@@ -177,7 +177,7 @@ atom          = INT | FLOAT | STRING | FSTRING | "True" | "False" | "none"
 | `list[T]` | growable array | `List<T>` |
 | `dict[K, V]` | hash map that keeps insertion order; `K` ∈ {`int`, `str`, `bool`}, otherwise `TP0200` | `OrderedDictionary<K, V>` |
 | `T?` | optional `T` | `T?` (C# nullable) |
-| `py` | dynamic Python object (M10) | `PyObject` |
+| `py` | dynamic Python object (M10, §10) | `Python.Runtime.PyObject` |
 
 - A function without `-> type` returns nothing (C# `void`). Using its result as a value is `TP0200`.
 - `T??` is `TP0213`. Optionals don't nest.
@@ -347,7 +347,7 @@ There are no other implicit conversions. Explicit conversions use the built-ins 
 - **A program is a main file plus the modules it imports, directly or indirectly.**
   - `import geometry` loads `geometry.tpn` from the main file's directory. Every module of a program lives in that one directory, so there are no packages or dotted module names in v0.1.
   - A missing file is `TP0221`, reported at the import.
-  - The module name `python` is reserved for Python interop (§10). Until M10, importing it is "not implemented".
+  - The module name `python` is reserved for Python interop (§10).
 - **Module files contain declarations only:** `import`, `def`, `struct`, `enum` and `const`. A top-level statement (including `let` and `var`) in a module other than the main file is `TP0222`. Only the main file has a top level that runs.
 - **Exports:** a module exports every name it defines, meaning its functions, structs, enums, their variants, and constants. There's no privacy, no re-export (a name a module itself imported can't be imported from it), and no `from m import *` (`TP0100`).
 - **Imports:**
@@ -474,6 +474,7 @@ Comparing values of unrelated types is `TP0200`.
   - `pop()` on an empty list: `pop from empty list`
   - mutation during iteration: `list mutated during iteration` / `dict mutated during iteration`. Any change to the list or dict being iterated counts, including assigning to an existing element.
   - `split("")` / `replace("", …)`: `empty separator`
+  - Python interop (§10.5): `cannot convert Python <type> to <T>`, `Python <ExceptionType>: <message>`, `cannot load Python: <reason>`
   - failed non-optional `as` (M10)
 
 ---
@@ -583,6 +584,7 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0200 | `'range' can only be used in a for loop` / `cannot iterate over <T>` |
 | TP0200 | `'<T>' is inferred as both <A> and <B>` / `'<T>' must be <A> or <B>, found <C>` (type-argument inference and constraints; `A, B or C` for longer tuples) |
 | TP0200 | `'<m>' is a module, not a value` |
+| TP0200 | `'as' converts py values; found <T>` / `cannot convert to <T>` / `cannot pass <T> to Python` (§10) |
 | TP0200 | `cannot match on <T>` / `'<E>' is a type, not a value` / `'<v>' is not a function` (a variant without a payload) |
 | TP0200 | `'is some' needs an optional, found <T>` / `'is none' needs an optional, found <T>` / `'??' needs an optional on the left, found <T>` |
 | TP0200 | `'<m>' is a method; call it` / `'<f>' is a field, not a method` / `cannot index <T>` / `dict keys must be int, str, or bool, found <T>` |
@@ -590,7 +592,7 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0202 | `cannot assign to '<x>': it is a <let binding\|parameter\|loop variable\|constant\|function\|method>`, with help `declare it with 'var'` for a `let` binding / `cannot assign to an element of str` |
 | TP0203 | `expected <T>, found <T>?` / `<T>? must be narrowed before use`, with help `narrow it with 'is some', or give a default with '??'` |
 | TP0204 | `non-exhaustive match (missing: <a>, <b>)` |
-| TP0205 | `condition must be bool, found <T>` |
+| TP0205 | `condition must be bool, found <T>` (with help `convert it with 'as bool'` for `py`) |
 | TP0206 | `cannot infer the type of an empty list` / `... empty dict` / `cannot infer the type of none` / `cannot infer '<T>' for '<f>'`, with help `add a type annotation` |
 | TP0207 | `'<x>' shadows an outer binding` |
 | TP0208 | `not all paths in '<f>' return a value` |
@@ -606,7 +608,7 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0217 | `const initializer must be a constant expression` |
 | TP0218 | `keyword arguments are only allowed in constructors` |
 | TP0219 | `instantiating '<f>' needs '<f>[<T>]', which is too deep`, at the call that starts the chain |
-| TP0221 | `module '<m>' not found`, with help `looked for <path>` |
+| TP0221 | `module '<m>' not found`, with help `looked for <path>` / `'python' is not a module`, with help `use 'from python import <module>'` |
 | TP0222 | `only the main file can have top-level statements` |
 | TP0220 | `a constraint needs at least two types` / `'<T>' is listed twice in the constraint` / `a constraint cannot be optional or generic` / `constraints are only supported on functions` |
 | TP0300 | `unreachable match arm` |
@@ -615,21 +617,57 @@ Types are written as in source: `int`, `str?`, `list[int]`. The type of `none` i
 
 ---
 
-## 10. Python interop (M10) — design sketch, revisit before implementing
+## 10. Python interop (M10)
 
-- **Import:** `from python import requests` binds `requests: py`.
-- **Dynamic operations on `py`:** attribute access, calls (positional and keyword), indexing, and arithmetic all return `py`, with no static checking.
-- **Taipan → Python:** implicit at call boundaries for `int`, `float`, `bool`, `str`, `list`, `dict`, and `none`.
-- **Python → Taipan:** only through `as`:
-  - `x as T?` is a checked conversion that returns `none` on mismatch.
-  - `x as T` panics on mismatch.
-  - Valid targets are `int`, `float`, `bool`, `str`, `list[T]`, and `dict[K, V]`. Conversion is recursive.
-- A `py` value can't flow into a static type any other way (`TP0200`).
-- **Implementation:**
-  - Python.NET (pythonnet) embeds CPython.
-  - The runtime initializes Python lazily on first import.
-  - The GIL is acquired per boundary call.
-- Python exceptions become panics, unless caught. Exception handling is post-v0.1.
+### 10.1 Importing Python modules
+- `from python import json, os as system` binds each name, which has type `py`, to the Python module of that name (via Python's `import`). `python` is a reserved module name (§4.7). `import python` is `TP0221`, with help `use 'from python import <module>'`.
+- Submodules are reached as attributes (`os.path`). Dotted names can't be imported directly in v0.1.
+- Python modules are imported when the program starts, in the order their imports appear (main file last, as for constants, §4.7). This happens before constants are initialized. A failed import (for example, a missing package) is a panic at that import's line.
+- A program with no `from python import` never loads Python.
+
+### 10.2 The `py` type
+- `py` holds any Python object. Each `py` operation is checked by Python at run time, not by Taipan:
+  - attribute access and assignment: `x.name`, `x.name = v`
+  - calls, positional and keyword (`TP0218` doesn't apply): `json.dumps(v, indent=2)`
+  - indexing and element assignment: `x[k]`, `x[k] = v`
+  - the operators `+ - * / // %`, unary `-`, `== != < <= > >=`, and `in`/`not in`, when either operand is `py`
+  - `for v in x`, giving `v: py`
+  - `len(x)`, which gives `int`, and `print`, `str()` and f-string holes, which use Python's `str(x)`
+- **The result of every `py` operation is `py`, including comparisons.** A `py` used as a condition, or with `and`, `or` or `not`, is `TP0205`, with help `convert it with 'as bool'`.
+- `py` may annotate variables, parameters, return types, fields and collection elements (`list[py]`). It can't be a dict key (§3.1).
+
+### 10.3 Taipan → Python
+- These Taipan types are *convertible*: `int`, `float`, `bool`, `str`, `none`, `list[T]` and `dict[K, V]` of convertible types, `T?` of a convertible `T`, and `py` itself.
+- A convertible value is converted when it's passed into a `py` operation, and when it's assigned to something of type `py` (so `let x: py = [1, 2]` is valid).
+- Lists and dicts are copied, so changes on either side aren't seen by the other.
+- A struct or enum value, or any other non-convertible type, passed to Python is `TP0200` (`cannot pass <T> to Python`).
+
+### 10.4 Python → Taipan: `as`
+- A `py` value reaches a static type only through `as` (cast, §2). Any other use where a static type is expected is `TP0200`. `as` applied to a non-`py` value is also `TP0200`.
+- `x as T` converts or panics. `x as T?` converts or gives `none`.
+- **Targets and what each accepts:**
+  - `int`: a Python `int` in the 64-bit range. A `bool` is not accepted, even though Python's `bool` is an `int`.
+  - `float`: a Python `float`, or an `int` (not `bool`), converted.
+  - `bool`: a Python `bool`.
+  - `str`: a Python `str`.
+  - `list[T]`: a Python `list` or `tuple` whose every element converts to `T`.
+  - `dict[K, V]`: a Python `dict` whose every key converts to `K` and every value to `V`.
+  - `T?` inside another target (for example `list[int?]`): Python `None` becomes `none`, and anything else converts as `T`. As the outer target, `x as int?` gives `none` both for `None` and on a mismatch.
+  - `py`: always succeeds, so `x as py` is allowed but pointless.
+  - Any other target (a struct, an enum) is `TP0200`.
+- Conversion is all-or-nothing: one failing element fails the whole conversion.
+
+### 10.5 Errors at run time
+- A failed `as T` panics with `cannot convert Python <type> to <T>`, where `<type>` is the Python type's name (`str`, `NoneType`).
+- A Python exception during any `py` operation panics with `Python <ExceptionType>: <message>`. Exception handling is post-v0.1.
+- If Python can't be loaded, the first Python import panics with `cannot load Python: <reason>`.
+- All of these exit with 101 and report the Taipan line, as other panics do (§7).
+
+### 10.6 Locating and running Python
+- The runtime embeds CPython through Python.NET (pythonnet). It looks for the CPython shared library in this order:
+  1. the `PYTHONNET_PYDLL` environment variable (pythonnet's own setting)
+  2. the library reported by the first of `python3` or `python` found on `PATH` (`sysconfig`'s `LIBDIR` and `LDLIBRARY`)
+- Python is initialized once per process and never shut down. Taipan programs are single-threaded, so the GIL is taken when Python is first used and held from then on.
 
 ---
 
