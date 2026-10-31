@@ -23,11 +23,14 @@ public sealed class Binder
     private static readonly HashSet<string> BuiltinTypeNames = ["int", "float", "bool", "str", "list", "dict", "py"];
 
     private readonly SourceText _source;
-    private readonly DiagnosticBag _diagnostics = new();
+    private DiagnosticBag _diagnostics = new();
     private readonly Scope _global = new(null);
     private readonly Dictionary<string, StructSymbol> _structs = [];
     private readonly Dictionary<string, EnumSymbol> _enums = [];
-    private Dictionary<string, TypeParameterSymbol> _typeParameters = [];
+    // Type names in scope inside a generic definition: each type parameter, or the concrete type it
+    // stands for while a constrained body is checked for one combination (SPEC §3.6).
+    private Dictionary<string, TaipanType> _typeParameters = [];
+    private Dictionary<TypeParameterSymbol, TaipanType> _specialization = [];
     private readonly HashSet<string> _scriptNames = [];
     private Scope _scope;
     private FunctionSymbol? _function;
@@ -91,7 +94,7 @@ public sealed class Binder
         foreach (var stmt in unit.Items.OfType<Stmt>())
             CollectScriptNames(stmt);
 
-        var boundFunctions = functions.Select(f => BindBody(f.Symbol, f.Syntax.Params, f.Syntax.Name, f.Syntax.Body, f.Syntax.Span)).ToImmutableArray();
+        var boundFunctions = functions.SelectMany(f => BindFunctionBodies(f.Symbol, f.Syntax)).ToImmutableArray();
         var boundStructs = structDefs
             .Select(s => new BoundStruct(
                 s.Symbol,
@@ -106,29 +109,70 @@ public sealed class Binder
             [.. enumDefs.Select(e => e.Symbol)], boundStructs, constants.ToImmutable(), boundFunctions, new BoundBlock(topLevel, unit.Span));
     }
 
-    private static ImmutableArray<TypeParameterSymbol> NewTypeParameters(ImmutableArray<Identifier> names) =>
-        [.. names.Select(n => new TypeParameterSymbol(n.Text))];
+    private static ImmutableArray<TypeParameterSymbol> NewTypeParameters(ImmutableArray<TypeParam> parameters) =>
+        [.. parameters.Select(p => new TypeParameterSymbol(p.Name.Text))];
 
-    /// <summary>A repeated type parameter is TP0214; one that hides a type name is TP0207 (SPEC §3.6).</summary>
-    private void CheckTypeParameters(ImmutableArray<Identifier> names)
+    /// <summary>
+    /// A repeated type parameter is TP0214; one that hides a type name is TP0207. Constraints are
+    /// TP0220 except on functions (SPEC §3.6).
+    /// </summary>
+    private void CheckTypeParameters(ImmutableArray<TypeParam> parameters, bool allowConstraints)
     {
         var seen = new HashSet<string>();
-        foreach (var name in names)
+        foreach (var parameter in parameters)
         {
+            var name = parameter.Name;
             if (!seen.Add(name.Text))
                 _diagnostics.ReportDuplicateDefinition(name.Span, name.Text);
             else if (BuiltinTypeNames.Contains(name.Text) || _structs.ContainsKey(name.Text) || _enums.ContainsKey(name.Text))
                 _diagnostics.ReportShadowing(name.Span, name.Text);
+            if (!allowConstraints && !parameter.Constraints.IsEmpty)
+                _diagnostics.ReportConstraintNotOnFunction(parameter.Constraints[0].Span);
         }
     }
 
+    /// <summary>Binds and validates a function's constraint tuples (TP0220), with its type parameters in scope.</summary>
+    private void BindConstraints(ImmutableArray<TypeParam> syntax, ImmutableArray<TypeParameterSymbol> symbols)
+    {
+        foreach (var (parameter, symbol) in syntax.Zip(symbols))
+        {
+            if (parameter.Constraints.IsEmpty)
+                continue;
+            var types = ImmutableArray.CreateBuilder<TaipanType>();
+            foreach (var constraint in parameter.Constraints)
+            {
+                var type = BindType(constraint);
+                if (type is OptionalOf || MentionsTypeParameter(type))
+                    _diagnostics.ReportConstraintNotConcrete(constraint.Span);
+                else if (types.Contains(type))
+                    _diagnostics.ReportConstraintRepeated(constraint.Span, type);
+                else if (!type.ContainsError)
+                    types.Add(type);
+            }
+            if (parameter.Constraints.Length < 2)
+                _diagnostics.ReportConstraintTooShort(parameter.Constraints[0].Span);
+            symbol.Constraints = types.Count >= 2 ? types.ToImmutable() : [];
+        }
+    }
+
+    private static bool MentionsTypeParameter(TaipanType type) => type switch
+    {
+        TypeParameterType => true,
+        OptionalOf o => MentionsTypeParameter(o.Inner),
+        ListOfType l => MentionsTypeParameter(l.Element),
+        DictOfType d => MentionsTypeParameter(d.Key) || MentionsTypeParameter(d.Value),
+        StructType s => s.TypeArguments.Any(MentionsTypeParameter),
+        EnumType e => e.TypeArguments.Any(MentionsTypeParameter),
+        _ => false,
+    };
+
     /// <summary>Makes <paramref name="parameters"/> the type parameters in scope; returns the previous ones.</summary>
-    private Dictionary<string, TypeParameterSymbol> EnterTypeParameters(ImmutableArray<TypeParameterSymbol> parameters)
+    private Dictionary<string, TaipanType> EnterTypeParameters(ImmutableArray<TypeParameterSymbol> parameters)
     {
         var previous = _typeParameters;
         _typeParameters = [];
         foreach (var parameter in parameters)
-            _typeParameters.TryAdd(parameter.Name, parameter);
+            _typeParameters.TryAdd(parameter.Name, _specialization.GetValueOrDefault(parameter, parameter.Type));
         return previous;
     }
 
@@ -187,7 +231,7 @@ public sealed class Binder
 
     private void BindVariantFields(EnumDef enumDef, EnumSymbol symbol)
     {
-        CheckTypeParameters(enumDef.TypeParams);
+        CheckTypeParameters(enumDef.TypeParams, allowConstraints: false);
         var outer = EnterTypeParameters(symbol.TypeParameters);
         foreach (var variantDef in enumDef.Variants)
         {
@@ -240,9 +284,10 @@ public sealed class Binder
 
     private FunctionSymbol BindFunctionSignature(FuncDef funcDef)
     {
-        CheckTypeParameters(funcDef.TypeParams);
+        CheckTypeParameters(funcDef.TypeParams, allowConstraints: true);
         var typeParameters = NewTypeParameters(funcDef.TypeParams);
         var outer = EnterTypeParameters(typeParameters);
+        BindConstraints(funcDef.TypeParams, typeParameters);
         var symbol = new FunctionSymbol(
             funcDef.Name.Text, BindParams(funcDef.Params), BindReturnType(funcDef.ReturnType), typeParameters: typeParameters);
         _typeParameters = outer;
@@ -257,7 +302,7 @@ public sealed class Binder
 
     private List<(MethodDef, FunctionSymbol)> BindStructMembers(StructDef structDef, StructSymbol symbol)
     {
-        CheckTypeParameters(structDef.TypeParams);
+        CheckTypeParameters(structDef.TypeParams, allowConstraints: false);
         var outer = EnterTypeParameters(symbol.TypeParameters);
         var names = new HashSet<string>();
         var fields = ImmutableArray.CreateBuilder<FieldSymbol>();
@@ -287,7 +332,56 @@ public sealed class Binder
         return methods;
     }
 
-    private BoundFunction BindBody(FunctionSymbol symbol, ImmutableArray<Param> parameters, Identifier name, Block body, TextSpan span)
+    /// <summary>
+    /// A function's body, or for constrained type parameters one body per combination of their
+    /// types (SPEC §3.6). Diagnostics only some combinations produce say which ones.
+    /// </summary>
+    private IEnumerable<BoundFunction> BindFunctionBodies(FunctionSymbol symbol, FuncDef syntax)
+    {
+        var constrained = symbol.TypeParameters.Where(p => !p.Constraints.IsEmpty).ToList();
+        if (constrained.Count == 0)
+            return [BindBody(symbol, syntax.Params, syntax.Name, syntax.Body, syntax.Span)];
+
+        var combinations = constrained.Aggregate(
+            (IEnumerable<ImmutableDictionary<TypeParameterSymbol, TaipanType>>)[ImmutableDictionary<TypeParameterSymbol, TaipanType>.Empty],
+            (partial, parameter) => partial.SelectMany(map => parameter.Constraints.Select(type => map.Add(parameter, type)))).ToList();
+
+        var outerDiagnostics = _diagnostics;
+        var bodies = new List<BoundFunction>();
+        var reports = new List<(string When, ImmutableArray<Diagnostic> Diagnostics)>();
+        foreach (var combination in combinations)
+        {
+            _diagnostics = new DiagnosticBag();
+            _specialization = new Dictionary<TypeParameterSymbol, TaipanType>(combination);
+            var parameters = symbol.Parameters
+                .Select(p => new VariableSymbol(p.Name, TypeChecker.Substitute(p.Type, _specialization), VariableKind.Parameter))
+                .ToImmutableArray();
+            var body = BindBody(symbol, syntax.Params, syntax.Name, syntax.Body, syntax.Span, parameters);
+            bodies.Add(body with
+            {
+                Parameters = parameters,
+                Specialization = [.. symbol.TypeParameters.Select(p => _specialization.GetValueOrDefault(p, p.Type))],
+            });
+            var when = string.Join(", ", constrained.Select(p => $"'{p.Name}' is {combination[p]}"));
+            reports.Add((when, _diagnostics.ToImmutable()));
+        }
+        _specialization = [];
+        _diagnostics = outerDiagnostics;
+
+        // Report each distinct diagnostic once, saying which combinations produce it if not all.
+        foreach (var diagnostic in reports.SelectMany(r => r.Diagnostics).Distinct())
+        {
+            var when = reports.Where(r => r.Diagnostics.Contains(diagnostic)).Select(r => r.When).ToList();
+            _diagnostics.AddRange([when.Count == reports.Count
+                ? diagnostic
+                : diagnostic with { Message = $"{diagnostic.Message} (when {string.Join(" or ", when)})" }]);
+        }
+        return bodies;
+    }
+
+    private BoundFunction BindBody(
+        FunctionSymbol symbol, ImmutableArray<Param> parameters, Identifier name, Block body, TextSpan span,
+        ImmutableArray<VariableSymbol>? specializedParameters = null)
     {
         // A method sees its struct's type parameters; a function its own.
         var outerTypeParameters = EnterTypeParameters(
@@ -297,8 +391,9 @@ public sealed class Binder
         _scope = new Scope(_global);
         if (symbol.Self is { } self)
             _scope.Declare(self);
-        for (var i = 0; i < symbol.Parameters.Length; i++)
-            DeclareLocal(parameters[i].Name, symbol.Parameters[i]);
+        var parameterSymbols = specializedParameters ?? symbol.Parameters;
+        for (var i = 0; i < parameterSymbols.Length; i++)
+            DeclareLocal(parameters[i].Name, parameterSymbols[i]);
 
         var boundBody = BindBlock(body);
         if (symbol.ReturnType != TaipanType.Nothing && !TypeChecker.Terminates(boundBody))
@@ -406,7 +501,7 @@ public sealed class Binder
             case NamedType { Name.Text: "py" }:
                 return Unsupported("the py type");
             case NamedType named when _typeParameters.TryGetValue(named.Name.Text, out var typeParameter):
-                return typeParameter.Type;
+                return typeParameter;
             case NamedType named when _structs.ContainsKey(named.Name.Text) || _enums.ContainsKey(named.Name.Text):
                 return BindGenericType(named.Name, [], named.Span);
             case GenericType generic:
@@ -779,7 +874,7 @@ public sealed class Binder
             return new BoundReturn(orphan, ret.Span);
         }
 
-        var returnType = _function.ReturnType;
+        var returnType = TypeChecker.Substitute(_function.ReturnType, _specialization);
         if (ret.Value is null)
         {
             if (returnType != TaipanType.Nothing)
@@ -1402,9 +1497,25 @@ public sealed class Binder
             _diagnostics.ReportCannotInferTypeArgument(nameSpan, parameter.Name, name);
             map[parameter] = TaipanType.Error;
         }
+        foreach (var parameter in typeParameters.Where(p => !p.Constraints.IsEmpty))
+            map[parameter] = CheckConstraint(parameter, map[parameter], nameSpan);
         for (var i = 0; i < bound.Count; i++)
             CheckAssignable(bound[i], TypeChecker.Substitute(parameterTypes[i], map), arguments[i].Span);
         return (bound.ToImmutable(), map);
+    }
+
+    /// <summary>
+    /// An inferred type argument must be one of its parameter's constraint types; an int becomes
+    /// float when only float is listed (SPEC §3.6). Otherwise TP0200, and the result is the error type.
+    /// </summary>
+    private TaipanType CheckConstraint(TypeParameterSymbol parameter, TaipanType inferred, TextSpan span)
+    {
+        if (inferred.ContainsError || parameter.Constraints.Contains(inferred))
+            return inferred;
+        if (inferred == TaipanType.Int && parameter.Constraints.Contains(TaipanType.Float))
+            return TaipanType.Float;
+        _diagnostics.ReportConstraintViolation(span, parameter.Name, parameter.Constraints.Select(c => c.ToString()), inferred);
+        return TaipanType.Error;
     }
 
     /// <summary>Unification of parameter types with argument types, for type-argument inference.</summary>

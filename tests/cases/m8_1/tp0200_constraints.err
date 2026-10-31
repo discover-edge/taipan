@@ -1,0 +1,5 @@
+tests/cases/m8_1/tp0200_constraints.tpn:8:14: error TP0210: int has no method 'upper' (when 'S' is int)
+tests/cases/m8_1/tp0200_constraints.tpn:11:12: error TP0200: operator '+' cannot be applied to str and int (when 'N' is str)
+tests/cases/m8_1/tp0200_constraints.tpn:14:13: error TP0200: 'N' must be int or float, found T
+tests/cases/m8_1/tp0200_constraints.tpn:17:7: error TP0200: 'N' must be int or float, found str
+tests/cases/m8_1/tp0200_constraints.tpn:18:7: error TP0200: 'N' must be int or float, found bool

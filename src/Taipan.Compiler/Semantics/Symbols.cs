@@ -120,4 +120,7 @@ public sealed class AmbiguousVariantSymbol(string name, ImmutableArray<VariantSy
 public sealed class TypeParameterSymbol(string name) : Symbol(name)
 {
     public TypeParameterType Type => new(this);
+
+    /// <summary>The types a constrained parameter can stand for (SPEC §3.6); empty if unconstrained.</summary>
+    public ImmutableArray<TaipanType> Constraints { get; set; } = [];
 }

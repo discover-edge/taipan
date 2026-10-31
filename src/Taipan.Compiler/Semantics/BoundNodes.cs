@@ -18,7 +18,17 @@ public sealed record BoundStruct(StructSymbol Symbol, ImmutableArray<BoundFuncti
 
 public sealed record BoundConstant(VariableSymbol Symbol, BoundExpr Value, TextSpan Span);
 
-public sealed record BoundFunction(FunctionSymbol Symbol, BoundBlock Body, TextSpan Span);
+public sealed record BoundFunction(FunctionSymbol Symbol, BoundBlock Body, TextSpan Span)
+{
+    /// <summary>The parameters the body refers to; specialized copies for a constrained body.</summary>
+    public ImmutableArray<VariableSymbol> Parameters { get; init; } = Symbol.Parameters;
+
+    /// <summary>
+    /// For a function with constrained type parameters, the combination this body was checked for:
+    /// one type per type parameter, an unconstrained one standing for itself (SPEC §3.6).
+    /// </summary>
+    public ImmutableArray<TaipanType> Specialization { get; init; } = [];
+}
 
 // ---- Statements ----
 

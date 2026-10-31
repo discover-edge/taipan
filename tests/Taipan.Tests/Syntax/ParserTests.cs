@@ -546,8 +546,16 @@ public class ParserTests
     public void GenericTypes(string type, string expected) =>
         Assert.Equal($"LetStmt(x, {expected}, NameExpr(y))", Snapshot($"let x: {type} = y\n"));
 
+    [Fact]
+    public void ConstrainedTypeParams() =>
+        Assert.Equal(
+            "FuncDef(total, [TypeParam(N, [NamedType(int), NamedType(float)]), T, TypeParam(K, [NamedType(str), ListType(NamedType(int))])], " +
+            "[Param(xs, ListType(NamedType(N)))], NamedType(N), Block([ReturnStmt(IntLiteral(0))]))",
+            Snapshot("def total[N: (int, float), T, K: (str, list[int],)](xs: list[N]) -> N:\n    return 0\n"));
+
     [Theory]
-    [InlineData("def f[T: (int, float)](x: T):\n    pass\n", "1:8 TP0100: expected ']', found ':'")]
+    [InlineData("def f[T: int](x: T):\n    pass\n", "1:10 TP0100: expected '(', found name 'int'")]
+    [InlineData("def f[T: (int, float](x: T):\n    pass\n", "1:21 TP0100: expected ')', found ']'")]
     [InlineData("def f[](x: int):\n    pass\n", "1:7 TP0100: expected name, found ']'")]
     [InlineData("let b: Box[] = x\n", "1:12 TP0100: expected type, found ']'")]
     public void TypeParamSyntaxErrors(string text, string expected) =>

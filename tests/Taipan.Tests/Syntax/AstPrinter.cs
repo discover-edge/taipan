@@ -19,6 +19,7 @@ public static class AstPrinter
         string s => $"\"{s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n")}\"",
         Identifier id => id.Text,
         NameExpr name => $"NameExpr({name.Name})",
+        TypeParam { Constraints.IsEmpty: true } parameter => parameter.Name.Text,
         bool b => b ? "True" : "False",
         BigInteger i => i.ToString(CultureInfo.InvariantCulture),
         double d => d.ToString("R", CultureInfo.InvariantCulture),

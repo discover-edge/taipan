@@ -62,7 +62,8 @@ public sealed record DictOfType(TaipanType Key, TaipanType Value) : TaipanType
 
     /// <summary>Dict keys are limited to int, str and bool (SPEC §3.1).</summary>
     public static bool IsValidKey(TaipanType type) =>
-        type.IsError || type == Int || type == Str || type == Bool;
+        type.IsError || type == Int || type == Str || type == Bool
+        || type is TypeParameterType { Symbol.Constraints: [_, ..] constraints } && constraints.All(IsValidKey);
 }
 
 /// <summary>A struct, with its type arguments if it's generic (SPEC §3.6). Equal when both match.</summary>

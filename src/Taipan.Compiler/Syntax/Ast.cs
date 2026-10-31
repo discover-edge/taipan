@@ -18,12 +18,12 @@ public abstract record TopItem(TextSpan Span) : Node(Span);
 // ---- Declarations ----
 
 /// <summary><see cref="TypeParams"/> is empty for a non-generic function (SPEC §3.6).</summary>
-public sealed record FuncDef(Identifier Name, ImmutableArray<Identifier> TypeParams, ImmutableArray<Param> Params, TypeSyntax? ReturnType, Block Body, TextSpan Span)
+public sealed record FuncDef(Identifier Name, ImmutableArray<TypeParam> TypeParams, ImmutableArray<Param> Params, TypeSyntax? ReturnType, Block Body, TextSpan Span)
     : TopItem(Span);
 
 public sealed record Param(Identifier Name, TypeSyntax Type, TextSpan Span) : Node(Span);
 
-public sealed record StructDef(Identifier Name, ImmutableArray<Identifier> TypeParams, ImmutableArray<FieldDef> Fields, ImmutableArray<MethodDef> Methods, TextSpan Span)
+public sealed record StructDef(Identifier Name, ImmutableArray<TypeParam> TypeParams, ImmutableArray<FieldDef> Fields, ImmutableArray<MethodDef> Methods, TextSpan Span)
     : TopItem(Span);
 
 /// <summary>A method; <see cref="Params"/> excludes the leading <c>self</c>, whose span is <see cref="Self"/>.</summary>
@@ -32,12 +32,15 @@ public sealed record MethodDef(Identifier Name, TextSpan Self, ImmutableArray<Pa
 
 public sealed record FieldDef(Identifier Name, TypeSyntax Type, TextSpan Span) : Node(Span);
 
-public sealed record EnumDef(Identifier Name, ImmutableArray<Identifier> TypeParams, ImmutableArray<VariantDef> Variants, TextSpan Span) : TopItem(Span);
+public sealed record EnumDef(Identifier Name, ImmutableArray<TypeParam> TypeParams, ImmutableArray<VariantDef> Variants, TextSpan Span) : TopItem(Span);
 
 /// <summary>An enum variant; <see cref="Fields"/> is empty for a variant without a payload.</summary>
 public sealed record VariantDef(Identifier Name, ImmutableArray<FieldDef> Fields, TextSpan Span) : Node(Span);
 
 public sealed record ConstDef(Identifier Name, TypeSyntax? Type, Expr Value, TextSpan Span) : TopItem(Span);
+
+/// <summary>A type parameter; <see cref="Constraints"/> is empty unless it has a constraint tuple (SPEC §3.6).</summary>
+public sealed record TypeParam(Identifier Name, ImmutableArray<TypeSyntax> Constraints, TextSpan Span) : Node(Span);
 
 // ---- Statements ----
 

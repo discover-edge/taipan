@@ -115,6 +115,28 @@ public sealed class DiagnosticBag
     public void ReportConflictingTypeArgument(TextSpan span, string parameter, object first, object second) =>
         Add("TP0200", span, $"'{parameter}' is inferred as both {first} and {second}");
 
+    public void ReportConstraintViolation(TextSpan span, string parameter, IEnumerable<string> allowed, object found) =>
+        Add("TP0200", span, $"'{parameter}' must be {Alternatives(allowed)}, found {found}");
+
+    public void ReportConstraintTooShort(TextSpan span) =>
+        Add("TP0220", span, "a constraint needs at least two types");
+
+    public void ReportConstraintRepeated(TextSpan span, object type) =>
+        Add("TP0220", span, $"'{type}' is listed twice in the constraint");
+
+    public void ReportConstraintNotConcrete(TextSpan span) =>
+        Add("TP0220", span, "a constraint cannot be optional or generic");
+
+    public void ReportConstraintNotOnFunction(TextSpan span) =>
+        Add("TP0220", span, "constraints are only supported on functions");
+
+    /// <summary>"a or b", "a, b or c".</summary>
+    public static string Alternatives(IEnumerable<string> items)
+    {
+        var list = items.ToList();
+        return list.Count <= 1 ? string.Concat(list) : $"{string.Join(", ", list[..^1])} or {list[^1]}";
+    }
+
     public void ReportInstantiationTooDeep(TextSpan span, string function, string instance) =>
         Add("TP0219", span, $"instantiating '{function}' needs '{instance}', which is too deep");
 

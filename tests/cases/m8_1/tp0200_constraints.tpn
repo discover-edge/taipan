@@ -1,0 +1,18 @@
+def total[N: (int, float)](xs: list[N]) -> N:
+    var sum: N = 0
+    for x in xs:
+        sum += x
+    return sum
+
+def shout[S: (int, str)](x: S) -> str:
+    return x.upper()
+
+def bump[N: (int, str)](x: N) -> N:
+    return x + 1
+
+def wrap[T](x: T) -> T:
+    let n = total([x])
+    return x
+
+print(total(["a"]))
+print(total([True]))

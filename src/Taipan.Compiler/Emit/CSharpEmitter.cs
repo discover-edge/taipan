@@ -46,7 +46,7 @@ public sealed class CSharpEmitter
     private Dictionary<TypeParameterSymbol, TaipanType> _map = [];
     private readonly Dictionary<string, string> _instanceNames = [];
     private readonly Queue<Instance> _pending = new();
-    private readonly Dictionary<FunctionSymbol, BoundFunction> _genericFunctions = [];
+    private readonly Dictionary<FunctionSymbol, List<BoundFunction>> _genericFunctions = [];
     private readonly Dictionary<StructSymbol, BoundStruct> _structs = [];
     private readonly DiagnosticBag _diagnostics = new();
     private int _depth;
@@ -82,7 +82,11 @@ public sealed class CSharpEmitter
         ];
         _out = _functionsOut;
         foreach (var function in program.Functions.Where(f => !f.Symbol.TypeParameters.IsEmpty))
-            _genericFunctions[function.Symbol] = function;
+        {
+            if (!_genericFunctions.TryGetValue(function.Symbol, out var bodies))
+                _genericFunctions[function.Symbol] = bodies = [];
+            bodies.Add(function);
+        }
         foreach (var structDef in program.Structs)
             _structs[structDef.Symbol] = structDef;
         _programClass = UniqueGlobal("TaipanProgram");
@@ -161,7 +165,7 @@ public sealed class CSharpEmitter
                 _out = _functionsOut;
                 _indent = 1;
                 Line();
-                EmitFunction(_genericFunctions[function], isMethod: false, instance.Name);
+                EmitFunction(BodyFor(function, instance.TypeArguments), isMethod: false, instance.Name);
                 break;
             case StructSymbol structSymbol:
                 _map = TypeChecker.Zip(structSymbol.TypeParameters, instance.TypeArguments);
@@ -180,6 +184,14 @@ public sealed class CSharpEmitter
         }
         _map = [];
     }
+
+    /// <summary>
+    /// The body to emit for a generic function's instance: for constrained type parameters, the
+    /// one checked for the instance's combination of their types (SPEC §3.6).
+    /// </summary>
+    private BoundFunction BodyFor(FunctionSymbol function, ImmutableArray<TaipanType> typeArguments) =>
+        _genericFunctions[function].First(body => body.Specialization.IsEmpty
+            || body.Specialization.Zip(typeArguments).All(pair => pair.First is TypeParameterType || pair.First == pair.Second));
 
     /// <summary>
     /// The C# name of a generic definition at concrete type arguments, queueing it for emission
@@ -253,9 +265,9 @@ public sealed class CSharpEmitter
     private void EmitFunction(BoundFunction function, bool isMethod, string? name = null)
     {
         var symbol = function.Symbol;
-        _locals = LocalNames.For(symbol.Parameters, function.Body, _globalNames);
+        _locals = LocalNames.For(function.Parameters, function.Body, _globalNames);
         _self = symbol.Self;
-        var parameters = string.Join(", ", symbol.Parameters.Select(p => $"{TypeName(p.Type)} @{_locals[p]}"));
+        var parameters = string.Join(", ", function.Parameters.Select(p => $"{TypeName(p.Type)} @{_locals[p]}"));
         Line($"public {(isMethod ? "" : "static ")}{TypeName(symbol.ReturnType)} @{name ?? symbol.Name}({parameters})");
         Line("{");
         _indent++;

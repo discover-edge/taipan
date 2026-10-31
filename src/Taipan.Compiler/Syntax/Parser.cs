@@ -209,21 +209,36 @@ public sealed class Parser
         return new FuncDef(name, typeParams, parameters, returnType, body, SpanFrom(start));
     }
 
-    // type_params = "[" NAME { "," NAME } "]"
-    private ImmutableArray<Identifier> ParseTypeParams()
+    // type_params = "[" type_param { "," type_param } "]"
+    private ImmutableArray<TypeParam> ParseTypeParams()
     {
         if (!At(TokenKind.OpenBracket))
             return [];
         Next();
-        var names = ImmutableArray.CreateBuilder<Identifier>();
-        names.Add(ExpectIdentifier());
+        var parameters = ImmutableArray.CreateBuilder<TypeParam>();
+        parameters.Add(ParseTypeParam());
         while (At(TokenKind.Comma))
         {
             Next();
-            names.Add(ExpectIdentifier());
+            parameters.Add(ParseTypeParam());
         }
         Expect(TokenKind.CloseBracket);
-        return names.ToImmutable();
+        return parameters.ToImmutable();
+    }
+
+    // type_param = NAME [ ":" "(" type { "," type } [ "," ] ")" ]
+    private TypeParam ParseTypeParam()
+    {
+        var name = ExpectIdentifier();
+        var constraints = ImmutableArray<TypeSyntax>.Empty;
+        if (At(TokenKind.Colon))
+        {
+            Next();
+            Expect(TokenKind.OpenParen);
+            constraints = ParseCommaList(TokenKind.CloseParen, ParseType);
+            Expect(TokenKind.CloseParen);
+        }
+        return new TypeParam(name, constraints, SpanFrom(name.Span.Start));
     }
 
     // params = param { "," param } [ "," ]
