@@ -20,6 +20,7 @@ public static class BoundTree
         BoundForRange forStmt => [forStmt.Stop],
         BoundForEach forEach => [forEach.Iterable],
         BoundMatch match => [match.Scrutinee],
+        BoundUnpack unpack => [unpack.Value, .. unpack.Stores.SelectMany(Expressions)],
         _ => [],
     };
 
@@ -48,6 +49,9 @@ public static class BoundTree
         BoundLambda lambda => [lambda.Body],
         BoundInvoke invoke => [invoke.Callee, .. invoke.Arguments],
         BoundSort sort => [sort.List, .. sort.Keywords.Select(k => k.Value)],
+        BoundTupleLiteral tuple => tuple.Elements,
+        BoundTupleElement element => [element.Tuple],
+        BoundSlice slice => ((BoundExpr?[])[slice.Target, slice.Start, slice.Stop, slice.Step]).OfType<BoundExpr>(),
         _ => [],
     };
 

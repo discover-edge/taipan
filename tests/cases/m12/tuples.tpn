@@ -1,0 +1,57 @@
+# Tuples (SPEC §3.8).
+
+def bounds(xs: list[int]) -> tuple[int, int]:
+    var lo = xs[0]
+    var hi = xs[0]
+    for x in xs:
+        if x < lo:
+            lo = x
+        if x > hi:
+            hi = x
+    return lo, hi
+
+let lo, hi = bounds([3, 9, 1, 4])
+print(lo, hi)
+let pair = bounds([5])
+print(pair, pair[0], pair[-1])
+
+# Swapping: the right side is evaluated first.
+var a = 1
+var b = 2
+a, b = b, a
+print(a, b)
+
+# Targets may be fields and elements; they're stored left to right.
+struct Point:
+    x: int
+    y: int
+
+let p = Point(0, 0)
+var xs = [0, 0]
+p.x, xs[1] = 7, 8
+print(p, xs)
+
+# _ ignores an element.
+let _, second, _ = (1, "two", 3.0)
+print(second)
+
+# An expected type is checked element by element.
+let fp: tuple[float, float] = (1, 2)
+print(fp)
+
+# Equality, ordering and dict keys.
+print((1, "a") == (1, "a"), (1, "a") != (1, "b"), (1, 2) == (1.0, 2))
+print((1, "b") < (1, "c"), (2, "a") <= (1, "z"), ("b", 1) > ("a", 9))
+var grid: dict[tuple[int, int], str] = {(0, 0): "origin"}
+grid[(1, 2)] = "p"
+print(grid[(1, 2)], (0, 0) in grid, grid)
+
+# Tuples hold any values: other tuples, lists, optionals.
+let nested = ((1, 2), [3, 4], "s")
+print(nested)
+var maybe: tuple[int, str]? = none
+maybe = (1, "x")
+if maybe is some m:
+    print(m[1])
+print([(1, "a"), (2, "b")])
+print(f"{(1, 2)}")

@@ -1,0 +1,10 @@
+from python import json
+
+print(json.dumps((1, "a", [True])))
+let back = json.loads("[2, \"b\"]") as tuple[int, str]
+print(back)
+let short = json.loads("[1]") as tuple[int, str]?
+print(short)
+let s = json.loads("[1, 2, 3, 4]")
+print(s[1:3], s[::-1])
+let wrong = json.loads("[1, 2, 3]") as tuple[int, int]

@@ -1,0 +1,4 @@
+let xs = [1, 2, 3]
+print("before")
+let step = 0
+print(xs[::step])

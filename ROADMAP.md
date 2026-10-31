@@ -2,7 +2,7 @@
 
 Each milestone is done when **all** of its acceptance criteria pass as golden tests (see CLAUDE.md). Milestones are sequential. Don't start the next one early.
 
-M0–M10 (with M8.1) make up v0.1 and are complete. M11 is complete; M12 onward are planned.
+M0–M10 (with M8.1) make up v0.1 and are complete. M11 and M12 are complete; M13 onward are planned.
 
 ## M0 — Scaffold
 - Create the solution layout from CLAUDE.md, the `taipan` CLI with `check | emit | build | run` stubs, and the golden-test harness.
@@ -88,7 +88,7 @@ M0–M10 (with M8.1) make up v0.1 and are complete. M11 is complete; M12 onward 
   - Calling a non-function, or a function with the wrong argument types, reports the right code at the right column.
 
 ## M12 — Tuples and slicing
-- Tuple types, literals and unpacking: `def bounds(xs: list[int]) -> (int, int)`, `let lo, hi = bounds(xs)`, `for i, x in enumerate(xs)`.
+- Tuple types, literals and unpacking: `def bounds(xs: list[int]) -> tuple[int, int]`, `let lo, hi = bounds(xs)`, `for i, x in enumerate(xs)`.
 - Slicing for `list` and `str`: `xs[1:3]`, `xs[::-1]`, `s[:5]`, with Python's clamping.
 - Update SPEC first: tuple display, equality, use as dict keys, and how tuples meet `match` and Python's `tuple`.
 - **Accept:**

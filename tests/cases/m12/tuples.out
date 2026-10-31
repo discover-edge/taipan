@@ -1,0 +1,13 @@
+1 9
+(5, 5) 5 5
+2 1
+Point(x=7, y=0) [0, 8]
+two
+(1.0, 2.0)
+True True True
+True False True
+p True {(0, 0): "origin", (1, 2): "p"}
+((1, 2), [3, 4], "s")
+x
+[(1, "a"), (2, "b")]
+(1, 2)

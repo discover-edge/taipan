@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Collections;
 using System.Diagnostics;
 using Python.Runtime;
@@ -88,6 +89,14 @@ public static class Interop
     public static void SetAttr(PyObject target, string name, object? value) => Run(() => target.SetAttr(name, From(value)));
 
     public static PyObject GetItem(PyObject target, object? key) => Run(() => target.GetItem(From(key)));
+
+    /// <summary><c>x[a:b:c]</c> on a py value: indexes with a Python <c>slice</c> (SPEC §5.4).</summary>
+    public static PyObject Slice(PyObject target, object? start, object? stop, object? step) => Run(() =>
+    {
+        using var builtins = Py.Import("builtins");
+        using var slice = builtins.GetAttr("slice").Invoke(Convert(start), Convert(stop), Convert(step));
+        return target.GetItem(slice);
+    });
 
     public static void SetItem(PyObject target, object? key, object? value) => Run(() => target.SetItem(From(key), From(value)));
 
@@ -201,6 +210,7 @@ public static class Interop
         bool b => b.ToPython(),
         string s => new PyString(s),
         IDictionary dict => ConvertDict(dict),
+        ITuple tuple => new PyTuple([.. Enumerable.Range(0, tuple.Length).Select(i => Convert(tuple[i]))]),
         IList list => new PyList([.. list.Cast<object?>().Select(Convert)]),
         _ => throw new ArgumentException($"{value.GetType()} can't be passed to Python"),
     };
@@ -297,6 +307,20 @@ public static class Interop
         foreach (var item in Items(value))
             result.Add(element(item));
         return result;
+    }
+
+    /// <summary>
+    /// A Python tuple or list of exactly <paramref name="count"/> elements, built into a Taipan
+    /// tuple from its items (SPEC §10.4).
+    /// </summary>
+    public static T ToTuple<T>(PyObject value, int count, Func<PyObject[], T> build)
+    {
+        if (TypeName(value) is not ("list" or "tuple"))
+            throw new ConversionFailed(TypeName(value));
+        var items = Items(value).ToArray();
+        if (items.Length != count)
+            throw new ConversionFailed(TypeName(value));
+        return build(items);
     }
 
     public static OrderedDictionary<TKey, TValue> ToDict<TKey, TValue>(

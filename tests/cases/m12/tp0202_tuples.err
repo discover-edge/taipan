@@ -1,0 +1,4 @@
+tests/cases/m12/tp0202_tuples.tpn:2:1: error TP0202: cannot assign to an element of a tuple
+tests/cases/m12/tp0202_tuples.tpn:4:1: error TP0202: cannot assign to 'a': it is a let binding
+  help: declare it with 'var'
+tests/cases/m12/tp0202_tuples.tpn:6:5: error TP0202: cannot assign to 'x': it is a loop variable

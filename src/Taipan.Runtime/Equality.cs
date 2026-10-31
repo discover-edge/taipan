@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Collections;
 
 namespace Taipan.Runtime;
@@ -16,6 +17,7 @@ public static class Equality
         (string l, string r) => string.Equals(l, r, StringComparison.Ordinal),
         (bool l, bool r) => l == r,
         (IFunction l, IFunction r) => ReferenceEquals(l, r),
+        (ITuple l, ITuple r) => l.Length == r.Length && Enumerable.Range(0, l.Length).All(i => Equal(l[i], r[i])),
         (IStruct l, IStruct r) => l.GetType() == r.GetType() && FieldsEqual(l, r),
         (IDictionary l, IDictionary r) => DictsEqual(l, r),
         (IList l, IList r) => ListsEqual(l, r),

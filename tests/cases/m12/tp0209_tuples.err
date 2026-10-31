@@ -1,0 +1,6 @@
+tests/cases/m12/tp0209_tuples.tpn:1:8: error TP0209: a tuple needs at least two elements
+tests/cases/m12/tp0209_tuples.tpn:2:9: error TP0209: a tuple needs at least two elements
+tests/cases/m12/tp0209_tuples.tpn:3:15: error TP0209: tuple[int, int] has 2 elements, found 3 names
+tests/cases/m12/tp0209_tuples.tpn:6:8: error TP0209: tuple[int, int, int] has 3 elements, found 2 names
+tests/cases/m12/tp0209_tuples.tpn:7:16: error TP0209: tuple[int, int] has 2 elements, found 3 names
+tests/cases/m12/tp0209_tuples.tpn:9:7: error TP0209: 'zip' takes 2 arguments, found 1

@@ -22,7 +22,7 @@ public sealed class VariableSymbol(string name, TaipanType type, VariableKind ki
     public VariableKind Kind { get; } = kind;
 }
 
-public enum BuiltinFunction { Print, Len, Str, Int, Float, Range, Sorted, Map, Filter }
+public enum BuiltinFunction { Print, Len, Str, Int, Float, Range, Sorted, Map, Filter, Enumerate, Zip }
 
 /// <summary>A function, or a method when <see cref="Self"/> is set.</summary>
 public sealed class FunctionSymbol(
@@ -58,6 +58,8 @@ public sealed class FunctionSymbol(
         new("sorted", [], TaipanType.Error, BuiltinFunction.Sorted),
         new("map", [], TaipanType.Error, BuiltinFunction.Map),
         new("filter", [], TaipanType.Error, BuiltinFunction.Filter),
+        new("enumerate", [], TaipanType.Error, BuiltinFunction.Enumerate),
+        new("zip", [], TaipanType.Error, BuiltinFunction.Zip),
     ];
 }
 
@@ -89,7 +91,7 @@ public sealed class StructSymbol(string name, ImmutableArray<TypeParameterSymbol
 public enum BuiltinMethod
 {
     ListAppend, ListPop, ListInsert, ListContains, ListSort,
-    DictGet, DictKeys, DictValues, DictRemove,
+    DictGet, DictKeys, DictValues, DictItems, DictRemove,
     StrUpper, StrLower, StrStrip, StrSplit, StrStartsWith, StrEndsWith, StrReplace,
 }
 

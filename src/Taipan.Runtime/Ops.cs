@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Globalization;
 using System.Text.RegularExpressions;
 
@@ -105,7 +106,129 @@ public static class Ops
         return normalized;
     }
 
+    // ---- Tuples (SPEC §3.8) ----
+
+    private enum Ordering { Less, LessEqual, Greater, GreaterEqual }
+
+    // Python's tuple comparison: the first pair of elements that differ decides, compared with the
+    // operator itself; if there's none, the tuples are equal.
+    public static bool Less(object left, object right) => Compare(left, right, Ordering.Less);
+
+    public static bool LessEqual(object left, object right) => Compare(left, right, Ordering.LessEqual);
+
+    public static bool Greater(object left, object right) => Compare(left, right, Ordering.Greater);
+
+    public static bool GreaterEqual(object left, object right) => Compare(left, right, Ordering.GreaterEqual);
+
+    private static bool Compare(object left, object right, Ordering ordering)
+    {
+        if (left is ITuple l && right is ITuple r)
+        {
+            for (var i = 0; i < l.Length; i++)
+            {
+                if (!Equality.Equal(l[i], r[i]))
+                    return Compare(l[i]!, r[i]!, ordering);
+            }
+            return ordering is Ordering.LessEqual or Ordering.GreaterEqual;
+        }
+        if (left is string ls && right is string rs)
+            return Apply(string.CompareOrdinal(ls, rs), 0, ordering);
+        if (left is long ll && right is long rl)
+            return Apply(ll, rl, ordering);
+        return Apply(System.Convert.ToDouble(left), System.Convert.ToDouble(right), ordering);
+    }
+
+    private static bool Apply<T>(T left, T right, Ordering ordering) where T : System.Numerics.IComparisonOperators<T, T, bool> => ordering switch
+    {
+        Ordering.Less => left < right,
+        Ordering.LessEqual => left <= right,
+        Ordering.Greater => left > right,
+        _ => left >= right,
+    };
+
+    /// <summary>The total order <c>sorted</c> uses: strings by ordinal, NaN first, tuples element by element.</summary>
+    private static int SortCompare(object? left, object? right) => (left, right) switch
+    {
+        (ITuple l, ITuple r) => Enumerable.Range(0, l.Length).Select(i => SortCompare(l[i], r[i])).FirstOrDefault(c => c != 0),
+        (string l, string r) => string.CompareOrdinal(l, r),
+        (long l, long r) => l.CompareTo(r),
+        _ => System.Convert.ToDouble(left).CompareTo(System.Convert.ToDouble(right)),
+    };
+
+    // ---- Slices (SPEC §5.4) ----
+
+    /// <summary><c>xs[start:stop:step]</c>: a new list.</summary>
+    public static List<T> Slice<T>(List<T> list, long? start, long? stop, long? step) =>
+        [.. SliceIndices(list.Count, start, stop, step).Select(i => list[i])];
+
+    /// <summary><c>s[start:stop:step]</c>, by code point.</summary>
+    public static string Slice(string value, long? start, long? stop, long? step)
+    {
+        var runes = value.EnumerateRunes().ToList();
+        return string.Concat(SliceIndices(runes.Count, start, stop, step).Select(i => runes[i].ToString()));
+    }
+
+    // Python's slice.indices: bounds are clamped, and omitted ones default to the ends in the
+    // step's direction.
+    private static IEnumerable<int> SliceIndices(int length, long? start, long? stop, long? step)
+    {
+        var by = step ?? 1;
+        if (by == 0)
+            throw Panic.Create("slice step cannot be zero");
+        long Adjust(long? bound, long whenOmitted)
+        {
+            if (bound is not { } b)
+                return whenOmitted;
+            if (b < 0)
+                return Math.Max(b + length, by < 0 ? -1 : 0);
+            return Math.Min(b, by < 0 ? length - 1 : length);
+        }
+        var first = Adjust(start, by < 0 ? length - 1 : 0);
+        var end = Adjust(stop, by < 0 ? -1 : length);
+        // The count, computed without stepping past the ends, so a huge step can't overflow.
+        var count = by > 0
+            ? (first < end ? (end - first - 1) / by + 1 : 0)
+            : (end < first ? (by == long.MinValue ? 1 : (first - end - 1) / -by + 1) : 0);
+        for (long k = 0; k < count; k++)
+            yield return (int)(first + k * by);
+    }
+
     // ---- Lists and dicts (SPEC §6) ----
+
+    /// <summary><c>enumerate(xs, start)</c>: (index, element) pairs, in a new list.</summary>
+    public static List<(long, T)> Enumerate<T>(List<T> list, long start = 0)
+    {
+        var result = new List<(long, T)>();
+        foreach (var item in Iter.Over(list))
+            result.Add((start + result.Count, item));
+        return result;
+    }
+
+    /// <summary><c>enumerate(s, start)</c> over a str's code points.</summary>
+    public static List<(long, string)> Enumerate(string value, long start = 0)
+    {
+        var result = new List<(long, string)>();
+        foreach (var item in Iter.Over(value))
+            result.Add((start + result.Count, item));
+        return result;
+    }
+
+    /// <summary><c>zip(xs, ys)</c>: pairs up to the shorter list's length.</summary>
+    public static List<(T1, T2)> Zip<T1, T2>(List<T1> first, List<T2> second)
+    {
+        var result = new List<(T1, T2)>();
+        using var other = Iter.Over(second).GetEnumerator();
+        foreach (var item in Iter.Over(first))
+        {
+            if (!other.MoveNext())
+                break;
+            result.Add((item, other.Current));
+        }
+        return result;
+    }
+
+    public static List<(TKey, TValue)> Items<TKey, TValue>(OrderedDictionary<TKey, TValue> dict) where TKey : notnull =>
+        [.. dict.Select(entry => (entry.Key, entry.Value))];
 
     /// <summary><c>sorted(xs, reverse=…)</c>: a new list, in a stable order.</summary>
     public static List<T> Sorted<T>(List<T> list, bool reverse = false) => Order(list, item => item, reverse);
@@ -129,7 +252,9 @@ public static class Ops
         var items = new List<(T Item, TKey Key)>();
         foreach (var item in Iter.Over(list))
             items.Add((item, key(item)));
-        var comparer = typeof(TKey) == typeof(string) ? (IComparer<TKey>)StringComparer.Ordinal : Comparer<TKey>.Default;
+        var comparer = typeof(TKey) == typeof(string) ? (IComparer<TKey>)StringComparer.Ordinal
+            : typeof(ITuple).IsAssignableFrom(typeof(TKey)) ? Comparer<TKey>.Create((l, r) => SortCompare(l, r))
+            : Comparer<TKey>.Default;
         var ordered = reverse ? items.OrderByDescending(p => p.Key, comparer) : items.OrderBy(p => p.Key, comparer);
         return [.. ordered.Select(p => p.Item)];
     }

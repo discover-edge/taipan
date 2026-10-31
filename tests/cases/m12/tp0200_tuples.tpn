@@ -1,0 +1,18 @@
+let t = (1, "a")
+let i = 0
+print(t[i])
+print(t[2])
+let a, b = [1, 2]
+match t:
+    _: pass
+print(t[1:])
+let d = {"a": 1}
+print(d[1:])
+let bad: tuple[int, int] = (1, 2, 3)
+print((1, [2]) < (1, [3]))
+let e: dict[tuple[int, list[int]], int] = {}
+let xs = [1]
+print(xs[1:"a"])
+for x, y in [1, 2]:
+    pass
+let n = (none, 1)

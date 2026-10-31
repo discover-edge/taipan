@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Numerics;
 using System.Text;
 using Taipan.Compiler.Text;
 
@@ -126,6 +127,27 @@ public sealed class DiagnosticBag
 
     public void ReportNoKeywordArgument(TextSpan span, string function, string name) =>
         Add("TP0218", span, $"'{function}' has no keyword argument '{name}'");
+
+    public void ReportTupleTooShort(TextSpan span) =>
+        Add("TP0209", span, "a tuple needs at least two elements");
+
+    public void ReportUnpackCount(TextSpan span, object type, int elements, int names) =>
+        Add("TP0209", span, $"{type} has {elements} elements, found {names} names");
+
+    public void ReportCannotUnpack(TextSpan span, object type) =>
+        Add("TP0200", span, $"cannot unpack {type}");
+
+    public void ReportTupleIndexNotLiteral(TextSpan span) =>
+        Add("TP0200", span, "tuple index must be an integer literal");
+
+    public void ReportTupleIndexOutOfRange(TextSpan span, BigInteger index, object type) =>
+        Add("TP0200", span, $"index {index} out of range for {type}");
+
+    public void ReportCannotSlice(TextSpan span, object type) =>
+        Add("TP0200", span, $"cannot slice {type}");
+
+    public void ReportCannotAssignTupleElement(TextSpan span) =>
+        Add("TP0202", span, "cannot assign to an element of a tuple");
 
     public void ReportNestedTypeParameters(TextSpan span) =>
         Add("TP0223", span, "nested functions cannot have type parameters");

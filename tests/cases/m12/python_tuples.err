@@ -1,0 +1,2 @@
+panic: cannot convert Python list to tuple[int, int]
+  at tests/cases/m12/python_tuples.tpn:10

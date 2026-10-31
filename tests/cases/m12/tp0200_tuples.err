@@ -1,0 +1,13 @@
+tests/cases/m12/tp0200_tuples.tpn:3:9: error TP0200: tuple index must be an integer literal
+tests/cases/m12/tp0200_tuples.tpn:4:9: error TP0200: index 2 out of range for tuple[int, str]
+tests/cases/m12/tp0200_tuples.tpn:5:12: error TP0200: cannot unpack list[int]
+tests/cases/m12/tp0200_tuples.tpn:6:7: error TP0200: cannot match on tuple[int, str]
+tests/cases/m12/tp0200_tuples.tpn:8:7: error TP0200: cannot slice tuple[int, str]
+tests/cases/m12/tp0200_tuples.tpn:10:7: error TP0200: cannot slice dict[str, int]
+tests/cases/m12/tp0200_tuples.tpn:11:28: error TP0200: expected tuple[int, int], found tuple[int, int, int]
+tests/cases/m12/tp0200_tuples.tpn:12:7: error TP0200: operator '<' cannot be applied to tuple[int, list[int]] and tuple[int, list[int]]
+tests/cases/m12/tp0200_tuples.tpn:13:13: error TP0200: dict keys must be int, str, or bool, found tuple[int, list[int]]
+tests/cases/m12/tp0200_tuples.tpn:15:12: error TP0200: expected int?, found str
+tests/cases/m12/tp0200_tuples.tpn:16:13: error TP0200: cannot unpack int
+tests/cases/m12/tp0200_tuples.tpn:18:10: error TP0206: cannot infer the type of none
+  help: add a type annotation

@@ -80,6 +80,12 @@ public sealed record BoundContinue(TextSpan Span) : BoundStmt(Span);
 public sealed record BoundExprStmt(BoundExpr Expr, TextSpan Span) : BoundStmt(Span);
 
 /// <summary>
+/// Unpacking (SPEC §3.8): <see cref="Value"/> is stored in <see cref="Temp"/>, then each of
+/// <see cref="Stores"/> declares or assigns one target from an element of it, in order.
+/// </summary>
+public sealed record BoundUnpack(VariableSymbol Temp, BoundExpr Value, ImmutableArray<BoundStmt> Stores, TextSpan Span) : BoundStmt(Span);
+
+/// <summary>
 /// A nested <c>def</c> (SPEC §3.7). <see cref="Symbol"/> holds the function value; it's declared
 /// before the body, which may refer to it.
 /// </summary>
@@ -169,6 +175,17 @@ public sealed record BoundBuiltinMethodCall(BoundExpr Target, BuiltinMethod Meth
 public sealed record BoundFString(ImmutableArray<BoundExpr> Parts, TextSpan Span) : BoundExpr(TaipanType.Str, Span);
 
 public sealed record BoundErrorExpr(TextSpan Span) : BoundExpr(TaipanType.Error, Span);
+
+// ---- Tuples and slices (SPEC §3.8, §5.4) ----
+
+public sealed record BoundTupleLiteral(ImmutableArray<BoundExpr> Elements, TupleOfType TupleType, TextSpan Span) : BoundExpr(TupleType, Span);
+
+/// <summary>An element of a tuple; <see cref="Index"/> counts from 0, already normalized.</summary>
+public sealed record BoundTupleElement(BoundExpr Tuple, int Index, TaipanType Type, TextSpan Span) : BoundExpr(Type, Span);
+
+/// <summary>A slice of a list, str or py value; omitted parts are null.</summary>
+public sealed record BoundSlice(BoundExpr Target, BoundExpr? Start, BoundExpr? Stop, BoundExpr? Step, TaipanType Type, TextSpan Span)
+    : BoundExpr(Type, Span);
 
 // ---- Functions as values (SPEC §3.7) ----
 
