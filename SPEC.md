@@ -34,13 +34,38 @@ Taipan is a statically typed, compiled language with Python's surface syntax. Th
 - **Identifiers:** `[A-Za-z_][A-Za-z0-9_]*`. A lone `_` is the wildcard pattern only.
 - **Keywords:**
   `def struct enum let var const if elif else while for in match return pass break continue and or not is some none True False as from import`
-- **Integer literals:** decimal, with `_` separators allowed (`1_000`). They're 64-bit signed, and overflow at compile time is `TP0200`.
-- **Float literals:** `1.5`, `1e9`, `2.5e-3`. A leading digit is required, so `.5` is invalid.
-- **String literals:** `"..."` or `'...'`. Escapes are `\n \t \\ \" \' \{ \}`. Strings are single-line only, and an unterminated string is `TP0003`.
-- **F-strings:** `f"...{expr}..."`. A hole holds any expression except an f-string. `{{` and `}}` are literal braces. The lexer emits the f-string as a single token holding the raw text plus hole spans, and the parser re-lexes the holes.
+- **Integer literals:** decimal, with `_` separators allowed (`1_000`). They're 64-bit signed, and overflow at compile time is `TP0200`. The range check belongs to the type checker, not the lexer, so `-9223372036854775808` is valid.
+- **Float literals:** `1.5`, `1e9`, `2.5e-3`. A leading digit is required, so `.5` is invalid. Formally: `digits "." digits [exp] | digits exp`, where `exp = ("e" | "E") ["+" | "-"] digits`. `1.` lexes as the int `1` followed by `.`.
+- **Number literal rules:** `_` may appear only between two digits. A multi-digit integer part can't start with `0`. A number immediately followed by a letter, digit-less exponent, or `_` (`12abc`, `1e`, `1_`, `007`) is `TP0007`.
+- **String literals:** `"..."` or `'...'`. Escapes are `\n \t \\ \" \' \{ \}`. Any other backslash sequence is `TP0005`. Strings are single-line only, and an unterminated string is `TP0003`.
+- **F-strings:** `f"...{expr}..."` or `f'...'`, with a lowercase `f` immediately before the quote. A hole holds any expression except an f-string. `{{` and `}}` are literal braces, and literal text uses the string escapes. The lexer emits the f-string as a single token holding the raw text plus hole spans, and the parser re-lexes the holes.
+  - A hole runs from `{` to its matching `}`. Inside a hole the lexer tracks nested brackets and skips over string literals of either quote, so `f"{d["k"]}"` is valid.
+  - `TP0006`: a lone `}` in literal text, an empty or whitespace-only hole, or an f-string inside a hole.
+  - An f-string, or a hole, still open at end of line is `TP0003`.
 - **Operators and punctuation:**
   `+ - * / // % == != < <= > >= = += -= *= /= -> ?? ? . , : ( ) [ ] { }`
-- Any other character is `TP0004`.
+- Any other character outside a string or comment, including a non-ASCII letter or a lone `\r`, is `TP0004`.
+
+### 1.4 Lexical errors
+- The lexer reports and keeps going, so one file can report several lexical errors.
+- **Positions:** each error points at the offending character. `TP0002` points at the line's first non-space character, `TP0003` at the opening quote, `TP0005` at the backslash, and `TP0007` at the literal's first character.
+- **Recovery:**
+  - `TP0001`: the line keeps the current indentation level, with no `INDENT` or `DEDENT`.
+  - `TP0002`: pop every level greater than the new indentation, emitting a `DEDENT` per pop, then treat the line as being at the current top of the stack.
+  - `TP0003`: the string ends at end of line.
+  - `TP0004`: the character is skipped.
+  - `TP0005`, `TP0006`, `TP0007`: the token is still produced.
+- **Messages:**
+
+| Code | Message |
+|---|---|
+| TP0001 | `tab in indentation` |
+| TP0002 | `dedent does not match any outer indentation level` |
+| TP0003 | `unterminated string` |
+| TP0004 | `invalid character '<c>'`, or `invalid character U+XXXX` for control and whitespace characters |
+| TP0005 | `invalid escape sequence '\<c>'` |
+| TP0006 | `single '}' is not allowed in an f-string` / `empty f-string hole` / `f-strings cannot be nested` |
+| TP0007 | `invalid number literal` |
 
 ---
 
@@ -336,6 +361,7 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
   help: <optional hint>
 ```
 - Diagnostics are written to stderr.
+- Lines and columns are 1-based. Columns count Unicode code points.
 - `<file>` is the source path exactly as given on the command line.
 
 **Exit codes:**
@@ -350,6 +376,9 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 | TP0002 | dedent doesn't match any outer indentation level |
 | TP0003 | unterminated string |
 | TP0004 | invalid character |
+| TP0005 | invalid escape sequence |
+| TP0006 | invalid f-string |
+| TP0007 | invalid number literal |
 | TP0100 | syntax error: expected X, found Y |
 | TP0200 | type mismatch |
 | TP0201 | undefined name |

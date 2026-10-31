@@ -9,10 +9,10 @@ Each milestone is done when **all** of its acceptance criteria pass as golden te
 
 ## M1 — Lexer
 - Tokens, INDENT/DEDENT/NEWLINE, implicit line joining, string escapes, and f-string tokens with hole spans.
-- Diagnostics TP0001–TP0004.
+- Diagnostics TP0001–TP0007.
 - **Accept:**
   - Token-stream unit tests for nested blocks, dedent-by-multiple-levels, bracket joining, comments, and blank lines.
-  - Error cases for all four codes.
+  - Error cases for all seven codes.
 
 ## M2 — Parser
 - A full AST for SPEC §2, excluding generics, methods, and `as`.
