@@ -23,23 +23,26 @@ public static class Display
         IStruct s => $"{s.TypeName}({string.Join(", ", s.Fields.Select(f => $"{f.Name}={Repr(f.Value)}"))})",
         IDictionary d => "{" + string.Join(", ", d.Keys.Cast<object>().Select(k => $"{Repr(k)}: {Repr(d[k])}")) + "}",
         IList l => "[" + string.Join(", ", l.Cast<object?>().Select(Repr)) + "]",
-        _ => ExternalFormat?.Invoke(value) ?? throw new ArgumentException($"no display form for {value.GetType()}"),
+        _ => ExternalFormat?.Invoke(value, false) ?? throw new ArgumentException($"no display form for {value.GetType()}"),
     };
 
     /// <summary>
-    /// Formats values from outside Taipan: Python objects, whose display is Python's <c>str()</c>
-    /// (SPEC §10.2). Set by <see cref="Interop"/> once Python starts, so Display never refers to
-    /// pythonnet's types.
+    /// Formats values from outside Taipan, given whether they're inside a container: Python
+    /// objects (SPEC §10.2). Set by <see cref="Interop"/> once Python starts, so Display never
+    /// refers to pythonnet's types.
     /// </summary>
-    public static Func<object, string?>? ExternalFormat { get; set; }
+    public static Func<object, bool, string?>? ExternalFormat { get; set; }
 
     /// <summary>
     /// The form of a value inside a list, dict or struct: a str is written as a literal, in
     /// quotes with <c>\ \" \n \t</c> escaped; everything else as <see cref="Format(object?)"/>.
     /// </summary>
-    public static string Repr(object? value) => value is string s
-        ? "\"" + s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\t", "\\t") + "\""
-        : Format(value);
+    public static string Repr(object? value) => value switch
+    {
+        string s => "\"" + s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\t", "\\t") + "\"",
+        null => Format(value),
+        _ => ExternalFormat?.Invoke(value, true) ?? Format(value),
+    };
 
     /// <summary>Python's <c>repr(float)</c>: shortest round-trip digits, fixed notation for decimal exponents in [-4, 16).</summary>
     public static string Format(double value)

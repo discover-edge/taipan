@@ -1399,6 +1399,7 @@ public sealed class Binder
         NameExpr name => BindName(name, expected),
         UnaryExpr unary => BindUnary(unary),
         BinaryExpr { Op: BinaryOp.Coalesce } binary => BindCoalesce(binary),
+        BinaryExpr { Op: BinaryOp.Equal or BinaryOp.NotEqual } equality => BindEquality(equality),
         BinaryExpr binary => BindBinaryOperation(BindValue(binary.Left), binary.Op, BindValue(binary.Right), binary.Span),
         CallExpr call => BindCall(call, expected),
         ListExpr list => BindList(list, expected),
@@ -1528,6 +1529,14 @@ public sealed class Binder
                 _diagnostics.ReportCannotPassToPython(operand.Span, operand.Type);
         }
         return new BoundBinary(left, op, right, TaipanType.Py, span);
+    }
+
+    // In `a == b` and `a != b`, a's type is b's expected type, so `m == Nothing` and `xs == []` work (SPEC §5.3).
+    private BoundExpr BindEquality(BinaryExpr binary)
+    {
+        var left = BindValue(binary.Left);
+        var expected = left.Type.ContainsError || left.Type == TaipanType.Py ? null : left.Type;
+        return BindBinaryOperation(left, binary.Op, BindValue(binary.Right, expected), binary.Span);
     }
 
     // `x ?? d` (SPEC §3.4): the default is checked against T; a T? default keeps the result optional.

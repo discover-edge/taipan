@@ -1,29 +1,116 @@
 # Taipan
 
-A statically typed, compiled language with Python's syntax. The compiler is written in C#/.NET 10, transpiles to C#, and compiles in-process with Roslyn. Python libraries are reachable through a checked boundary (planned for M10).
+A statically typed, compiled language with Python's syntax. Taipan reads like Python, but checks types at compile time, has no `null` surprises, and requires exhaustive `match`. Programs compile to .NET assemblies, and Python libraries are reachable through a checked boundary.
 
 ```python
-def find(services: list[Service], name: str) -> Service?:
-    for s in services:
-        if s.name == name:
-            return s
+struct Service:
+    name: str
+    replicas: int
+    healthy: int
+
+enum Health:
+    Ok
+    Degraded(healthy: int, total: int)
+    Down
+
+def status(svc: Service) -> Health:
+    if svc.healthy == svc.replicas:
+        return Ok
+    elif svc.healthy > 0:
+        return Degraded(svc.healthy, svc.replicas)
+    return Down
+
+def find[T](items: list[T], keep: list[bool]) -> T?:
+    for i in range(len(items)):
+        if keep[i]:
+            return items[i]
     return none
+
+let services = [Service("api", 3, 3), Service("worker", 4, 3)]
+for svc in services:
+    match status(svc):
+        Ok: print(svc.name, "ok")
+        Degraded(h, t): print(svc.name, f"degraded ({h}/{t})")
+        Down: print(svc.name, "down")
+
+if find(services, [False, True]) is some s:
+    print("found", s.name)
 ```
 
-## Files
-- `SPEC.md`: the language definition and source of truth.
-- `ROADMAP.md`: milestones M0–M10 with acceptance criteria.
-- `CLAUDE.md`: instructions for Claude Code covering architecture, testing, and workflow.
-- `examples/`: target programs that milestones must make run.
+```
+api ok
+worker degraded (3/4)
+found worker
+```
 
-## Getting started with Claude Code
+## Getting started
+
+You need the [.NET 10 SDK](https://dotnet.microsoft.com/download). Then build the compiler from source:
+
 ```
-claude
-> Read CLAUDE.md, SPEC.md and ROADMAP.md, then implement M0.
+git clone git@github.com:discover-edge/taipan.git
+cd taipan
+dotnet build
 ```
-After each milestone: review the summary, answer any spec questions, then move on to the next.
+
+Run a program with:
+
+```
+dotnet run --project src/Taipan.Cli -- run examples/health.tpn
+```
+
+### Commands
+
+| Command | What it does |
+|---|---|
+| `taipan check <file>` | Type-checks the program and prints diagnostics |
+| `taipan run <file>` | Compiles and runs the program |
+| `taipan emit <file>` | Prints the generated C# |
+| `taipan build <file> -o <dir>` | Writes a runnable `<dir>/<file>.dll` (run it with `dotnet`) |
+
+Exit codes: `0` success, `1` compile error, `2` usage error, `101` runtime panic.
+
+## The language at a glance
+
+- **Python's syntax:** indentation, `def`, `for`/`while`, f-strings, `match`, PEP 695 generics (`def first[T](xs: list[T]) -> T?`).
+- **Static types:** annotate function signatures, and locals are inferred. There's no truthiness: conditions must be `bool`.
+- **Optionals instead of null:** a `T?` must be narrowed with `is some`, or given a default with `??`, before use.
+- **Structs and enums:** structs have methods and structural equality. Enums carry payloads, and `match` must cover every variant.
+- **Checked arithmetic:** int overflow, division by zero, and out-of-range indexing are panics that report the `.tpn` line.
+- **Modules:** `import geometry` or `from geometry import Point` loads `geometry.tpn` from the main file's directory.
+- **Python interop:** `from python import json` gives `py` values. These are dynamic objects that reach static types only through checked conversions (`x as int?`):
+
+```python
+from python import json
+
+let data = json.loads("{\"replicas\": 3}")
+let replicas = data["replicas"] as int? ?? 0
+print(replicas * 2)
+```
+
+Python interop needs a CPython 3 installation. Taipan finds it through the `PYTHONNET_PYDLL` environment variable (the path to the shared library, such as `libpython3.12.so`), or else by asking `python3` or `python` on your `PATH`.
+
+[SPEC.md](SPEC.md) is the full language definition, and `examples/` and `tests/cases/` have many more programs.
+
+## How it works
+
+The compiler is written in C#. It lexes and parses `.tpn` files, type-checks them into a bound tree, emits C#, and compiles that in-process with Roslyn. `#line` directives map .NET stack traces back to `.tpn` lines, so panics report the right source line. Generics are monomorphized. Python is embedded through [pythonnet](https://github.com/pythonnet/pythonnet).
+
+```
+src/Taipan.Compiler/   lexer, parser, binder and type checker, C# emitter
+src/Taipan.Runtime/    panics, operators, display, Python interop (used by compiled programs)
+src/Taipan.Cli/        the taipan command
+tests/                 golden tests (tests/cases/) and unit tests
+```
+
+## Development
+
+```
+dotnet test
+```
+
+Golden tests in `tests/cases/` are the main signal. Each `.tpn` runs through the CLI, and its output is compared with sidecar files (`.out`, `.err`, `.exit`, and `.cs` for emitted C#). [CLAUDE.md](CLAUDE.md) describes the conventions, and [ROADMAP.md](ROADMAP.md) has the milestones, past and planned. Language changes start as SPEC.md edits.
 
 ## Name
-Taipan: a snake, as a nod to Python, and a strict one. Source files use `.tpn` and diagnostic codes use the `TP` prefix.
 
-Before publishing, confirm the GitHub org, the NuGet IDs (`Taipan.Compiler`, `Taipan.Runtime`), and a domain are available.
+Taipan is a snake, as a nod to Python, and a strict one. Source files use `.tpn`, and diagnostic codes use the `TP` prefix.

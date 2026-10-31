@@ -34,8 +34,9 @@ public class GoldenTests
     public void Golden(string casePath)
     {
         // A `.requires` sidecar naming `python` marks a case that needs CPython (SPEC §10.6).
-        // Without one installed, the case passes with a note rather than failing.
-        if (ReadSidecar(casePath, ".requires")?.Contains("python") == true && Taipan.Runtime.Interop.FindLibrary() is null)
+        // Without one installed, the case passes with a note rather than failing (unless
+        // TAIPAN_REQUIRE_PYTHON=1).
+        if (ReadSidecar(casePath, ".requires")?.Contains("python") == true && !PythonAvailability.Available())
         {
             Console.WriteLine($"skipped {casePath}: no Python installation found");
             return;

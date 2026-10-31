@@ -1,0 +1,9 @@
+# py values display by Taipan's rules when they're values Taipan knows (SPEC §10.2).
+from python import json, datetime
+
+let data = json.loads("{\"k\": [1, null, 2.0, \"s\"], \"t\": true, \"n\": null}")
+print(data)
+print(data["k"], data["n"], data["k"][3], [data["k"][3], data["t"]])
+print(json.loads("1e16"), json.loads("[[]]"), datetime.date(2026, 10, 31))
+let pairs = json.loads("[[1, 2]]")
+print(pairs[0], f"{data['n']} {data['k'][2]}")

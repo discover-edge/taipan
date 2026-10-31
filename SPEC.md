@@ -422,6 +422,8 @@ There are no other implicit conversions. Explicit conversions use the built-ins 
 
 Comparing values of unrelated types is `TP0200`.
 
+In `a == b` and `a != b`, `a`'s type is `b`'s expected type (§4.6), so `m == Nothing` with `m: Maybe[int]`, and `xs == []`, are valid.
+
 ### 5.4 Indexing
 - `list[i]` with an int index: out of range panics. Negative indices count from the end, as in Python.
 - `dict[k]`: a missing key panics. Use `d.get(k) -> V?` instead.
@@ -633,7 +635,8 @@ Types are written as in source: `int`, `str?`, `list[int]`. The type of `none` i
   - indexing and element assignment: `x[k]`, `x[k] = v`
   - the operators `+ - * / // %`, unary `-`, `== != < <= > >=`, and `in`/`not in`, when either operand is `py`
   - `for v in x`, giving `v: py`
-  - `len(x)`, which gives `int`, and `print`, `str()` and f-string holes, which use Python's `str(x)`
+  - `len(x)`, which gives `int`
+  - `print`, `str()` and f-string holes. A `None`, `bool`, `int`, `float`, `str`, `list`, `tuple` or `dict` displays by Taipan's rules (§6), so `None` is `none` and strings inside containers are quoted. A `tuple` is written `(1, 2)`. Any other object displays as Python's `str(x)`.
 - **The result of every `py` operation is `py`, including comparisons.** A `py` used as a condition, or with `and`, `or` or `not`, is `TP0205`, with help `convert it with 'as bool'`.
 - `py` may annotate variables, parameters, return types, fields and collection elements (`list[py]`). It can't be a dict key (§3.1). A list, dict or optional containing `py` can't be compared with `==` (`TP0200`), since Python objects have no Taipan equality.
 

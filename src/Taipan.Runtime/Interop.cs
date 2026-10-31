@@ -41,7 +41,7 @@ public static class Interop
         {
             throw Panic.Create($"cannot load Python: {e.Message}");
         }
-        Display.ExternalFormat = value => value is PyObject python ? Str(python) : null;
+        Display.ExternalFormat = (value, nested) => value is PyObject python ? Run(() => Show(python, nested)) : null;
     }
 
     /// <summary>
@@ -145,6 +145,24 @@ public static class Interop
     public static long Len(PyObject value) => Run(() => value.Length());
 
     public static string Str(PyObject value) => Run(() => value.ToString() ?? "");
+
+    /// <summary>
+    /// The display form of a py value (SPEC §10.2): Taipan's rules (§6) for None, bool, int,
+    /// float, str, list, tuple and dict, so they look like the Taipan values they convert to;
+    /// Python's <c>str()</c> for anything else. The caller holds the GIL.
+    /// </summary>
+    private static string Show(PyObject value, bool nested) => TypeName(value) switch
+    {
+        "NoneType" => "none",
+        "float" => Display.Format(value.As<double>()),
+        "str" when nested => Display.Repr(value.As<string>()),
+        "list" => "[" + string.Join(", ", Items(value).Select(item => Show(item, nested: true))) + "]",
+        "tuple" => Items(value).Select(item => Show(item, nested: true)).ToList() is [var single]
+            ? $"({single},)"
+            : "(" + string.Join(", ", Items(value).Select(item => Show(item, nested: true))) + ")",
+        "dict" => "{" + string.Join(", ", Items(value).Select(key => $"{Show(key, true)}: {Show(value[key], true)}")) + "}",
+        _ => value.ToString() ?? "",
+    };
 
     /// <summary><c>for v in x</c>: Python iteration, one GIL acquisition per step.</summary>
     public static IEnumerable<PyObject> Iterate(PyObject value)

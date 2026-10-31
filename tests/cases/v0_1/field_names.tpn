@@ -1,0 +1,17 @@
+# Field names that clash with members C# generates are renamed in the C# output only.
+struct Node:
+    Node: int
+    ToString: str
+    Equals: bool
+
+enum Shape:
+    Wrap(Wrap: int, Deconstruct: str)
+    Empty
+
+let n = Node(Node=1, ToString="s", Equals=True)
+n.Node += 1
+print(n, n.Node, n.ToString, n.Equals)
+let w = Wrap(Wrap=5, Deconstruct="d")
+match w:
+    Wrap(inner, label): print(inner, label, w)
+    Empty: pass
