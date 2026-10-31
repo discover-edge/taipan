@@ -257,6 +257,15 @@ There are no other implicit conversions. Explicit conversions use the built-ins 
   - The unqualified form is valid when the variant name is unique among enums in scope. Otherwise it's `TP0216`.
 - Payload fields are read-only and reachable only through `match` bindings.
 - Enums have structural equality.
+- **Names:**
+  - An enum's name lives in the type namespace and the global value scope, like a struct's.
+  - Each variant name also occupies the global value scope. A variant can't share its name with a function, constant, struct, enum or built-in (`TP0214`).
+  - Two enums may share a variant name, but then only the qualified form is valid. The unqualified form is `TP0216`, even when an expected type would disambiguate.
+  - A local can't take a variant's name (`TP0207`).
+- **Construction details:**
+  - A variant with a payload follows the struct constructor rules of §4.6 (`TP0209`, `TP0210`). Without arguments, it's `TP0209`.
+  - A variant without a payload is a value. Calling it, as in `Ok()`, is `TP0200`.
+  - An enum name used as a value is `TP0200`. So is member access on an enum value: payloads are reached only through `match`.
 
 ### 4.5 Names and checking rules
 - **Namespaces:** types (`int`, `float`, `bool`, `str`, user structs and enums) and values (functions, constants, variables, parameters, built-in functions) are separate. An unknown type name is `TP0201`.
@@ -313,6 +322,18 @@ There are no other implicit conversions. Explicit conversions use the built-ins 
   - For `int` and `str`, a `_` arm is required.
 - An arm after `_`, or a duplicate arm, is warning `TP0300` (unreachable).
 - `match` is a statement in v0.1. A match expression is post-v0.1.
+- **Checking details:**
+  - Any other scrutinee type is `TP0200`, and an optional scrutinee is `TP0203`.
+  - The scrutinee is evaluated once.
+  - A literal pattern of the wrong type, or a variant pattern on a non-enum scrutinee, is `TP0200`.
+  - Variant patterns are resolved against the scrutinee's enum, so an unqualified variant pattern is never ambiguous. A variant the enum doesn't have is `TP0210`, and a qualified pattern naming another enum is `TP0200`.
+  - A binding count that differs from the payload's field count is `TP0209`. A variant without a payload may be written with or without empty parentheses.
+  - **`_` as a binding** (`Degraded(_, t)`) ignores that field and may repeat.
+  - Other bindings are `let`s scoped to their arm. They follow the shadowing rules (`TP0207`), and a name repeated within one pattern is `TP0214`.
+  - **Duplicates (`TP0300`):** a duplicate arm is the same variant, literal or `True`/`False` as an earlier arm, regardless of its bindings. Unreachable arms are still checked, but not emitted.
+  - `TP0204` points at the `match` keyword. It lists missing variants in declaration order (`missing: Down, Ok`), `True`/`False` for bool, and `_` for int and str.
+- **Return paths:** a `match` terminates (§4.5) if every arm's body terminates. Exhaustiveness is guaranteed once it type-checks.
+- **Control flow:** `break` and `continue` in an arm apply to the enclosing loop, as anywhere else.
 
 ### 5.2 Loops
 - `for x in e` works when `e` is:
@@ -421,7 +442,7 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 | `x is some v` | `x is {} v`. C# scopes pattern variables more widely than Taipan, so a binding whose name is used anywhere else in the method gets a numeric suffix. |
 | `x is none` / `none` | `x is null` / `null` |
 | `x ?? d` | `x ?? d` |
-| `match` | `switch` statement with type and constant patterns; emitted `default:` throws `UnreachableException` (exhaustiveness is guaranteed by the Taipan checker) |
+| `match` | `switch` statement with type, positional and constant patterns; each arm's body in its own braces. When there's no `_` arm, an emitted `default:` throws `UnreachableException` (exhaustiveness is guaranteed by the Taipan checker). A Taipan `break` inside an arm becomes `goto` to a label after the loop, since a C# `break` would leave the `switch`. Variants implement `Taipan.Runtime.IStruct`, and `==` on enums uses `Taipan.Runtime.Equality.Equal`, as for structs. |
 | `/` `//` `%` | `Taipan.Runtime.Ops.Div / FloorDiv / Mod` |
 | f-string | C# interpolated string; every hole wrapped in `Taipan.Runtime.Display.Format(...)` |
 | `print` | `Taipan.Runtime.Builtins.Print(params object?[])` |
@@ -441,6 +462,8 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 - Lines and columns are 1-based. Columns count Unicode code points.
 - Each compiler stage runs only if the stages before it reported no errors: lexing (§1), then parsing (§2), then type checking. This keeps one mistake from cascading into spurious errors in later stages.
 - `<file>` is the source path exactly as given on the command line.
+
+- **Warnings** (currently only `TP0300`) print as `<file>:<line>:<col>: warning TP<code>: <message>`. They don't stop compilation or change the exit code. They're printed with the type checker's errors, before the program runs.
 
 **Exit codes:**
 - `0` success
@@ -494,23 +517,28 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0200 | `'<f>' is a function; call it` / `'<x>' is not a function` |
 | TP0200 | `integer literal is out of range` |
 | TP0200 | `'range' can only be used in a for loop` / `cannot iterate over <T>` |
+| TP0200 | `cannot match on <T>` / `'<E>' is a type, not a value` / `'<v>' is not a function` (a variant without a payload) |
 | TP0200 | `'is some' needs an optional, found <T>` / `'is none' needs an optional, found <T>` / `'??' needs an optional on the left, found <T>` |
 | TP0200 | `'<m>' is a method; call it` / `'<f>' is a field, not a method` / `cannot index <T>` / `dict keys must be int, str, or bool, found <T>` |
 | TP0201 | `undefined name '<x>'` / `undefined type '<T>'` |
 | TP0202 | `cannot assign to '<x>': it is a <let binding\|parameter\|loop variable\|constant\|function\|method>`, with help `declare it with 'var'` for a `let` binding / `cannot assign to an element of str` |
 | TP0203 | `expected <T>, found <T>?` / `<T>? must be narrowed before use`, with help `narrow it with 'is some', or give a default with '??'` |
+| TP0204 | `non-exhaustive match (missing: <a>, <b>)` |
 | TP0205 | `condition must be bool, found <T>` |
 | TP0206 | `cannot infer the type of an empty list` / `... empty dict` / `cannot infer the type of none`, with help `add a type annotation` |
 | TP0207 | `'<x>' shadows an outer binding` |
 | TP0208 | `not all paths in '<f>' return a value` |
+| TP0209 | `'<v>' has <n> fields, found <m> bindings` (variant patterns) |
 | TP0209 | `'<f>' takes <n> arguments, found <m>` (`argument` when n is 1; `1 or 2 arguments` for `range`) / `missing field '<f>' in '<S>'` / `field '<f>' is given more than once` |
-| TP0210 | `<T> has no field '<x>'` / `<T> has no method '<x>'` |
+| TP0210 | `<T> has no field '<x>'` / `<T> has no method '<x>'` / `<E> has no variant '<x>'` |
 | TP0211 | `'<f>' cannot use top-level variable '<x>'`, with help `pass it as a parameter, or make it a const` |
 | TP0213 | `optional types cannot be nested` / `'get' on <dict type> would return a nested optional` |
 | TP0214 | `duplicate definition of '<x>'` |
 | TP0215 | `'break' outside a loop` / `'continue' outside a loop` / `'return' outside a function` |
+| TP0216 | `'<v>' is ambiguous: it is a variant of <E1> and <E2>`, with help `qualify it, e.g. '<E1>.<v>'` |
 | TP0217 | `const initializer must be a constant expression` |
 | TP0218 | `keyword arguments are only allowed in constructors` |
+| TP0300 | `unreachable match arm` |
 
 Types are written as in source: `int`, `str?`, `list[int]`. The type of `none` is written `none`, and a missing value is written `nothing`.
 
