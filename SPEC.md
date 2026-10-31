@@ -170,7 +170,7 @@ atom          = INT | FLOAT | STRING | FSTRING | "True" | "False" | "none"
 | `bool` | `True` / `False` | `bool` |
 | `str` | immutable Unicode string | `string` |
 | `list[T]` | growable array | `List<T>` |
-| `dict[K, V]` | hash map; `K` ∈ {`int`, `str`, `bool`} | `Dictionary<K, V>` |
+| `dict[K, V]` | hash map that keeps insertion order; `K` ∈ {`int`, `str`, `bool`}, otherwise `TP0200` | `OrderedDictionary<K, V>` |
 | `T?` | optional `T` | `T?` (C# nullable) |
 | `py` | dynamic Python object (M10) | `PyObject` |
 
@@ -259,6 +259,27 @@ There are no other implicit conversions. Explicit conversions use the built-ins 
 - **Expression statements:** any expression may be used as a statement, and its value is discarded.
 - **Error types:** once an expression has an error, its type is treated as compatible with everything. This means one mistake is reported once, not again at every use.
 
+### 4.6 Structs, lists and dicts: checking rules
+- **Struct names** live in the type namespace and also in the global value scope, as the struct's constructor. So a struct can't share a name with a function, constant or built-in (`TP0214`), and a local can't take its name (`TP0207`). A struct named `int`, `float`, `bool`, `str`, `list`, `dict` or `py` is also `TP0214`.
+- **Members:** field and method names within one struct must be distinct (`TP0214`). Field types may name any struct, including the struct itself, for example through `list[Node]`.
+- **Construction:**
+  - The positional form takes exactly one argument per field, in declaration order (`TP0209`).
+  - The keyword form must name every field exactly once. A missing or repeated field is `TP0209`, and an unknown name is `TP0210`.
+  - Arguments are evaluated in source order.
+- **Methods** are hoisted with their struct. Inside a method, `self` is an immutable parameter (`TP0202` to reassign), and other methods are reached as `self.m()`. A bare `m()` refers to a global function. `self` outside a method is `TP0201`.
+- **Member access:**
+  - An unknown field or method is `TP0210`.
+  - A method used without calling it is `TP0200`, and so is calling a field.
+  - Assigning to a method is `TP0202`.
+- **Expected types.** An expression is checked against an expected type when its context supplies one: an annotation, a parameter (including constructor fields and built-in method parameters), a return type, an assignment target (variable, field or element), or an enclosing list or dict literal that has an expected type. `[]` and `{}` need one (`TP0206`). With an expected type, each element is checked against the expected element type, so `let xs: list[float] = [1, 2]` is valid.
+- **Literals without an expected type:** all elements (or all keys, or all values) must have the same type, except that `int` and `float` mix to `float`. A mismatch is `TP0200` at the first element that differs.
+- **Assignment targets:**
+  - `xs[i] = v` and `d[k] = v` are allowed (a `d[k]` assignment inserts or updates).
+  - `s[i] = v` on a `str` is `TP0202`.
+  - Compound forms (`xs[f()] += 1`, `make().count += 1`) evaluate the target's sub-expressions once.
+- **Indexing** applies to `list[T]` (`int` index, gives `T`), `dict[K, V]` (`K` key, gives `V`), and `str` (`int` index, gives `str`). Anything else is `TP0200`.
+- **Built-in methods** follow §6, with argument counts checked by `TP0209`. `d.get` arrives with optionals in M6.
+
 ---
 
 ## 5. Statements and expressions
@@ -307,7 +328,7 @@ Comparing values of unrelated types is `TP0200`.
 ### 5.4 Indexing
 - `list[i]` with an int index: out of range panics. Negative indices count from the end, as in Python.
 - `dict[k]`: a missing key panics. Use `d.get(k) -> V?` instead.
-- `str[i] -> str`, one character, with the same rules as list.
+- `str[i] -> str`, one character, with the same rules as list. Characters are Unicode code points, as for `len`.
 - Slicing is post-v0.1.
 
 ---
@@ -324,9 +345,10 @@ Comparing values of unrelated types is `TP0200`.
 - `range` can only be used as the iterable of a `for` loop. Any other use is `TP0200`.
 
 **Methods**
-- `list[T]`: `append(x: T)`, `pop() -> T` (panics if empty), `insert(i: int, x: T)`, `contains(x: T) -> bool`
-- `dict[K, V]`: `get(k: K) -> V?`, `keys() -> list[K]`, `values() -> list[V]`, `remove(k: K) -> bool`
-- `str`: `upper()`, `lower()`, `strip()`, `split(sep: str) -> list[str]`, `startswith(p: str) -> bool`, `endswith(p: str) -> bool`, `replace(old: str, new: str) -> str`
+- `list[T]`: `append(x: T)`, `pop() -> T` (removes and returns the last element; panics if empty), `insert(i: int, x: T)` (Python semantics: a negative `i` counts from the end, and out-of-range indices clamp), `contains(x: T) -> bool`
+- `dict[K, V]`: `get(k: K) -> V?` (M6), `keys() -> list[K]`, `values() -> list[V]` (new lists, in insertion order), `remove(k: K) -> bool` (`True` if the key was present)
+- `str`: `upper() -> str`, `lower() -> str` (invariant-culture case mapping), `strip() -> str` (removes leading and trailing whitespace), `split(sep: str) -> list[str]` (an empty `sep` panics), `startswith(p: str) -> bool`, `endswith(p: str) -> bool`, `replace(old: str, new: str) -> str` (every occurrence; an empty `old` panics)
+- Equality inside `contains`, `in`, `==` and `!=` is structural, as for `==`. Dict equality ignores order.
 
 **Display form** (used by `print`, `str()`, and f-strings)
 
@@ -336,7 +358,7 @@ Comparing values of unrelated types is `TP0200`.
 | `float` | as Python's `repr`: the shortest digits that round-trip. Fixed notation when the decimal exponent is in [-4, 16), with `.0` appended when integral (`1.0`, `0.0001`, `1000000000000000.0`, `-0.0`). Otherwise scientific notation, with a lowercase `e`, a sign, and at least two exponent digits (`1e+16`, `1e-05`, `1.5e-07`). Also `inf`, `-inf`, `nan` |
 | `bool` | `True` / `False` |
 | `none` | `none` |
-| `str` | as-is at top level; quoted with `"` inside containers |
+| `str` | as-is at top level. Inside a list, dict or struct, written as a literal: in `"` quotes, with `\\`, `\"`, `\n` and `\t` escaped |
 | list | `[1, 2, 3]` |
 | dict | `{"a": 1}` |
 | struct | `Service(name="api", replicas=3, healthy=3)` |
@@ -351,10 +373,11 @@ Comparing values of unrelated types is `TP0200`.
   - int overflow: `integer overflow`. This includes `-x` and `x // -1` for the most negative int.
   - division by zero (`/`, `//`, `%`): `division by zero`
   - `int(x)` of a float that is NaN, infinite, or outside the int range: `cannot convert <x> to int`, with `<x>` in display form
-  - index out of range
-  - missing dict key
-  - `pop()` on an empty list
-  - mutation during iteration
+  - index out of range: `index <i> out of range for length <n>`
+  - missing dict key: `missing key <k>`, with `<k>` as written inside a container (strings quoted)
+  - `pop()` on an empty list: `pop from empty list`
+  - mutation during iteration: `list mutated during iteration` / `dict mutated during iteration`. Any change to the list or dict being iterated counts, including assigning to an existing element.
+  - `split("")` / `replace("", …)`: `empty separator`
   - failed non-optional `as` (M10)
 
 ---
@@ -371,9 +394,10 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 | program | `public static class TaipanProgram { ...constants... static void TopLevel() { ...constant initializers, then top-level stmts... } ...functions... }`, plus `public static class TaipanEntry { static int Main() => Taipan.Runtime.Panic.Run(TaipanProgram.TopLevel); }`. `Panic.Run` turns panics into the §7 output and the exit code. A generated name that clashes with a user name gets a numeric suffix. |
 | identifiers | always verbatim-escaped (`@name`) to avoid C# keyword collisions |
 | `def f(a: int) -> str` | `public static string @f(long @a)` |
-| `struct S` | `public sealed record class S(...)` with mutable `{ get; set; }` properties; `ToString` overridden to the display form |
+| `struct S` | `public sealed class S : Taipan.Runtime.IStruct`, with a mutable `{ get; set; }` property per field, a positional constructor, methods as instance methods (`self` is `this`), and `ToString` overridden to the display form. Not a C# record: Taipan equality is deep (lists inside structs compare by contents), so `==` on structs, lists and dicts calls `Taipan.Runtime.Equality.Equal` rather than C# `Equals`. |
 | `enum E` | `public abstract record E` with a private constructor; each variant is `public sealed record V(...) : E` nested inside |
 | `T?` | `T?` |
+| `list[T]` / `dict[K, V]` | `List<T>` / `OrderedDictionary<K, V>`. `for` over them goes through a runtime iterator that turns concurrent modification into the §7 panic. |
 | `const` | a `static` field, assigned at the start of `TopLevel` in source order |
 | locals | a typed C# local. A Taipan local whose name C# scoping would reject (the same name declared in a nested block and again later in the outer block) is renamed with a numeric suffix. |
 | `for x in range(a, b)` | a C# `for` loop. `a` and `b` are evaluated once, before the loop. |
@@ -451,12 +475,15 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0200 | `'<f>' is a function; call it` / `'<x>' is not a function` |
 | TP0200 | `integer literal is out of range` |
 | TP0200 | `'range' can only be used in a for loop` / `cannot iterate over <T>` |
+| TP0200 | `'<m>' is a method; call it` / `'<f>' is a field, not a method` / `cannot index <T>` / `dict keys must be int, str, or bool, found <T>` |
 | TP0201 | `undefined name '<x>'` / `undefined type '<T>'` |
-| TP0202 | `cannot assign to '<x>': it is a <let binding\|parameter\|loop variable\|constant\|function>`, with help `declare it with 'var'` for a `let` binding |
+| TP0202 | `cannot assign to '<x>': it is a <let binding\|parameter\|loop variable\|constant\|function\|method>`, with help `declare it with 'var'` for a `let` binding / `cannot assign to an element of str` |
 | TP0205 | `condition must be bool, found <T>` |
+| TP0206 | `cannot infer the type of an empty list` / `... empty dict`, with help `add a type annotation` |
 | TP0207 | `'<x>' shadows an outer binding` |
 | TP0208 | `not all paths in '<f>' return a value` |
-| TP0209 | `'<f>' takes <n> arguments, found <m>` (`argument` when n is 1; `1 or 2 arguments` for `range`) |
+| TP0209 | `'<f>' takes <n> arguments, found <m>` (`argument` when n is 1; `1 or 2 arguments` for `range`) / `missing field '<f>' in '<S>'` / `field '<f>' is given more than once` |
+| TP0210 | `<T> has no field '<x>'` / `<T> has no method '<x>'` |
 | TP0211 | `'<f>' cannot use top-level variable '<x>'`, with help `pass it as a parameter, or make it a const` |
 | TP0214 | `duplicate definition of '<x>'` |
 | TP0215 | `'break' outside a loop` / `'continue' outside a loop` / `'return' outside a function` |
