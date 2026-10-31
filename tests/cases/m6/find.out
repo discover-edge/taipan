@@ -1,3 +1,3 @@
 worker 3 / 4
 no db
-Service(name="api", replicas=3, healthy=3) none
+Service(name="api", replicas=3, healthy=3) None

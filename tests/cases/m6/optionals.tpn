@@ -1,16 +1,16 @@
 let maybe: int? = 5
-let nothing: int? = none
+let nothing: int? = None
 print(maybe, nothing, maybe ?? 0, nothing ?? -1)
-print(maybe == 5, maybe == none, nothing == none, maybe != 6, nothing == 5)
+print(maybe == 5, maybe == None, nothing == None, maybe != 6, nothing == 5)
 let fallback: int? = nothing ?? maybe
 print(nothing ?? nothing ?? 7, fallback)
 
-let names = [none, "b", "c"]
+let names = [None, "b", "c"]
 print(names, len(names))
 for n in names:
     if n is some name:
         print("got", name.upper())
-    elif n is none:
+    elif n is None:
         print("none here")
 
 let ages = {"ann": 31}
@@ -18,7 +18,7 @@ print(ages.get("ann"), ages.get("bob"), ages.get("bob") ?? 0)
 let tags: dict[int, list[str]] = {1: ["x"]}
 print(tags.get(1) ?? [], tags.get(2) ?? [])
 
-var queue: list[int?] = [1, none, 3]
+var queue: list[int?] = [1, None, 3]
 while queue.pop() is some last:
     print("popped", last)
 print(queue)
@@ -27,11 +27,11 @@ struct Node:
     value: int
     next: Node?
 
-let chain = Node(1, Node(2, Node(3, none)))
+let chain = Node(1, Node(2, Node(3, None)))
 var cursor: Node? = chain
 var total = 0
 while cursor is some node:
     total += node.value
     cursor = node.next
-print(total, chain.next == Node(2, Node(3, none)))
+print(total, chain.next == Node(2, Node(3, None)))
 print(f"{nothing} {maybe}", str(nothing))

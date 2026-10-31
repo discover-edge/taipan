@@ -1,4 +1,4 @@
-let a = none
-var b = [none]
-let c = {"k": none}
-let ok = [none, 1]
+let a = None
+var b = [None]
+let c = {"k": None}
+let ok = [None, 1]

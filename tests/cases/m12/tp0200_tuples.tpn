@@ -15,4 +15,4 @@ let xs = [1]
 print(xs[1:"a"])
 for x, y in [1, 2]:
     pass
-let n = (none, 1)
+let n = (None, 1)

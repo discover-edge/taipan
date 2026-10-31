@@ -1,0 +1,3 @@
+let a: int? = None
+if a is none:
+    pass

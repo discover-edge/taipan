@@ -1,4 +1,4 @@
-{"k": [1, none, 2.0, "s"], "t": True, "n": none}
-[1, none, 2.0, "s"] none s ["s", True]
+{"k": [1, None, 2.0, "s"], "t": True, "n": None}
+[1, None, 2.0, "s"] None s ["s", True]
 1e+16 [[]] 2026-10-31
-[1, 2] none 2.0
+[1, 2] None 2.0

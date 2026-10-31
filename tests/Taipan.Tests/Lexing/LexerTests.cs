@@ -108,13 +108,13 @@ public class LexerTests
             "ContinueKeyword AndKeyword OrKeyword NotKeyword IsKeyword SomeKeyword NoneKeyword TrueKeyword " +
             "FalseKeyword AsKeyword FromKeyword ImportKeyword LambdaKeyword Newline EndOfFile",
             Dump("def struct enum let var const if elif else while for in match return pass break " +
-                 "continue and or not is some none True False as from import lambda"));
+                 "continue and or not is some None True False as from import lambda"));
 
     [Fact]
     public void NamesThatResembleKeywords() =>
         Assert.Equal(
-            "Name(self) Name(int) Name(true) Name(None) Name(_) Name(_x1) Name(define) Name(f) Newline EndOfFile",
-            Dump("self int true None _ _x1 define f"));
+            "Name(self) Name(int) Name(true) Name(none) Name(_) Name(_x1) Name(define) Name(f) Newline EndOfFile",
+            Dump("self int true none _ _x1 define f"));
 
     [Fact]
     public void OperatorsUseLongestMatch() =>

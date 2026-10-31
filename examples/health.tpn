@@ -12,7 +12,7 @@ def find(services: list[Service], name: str) -> Service?:
     for s in services:
         if s.name == name:
             return s
-    return none
+    return None
 
 def status(svc: Service) -> Health:
     let ratio = svc.healthy / svc.replicas

@@ -1,5 +1,5 @@
 tests/cases/m6/tp0200_optionals.tpn:2:4: error TP0200: 'is some' needs an optional, found int
-tests/cases/m6/tp0200_optionals.tpn:4:7: error TP0200: 'is none' needs an optional, found int
+tests/cases/m6/tp0200_optionals.tpn:4:7: error TP0200: 'is None' needs an optional, found int
 tests/cases/m6/tp0200_optionals.tpn:6:7: error TP0200: '??' needs an optional on the left, found int
 tests/cases/m6/tp0200_optionals.tpn:8:12: error TP0200: expected int, found str
 tests/cases/m6/tp0200_optionals.tpn:10:7: error TP0200: cannot compare str? and int

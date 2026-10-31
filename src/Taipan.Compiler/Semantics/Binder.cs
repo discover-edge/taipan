@@ -1359,7 +1359,7 @@ public sealed class Binder
                 break;
             case IsNoneCondition isNone:
                 var noneOperand = BindValue(isNone.Expr);
-                RequireOptional(noneOperand, isNone.Expr.Span, "is none");
+                RequireOptional(noneOperand, isNone.Expr.Span, "is None");
                 bound = new BoundIsNone(noneOperand, isNone.Span);
                 break;
             default:
@@ -1675,7 +1675,8 @@ public sealed class Binder
         }
 
         BoundExpr body;
-        if (result is NothingType)
+        // An error result (an undefined type, say) was already reported, so any body fits it.
+        if (result is NothingType or ErrorType)
         {
             body = BindExpr(lambda.Body);
         }

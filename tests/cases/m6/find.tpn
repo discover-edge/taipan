@@ -8,7 +8,7 @@ def find(services: list[Service], name: str) -> Service?:
     for s in services:
         if s.name == name:
             return s
-    return none
+    return None
 
 let services = [Service("api", 3, 3), Service("worker", 4, 3)]
 let svc = find(services, "worker")
@@ -18,6 +18,6 @@ if svc is some s:
 else:
     print("no such service")
 
-if find(services, "db") is none:
+if find(services, "db") is None:
     print("no db")
 print(find(services, "api"), find(services, "db"))

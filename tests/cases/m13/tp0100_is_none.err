@@ -1,0 +1,1 @@
+tests/cases/m13/tp0100_is_none.tpn:2:9: error TP0100: expected 'some' or 'None', found name 'none'

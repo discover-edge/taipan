@@ -38,5 +38,5 @@ def depth(t: Tree) -> int:
 let tree = Node(Node(Leaf, 1, Leaf), 2, Node(Leaf, 3, Node(Leaf, 4, Leaf)))
 print(total(tree), depth(tree))
 print(Node(Leaf, 1, Leaf))
-let maybe: Shape? = none
-print(maybe ?? Dot, maybe == none)
+let maybe: Shape? = None
+print(maybe ?? Dot, maybe == None)

@@ -24,7 +24,7 @@ def find[T](items: list[T], keep: list[bool]) -> T?:
     for i in range(len(items)):
         if keep[i]:
             return items[i]
-    return none
+    return None
 
 let services = [Service("api", 3, 3), Service("worker", 4, 3)]
 for svc in services:

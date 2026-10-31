@@ -137,7 +137,7 @@ public class ParserTests
         Assert.Equal(
             "LetStmt(x, null, IntLiteral(1))\n" +
             "VarStmt(y, OptionalType(NamedType(str)), NoneLiteral)",
-            Snapshot("let x = 1\nvar y: str? = none\n"));
+            Snapshot("let x = 1\nvar y: str? = None\n"));
 
     // ---- assign_stmt / target ----
 
@@ -190,7 +190,7 @@ public class ParserTests
         Assert.Equal(
             "IfStmt([IfClause(IsSomeCondition(CallExpr(NameExpr(find), []), s), Block([PassStmt])), " +
             "IfClause(IsNoneCondition(NameExpr(x)), Block([PassStmt]))], null)",
-            Snapshot("if find() is some s:\n    pass\nelif x is none:\n    pass\n"));
+            Snapshot("if find() is some s:\n    pass\nelif x is None:\n    pass\n"));
 
     // ---- while_stmt ----
 
@@ -331,7 +331,7 @@ public class ParserTests
         Assert.Equal(
             "LetStmt(f, CallableType([NamedType(int), NamedType(str)], null), NameExpr(g))\n" +
             "LetStmt(h, OptionalType(CallableType([], ListType(NamedType(int)))), NameExpr(g))",
-            Snapshot("let f: Callable[[int, str], none] = g\nlet h: Callable[[], list[int]]? = g\n"));
+            Snapshot("let f: Callable[[int, str], None] = g\nlet h: Callable[[], list[int]]? = g\n"));
 
     [Fact]
     public void BareCallableIsANamedType() =>
@@ -348,7 +348,7 @@ public class ParserTests
     [InlineData("let f = lambda (x): x\n", "1:16 TP0100: expected ':', found '('")]
     [InlineData("let f: Callable[int, str] = g\n", "1:17 TP0100: expected '[', found name 'int'")]
     [InlineData("let f: Callable[[int] int] = g\n", "1:23 TP0100: expected ',', found name 'int'")]
-    [InlineData("let f: Callable[[int], none?] = g\n", "1:28 TP0100: expected ']', found '?'")]
+    [InlineData("let f: Callable[[int], None?] = g\n", "1:28 TP0100: expected ']', found '?'")]
     public void FunctionSyntaxErrors(string text, string expected) =>
         Assert.Equal([expected], Errors(text));
 
@@ -445,7 +445,7 @@ public class ParserTests
     [InlineData("\"a\\nb\"", "StringLiteral(\"a\\nb\")")]
     [InlineData("True", "BoolLiteral(True)")]
     [InlineData("False", "BoolLiteral(False)")]
-    [InlineData("none", "NoneLiteral")]
+    [InlineData("None", "NoneLiteral")]
     [InlineData("x", "NameExpr(x)")]
     [InlineData("self", "NameExpr(self)")]
     [InlineData("[]", "ListExpr([])")]
@@ -511,7 +511,7 @@ public class ParserTests
     [InlineData("else:\n    pass\n", "1:1 TP0100: expected statement, found 'else'")]
     [InlineData("    x\n", "1:5 TP0100: expected statement, found indent")]
     [InlineData("x = y z\n", "1:7 TP0100: expected newline, found name 'z'")]
-    [InlineData("if x is y:\n    pass\n", "1:9 TP0100: expected 'some', found name 'y'")]
+    [InlineData("if x is y:\n    pass\n", "1:9 TP0100: expected 'some' or 'None', found name 'y'")]
     [InlineData("match x:\n    +: pass\n", "2:5 TP0100: expected pattern, found '+'")]
     [InlineData("def f(:\n    pass\n", "1:7 TP0100: expected name, found ':'")]
     [InlineData("enum E:\n    V()\n", "2:7 TP0100: expected name, found ')'")]
@@ -642,7 +642,7 @@ public class ParserTests
     public void GenericFunction() =>
         Assert.Equal(
             "FuncDef(first, [T], [Param(xs, ListType(NamedType(T)))], OptionalType(NamedType(T)), Block([ReturnStmt(NoneLiteral)]))",
-            Snapshot("def first[T](xs: list[T]) -> T?:\n    return none\n"));
+            Snapshot("def first[T](xs: list[T]) -> T?:\n    return None\n"));
 
     [Fact]
     public void GenericStructAndEnum() =>

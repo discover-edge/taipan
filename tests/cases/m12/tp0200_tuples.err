@@ -9,5 +9,5 @@ tests/cases/m12/tp0200_tuples.tpn:12:7: error TP0200: operator '<' cannot be app
 tests/cases/m12/tp0200_tuples.tpn:13:13: error TP0200: dict keys must be int, str, or bool, found tuple[int, list[int]]
 tests/cases/m12/tp0200_tuples.tpn:15:12: error TP0200: expected int?, found str
 tests/cases/m12/tp0200_tuples.tpn:16:13: error TP0200: cannot unpack int
-tests/cases/m12/tp0200_tuples.tpn:18:10: error TP0206: cannot infer the type of none
+tests/cases/m12/tp0200_tuples.tpn:18:10: error TP0206: cannot infer the type of None
   help: add a type annotation

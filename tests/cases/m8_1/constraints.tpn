@@ -6,7 +6,7 @@ def total[N: (int, float)](xs: list[N]) -> N:
     return sum
 
 def largest[T: (int, float, str)](xs: list[T]) -> T?:
-    var best: T? = none
+    var best: T? = None
     for x in xs:
         if best is some b:
             if x > b:

@@ -21,17 +21,17 @@ let b = Button("ok", lambda s: s + " clicked")
 print(b.on_click(b.label))
 
 # Optional functions are narrowed before they're called.
-var handler: Callable[[], str]? = none
-if handler is none:
+var handler: Callable[[], str]? = None
+if handler is None:
     print("no handler")
 handler = lambda: "handled"
 if handler is some h:
     print(h())
 
-# A result of none: the body's value, if any, is discarded.
-let log: Callable[[str], none] = lambda msg: print("log:", msg)
+# A result of None: the body's value, if any, is discarded.
+let log: Callable[[str], None] = lambda msg: print("log:", msg)
 log("started")
-let ignore: Callable[[int], none] = lambda x: x * 2
+let ignore: Callable[[int], None] = lambda x: x * 2
 ignore(1)
 
 # A lambda without parameters infers its type.
@@ -58,6 +58,6 @@ print(to_float(3))
 let second: Callable[[int, int], int] = lambda _, y: y
 print(second(1, 2))
 
-# A parameterless lambda whose body returns nothing is a Callable[[], none].
+# A parameterless lambda whose body returns nothing is a Callable[[], None].
 let hello = lambda: print("hello")
 hello()

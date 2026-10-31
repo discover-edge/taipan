@@ -1,7 +1,7 @@
 let n = 5
 if n is some v:
     pass
-while n is none:
+while n is None:
     pass
 print(n ?? 0)
 let m: int? = 1

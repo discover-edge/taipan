@@ -2,7 +2,7 @@ from python import json, math as m, collections
 
 # Taipan values convert into Python: lists and dicts are copies.
 let xs = [3, 1, 2]
-let encoded = json.dumps({"xs": xs, "ok": True, "none": none, "f": 1.5}, sort_keys=True)
+let encoded = json.dumps({"xs": xs, "ok": True, "none": None, "f": 1.5}, sort_keys=True)
 print(encoded as str)
 let back = json.loads(encoded)
 print(back["xs"] as list[int], back["none"] as int?, back["f"] as float, back["xs"][0] as float)
@@ -21,7 +21,7 @@ print(total)
 let counter = collections.Counter("abracadabra")
 print(counter.most_common(1)[0][0] as str)
 let d = json.loads("{}")
-d["k"] = [1, none]
+d["k"] = [1, None]
 d["k"].append(3)
 print(d, f"{d['k']} has {len(d['k'])}", d["k"] as list[int?])
 let nested = json.loads("[[1, 2], [3]]") as list[list[int]]

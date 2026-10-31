@@ -16,7 +16,7 @@ def counter() -> Callable[[], int]:
 let c = counter()
 c()
 print(apply(double, 4), apply(lambda s: s + "!", "hi"), c())
-var fs: list[Callable[[], none]] = []
+var fs: list[Callable[[], None]] = []
 for i in range(2):
     fs.append(lambda: print(i))
 for f in fs:

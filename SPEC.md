@@ -33,7 +33,7 @@ Taipan is a statically typed, compiled language with Python's surface syntax. Th
 - **Comments:** `#` to end of line.
 - **Identifiers:** `[A-Za-z_][A-Za-z0-9_]*`. A lone `_` is the wildcard pattern only.
 - **Keywords:**
-  `def struct enum let var const if elif else while for in match return pass break continue and or not is some none True False as from import lambda`
+  `def struct enum let var const if elif else while for in match return pass break continue and or not is some None True False as from import lambda`
 - **Integer literals:** decimal, with `_` separators allowed (`1_000`). They're 64-bit signed, and overflow at compile time is `TP0200`. The range check belongs to the type checker, not the lexer, so `-9223372036854775808` is valid.
 - **Float literals:** `1.5`, `1e9`, `2.5e-3`. A leading digit is required, so `.5` is invalid. Formally: `digits "." digits [exp] | digits exp`, where `exp = ("e" | "E") ["+" | "-"] digits`. `1.` lexes as the int `1` followed by `.`.
 - **Number literal rules:** `_` may appear only between two digits. A multi-digit integer part can't start with `0`. A number immediately followed by a letter, digit-less exponent, or `_` (`12abc`, `1e`, `1_`, `007`) is `TP0007`.
@@ -113,7 +113,7 @@ expr_list     = expr { "," expr } ;                                  (* two or m
 
 compound_stmt = if_stmt | while_stmt | for_stmt | match_stmt | func_def ;     (* in a block: nested function, M11 *)
 if_stmt       = "if" condition ":" block { "elif" condition ":" block } [ "else" ":" block ] ;
-condition     = expr "is" "some" NAME | expr "is" "none" | expr ;
+condition     = expr "is" "some" NAME | expr "is" "None" | expr ;
 while_stmt    = "while" condition ":" block ;
 for_stmt      = "for" ( NAME | names ) "in" expr ":" block ;
 match_stmt    = "match" expr ":" NEWLINE INDENT arm { arm } DEDENT ;
@@ -127,7 +127,7 @@ base_type     = "int" | "float" | "bool" | "str" | "py"           (* py: M10 *)
               | "list" "[" type "]"
               | "dict" "[" type "," type "]"
               | "tuple" "[" type { "," type } "]"                    (* M12; fewer than two types is TP0209 *)
-              | "Callable" "[" "[" [ type { "," type } ] "]" "," ( type | "none" ) "]"   (* M11, §3.7 *)
+              | "Callable" "[" "[" [ type { "," type } ] "]" "," ( type | "None" ) "]"   (* M11, §3.7 *)
               | NAME [ "." NAME ] [ "[" type { "," type } "]" ] ;  (* module.Type: M9 *)
 
 (* Expressions, lowest to highest precedence *)
@@ -148,7 +148,7 @@ postfix       = atom { call | "." NAME | "[" subscript "]" } ;
 subscript     = expr | [ expr ] ":" [ expr ] [ ":" [ expr ] ] ;      (* a slice: M12, §5.4 *)
 call          = "(" [ arg { "," arg } [ "," ] ] ")" ;
 arg           = expr | NAME "=" expr ;
-atom          = INT | FLOAT | STRING | FSTRING | "True" | "False" | "none"
+atom          = INT | FLOAT | STRING | FSTRING | "True" | "False" | "None"
               | NAME | "self" | "(" expr ")"
               | "(" expr "," [ expr { "," expr } [ "," ] ] ")"         (* a tuple: M12; one element is TP0209 *)
               | "[" [ expr { "," expr } [ "," ] ] "]"
@@ -207,7 +207,7 @@ atom          = INT | FLOAT | STRING | FSTRING | "True" | "False" | "none"
 - `S == T`
 - `S` is `int` and `T` is `float` (implicit widening)
 - `T` is `U?` and `S` is assignable to `U`
-- `S` is the type of `none` and `T` is any optional
+- `S` is the type of `None` and `T` is any optional
 
 There are no other implicit conversions. Explicit conversions use the built-ins `int(x)`, `float(x)`, and `str(x)` (§6).
 
@@ -215,26 +215,27 @@ There are no other implicit conversions. Explicit conversions use the built-ins 
 - A value of type `T?` can't be used where `T` is expected (`TP0203`). Member access and indexing on `T?` are also `TP0203`.
 - These forms narrow it:
   - `if x is some v:` binds `v: T` in that branch only.
-  - `if x is none:` (no binding). Narrowing of `x` itself after an early return is a post-v0.1 feature.
+  - `if x is None:` (no binding). Narrowing of `x` itself after an early return is a post-v0.1 feature.
   - `x ?? default` has type `T` when `default: T`.
-- `x == none` is allowed and returns `bool`, but it doesn't narrow.
+- `x == None` is allowed and returns `bool`, but it doesn't narrow.
 - **Using an optional:**
   - A `T?` is `TP0203` wherever a `T` is expected. That includes operands of operators other than `==`/`!=`, the target of member access, indexing or a method call, and the iterable of a `for`.
   - It's `TP0200` where some unrelated type is expected.
-  - `==` and `!=` may compare a `T?` with a `T`, a `T?` or `none`. The result is `True` only when both are `none`, or both hold equal values.
-- **`is some` / `is none`:**
+  - `==` and `!=` may compare a `T?` with a `T`, a `T?` or `None`. The result is `True` only when both are `None`, or both hold equal values.
+- **`is some` / `is None`:**
   - The tested expression is evaluated once and must be optional. Otherwise it's `TP0200`.
   - The binding `v` is a `let` and follows the usual shadowing rules (`TP0207`).
   - In `while x is some v:`, `x` is re-tested on each iteration and `v` is bound in the body.
   - In an `elif` clause, the binding is visible only in that clause's branch.
 - **`??`:**
-  - The left operand must be optional (`TP0200` otherwise) and is evaluated first. The right operand is evaluated only when the left is `none`.
+  - The left operand must be optional (`TP0200` otherwise) and is evaluated first. The right operand is evaluated only when the left is `None`.
   - With `x: T?`, the default is checked against `T` as its expected type, and the result is `T`. If the default is itself a `T?`, the result is `T?`, so `a ?? b ?? 0` works.
-- **`none` and inference:**
-  - `none` has its own type, written `none`, which is assignable to every optional.
-  - `let x = none` without an annotation is `TP0206`.
-  - In list and dict literals without an expected type, `none` and `T` mix to `T?`, and `T` and `T?` mix to `T?`. So `[1, none]` is `list[int?]`.
-- **Nesting (`TP0213`):** `T??` is reported at the type. Optionals never nest. `d.get(k)` on a dict whose values are already optional returns that same optional type: on a `dict[str, int?]` it gives `int?`, and a missing key and a stored `none` both give `none` (as in Python, and as with generics, §3.6).
+- **`None` and inference:**
+  - `None` has its own type, written `None`, which is assignable to every optional.
+  - `None` is spelled as in Python (M13). Lowercase `none` is an ordinary name, so an undefined `none` is `TP0201`, with help `use 'None'`.
+  - `let x = None` without an annotation is `TP0206`.
+  - In list and dict literals without an expected type, `None` and `T` mix to `T?`, and `T` and `T?` mix to `T?`. So `[1, None]` is `list[int?]`.
+- **Nesting (`TP0213`):** `T??` is reported at the type. Optionals never nest. `d.get(k)` on a dict whose values are already optional returns that same optional type: on a `dict[str, int?]` it gives `int?`, and a missing key and a stored `None` both give `None` (as in Python, and as with generics, §3.6).
 
 ### 3.5 Conditions
 `if`, `elif`, and `while` conditions and the operands of `and`, `or`, and `not` must be `bool`. There's no truthiness, so `if xs:` is `TP0205`.
@@ -254,7 +255,7 @@ There are no other implicit conversions. Explicit conversions use the built-ins 
   - An argument whose type doesn't fit what the expected type inferred overrides it. So `let b: Box[float] = Box(1)` keeps `T = float`, but `let x: int? = first(xs)` with `xs: list[int?]` infers `T = int?`.
   - Arguments are then checked against the substituted parameter types, with the usual widening.
   - When two arguments infer `int` and `float` for the same parameter, it's `float`. Any other disagreement is `TP0200`.
-  - A `none` argument infers nothing, and an argument of type `U?` for a `T?` parameter infers `T = U`.
+  - A `None` argument infers nothing, and an argument of type `U?` for a `T?` parameter infers `T = U`.
   - A parameter left undetermined is `TP0206`. For example, `Nothing` from `enum Maybe[T]` has no expected type to infer from.
 - Generic enum variants and generic struct constructors infer their type arguments the same way: `Box(5)` is `Box[int]`, and `Just("x")` is `Maybe[str]`.
 - **Optionals don't nest, even through substitution:** `T?` with `T = int?` is `int?`, as in Python's `Optional[Optional[int]]`. Only a literal `T??` in source is `TP0213`.
@@ -272,7 +273,7 @@ There are no other implicit conversions. Explicit conversions use the built-ins 
 - **Polymorphic recursion:** a generic function that, through its own calls, needs ever-larger instantiations (for example, `f[T]` calling `f` with a `list[T]`) is `TP0219`. It's reported once the instantiation chain is 32 deep.
 
 ### 3.7 Functions as values (M11)
-- **Function types** are written as in Python's `typing`. `Callable[[int, str], bool]` takes an `int` and a `str` and returns a `bool`, and `Callable[[], int]` takes nothing. A result of `none` means the function returns nothing: `Callable[[str], none]`.
+- **Function types** are written as in Python's `typing`. `Callable[[int, str], bool]` takes an `int` and a `str` and returns a `bool`, and `Callable[[], int]` takes nothing. A result of `None` means the function returns nothing: `Callable[[str], None]`.
   - `Callable` is a built-in type name, like `list`. A bare `Callable` is `TP0209`.
   - A function type is assignable only to an identical one. Parameter and result types must match exactly, with no widening. A lambda is checked against its expected type, though, so `lambda x: x` fits `Callable[[int], float]`.
   - Function types may appear wherever a type can: as `T?`, in lists, as dict values, as fields, and as type arguments. They can't be dict keys, and they aren't convertible to Python (§10.3).
@@ -284,7 +285,7 @@ There are no other implicit conversions. Explicit conversions use the built-ins 
 - **Calls:** any expression of function type can be called: `f(x)`, `handlers[0](req)`, or `s.on_done()` for a field. Arguments are positional only (`TP0218`), and are checked against the parameter types. A wrong count is `TP0209`. Calling a `T?` is `TP0203`.
 - **Lambdas:** `lambda x, y: x + y`. The body is a single expression, whose value is the result.
   - Parameters take no annotations. Their types come from the expected type (§4.6), which must be a function type with as many parameters as the lambda has (`TP0209` otherwise).
-  - The body is checked against the expected result type. When the result is `none`, the body is checked as an expression statement, and its value is discarded.
+  - The body is checked against the expected result type. When the result is `None`, the body is checked as an expression statement, and its value is discarded.
   - Without an expected type, a lambda with no parameters takes its body's type (`let f = lambda: 0` is `Callable[[], int]`). One with parameters is `TP0206`.
   - Where the expected type isn't a function type, a lambda is `TP0200`.
   - Parameters are immutable and follow the shadowing rules (`TP0207`). A `_` parameter is ignored and may repeat. Any other repeated name is `TP0214`.
@@ -508,7 +509,7 @@ In `a == b` and `a != b`, `a`'s type is `b`'s expected type (§4.6), so `m == No
 - `str[i] -> str`, one character, with the same rules as list. Characters are Unicode code points, as for `len`.
 - **Slicing (M12):** `xs[a:b]` and `xs[a:b:c]`, with any of the three parts omitted.
   - It applies to `list[T]`, giving a new `list[T]`, and to `str`, giving a `str`.
-  - Each part is an `int`, or an `int?` where `none` means omitted.
+  - Each part is an `int`, or an `int?` where `None` means omitted.
   - The semantics are Python's:
     - Negative bounds count from the end, and out-of-range bounds clamp.
     - A negative step walks backwards, with the omitted bounds defaulting to the ends, so `xs[::-1]` reverses.
@@ -527,8 +528,8 @@ In `a == b` and `a != b`, `a`'s type is `b`'s expected type (§4.6), so `m == No
 - `len(x) -> int` takes a list, dict, or str. For a `str` it counts Unicode code points, so `len("🐍")` is `1`.
 - `range(stop)` and `range(start, stop)` iterate only (they're not a list).
 - `str(x) -> str` gives the display form.
-- `int(x: float) -> int` truncates toward zero. An `int` argument is returned unchanged. `int(x: str) -> int?` parses, returning `none` on failure. It accepts an optional sign and decimal digits with `_` only between digits (as in §1.3), with surrounding whitespace allowed. A value outside the int range gives `none`.
-- `float(x: int) -> float`. A `float` argument is returned unchanged. `float(x: str) -> float?` accepts the same forms as `int(str)`, plus an optional fraction and exponent (`1.5`, `2e-3`, `.5`, `5.`), and `inf`, `infinity` and `nan` in any case. Otherwise it returns `none`.
+- `int(x: float) -> int` truncates toward zero. An `int` argument is returned unchanged. `int(x: str) -> int?` parses, returning `None` on failure. It accepts an optional sign and decimal digits with `_` only between digits (as in §1.3), with surrounding whitespace allowed. A value outside the int range gives `None`.
+- `float(x: int) -> float`. A `float` argument is returned unchanged. `float(x: str) -> float?` accepts the same forms as `int(str)`, plus an optional fraction and exponent (`1.5`, `2e-3`, `.5`, `5.`), and `inf`, `infinity` and `nan` in any case. Otherwise it returns `None`.
 - `range` can only be used as the iterable of a `for` loop. Any other use is `TP0200`.
 - `sorted(xs: list[T], key=…, reverse=False) -> list[T]` (M11) returns a new list in ascending order.
   - `key: Callable[[T], K]` gives each element's sort key. It's called once per element, in list order, before any reordering.
@@ -554,7 +555,7 @@ In `a == b` and `a != b`, `a`'s type is `b`'s expected type (§4.6), so `m == No
 | `int` | decimal |
 | `float` | as Python's `repr`: the shortest digits that round-trip. Fixed notation when the decimal exponent is in [-4, 16), with `.0` appended when integral (`1.0`, `0.0001`, `1000000000000000.0`, `-0.0`). Otherwise scientific notation, with a lowercase `e`, a sign, and at least two exponent digits (`1e+16`, `1e-05`, `1.5e-07`). Also `inf`, `-inf`, `nan` |
 | `bool` | `True` / `False` |
-| `none` | `none` |
+| `None` | `None` |
 | `str` | as-is at top level. Inside a list, dict or struct, written as a literal: in `"` quotes, with `\\`, `\"`, `\n` and `\t` escaped |
 | list | `[1, 2, 3]` |
 | tuple | `(1, "a")` (M12) |
@@ -609,7 +610,7 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 | locals | a typed C# local. A Taipan local whose name C# scoping would reject (the same name declared in a nested block and again later in the outer block) is renamed with a numeric suffix. |
 | `for x in range(a, b)` | a C# `for` loop. `a` and `b` are evaluated once, before the loop. |
 | `x is some v` | `x is {} v`. C# scopes pattern variables more widely than Taipan, so a binding whose name is used anywhere else in the method gets a numeric suffix. |
-| `x is none` / `none` | `x is null` / `null` |
+| `x is None` / `None` | `x is null` / `null` |
 | `x ?? d` | `x ?? d` |
 | `match` | `switch` statement with type, positional and constant patterns; each arm's body in its own braces. When there's no `_` arm, an emitted `default:` throws `UnreachableException` (exhaustiveness is guaranteed by the Taipan checker). A Taipan `break` inside an arm becomes `goto` to a label after the loop, since a C# `break` would leave the `switch`. Variants implement `Taipan.Runtime.IStruct`, and `==` on enums uses `Taipan.Runtime.Equality.Equal`, as for structs. |
 | `/` `//` `%` | `Taipan.Runtime.Ops.Div / FloorDiv / Mod` |
@@ -698,14 +699,14 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0200 | `'<m>' is a module, not a value` |
 | TP0200 | `'as' converts py values; found <T>` / `cannot convert to <T>` / `cannot pass <T> to Python` (§10) |
 | TP0200 | `cannot match on <T>` / `'<E>' is a type, not a value` / `'<v>' is not a function` (a variant without a payload) |
-| TP0200 | `'is some' needs an optional, found <T>` / `'is none' needs an optional, found <T>` / `'??' needs an optional on the left, found <T>` |
+| TP0200 | `'is some' needs an optional, found <T>` / `'is None' needs an optional, found <T>` / `'??' needs an optional on the left, found <T>` |
 | TP0200 | `'<m>' is a method; call it` / `'<f>' is a field, not a method` / `cannot index <T>` / `dict keys must be int, str, or bool, found <T>` |
-| TP0201 | `undefined name '<x>'` / `undefined type '<T>'` / `module '<m>' has no definition '<x>'` |
+| TP0201 | `undefined name '<x>'` (with help `use 'None'` for `none`) / `undefined type '<T>'` / `module '<m>' has no definition '<x>'` |
 | TP0202 | `cannot assign to '<x>': it is a <let binding\|parameter\|loop variable\|constant\|function\|method>`, with help `declare it with 'var'` for a `let` binding / `cannot assign to an element of str` / `cannot assign to an element of a tuple` |
 | TP0203 | `expected <T>, found <T>?` / `<T>? must be narrowed before use`, with help `narrow it with 'is some', or give a default with '??'` |
 | TP0204 | `non-exhaustive match (missing: <a>, <b>)` |
 | TP0205 | `condition must be bool, found <T>` (with help `convert it with 'as bool'` for `py`) |
-| TP0206 | `cannot infer the type of an empty list` / `... empty dict` / `cannot infer the type of none` / `cannot infer '<T>' for '<f>'` / `cannot infer the type of lambda parameter '<x>'`, with help `add a type annotation` |
+| TP0206 | `cannot infer the type of an empty list` / `... empty dict` / `cannot infer the type of None` / `cannot infer '<T>' for '<f>'` / `cannot infer the type of lambda parameter '<x>'`, with help `add a type annotation` |
 | TP0207 | `'<x>' shadows an outer binding` |
 | TP0208 | `not all paths in '<f>' return a value` |
 | TP0209 | `'<S>' takes <n> type arguments, found <m>` (`type argument` when n is 1) |
@@ -728,7 +729,7 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0220 | `a constraint needs at least two types` / `'<T>' is listed twice in the constraint` / `a constraint cannot be optional or generic` / `constraints are only supported on functions` |
 | TP0300 | `unreachable match arm` |
 
-Types are written as in source: `int`, `str?`, `list[int]`. The type of `none` is written `none`, and a missing value is written `nothing`.
+Types are written as in source: `int`, `str?`, `list[int]`. The type of `None` is written `None`, and a missing value is written `nothing`.
 
 ---
 
@@ -748,20 +749,20 @@ Types are written as in source: `int`, `str?`, `list[int]`. The type of `none` i
   - the operators `+ - * / // %`, unary `-`, `== != < <= > >=`, and `in`/`not in`, when either operand is `py`
   - `for v in x`, giving `v: py`
   - `len(x)`, which gives `int`
-  - `print`, `str()` and f-string holes. A `None`, `bool`, `int`, `float`, `str`, `list`, `tuple` or `dict` displays by Taipan's rules (§6), so `None` is `none` and strings inside containers are quoted. A `tuple` is written `(1, 2)`. Any other object displays as Python's `str(x)`.
+  - `print`, `str()` and f-string holes. A `None`, `bool`, `int`, `float`, `str`, `list`, `tuple` or `dict` displays by Taipan's rules (§6), so `None` displays as `None` and strings inside containers are quoted. A `tuple` is written `(1, 2)`. Any other object displays as Python's `str(x)`.
 - **The result of every `py` operation is `py`, including comparisons.** A `py` used as a condition, or with `and`, `or` or `not`, is `TP0205`, with help `convert it with 'as bool'`.
 - `py` may annotate variables, parameters, return types, fields and collection elements (`list[py]`). It can't be a dict key (§3.1). A list, dict or optional containing `py` can't be compared with `==` (`TP0200`), since Python objects have no Taipan equality.
 
 ### 10.3 Taipan → Python
-- These Taipan types are *convertible*: `int`, `float`, `bool`, `str`, `none`, `list[T]` and `dict[K, V]` of convertible types, tuples of convertible types (M12, converted to a Python `tuple`), `T?` of a convertible `T`, and `py` itself.
+- These Taipan types are *convertible*: `int`, `float`, `bool`, `str`, `None`, `list[T]` and `dict[K, V]` of convertible types, tuples of convertible types (M12, converted to a Python `tuple`), `T?` of a convertible `T`, and `py` itself.
 - A convertible value is converted when it's passed into a `py` operation, and when it's assigned to something of type `py` (so `let x: py = [1, 2]` is valid).
 - Lists and dicts are copied, so changes on either side aren't seen by the other.
-- **Mixed literals:** in a `py` operation's arguments and operands, a list literal has element type `py` and a dict literal has value type `py`, so their elements may mix types: `json.dumps({"xs": [1, 2], "ok": True, "none": none})`.
+- **Mixed literals:** in a `py` operation's arguments and operands, a list literal has element type `py` and a dict literal has value type `py`, so their elements may mix types: `json.dumps({"xs": [1, 2], "ok": True, "None": None})`.
 - A struct or enum value, or any other non-convertible type, passed to Python is `TP0200` (`cannot pass <T> to Python`).
 
 ### 10.4 Python → Taipan: `as`
 - A `py` value reaches a static type only through `as` (cast, §2). Any other use where a static type is expected is `TP0200`. `as` applied to a non-`py` value is also `TP0200`.
-- `x as T` converts or panics. `x as T?` converts or gives `none`.
+- `x as T` converts or panics. `x as T?` converts or gives `None`.
 - **Targets and what each accepts:**
   - `int`: a Python `int` in the 64-bit range. A `bool` is not accepted, even though Python's `bool` is an `int`.
   - `float`: a Python `float`, or an `int` (not `bool`), converted.
@@ -770,7 +771,7 @@ Types are written as in source: `int`, `str?`, `list[int]`. The type of `none` i
   - `list[T]`: a Python `list` or `tuple` whose every element converts to `T`.
   - `dict[K, V]`: a Python `dict` whose every key converts to `K` and every value to `V`.
   - `tuple[A, B, …]` (M12): a Python `tuple` or `list` with exactly that many elements, each converting to its type.
-  - `T?` inside another target (for example `list[int?]`): Python `None` becomes `none`, and anything else converts as `T`. As the outer target, `x as int?` gives `none` both for `None` and on a mismatch.
+  - `T?` inside another target (for example `list[int?]`): Python `None` becomes Taipan's `None`, and anything else converts as `T`. As the outer target, `x as int?` gives `None` both for `None` and on a mismatch.
   - `py`: always succeeds, so `x as py` is allowed but pointless.
   - Any other target (a struct, an enum) is `TP0200`.
 - Conversion is all-or-nothing: one failing element fails the whole conversion.
