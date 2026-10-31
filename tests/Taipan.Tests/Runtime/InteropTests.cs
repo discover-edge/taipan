@@ -2,15 +2,14 @@ using Taipan.Runtime;
 
 namespace Taipan.Tests.Runtime;
 
-// Runs only where a Python is installed (SPEC §10.6); passes trivially otherwise.
+// Runs only where a Python is installed (SPEC §10.6); passes trivially otherwise, unless
+// TAIPAN_REQUIRE_PYTHON=1.
 public class InteropTests
 {
-    private static bool HavePython => Interop.FindLibrary() is not null;
-
     [Fact]
     public void ImportsCallsAndConverts()
     {
-        if (!HavePython)
+        if (!PythonAvailability.Available())
             return;
         var json = Interop.Import("json");
         var parsed = Interop.Call(Interop.GetAttr(json, "loads"), ["{\"n\": 42, \"ok\": true, \"xs\": [1, null]}"], []);
