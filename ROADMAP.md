@@ -58,6 +58,15 @@ Each milestone is done when **all** of its acceptance criteria pass as golden te
 - PEP 695-style `def first[T](xs: list[T]) -> T?` and `struct Box[T]`, with type-argument inference at call sites.
 - Update SPEC §3 with the rules first.
 
+## M8.1 — Constrained type parameters
+- PEP 695 constraint tuples: `def total[N: (int, float)](xs: list[N]) -> N`, `def count[K: (int, str, bool)](xs: list[K]) -> dict[K, int]`.
+- A constrained parameter allows exactly the operations every listed type supports (arithmetic, ordering, dict keys); the body is checked once per listed type.
+- Update SPEC §3.6 with the rules first.
+- **Accept:**
+  - `total`, `largest` and `count` work for each of their listed types.
+  - An operation that some listed type lacks is reported, naming that type.
+  - A call whose inferred type argument isn't in the tuple is reported.
+
 ## M9 — Modules
 - Multi-file programs: `import other` and `from other import name`.
 - The spec section is written at the start of this milestone.
