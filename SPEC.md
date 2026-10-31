@@ -232,7 +232,8 @@ There are no other implicit conversions. Explicit conversions use the built-ins 
 - **Type arguments are always inferred.** There's no explicit call-site syntax.
   - **Expected type first:** if the call has an expected type (§4.6), the return type is unified with it.
   - **Then arguments:** the remaining parameters are inferred from the argument types, in order.
-  - Arguments are then checked against the substituted parameter types, with the usual widening, so `let b: Box[float] = Box(1)` is valid.
+  - An argument whose type doesn't fit what the expected type inferred overrides it. So `let b: Box[float] = Box(1)` keeps `T = float`, but `let x: int? = first(xs)` with `xs: list[int?]` infers `T = int?`.
+  - Arguments are then checked against the substituted parameter types, with the usual widening.
   - When two arguments infer `int` and `float` for the same parameter, it's `float`. Any other disagreement is `TP0200`.
   - A `none` argument infers nothing, and an argument of type `U?` for a `T?` parameter infers `T = U`.
   - A parameter left undetermined is `TP0206`. For example, `Nothing` from `enum Maybe[T]` has no expected type to infer from.

@@ -118,7 +118,10 @@ public static class Cli
         if (Report(bound.Diagnostics, source, stderr))
             return ExitCompileError;
 
-        program = CSharpEmitter.Emit(source, bound.Program);
+        var emitted = CSharpEmitter.Emit(source, bound.Program);
+        if (Report(emitted.Diagnostics, source, stderr))
+            return ExitCompileError;
+        program = emitted;
         return ExitSuccess;
     }
 

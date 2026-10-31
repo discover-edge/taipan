@@ -106,8 +106,17 @@ public sealed class DiagnosticBag
     public void ReportNestedOptional(TextSpan span) =>
         Add("TP0213", span, "optional types cannot be nested");
 
-    public void ReportNestedOptionalGet(TextSpan span, object dictType) =>
-        Add("TP0213", span, $"'get' on {dictType} would return a nested optional");
+    public void ReportWrongTypeArgumentCount(TextSpan span, string name, int expected, int found) =>
+        Add("TP0209", span, $"'{name}' takes {expected} {(expected == 1 ? "type argument" : "type arguments")}, found {found}");
+
+    public void ReportCannotInferTypeArgument(TextSpan span, string parameter, string function) =>
+        Add("TP0206", span, $"cannot infer '{parameter}' for '{function}'", "add a type annotation");
+
+    public void ReportConflictingTypeArgument(TextSpan span, string parameter, object first, object second) =>
+        Add("TP0200", span, $"'{parameter}' is inferred as both {first} and {second}");
+
+    public void ReportInstantiationTooDeep(TextSpan span, string function, string instance) =>
+        Add("TP0219", span, $"instantiating '{function}' needs '{instance}', which is too deep");
 
     public void ReportCannotInferNone(TextSpan span) =>
         Add("TP0206", span, "cannot infer the type of none", "add a type annotation");

@@ -135,6 +135,10 @@ public static class Ops
         where TKey : notnull where TValue : class =>
         dict.TryGetValue(key, out var value) ? value : null;
 
+    /// <summary><c>d.get(k)</c> when the values are already optional: a missing key gives none.</summary>
+    public static TValue? GetOrDefault<TKey, TValue>(OrderedDictionary<TKey, TValue> dict, TKey key) where TKey : notnull =>
+        dict.TryGetValue(key, out var value) ? value : default;
+
     public static List<TKey> Keys<TKey, TValue>(OrderedDictionary<TKey, TValue> dict) where TKey : notnull => [.. dict.Keys];
 
     public static List<TValue> Values<TKey, TValue>(OrderedDictionary<TKey, TValue> dict) where TKey : notnull => [.. dict.Values];

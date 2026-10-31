@@ -1,0 +1,37 @@
+struct Box[T]:
+    value: T
+
+    def get(self) -> T:
+        return self.value
+
+    def set(self, value: T):
+        self.value = value
+
+    def map_str(self) -> Box[str]:
+        return Box(str(self.value))
+
+struct Pair[A, B]:
+    first: A
+    second: B
+
+    def swap(self) -> Pair[B, A]:
+        return Pair(self.second, self.first)
+
+let b = Box(5)
+b.set(b.get() + 1)
+print(b, b.get(), b.map_str(), b.map_str().get() + "!")
+let named = Box(value="x")
+let wide: Box[float] = Box(1)
+print(named, wide, Box([1, 2]), Box(Box(none_or(3))))
+let p = Pair(1, "one")
+print(p, p.swap(), p.swap().swap() == p)
+let boxes: list[Box[int]] = [Box(1), Box(2)]
+var total = 0
+for bx in boxes:
+    total += bx.value
+print(total)
+
+def none_or(n: int) -> int?:
+    if n > 0:
+        return n
+    return none

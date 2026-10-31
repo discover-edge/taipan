@@ -98,7 +98,11 @@ public sealed record BoundBinary(BoundExpr Left, BinaryOp Op, BoundExpr Right, T
     : BoundExpr(Type, Span);
 
 public sealed record BoundCall(FunctionSymbol Function, ImmutableArray<BoundExpr> Arguments, TaipanType Type, TextSpan Span)
-    : BoundExpr(Type, Span);
+    : BoundExpr(Type, Span)
+{
+    /// <summary>A generic function's inferred type arguments, in parameter order (SPEC §3.6).</summary>
+    public ImmutableArray<TaipanType> TypeArguments { get; init; } = [];
+}
 
 public sealed record BoundListLiteral(ImmutableArray<BoundExpr> Elements, ListOfType ListType, TextSpan Span)
     : BoundExpr(ListType, Span);
@@ -107,20 +111,21 @@ public sealed record BoundDictLiteral(ImmutableArray<(BoundExpr Key, BoundExpr V
     : BoundExpr(DictType, Span);
 
 /// <summary>A struct constructor call. Arguments are in source order, each with the field it sets.</summary>
-public sealed record BoundConstruct(StructSymbol Struct, ImmutableArray<(FieldSymbol Field, BoundExpr Value)> Arguments, bool IsKeyword, TextSpan Span)
-    : BoundExpr(Struct.Type, Span);
+public sealed record BoundConstruct(StructType StructType, ImmutableArray<(FieldSymbol Field, BoundExpr Value)> Arguments, bool IsKeyword, TextSpan Span)
+    : BoundExpr(StructType, Span);
 
 /// <summary>An enum value; arguments are in source order as for <see cref="BoundConstruct"/>.</summary>
-public sealed record BoundConstructVariant(VariantSymbol Variant, ImmutableArray<(FieldSymbol Field, BoundExpr Value)> Arguments, bool IsKeyword, TextSpan Span)
-    : BoundExpr(Variant.Enum.Type, Span);
+public sealed record BoundConstructVariant(VariantSymbol Variant, EnumType EnumType, ImmutableArray<(FieldSymbol Field, BoundExpr Value)> Arguments, bool IsKeyword, TextSpan Span)
+    : BoundExpr(EnumType, Span);
 
-public sealed record BoundFieldAccess(BoundExpr Target, FieldSymbol Field, TextSpan Span) : BoundExpr(Field.Type, Span);
+/// <summary><see cref="BoundExpr.Type"/> is the field's type with the target's type arguments substituted.</summary>
+public sealed record BoundFieldAccess(BoundExpr Target, FieldSymbol Field, TaipanType Type, TextSpan Span) : BoundExpr(Type, Span);
 
 /// <summary>Indexing a list, dict or str; <see cref="Target"/>'s type says which.</summary>
 public sealed record BoundIndex(BoundExpr Target, BoundExpr Index, TaipanType Type, TextSpan Span) : BoundExpr(Type, Span);
 
-public sealed record BoundMethodCall(BoundExpr Target, FunctionSymbol Method, ImmutableArray<BoundExpr> Arguments, TextSpan Span)
-    : BoundExpr(Method.ReturnType, Span);
+public sealed record BoundMethodCall(BoundExpr Target, FunctionSymbol Method, ImmutableArray<BoundExpr> Arguments, TaipanType Type, TextSpan Span)
+    : BoundExpr(Type, Span);
 
 public sealed record BoundBuiltinMethodCall(BoundExpr Target, BuiltinMethod Method, ImmutableArray<BoundExpr> Arguments, TaipanType Type, TextSpan Span)
     : BoundExpr(Type, Span);

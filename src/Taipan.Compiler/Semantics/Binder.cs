@@ -27,6 +27,7 @@ public sealed class Binder
     private readonly Scope _global = new(null);
     private readonly Dictionary<string, StructSymbol> _structs = [];
     private readonly Dictionary<string, EnumSymbol> _enums = [];
+    private Dictionary<string, TypeParameterSymbol> _typeParameters = [];
     private readonly HashSet<string> _scriptNames = [];
     private Scope _scope;
     private FunctionSymbol? _function;
@@ -105,9 +106,35 @@ public sealed class Binder
             [.. enumDefs.Select(e => e.Symbol)], boundStructs, constants.ToImmutable(), boundFunctions, new BoundBlock(topLevel, unit.Span));
     }
 
+    private static ImmutableArray<TypeParameterSymbol> NewTypeParameters(ImmutableArray<Identifier> names) =>
+        [.. names.Select(n => new TypeParameterSymbol(n.Text))];
+
+    /// <summary>A repeated type parameter is TP0214; one that hides a type name is TP0207 (SPEC §3.6).</summary>
+    private void CheckTypeParameters(ImmutableArray<Identifier> names)
+    {
+        var seen = new HashSet<string>();
+        foreach (var name in names)
+        {
+            if (!seen.Add(name.Text))
+                _diagnostics.ReportDuplicateDefinition(name.Span, name.Text);
+            else if (BuiltinTypeNames.Contains(name.Text) || _structs.ContainsKey(name.Text) || _enums.ContainsKey(name.Text))
+                _diagnostics.ReportShadowing(name.Span, name.Text);
+        }
+    }
+
+    /// <summary>Makes <paramref name="parameters"/> the type parameters in scope; returns the previous ones.</summary>
+    private Dictionary<string, TypeParameterSymbol> EnterTypeParameters(ImmutableArray<TypeParameterSymbol> parameters)
+    {
+        var previous = _typeParameters;
+        _typeParameters = [];
+        foreach (var parameter in parameters)
+            _typeParameters.TryAdd(parameter.Name, parameter);
+        return previous;
+    }
+
     private StructSymbol DeclareStruct(StructDef structDef)
     {
-        var symbol = new StructSymbol(structDef.Name.Text);
+        var symbol = new StructSymbol(structDef.Name.Text, NewTypeParameters(structDef.TypeParams));
         if (BuiltinTypeNames.Contains(symbol.Name))
             _diagnostics.ReportDuplicateDefinition(structDef.Name.Span, symbol.Name);
         else if (DeclareGlobal(structDef.Name, symbol))
@@ -121,7 +148,7 @@ public sealed class Binder
     /// </summary>
     private (EnumDef Syntax, EnumSymbol Symbol) DeclareEnum(EnumDef enumDef)
     {
-        var symbol = new EnumSymbol(enumDef.Name.Text);
+        var symbol = new EnumSymbol(enumDef.Name.Text, NewTypeParameters(enumDef.TypeParams));
         if (BuiltinTypeNames.Contains(symbol.Name))
             _diagnostics.ReportDuplicateDefinition(enumDef.Name.Span, symbol.Name);
         else if (DeclareGlobal(enumDef.Name, symbol))
@@ -160,6 +187,8 @@ public sealed class Binder
 
     private void BindVariantFields(EnumDef enumDef, EnumSymbol symbol)
     {
+        CheckTypeParameters(enumDef.TypeParams);
+        var outer = EnterTypeParameters(symbol.TypeParameters);
         foreach (var variantDef in enumDef.Variants)
         {
             if (symbol.FindVariant(variantDef.Name.Text) is not { } variant || !variant.Fields.IsEmpty)
@@ -174,6 +203,7 @@ public sealed class Binder
             }
             variant.Fields = fields.ToImmutable();
         }
+        _typeParameters = outer;
     }
 
     private BoundConstant BindConstDef(ConstDef constDef)
@@ -210,7 +240,12 @@ public sealed class Binder
 
     private FunctionSymbol BindFunctionSignature(FuncDef funcDef)
     {
-        var symbol = new FunctionSymbol(funcDef.Name.Text, BindParams(funcDef.Params), BindReturnType(funcDef.ReturnType));
+        CheckTypeParameters(funcDef.TypeParams);
+        var typeParameters = NewTypeParameters(funcDef.TypeParams);
+        var outer = EnterTypeParameters(typeParameters);
+        var symbol = new FunctionSymbol(
+            funcDef.Name.Text, BindParams(funcDef.Params), BindReturnType(funcDef.ReturnType), typeParameters: typeParameters);
+        _typeParameters = outer;
         DeclareGlobal(funcDef.Name, symbol);
         return symbol;
     }
@@ -222,6 +257,8 @@ public sealed class Binder
 
     private List<(MethodDef, FunctionSymbol)> BindStructMembers(StructDef structDef, StructSymbol symbol)
     {
+        CheckTypeParameters(structDef.TypeParams);
+        var outer = EnterTypeParameters(symbol.TypeParameters);
         var names = new HashSet<string>();
         var fields = ImmutableArray.CreateBuilder<FieldSymbol>();
         foreach (var field in structDef.Fields)
@@ -246,11 +283,15 @@ public sealed class Binder
                 _diagnostics.ReportDuplicateDefinition(method.Name.Span, method.Name.Text);
             methods.Add((method, methodSymbol));
         }
+        _typeParameters = outer;
         return methods;
     }
 
     private BoundFunction BindBody(FunctionSymbol symbol, ImmutableArray<Param> parameters, Identifier name, Block body, TextSpan span)
     {
+        // A method sees its struct's type parameters; a function its own.
+        var outerTypeParameters = EnterTypeParameters(
+            symbol.Self?.Type is StructType { Symbol: var owner } ? owner.TypeParameters : symbol.TypeParameters);
         _function = symbol;
         _loopDepth = 0;
         _scope = new Scope(_global);
@@ -265,6 +306,7 @@ public sealed class Binder
 
         _function = null;
         _scope = _global;
+        _typeParameters = outerTypeParameters;
         return new BoundFunction(symbol, boundBody, span);
     }
 
@@ -363,10 +405,12 @@ public sealed class Binder
                 return TaipanType.Str;
             case NamedType { Name.Text: "py" }:
                 return Unsupported("the py type");
-            case NamedType named when _structs.TryGetValue(named.Name.Text, out var structSymbol):
-                return structSymbol.Type;
-            case NamedType named when _enums.TryGetValue(named.Name.Text, out var enumSymbol):
-                return enumSymbol.Type;
+            case NamedType named when _typeParameters.TryGetValue(named.Name.Text, out var typeParameter):
+                return typeParameter.Type;
+            case NamedType named when _structs.ContainsKey(named.Name.Text) || _enums.ContainsKey(named.Name.Text):
+                return BindGenericType(named.Name, [], named.Span);
+            case GenericType generic:
+                return BindGenericType(generic.Name, generic.Arguments, generic.Span);
             case NamedType named:
                 _diagnostics.ReportUndefinedType(named.Span, named.Name.Text);
                 return TaipanType.Error;
@@ -388,6 +432,31 @@ public sealed class Binder
             default:
                 return TaipanType.Error;
         }
+    }
+
+    /// <summary>A struct or enum type with exactly as many type arguments as it has parameters (SPEC §3.6).</summary>
+    private TaipanType BindGenericType(Identifier name, ImmutableArray<TypeSyntax> argumentSyntax, TextSpan span)
+    {
+        var arguments = argumentSyntax.Select(BindType).ToImmutableArray();
+        ImmutableArray<TypeParameterSymbol> parameters;
+        if (_structs.TryGetValue(name.Text, out var structSymbol))
+            parameters = structSymbol.TypeParameters;
+        else if (_enums.TryGetValue(name.Text, out var enumSymbol))
+            parameters = enumSymbol.TypeParameters;
+        else
+        {
+            _diagnostics.ReportUndefinedType(name.Span, name.Text);
+            return TaipanType.Error;
+        }
+
+        if (arguments.Length != parameters.Length)
+        {
+            _diagnostics.ReportWrongTypeArgumentCount(span, name.Text, parameters.Length, arguments.Length);
+            return TaipanType.Error;
+        }
+        return structSymbol is not null
+            ? new StructType(structSymbol, arguments)
+            : new EnumType(_enums[name.Text], arguments);
     }
 
     private TaipanType Unsupported(string feature)
@@ -505,7 +574,7 @@ public sealed class Binder
                             builder.Add(null);
                             continue;
                         }
-                        var symbol = new VariableSymbol(name.Text, field.Type, VariableKind.Let);
+                        var symbol = new VariableSymbol(name.Text, FieldType(type, field), VariableKind.Let);
                         if (bindings.Any(b => b.Item1.Text == name.Text))
                             _diagnostics.ReportDuplicateDefinition(name.Span, name.Text);
                         else
@@ -653,7 +722,8 @@ public sealed class Binder
         {
             if (structSymbol.FindField(member.Member.Text) is { } field)
             {
-                var value = BindAssignedValue(assign, new BoundFieldAccess(target, field, member.Span), field.Type);
+                var fieldType = FieldType(target.Type, field);
+                var value = BindAssignedValue(assign, new BoundFieldAccess(target, field, fieldType, member.Span), fieldType);
                 return new BoundFieldAssign(target, field, value, assign.Op != AssignOp.Assign, assign.Span);
             }
             if (structSymbol.Methods.ContainsKey(member.Member.Text))
@@ -916,14 +986,14 @@ public sealed class Binder
         StringLiteral literal => new BoundLiteral(literal.Value, TaipanType.Str, literal.Span),
         BoolLiteral literal => new BoundLiteral(literal.Value, TaipanType.Bool, literal.Span),
         FStringExpr fstring => BindFString(fstring),
-        NameExpr name => BindName(name),
+        NameExpr name => BindName(name, expected),
         UnaryExpr unary => BindUnary(unary),
         BinaryExpr { Op: BinaryOp.Coalesce } binary => BindCoalesce(binary),
         BinaryExpr binary => BindBinaryOperation(BindValue(binary.Left), binary.Op, BindValue(binary.Right), binary.Span),
-        CallExpr call => BindCall(call),
+        CallExpr call => BindCall(call, expected),
         ListExpr list => BindList(list, expected),
         DictExpr dict => BindDict(dict, expected),
-        MemberExpr member => BindMember(member),
+        MemberExpr member => BindMember(member, expected),
         IndexExpr index => BindIndexOf(BindValue(index.Target), index),
         NoneLiteral => new BoundNone(expr.Span),
         ErrorExpr => new BoundErrorExpr(expr.Span),
@@ -957,7 +1027,7 @@ public sealed class Binder
         return new BoundFString(parts, fstring.Span);
     }
 
-    private BoundExpr BindName(NameExpr name)
+    private BoundExpr BindName(NameExpr name, TaipanType? expected)
     {
         switch (LookupName(name.Name, name.Span))
         {
@@ -970,7 +1040,7 @@ public sealed class Binder
                 _diagnostics.ReportTypeAsValue(name.Span, name.Name);
                 return new BoundErrorExpr(name.Span);
             case VariantSymbol variant:
-                return BindVariantValue(variant, name.Span);
+                return BindVariantValue(variant, name.Span, expected);
             case AmbiguousVariantSymbol ambiguous:
                 ReportAmbiguous(ambiguous, name.Span);
                 return new BoundErrorExpr(name.Span);
@@ -1184,10 +1254,10 @@ public sealed class Binder
         return optional ? new OptionalOf(common) : common;
     }
 
-    private BoundExpr BindMember(MemberExpr member)
+    private BoundExpr BindMember(MemberExpr member, TaipanType? expected)
     {
         if (TryQualifiedVariant(member, out var qualified))
-            return qualified is null ? new BoundErrorExpr(member.Span) : BindVariantValue(qualified, member.Span);
+            return qualified is null ? new BoundErrorExpr(member.Span) : BindVariantValue(qualified, member.Span, expected);
 
         var target = BindValue(member.Target);
         var name = member.Member.Text;
@@ -1197,7 +1267,7 @@ public sealed class Binder
         if (target.Type is StructType { Symbol: var structSymbol })
         {
             if (structSymbol.FindField(name) is { } field)
-                return new BoundFieldAccess(target, field, member.Span);
+                return new BoundFieldAccess(target, field, FieldType(target.Type, field), member.Span);
             if (structSymbol.Methods.ContainsKey(name))
                 _diagnostics.ReportMethodAsValue(member.Member.Span, name);
             else
@@ -1213,6 +1283,10 @@ public sealed class Binder
         }
         return new BoundErrorExpr(member.Span);
     }
+
+    /// <summary>A field's type as seen through <paramref name="owner"/>'s type arguments.</summary>
+    private static TaipanType FieldType(TaipanType owner, FieldSymbol field) =>
+        TypeChecker.Substitute(field.Type, TypeChecker.MapOf(owner));
 
     private BoundExpr BindIndexOf(BoundExpr target, IndexExpr indexExpr)
     {
@@ -1240,10 +1314,10 @@ public sealed class Binder
 
     // ---- Calls ----
 
-    private BoundExpr BindCall(CallExpr call)
+    private BoundExpr BindCall(CallExpr call, TaipanType? expected)
     {
         if (call.Callee is MemberExpr member)
-            return BindMethodCall(call, member);
+            return BindMethodCall(call, member, expected);
 
         if (call.Callee is not NameExpr calleeName)
         {
@@ -1258,9 +1332,9 @@ public sealed class Binder
         switch (symbol)
         {
             case StructSymbol structSymbol:
-                return BindConstruct(call, structSymbol);
+                return BindConstruct(call, structSymbol, expected);
             case VariantSymbol variant:
-                return BindConstructVariant(call, variant);
+                return BindConstructVariant(call, variant, expected);
             case AmbiguousVariantSymbol ambiguous:
                 BindArguments(call);
                 ReportAmbiguous(ambiguous, calleeName.Span);
@@ -1270,13 +1344,158 @@ public sealed class Binder
                 return BindBuiltinCall(call, function, builtin);
             case FunctionSymbol function:
                 ReportKeywordArguments(call);
-                var arguments = BindParameterArguments(call, function.Name, [.. function.Parameters.Select(p => p.Type)]);
-                return new BoundCall(function, arguments, function.ReturnType, call.Span);
+                return BindUserCall(call, function, expected);
             default:
                 BindArguments(call);
                 if (symbol is VariableSymbol)
                     _diagnostics.ReportNotAFunction(calleeName.Span, calleeName.Name);
                 return new BoundErrorExpr(call.Span);
+        }
+    }
+
+    private BoundExpr BindUserCall(CallExpr call, FunctionSymbol function, TaipanType? expected)
+    {
+        var parameterTypes = function.Parameters.Select(p => p.Type).ToImmutableArray();
+        if (call.Arguments.Length != parameterTypes.Length)
+        {
+            var arguments = BindParameterArguments(call, function.Name, parameterTypes);
+            return new BoundCall(function, arguments, function.TypeParameters.IsEmpty ? function.ReturnType : TaipanType.Error, call.Span);
+        }
+
+        var (bound, map) = InferAndBind(
+            function.Name, call.Callee.Span, function.TypeParameters, parameterTypes, function.ReturnType,
+            [.. call.Arguments.Select(a => a.Value)], expected);
+        return new BoundCall(function, bound, TypeChecker.Substitute(function.ReturnType, map), call.Span)
+        {
+            TypeArguments = [.. function.TypeParameters.Select(p => map[p])],
+        };
+    }
+
+    /// <summary>
+    /// Binds arguments against parameter types, inferring any type parameters first (SPEC §3.6):
+    /// from the expected type of the result, then from each argument in order. Each argument gets
+    /// its parameter as its expected type once that type is fully known, then is checked against it.
+    /// </summary>
+    private (ImmutableArray<BoundExpr> Arguments, Dictionary<TypeParameterSymbol, TaipanType> Map) InferAndBind(
+        string name, TextSpan nameSpan, ImmutableArray<TypeParameterSymbol> typeParameters,
+        IReadOnlyList<TaipanType> parameterTypes, TaipanType resultType, IReadOnlyList<Expr> arguments, TaipanType? expected)
+    {
+        var map = new Dictionary<TypeParameterSymbol, TaipanType>();
+        if (typeParameters.IsEmpty)
+            return ([.. arguments.Select((a, i) => BindExpected(a, parameterTypes[i]))], map);
+
+        var inference = new TypeInference(typeParameters, map, _diagnostics);
+        if (expected is not null)
+            inference.Unify(resultType, expected, fromArgument: null);
+
+        var bound = ImmutableArray.CreateBuilder<BoundExpr>();
+        for (var i = 0; i < arguments.Count; i++)
+        {
+            var parameter = parameterTypes[i];
+            var argument = BindValue(arguments[i], inference.IsKnown(parameter) ? TypeChecker.Substitute(parameter, map) : null);
+            inference.Unify(parameter, argument.Type, fromArgument: arguments[i].Span);
+            bound.Add(argument);
+        }
+
+        foreach (var parameter in typeParameters.Where(p => !map.ContainsKey(p)))
+        {
+            _diagnostics.ReportCannotInferTypeArgument(nameSpan, parameter.Name, name);
+            map[parameter] = TaipanType.Error;
+        }
+        for (var i = 0; i < bound.Count; i++)
+            CheckAssignable(bound[i], TypeChecker.Substitute(parameterTypes[i], map), arguments[i].Span);
+        return (bound.ToImmutable(), map);
+    }
+
+    /// <summary>Unification of parameter types with argument types, for type-argument inference.</summary>
+    private sealed class TypeInference(
+        ImmutableArray<TypeParameterSymbol> parameters, Dictionary<TypeParameterSymbol, TaipanType> map, DiagnosticBag diagnostics)
+    {
+        private readonly HashSet<TypeParameterSymbol> _fromArguments = [];
+
+        /// <summary>Whether every type parameter in <paramref name="type"/> is already inferred.</summary>
+        public bool IsKnown(TaipanType type) => type switch
+        {
+            TypeParameterType p => !parameters.Contains(p.Symbol) || map.ContainsKey(p.Symbol),
+            OptionalOf o => IsKnown(o.Inner),
+            ListOfType l => IsKnown(l.Element),
+            DictOfType d => IsKnown(d.Key) && IsKnown(d.Value),
+            StructType s => s.TypeArguments.All(IsKnown),
+            EnumType e => e.TypeArguments.All(IsKnown),
+            _ => true,
+        };
+
+        /// <summary>
+        /// Matches <paramref name="pattern"/> (a parameter or result type) against an actual type.
+        /// Disagreements between arguments are TP0200, except that int and float give float. An
+        /// argument overrides what the expected type inferred unless it's assignable to it.
+        /// </summary>
+        public void Unify(TaipanType pattern, TaipanType actual, TextSpan? fromArgument)
+        {
+            if (actual.ContainsError)
+                return;
+            switch (pattern, actual)
+            {
+                case (TypeParameterType p, _) when parameters.Contains(p.Symbol):
+                    Bind(p.Symbol, actual, fromArgument);
+                    break;
+                case (OptionalOf p, OptionalOf a):
+                    Unify(p.Inner, a.Inner, fromArgument);
+                    break;
+                case (OptionalOf, NoneType):
+                    break;
+                case (OptionalOf p, _):
+                    Unify(p.Inner, actual, fromArgument);
+                    break;
+                case (ListOfType p, ListOfType a):
+                    Unify(p.Element, a.Element, fromArgument);
+                    break;
+                case (DictOfType p, DictOfType a):
+                    Unify(p.Key, a.Key, fromArgument);
+                    Unify(p.Value, a.Value, fromArgument);
+                    break;
+                case (StructType p, StructType a) when p.Symbol == a.Symbol:
+                    foreach (var (pa, aa) in p.TypeArguments.Zip(a.TypeArguments))
+                        Unify(pa, aa, fromArgument);
+                    break;
+                case (EnumType p, EnumType a) when p.Symbol == a.Symbol:
+                    foreach (var (pa, aa) in p.TypeArguments.Zip(a.TypeArguments))
+                        Unify(pa, aa, fromArgument);
+                    break;
+            }
+        }
+
+        private void Bind(TypeParameterSymbol parameter, TaipanType actual, TextSpan? fromArgument)
+        {
+            if (actual is NoneType)
+                return;
+            if (!map.TryGetValue(parameter, out var existing))
+            {
+                map[parameter] = actual;
+                if (fromArgument is not null)
+                    _fromArguments.Add(parameter);
+                return;
+            }
+            if (existing == actual || fromArgument is not { } span || existing.ContainsError)
+                return;
+            if (!_fromArguments.Contains(parameter))
+            {
+                // Inferred from the expected type: `Box(1)` into a Box[float] keeps float, but
+                // `first(xs)` with xs: list[int?] into an int? needs T = int?.
+                if (!TypeChecker.IsAssignable(actual, existing))
+                {
+                    map[parameter] = actual;
+                    _fromArguments.Add(parameter);
+                }
+                return;
+            }
+            if (existing.IsNumeric && actual.IsNumeric)
+            {
+                map[parameter] = TaipanType.Float;
+                return;
+            }
+            diagnostics.ReportConflictingTypeArgument(span, parameter.Name, existing, actual);
+            map[parameter] = TaipanType.Error;
         }
     }
 
@@ -1288,7 +1507,7 @@ public sealed class Binder
 
     /// <summary>
     /// Binds arguments against parameter types: each one gets its parameter as its expected type.
-    /// A count mismatch is TP0209, reported at <paramref name="countSpan"/> (the callee).
+    /// A count mismatch is TP0209, reported at the callee.
     /// </summary>
     private ImmutableArray<BoundExpr> BindParameterArguments(CallExpr call, string name, ImmutableArray<TaipanType> parameters)
     {
@@ -1307,12 +1526,15 @@ public sealed class Binder
             _diagnostics.ReportKeywordArguments(keyword.Span);
     }
 
-    private BoundExpr BindConstruct(CallExpr call, StructSymbol structSymbol) =>
-        BindFieldArguments(call, structSymbol.Name, structSymbol.Fields) is var (arguments, isKeyword) && arguments is { } valid
-            ? new BoundConstruct(structSymbol, valid, isKeyword, call.Span)
+    private BoundExpr BindConstruct(CallExpr call, StructSymbol structSymbol, TaipanType? expected)
+    {
+        var (arguments, isKeyword, map) = BindFieldArguments(call, structSymbol.Name, structSymbol.Fields, structSymbol.TypeParameters, structSymbol.Type, expected);
+        return arguments is { } valid
+            ? new BoundConstruct((StructType)TypeChecker.Substitute(structSymbol.Type, map), valid, isKeyword, call.Span)
             : new BoundErrorExpr(call.Span);
+    }
 
-    private BoundExpr BindConstructVariant(CallExpr call, VariantSymbol variant)
+    private BoundExpr BindConstructVariant(CallExpr call, VariantSymbol variant, TaipanType? expected)
     {
         if (variant.Fields.IsEmpty)
         {
@@ -1321,55 +1543,67 @@ public sealed class Binder
             _diagnostics.ReportNotAFunction(call.Callee.Span, variant.Name);
             return new BoundErrorExpr(call.Span);
         }
-        return BindFieldArguments(call, variant.Name, variant.Fields) is var (arguments, isKeyword) && arguments is { } valid
-            ? new BoundConstructVariant(variant, valid, isKeyword, call.Span)
+        var enumSymbol = variant.Enum;
+        var (arguments, isKeyword, map) = BindFieldArguments(call, variant.Name, variant.Fields, enumSymbol.TypeParameters, enumSymbol.Type, expected);
+        return arguments is { } valid
+            ? new BoundConstructVariant(variant, (EnumType)TypeChecker.Substitute(enumSymbol.Type, map), valid, isKeyword, call.Span)
             : new BoundErrorExpr(call.Span);
     }
 
     /// <summary>
-    /// Constructor arguments for a struct or variant (SPEC §4.6). Positional: one per field, in
-    /// order. Keyword: every field exactly once. Null if any argument is wrong.
+    /// Constructor arguments for a struct or variant (SPEC §4.6), inferring a generic owner's type
+    /// arguments (§3.6). Positional: one per field, in order. Keyword: every field exactly once.
+    /// The arguments are null if any of them is wrong.
     /// </summary>
-    private (ImmutableArray<(FieldSymbol, BoundExpr)>? Arguments, bool IsKeyword) BindFieldArguments(
-        CallExpr call, string owner, ImmutableArray<FieldSymbol> fields)
+    private (ImmutableArray<(FieldSymbol, BoundExpr)>? Arguments, bool IsKeyword, Dictionary<TypeParameterSymbol, TaipanType> Map) BindFieldArguments(
+        CallExpr call, string owner, ImmutableArray<FieldSymbol> fields, ImmutableArray<TypeParameterSymbol> typeParameters,
+        TaipanType ownerType, TaipanType? expected)
     {
         var isKeyword = call.Arguments.Any(a => a.Name is not null);
+        var valid = true;
+        var chosen = new List<(FieldSymbol Field, Expr Value)>();
         if (!isKeyword)
         {
-            var positional = BindParameterArguments(call, owner, [.. fields.Select(f => f.Type)]);
-            if (positional.Length != fields.Length)
-                return (null, false);
-            return ([.. fields.Zip(positional)], false);
+            if (call.Arguments.Length != fields.Length)
+            {
+                BindParameterArguments(call, owner, [.. fields.Select(f => f.Type)]);
+                return (null, false, []);
+            }
+            chosen.AddRange(fields.Zip(call.Arguments.Select(a => a.Value)));
+        }
+        else
+        {
+            var given = new HashSet<string>();
+            foreach (var argument in call.Arguments)
+            {
+                var name = argument.Name!;
+                var field = fields.FirstOrDefault(f => f.Name == name.Text);
+                if (field is null)
+                {
+                    _diagnostics.ReportNoField(name.Span, owner, name.Text);
+                    BindValue(argument.Value);
+                    valid = false;
+                    continue;
+                }
+                if (!given.Add(name.Text))
+                {
+                    _diagnostics.ReportRepeatedField(name.Span, name.Text);
+                    valid = false;
+                }
+                chosen.Add((field, argument.Value));
+            }
+            foreach (var missing in fields.Where(f => !given.Contains(f.Name)))
+            {
+                _diagnostics.ReportMissingField(call.Callee.Span, missing.Name, owner);
+                valid = false;
+            }
         }
 
-        var arguments = ImmutableArray.CreateBuilder<(FieldSymbol, BoundExpr)>();
-        var given = new HashSet<string>();
-        var valid = true;
-        foreach (var argument in call.Arguments)
-        {
-            var name = argument.Name!;
-            var field = fields.FirstOrDefault(f => f.Name == name.Text);
-            if (field is null)
-            {
-                _diagnostics.ReportNoField(name.Span, owner, name.Text);
-                BindValue(argument.Value);
-                valid = false;
-                continue;
-            }
-            if (!given.Add(name.Text))
-            {
-                _diagnostics.ReportRepeatedField(name.Span, name.Text);
-                valid = false;
-            }
-            arguments.Add((field, BindExpected(argument.Value, field.Type)));
-        }
-
-        foreach (var missing in fields.Where(f => !given.Contains(f.Name)))
-        {
-            _diagnostics.ReportMissingField(call.Callee.Span, missing.Name, owner);
-            valid = false;
-        }
-        return (valid ? arguments.ToImmutable() : null, true);
+        var (bound, map) = InferAndBind(
+            owner, call.Callee.Span, typeParameters, [.. chosen.Select(c => c.Field.Type)], ownerType, [.. chosen.Select(c => c.Value)],
+            valid ? expected : null);
+        ImmutableArray<(FieldSymbol, BoundExpr)> pairs = [.. chosen.Select(c => c.Field).Zip(bound)];
+        return (valid ? pairs : null, isKeyword, map);
     }
 
     /// <summary>
@@ -1387,21 +1621,34 @@ public sealed class Binder
         return true;
     }
 
-    /// <summary>A variant used as a value: only one without a payload is a value by itself.</summary>
-    private BoundExpr BindVariantValue(VariantSymbol variant, TextSpan span)
+    /// <summary>
+    /// A variant used as a value: only one without a payload is a value by itself. A generic
+    /// enum's type arguments come from the expected type (SPEC §3.6).
+    /// </summary>
+    private BoundExpr BindVariantValue(VariantSymbol variant, TextSpan span, TaipanType? expected)
     {
-        if (variant.Fields.IsEmpty)
-            return new BoundConstructVariant(variant, [], IsKeyword: false, span);
-        _diagnostics.ReportWrongArgumentCount(span, variant.Name, Arguments(variant.Fields.Length), 0);
+        if (!variant.Fields.IsEmpty)
+        {
+            _diagnostics.ReportWrongArgumentCount(span, variant.Name, Arguments(variant.Fields.Length), 0);
+            return new BoundErrorExpr(span);
+        }
+
+        var enumSymbol = variant.Enum;
+        if (enumSymbol.TypeParameters.IsEmpty)
+            return new BoundConstructVariant(variant, enumSymbol.Type, [], IsKeyword: false, span);
+        if (TypeChecker.Unwrap(expected ?? TaipanType.Error) is EnumType enumType && enumType.Symbol == enumSymbol)
+            return new BoundConstructVariant(variant, enumType, [], IsKeyword: false, span);
+
+        _diagnostics.ReportCannotInferTypeArgument(span, enumSymbol.TypeParameters[0].Name, variant.Name);
         return new BoundErrorExpr(span);
     }
 
-    private BoundExpr BindMethodCall(CallExpr call, MemberExpr member)
+    private BoundExpr BindMethodCall(CallExpr call, MemberExpr member, TaipanType? expected)
     {
         if (TryQualifiedVariant(member, out var qualified))
         {
             if (qualified is not null)
-                return BindConstructVariant(call, qualified);
+                return BindConstructVariant(call, qualified, expected);
             BindArguments(call);
             return new BoundErrorExpr(call.Span);
         }
@@ -1419,21 +1666,15 @@ public sealed class Binder
         {
             if (structSymbol.Methods.TryGetValue(name, out var method))
             {
-                var arguments = BindParameterArguments(call, name, [.. method.Parameters.Select(p => p.Type)]);
-                return new BoundMethodCall(target, method, arguments, call.Span);
+                var map = TypeChecker.MapOf(target.Type);
+                var arguments = BindParameterArguments(call, name, [.. method.Parameters.Select(p => TypeChecker.Substitute(p.Type, map))]);
+                return new BoundMethodCall(target, method, arguments, TypeChecker.Substitute(method.ReturnType, map), call.Span);
             }
             BindArguments(call);
             if (structSymbol.FindField(name) is not null)
                 _diagnostics.ReportFieldNotMethod(member.Member.Span, name);
             else
                 _diagnostics.ReportNoMethod(member.Member.Span, target.Type, name);
-            return new BoundErrorExpr(call.Span);
-        }
-
-        if (target.Type is DictOfType { Value: OptionalOf } nested && name == "get")
-        {
-            BindArguments(call);
-            _diagnostics.ReportNestedOptionalGet(member.Member.Span, nested);
             return new BoundErrorExpr(call.Span);
         }
 
@@ -1460,7 +1701,8 @@ public sealed class Binder
             (ListOfType list, "pop") => (BuiltinMethod.ListPop, [], list.Element),
             (ListOfType list, "insert") => (BuiltinMethod.ListInsert, [TaipanType.Int, list.Element], TaipanType.Nothing),
             (ListOfType list, "contains") => (BuiltinMethod.ListContains, [list.Element], TaipanType.Bool),
-            (DictOfType dict, "get") => (BuiltinMethod.DictGet, [dict.Key], new OptionalOf(dict.Value)),
+            // Optionals don't nest: on a dict[K, V?], get returns V? (SPEC §3.4).
+            (DictOfType dict, "get") => (BuiltinMethod.DictGet, [dict.Key], dict.Value is OptionalOf ? dict.Value : new OptionalOf(dict.Value)),
             (DictOfType dict, "keys") => (BuiltinMethod.DictKeys, [], new ListOfType(dict.Key)),
             (DictOfType dict, "values") => (BuiltinMethod.DictValues, [], new ListOfType(dict.Value)),
             (DictOfType dict, "remove") => (BuiltinMethod.DictRemove, [dict.Key], TaipanType.Bool),

@@ -1,3 +1,5 @@
+using System.Collections.Immutable;
+
 namespace Taipan.Compiler.Semantics;
 
 /// <summary>A Taipan type (SPEC §3). Displayed as written in source.</summary>
@@ -26,6 +28,8 @@ public abstract record TaipanType
         ListOfType list => list.Element.ContainsError,
         DictOfType dict => dict.Key.ContainsError || dict.Value.ContainsError,
         OptionalOf optional => optional.Inner.ContainsError,
+        StructType structType => structType.TypeArguments.Any(a => a.ContainsError),
+        EnumType enumType => enumType.TypeArguments.Any(a => a.ContainsError),
         _ => false,
     };
 
@@ -61,10 +65,18 @@ public sealed record DictOfType(TaipanType Key, TaipanType Value) : TaipanType
         type.IsError || type == Int || type == Str || type == Bool;
 }
 
-/// <summary>Equal when the symbols are the same struct.</summary>
-public sealed record StructType(StructSymbol Symbol) : TaipanType
+/// <summary>A struct, with its type arguments if it's generic (SPEC §3.6). Equal when both match.</summary>
+public sealed record StructType(StructSymbol Symbol, ImmutableArray<TaipanType> TypeArguments) : TaipanType
 {
-    public override string ToString() => Symbol.Name;
+    public bool Equals(StructType? other) =>
+        other is not null && other.Symbol == Symbol && other.TypeArguments.SequenceEqual(TypeArguments);
+
+    public override int GetHashCode() => Symbol.GetHashCode();
+
+    public override string ToString() => GenericName(Symbol.Name, TypeArguments);
+
+    internal static string GenericName(string name, ImmutableArray<TaipanType> arguments) =>
+        arguments.IsEmpty ? name : $"{name}[{string.Join(", ", arguments)}]";
 }
 
 public sealed record NoneType : TaipanType
@@ -78,8 +90,19 @@ public sealed record OptionalOf(TaipanType Inner) : TaipanType
     public override string ToString() => $"{Inner}?";
 }
 
-/// <summary>Equal when the symbols are the same enum.</summary>
-public sealed record EnumType(EnumSymbol Symbol) : TaipanType
+/// <summary>An enum, with its type arguments if it's generic (SPEC §3.6). Equal when both match.</summary>
+public sealed record EnumType(EnumSymbol Symbol, ImmutableArray<TaipanType> TypeArguments) : TaipanType
+{
+    public bool Equals(EnumType? other) =>
+        other is not null && other.Symbol == Symbol && other.TypeArguments.SequenceEqual(TypeArguments);
+
+    public override int GetHashCode() => Symbol.GetHashCode();
+
+    public override string ToString() => StructType.GenericName(Symbol.Name, TypeArguments);
+}
+
+/// <summary>A type parameter inside a generic definition: an opaque type (SPEC §3.6).</summary>
+public sealed record TypeParameterType(TypeParameterSymbol Symbol) : TaipanType
 {
     public override string ToString() => Symbol.Name;
 }

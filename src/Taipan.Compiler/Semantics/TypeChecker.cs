@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Taipan.Compiler.Syntax;
 
 namespace Taipan.Compiler.Semantics;
@@ -27,6 +28,39 @@ public static class TypeChecker
     }
 
     public static TaipanType Unwrap(TaipanType type) => type is OptionalOf optional ? optional.Inner : type;
+
+    /// <summary>
+    /// Replaces type parameters by their arguments. Optionals flatten: <c>T?</c> with
+    /// <c>T = int?</c> is <c>int?</c> (SPEC §3.6).
+    /// </summary>
+    public static TaipanType Substitute(TaipanType type, IReadOnlyDictionary<TypeParameterSymbol, TaipanType> map)
+    {
+        if (map.Count == 0)
+            return type;
+        return type switch
+        {
+            TypeParameterType parameter => map.GetValueOrDefault(parameter.Symbol, parameter),
+            OptionalOf optional => Flatten(Substitute(optional.Inner, map)),
+            ListOfType list => new ListOfType(Substitute(list.Element, map)),
+            DictOfType dict => new DictOfType(Substitute(dict.Key, map), Substitute(dict.Value, map)),
+            StructType structType => structType with { TypeArguments = [.. structType.TypeArguments.Select(a => Substitute(a, map))] },
+            EnumType enumType => enumType with { TypeArguments = [.. enumType.TypeArguments.Select(a => Substitute(a, map))] },
+            _ => type,
+        };
+    }
+
+    private static TaipanType Flatten(TaipanType inner) => inner is OptionalOf or ErrorType ? inner : new OptionalOf(inner);
+
+    /// <summary>The substitution for a generic struct or enum type's members.</summary>
+    public static Dictionary<TypeParameterSymbol, TaipanType> MapOf(TaipanType type) => type switch
+    {
+        StructType s => Zip(s.Symbol.TypeParameters, s.TypeArguments),
+        EnumType e => Zip(e.Symbol.TypeParameters, e.TypeArguments),
+        _ => [],
+    };
+
+    public static Dictionary<TypeParameterSymbol, TaipanType> Zip(ImmutableArray<TypeParameterSymbol> parameters, ImmutableArray<TaipanType> arguments) =>
+        parameters.Zip(arguments).ToDictionary(pair => pair.First, pair => pair.Second);
 
     /// <summary>Result of an arithmetic operator, or null if it doesn't apply to these operands.</summary>
     public static TaipanType? Arithmetic(BinaryOp op, TaipanType left, TaipanType right)

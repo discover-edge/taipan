@@ -1,0 +1,31 @@
+enum Maybe[T]:
+    Just(value: T)
+    Nothing
+
+enum Result[T, E]:
+    Ok(value: T)
+    Err(error: E)
+
+def describe[T](m: Maybe[T]) -> str:
+    match m:
+        Just(v): return f"just {v}"
+        Nothing: return "nothing"
+
+def safe_div(a: int, b: int) -> Result[int, str]:
+    if b == 0:
+        return Err("division by zero")
+    return Ok(a // b)
+
+def unwrap_or[T, E](r: Result[T, E], fallback: T) -> T:
+    match r:
+        Ok(v): return v
+        Err(_): return fallback
+
+let m: Maybe[int] = Nothing
+print(describe(Just(3)), describe(m), describe(Just("s")), Just([1]))
+print(safe_div(7, 2), safe_div(1, 0), unwrap_or(safe_div(9, 3), -1), unwrap_or(safe_div(1, 0), -1))
+let also_nothing: Maybe[int] = Maybe.Nothing
+print(Just(1) == Just(1), Just(1) == Maybe.Just(2), m == also_nothing, m == Just(0))
+let maybes: list[Maybe[str]] = [Just("a"), Nothing]
+for item in maybes:
+    print(describe(item))

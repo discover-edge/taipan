@@ -53,7 +53,7 @@ public class ParserTests
     public void FileWithSeveralItems() =>
         Assert.Equal(
             "ConstDef(N, null, IntLiteral(3))\n" +
-            "FuncDef(f, [], null, Block([PassStmt]))\n" +
+            "FuncDef(f, [], [], null, Block([PassStmt]))\n" +
             "ExprStmt(CallExpr(NameExpr(f), []))",
             Snapshot("const N = 3\n\ndef f():\n    pass\n\nf()\n"));
 
@@ -70,14 +70,14 @@ public class ParserTests
     [Fact]
     public void FuncDefWithParamsAndReturnType() =>
         Assert.Equal(
-            "FuncDef(add, [Param(a, NamedType(int)), Param(b, NamedType(float))], NamedType(float), " +
+            "FuncDef(add, [], [Param(a, NamedType(int)), Param(b, NamedType(float))], NamedType(float), " +
             "Block([ReturnStmt(BinaryExpr(NameExpr(a), Add, NameExpr(b)))]))",
             Snapshot("def add(a: int, b: float) -> float:\n    return a + b\n"));
 
     [Fact]
     public void FuncDefParamsTrailingComma() =>
         Assert.Equal(
-            "FuncDef(f, [Param(a, NamedType(int))], null, Block([PassStmt]))",
+            "FuncDef(f, [], [Param(a, NamedType(int))], null, Block([PassStmt]))",
             Snapshot("def f(\n    a: int,\n):\n    pass\n"));
 
     // ---- struct_def / struct_member ----
@@ -85,7 +85,7 @@ public class ParserTests
     [Fact]
     public void StructDef() =>
         Assert.Equal(
-            "StructDef(Service, [FieldDef(name, NamedType(str)), FieldDef(tags, ListType(NamedType(str)))], [])",
+            "StructDef(Service, [], [FieldDef(name, NamedType(str)), FieldDef(tags, ListType(NamedType(str)))], [])",
             Snapshot("struct Service:\n    name: str\n    tags: list[str]\n"));
 
     // ---- method_def ----
@@ -93,7 +93,7 @@ public class ParserTests
     [Fact]
     public void StructWithMethods() =>
         Assert.Equal(
-            "StructDef(Counter, [FieldDef(n, NamedType(int))], [" +
+            "StructDef(Counter, [], [FieldDef(n, NamedType(int))], [" +
             "MethodDef(bump, [Param(by, NamedType(int))], null, Block([AssignStmt(MemberExpr(NameExpr(self), n), Add, NameExpr(by))])), " +
             "MethodDef(get, [], NamedType(int), Block([ReturnStmt(MemberExpr(NameExpr(self), n))]))])",
             Snapshot("struct Counter:\n    n: int\n    def bump(self, by: int,):\n        self.n += by\n    def get(self) -> int:\n        return self.n\n"));
@@ -110,7 +110,7 @@ public class ParserTests
     [Fact]
     public void EnumDef() =>
         Assert.Equal(
-            "EnumDef(Health, [VariantDef(Ok, []), " +
+            "EnumDef(Health, [], [VariantDef(Ok, []), " +
             "VariantDef(Degraded, [FieldDef(healthy, NamedType(int)), FieldDef(total, NamedType(int))]), " +
             "VariantDef(Down, [])])",
             Snapshot("enum Health:\n    Ok\n    Degraded(healthy: int, total: int)\n    Down\n"));
@@ -118,7 +118,7 @@ public class ParserTests
     [Fact]
     public void NamedFieldsTrailingComma() =>
         Assert.Equal(
-            "EnumDef(E, [VariantDef(V, [FieldDef(a, NamedType(int))])])",
+            "EnumDef(E, [], [VariantDef(V, [FieldDef(a, NamedType(int))])])",
             Snapshot("enum E:\n    V(a: int,)\n"));
 
     // ---- block ----
@@ -163,8 +163,8 @@ public class ParserTests
     [Fact]
     public void ReturnWithAndWithoutValue() =>
         Assert.Equal(
-            "FuncDef(f, [], null, Block([ReturnStmt(null)]))\n" +
-            "FuncDef(g, [], NamedType(int), Block([ReturnStmt(IntLiteral(1))]))",
+            "FuncDef(f, [], [], null, Block([ReturnStmt(null)]))\n" +
+            "FuncDef(g, [], [], NamedType(int), Block([ReturnStmt(IntLiteral(1))]))",
             Snapshot("def f():\n    return\ndef g() -> int:\n    return 1\n"));
 
     [Fact]
@@ -487,7 +487,7 @@ public class ParserTests
         var result = ParseText("def f():\n    let = 1\n    let y = 2\nlet z = 3\n");
         Assert.Single(result.Diagnostics);
         Assert.Equal(
-            "FuncDef(f, [], null, Block([LetStmt(, null, ErrorExpr), LetStmt(y, null, IntLiteral(2))]))\n" +
+            "FuncDef(f, [], [], null, Block([LetStmt(, null, ErrorExpr), LetStmt(y, null, IntLiteral(2))]))\n" +
             "LetStmt(z, null, IntLiteral(3))",
             string.Join("\n", result.Unit.Items.Select(AstPrinter.Print)));
     }
@@ -524,12 +524,40 @@ public class ParserTests
     public void FStringHoleErrorCountsAsTheStatementsError() =>
         Assert.Equal(["1:12 TP0100: expected expression, found '+'"], Errors("let a = f\"{+}\" 1 2\n"));
 
+    // ---- type_params and generic types (M8) ----
+
+    [Fact]
+    public void GenericFunction() =>
+        Assert.Equal(
+            "FuncDef(first, [T], [Param(xs, ListType(NamedType(T)))], OptionalType(NamedType(T)), Block([ReturnStmt(NoneLiteral)]))",
+            Snapshot("def first[T](xs: list[T]) -> T?:\n    return none\n"));
+
+    [Fact]
+    public void GenericStructAndEnum() =>
+        Assert.Equal(
+            "StructDef(Pair, [A, B], [FieldDef(a, NamedType(A)), FieldDef(b, NamedType(B))], [])\n" +
+            "EnumDef(Maybe, [T], [VariantDef(Just, [FieldDef(value, NamedType(T))]), VariantDef(Nothing, [])])",
+            Snapshot("struct Pair[A, B]:\n    a: A\n    b: B\nenum Maybe[T]:\n    Just(value: T)\n    Nothing\n"));
+
+    [Theory]
+    [InlineData("Box[int]", "GenericType(Box, [NamedType(int)])")]
+    [InlineData("Pair[str, list[int]]?", "OptionalType(GenericType(Pair, [NamedType(str), ListType(NamedType(int))]))")]
+    [InlineData("Box[Box[int?]]", "GenericType(Box, [GenericType(Box, [OptionalType(NamedType(int))])])")]
+    public void GenericTypes(string type, string expected) =>
+        Assert.Equal($"LetStmt(x, {expected}, NameExpr(y))", Snapshot($"let x: {type} = y\n"));
+
+    [Theory]
+    [InlineData("def f[T: (int, float)](x: T):\n    pass\n", "1:8 TP0100: expected ']', found ':'")]
+    [InlineData("def f[](x: int):\n    pass\n", "1:7 TP0100: expected name, found ']'")]
+    [InlineData("let b: Box[] = x\n", "1:12 TP0100: expected type, found ']'")]
+    public void TypeParamSyntaxErrors(string text, string expected) =>
+        Assert.Equal([expected], Errors(text));
+
     // ---- Features from later milestones are syntax errors ----
 
     [Theory]
-    [InlineData("def first[T](xs: list[T]) -> T?:\n    return none\n", "1:10 TP0100: expected '(', found '['")]
-    [InlineData("let b: Box[int] = x\n", "1:11 TP0100: expected '=', found '['")]
     [InlineData("let n = x as int?\n", "1:11 TP0100: expected newline, found 'as'")]
     public void LaterMilestoneSyntax(string text, string expected) =>
         Assert.Equal([expected], Errors(text));
+
 }

@@ -187,11 +187,12 @@ public sealed class Parser
         return new ConstDef(name, type, value, span);
     }
 
-    // func_def = "def" NAME "(" [ params ] ")" [ "->" type ] ":" block
+    // func_def = "def" NAME [ type_params ] "(" [ params ] ")" [ "->" type ] ":" block
     private FuncDef ParseFuncDef()
     {
         var start = Next().Span.Start;
         var name = ExpectIdentifier();
+        var typeParams = ParseTypeParams();
         Expect(TokenKind.OpenParen);
         var parameters = ParseParams();
         Expect(TokenKind.CloseParen);
@@ -205,7 +206,24 @@ public sealed class Parser
 
         Expect(TokenKind.Colon);
         var body = ParseBlock();
-        return new FuncDef(name, parameters, returnType, body, SpanFrom(start));
+        return new FuncDef(name, typeParams, parameters, returnType, body, SpanFrom(start));
+    }
+
+    // type_params = "[" NAME { "," NAME } "]"
+    private ImmutableArray<Identifier> ParseTypeParams()
+    {
+        if (!At(TokenKind.OpenBracket))
+            return [];
+        Next();
+        var names = ImmutableArray.CreateBuilder<Identifier>();
+        names.Add(ExpectIdentifier());
+        while (At(TokenKind.Comma))
+        {
+            Next();
+            names.Add(ExpectIdentifier());
+        }
+        Expect(TokenKind.CloseBracket);
+        return names.ToImmutable();
     }
 
     // params = param { "," param } [ "," ]
@@ -220,14 +238,15 @@ public sealed class Parser
         return new Param(name, type, SpanFrom(name.Span.Start));
     }
 
-    // struct_def = "struct" NAME ":" NEWLINE INDENT struct_member { struct_member } DEDENT
+    // struct_def = "struct" NAME [ type_params ] ":" NEWLINE INDENT struct_member { struct_member } DEDENT
     private StructDef ParseStructDef()
     {
         var start = Next().Span.Start;
         var name = ExpectIdentifier();
+        var typeParams = ParseTypeParams();
         Expect(TokenKind.Colon);
         var members = ParseIndentedBody(ParseStructMember);
-        return new StructDef(name, [.. members.OfType<FieldDef>()], [.. members.OfType<MethodDef>()], SpanFrom(start));
+        return new StructDef(name, typeParams, [.. members.OfType<FieldDef>()], [.. members.OfType<MethodDef>()], SpanFrom(start));
     }
 
     // struct_member = NAME ":" type NEWLINE | method_def
@@ -273,14 +292,15 @@ public sealed class Parser
         return new MethodDef(name, self, parameters, returnType, body, SpanFrom(start));
     }
 
-    // enum_def = "enum" NAME ":" NEWLINE INDENT variant { variant } DEDENT
+    // enum_def = "enum" NAME [ type_params ] ":" NEWLINE INDENT variant { variant } DEDENT
     private EnumDef ParseEnumDef()
     {
         var start = Next().Span.Start;
         var name = ExpectIdentifier();
+        var typeParams = ParseTypeParams();
         Expect(TokenKind.Colon);
         var variants = ParseIndentedBody(ParseVariant);
-        return new EnumDef(name, variants, SpanFrom(start));
+        return new EnumDef(name, typeParams, variants, SpanFrom(start));
     }
 
     // variant = NAME [ "(" named_fields ")" ] NEWLINE
@@ -668,7 +688,8 @@ public sealed class Parser
         }
     }
 
-    // base_type = "int" | "float" | "bool" | "str" | "py" | "list" "[" type "]" | "dict" "[" type "," type "]" | NAME
+    // base_type = "int" | "float" | "bool" | "str" | "py" | "list" "[" type "]" | "dict" "[" type "," type "]"
+    //           | NAME [ "[" type { "," type } "]" ]
     private TypeSyntax ParseBaseType()
     {
         var start = Current.Span.Start;
@@ -698,7 +719,18 @@ public sealed class Parser
                 return new DictType(key, value, SpanFrom(start));
             }
             default:
-                return new NamedType(name, name.Span);
+                if (!At(TokenKind.OpenBracket))
+                    return new NamedType(name, name.Span);
+                Next();
+                var arguments = ImmutableArray.CreateBuilder<TypeSyntax>();
+                arguments.Add(ParseType());
+                while (At(TokenKind.Comma))
+                {
+                    Next();
+                    arguments.Add(ParseType());
+                }
+                Expect(TokenKind.CloseBracket);
+                return new GenericType(name, arguments.ToImmutable(), SpanFrom(start));
         }
     }
 

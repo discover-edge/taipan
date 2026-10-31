@@ -1,0 +1,5 @@
+just 3 nothing just s Just(value=[1])
+Ok(value=3) Err(error="division by zero") 3 -1
+True False True False
+just a
+nothing

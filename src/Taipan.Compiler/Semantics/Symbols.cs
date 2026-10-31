@@ -29,8 +29,12 @@ public sealed class FunctionSymbol(
     ImmutableArray<VariableSymbol> parameters,
     TaipanType returnType,
     BuiltinFunction? builtin = null,
-    VariableSymbol? self = null) : Symbol(name)
+    VariableSymbol? self = null,
+    ImmutableArray<TypeParameterSymbol> typeParameters = default) : Symbol(name)
 {
+    /// <summary>A generic function's type parameters (SPEC §3.6); empty otherwise.</summary>
+    public ImmutableArray<TypeParameterSymbol> TypeParameters { get; } = typeParameters.IsDefault ? [] : typeParameters;
+
     /// <summary>For a method, its implicit <c>self</c> parameter, typed as the struct.</summary>
     public VariableSymbol? Self { get; } = self;
 
@@ -62,13 +66,17 @@ public sealed class FieldSymbol(string name, TaipanType type) : Symbol(name)
 /// A struct. It is also the struct's constructor in the value namespace (SPEC §4.6). Fields and
 /// methods are filled in after every struct name is known, since they may refer to each other.
 /// </summary>
-public sealed class StructSymbol(string name) : Symbol(name)
+public sealed class StructSymbol(string name, ImmutableArray<TypeParameterSymbol> typeParameters) : Symbol(name)
 {
+    public ImmutableArray<TypeParameterSymbol> TypeParameters { get; } = typeParameters;
+
+    /// <summary>Field and method types are written in terms of <see cref="TypeParameters"/>.</summary>
     public ImmutableArray<FieldSymbol> Fields { get; set; } = [];
 
     public Dictionary<string, FunctionSymbol> Methods { get; } = [];
 
-    public StructType Type => new(this);
+    /// <summary>The struct applied to its own type parameters: the type of <c>self</c>.</summary>
+    public StructType Type => new(this, [.. TypeParameters.Select(p => p.Type)]);
 
     public FieldSymbol? FindField(string name) => Fields.FirstOrDefault(f => f.Name == name);
 }
@@ -82,11 +90,14 @@ public enum BuiltinMethod
 }
 
 /// <summary>An enum (SPEC §4.4). Variants are filled in once every type name is known.</summary>
-public sealed class EnumSymbol(string name) : Symbol(name)
+public sealed class EnumSymbol(string name, ImmutableArray<TypeParameterSymbol> typeParameters) : Symbol(name)
 {
+    public ImmutableArray<TypeParameterSymbol> TypeParameters { get; } = typeParameters;
+
     public ImmutableArray<VariantSymbol> Variants { get; set; } = [];
 
-    public EnumType Type => new(this);
+    /// <summary>The enum applied to its own type parameters.</summary>
+    public EnumType Type => new(this, [.. TypeParameters.Select(p => p.Type)]);
 
     public VariantSymbol? FindVariant(string name) => Variants.FirstOrDefault(v => v.Name == name);
 }
@@ -103,4 +114,10 @@ public sealed class VariantSymbol(string name, EnumSymbol @enum) : Symbol(name)
 public sealed class AmbiguousVariantSymbol(string name, ImmutableArray<VariantSymbol> variants) : Symbol(name)
 {
     public ImmutableArray<VariantSymbol> Variants { get; } = variants;
+}
+
+/// <summary>A type parameter of a generic function, struct or enum (SPEC §3.6).</summary>
+public sealed class TypeParameterSymbol(string name) : Symbol(name)
+{
+    public TypeParameterType Type => new(this);
 }

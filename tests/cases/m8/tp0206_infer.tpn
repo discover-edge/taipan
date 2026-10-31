@@ -1,0 +1,11 @@
+enum Maybe[T]:
+    Just(value: T)
+    Nothing
+
+def empty[T]() -> list[T]:
+    return []
+
+print(empty())
+let m = Nothing
+print(Maybe.Nothing)
+let ok: Maybe[int] = Maybe.Nothing

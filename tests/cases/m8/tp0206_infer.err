@@ -1,0 +1,6 @@
+tests/cases/m8/tp0206_infer.tpn:8:7: error TP0206: cannot infer 'T' for 'empty'
+  help: add a type annotation
+tests/cases/m8/tp0206_infer.tpn:9:9: error TP0206: cannot infer 'T' for 'Nothing'
+  help: add a type annotation
+tests/cases/m8/tp0206_infer.tpn:10:7: error TP0206: cannot infer 'T' for 'Nothing'
+  help: add a type annotation
