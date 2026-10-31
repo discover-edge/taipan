@@ -1,0 +1,2 @@
+panic: division by zero
+  at tests/cases/m4/panic_float_div.tpn:4

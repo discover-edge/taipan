@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using Taipan.Compiler.Diagnostics;
+using Taipan.Compiler.Emit;
 using Taipan.Compiler.Lexing;
 using Taipan.Compiler.Semantics;
 using Taipan.Compiler.Syntax;
@@ -35,9 +36,9 @@ public static class Cli
         return command switch
         {
             "check" => Check(rest, stderr),
-            "emit" => Emit(rest, stderr),
-            "build" => Build(rest, stderr),
-            "run" => RunFile(rest, stderr),
+            "emit" => Emit(rest, stdout, stderr),
+            "build" => Build(rest, stdout, stderr),
+            "run" => RunFile(rest, stdout, stderr),
             _ => UsageError(stderr, $"unknown command '{command}'"),
         };
     }
@@ -46,37 +47,56 @@ public static class Cli
     {
         if (args.Length != 1)
             return UsageError(stderr, "check takes exactly one file");
-        return Compile("check", args[0], stderr);
+        return Compile(args[0], stderr, out _);
     }
 
-    private static int Emit(string[] args, TextWriter stderr)
+    private static int Emit(string[] args, TextWriter stdout, TextWriter stderr)
     {
         if (args.Length != 1)
             return UsageError(stderr, "emit takes exactly one file");
-        return NotImplemented("'emit'", stderr);
+        var exit = Compile(args[0], stderr, out var csharp);
+        if (csharp is not null)
+            stdout.Write(csharp);
+        return exit;
     }
 
-    private static int Build(string[] args, TextWriter stderr)
+    private static int Build(string[] args, TextWriter stdout, TextWriter stderr)
     {
         if (args.Length != 3 || args[1] != "-o")
             return UsageError(stderr, "build takes a file and -o <dir>");
-        return NotImplemented("'build'", stderr);
+        var exit = Compile(args[0], stderr, out var csharp);
+        if (csharp is null)
+            return exit;
+
+        var name = Path.GetFileNameWithoutExtension(args[0]);
+        var path = RoslynCompiler.Save(RoslynCompiler.Compile(csharp, name), name, args[2]);
+        stdout.WriteLine($"built {path}");
+        return ExitSuccess;
     }
 
-    private static int RunFile(string[] args, TextWriter stderr)
+    // Arguments after `--` are accepted; v0.1 programs have no way to read them.
+    private static int RunFile(string[] args, TextWriter stdout, TextWriter stderr)
     {
         if (args.Length == 0)
             return UsageError(stderr, "run takes a file");
         if (args.Length > 1 && args[1] != "--")
             return UsageError(stderr, "program arguments must follow '--'");
-        return Compile("run", args[0], stderr);
+        var exit = Compile(args[0], stderr, out var csharp);
+        if (csharp is null)
+            return exit;
+
+        var image = RoslynCompiler.Compile(csharp, Path.GetFileNameWithoutExtension(args[0]));
+        return RoslynCompiler.Run(image, stdout, stderr);
     }
 
-    // The pipeline currently ends at the type checker: `check` reports all compile errors, and
-    // `run` can only execute an empty program. Each stage runs only if the previous one reported
-    // no errors (SPEC §9). Features from later milestones stop compilation as "not implemented".
-    private static int Compile(string command, string path, TextWriter stderr)
+    /// <summary>
+    /// Runs lex → parse → bind → emit. Each stage runs only if the previous one reported no
+    /// errors (SPEC §9). Features from later milestones stop compilation as "not implemented".
+    /// <paramref name="csharp"/> is set only on success.
+    /// </summary>
+    private static int Compile(string path, TextWriter stderr, out string? csharp)
     {
+        csharp = null;
         if (!File.Exists(path))
         {
             stderr.WriteLine($"taipan: file not found: {path}");
@@ -98,10 +118,8 @@ public static class Cli
         if (Report(bound.Diagnostics, source, stderr))
             return ExitCompileError;
 
-        if (command == "check" || bound.Program.IsEmpty)
-            return ExitSuccess;
-
-        return NotImplemented($"'{command}'", stderr);
+        csharp = CSharpEmitter.Emit(source, bound.Program);
+        return ExitSuccess;
     }
 
     private static bool Report(ImmutableArray<Diagnostic> diagnostics, SourceText source, TextWriter stderr)

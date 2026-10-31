@@ -1,0 +1,7 @@
+def ratio(a: int, b: int) -> int:
+    let half = a // 2
+    return a // b
+
+print(ratio(10, 2))
+print(ratio(1, 0))
+print("unreachable")

@@ -1,0 +1,10 @@
+def check(n: int) -> str:
+    if n > 10:
+        return "big"
+    elif 10 // n > 1:
+        return "small"
+    return "other"
+
+print(check(20))
+print(check(3))
+print(check(0))
