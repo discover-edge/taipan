@@ -1,0 +1,14 @@
+def connect(host: str, port: int = 80, retries: int = 3) -> str:
+    return f"{host}:{port}/{retries}"
+
+def wrap[T](x: T, into: list[T] = []) -> list[T]:
+    into.append(x)
+    return into
+
+def main():
+    def pair(a: int, b: int = 2) -> int:
+        return a * 10 + b
+    print(connect("db"), connect(retries=1, host="x"), connect("y", 1))
+    print(pair(1), pair(b=3, a=4), wrap(1), wrap("s"))
+
+main()

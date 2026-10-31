@@ -1,0 +1,6 @@
+let limit = 10
+
+def f(n: int = limit) -> int:
+    return n
+
+print(f())

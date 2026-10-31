@@ -1,0 +1,5 @@
+def f(n: int = "ten", xs: list[str] = [1]) -> int:
+    return n
+
+def g[T](x: T, y: T = 0) -> T:
+    return y

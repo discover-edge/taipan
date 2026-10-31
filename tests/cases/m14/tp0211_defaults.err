@@ -1,0 +1,2 @@
+tests/cases/m14/tp0211_defaults.tpn:3:16: error TP0211: 'f' cannot use top-level variable 'limit'
+  help: pass it as a parameter, or make it a const

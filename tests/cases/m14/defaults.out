@@ -1,0 +1,18 @@
+db:8080 x3
+db:5432 x3
+db:8080 x5
+db:1 x3
+cache:8080 x0
+[1] [2]
+[10, 3] [10, 3]
+eval c
+eval a
+eval default b
+129
+4 4 6
+Service(name="api", replicas=6, healthy=2)
+hi ann HI hi bob ?
+hi cy .
+x:1 x2
+[1] ["a"] [1.5, 2.5]
+8 5 -4

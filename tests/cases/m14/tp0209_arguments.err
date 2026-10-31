@@ -1,0 +1,8 @@
+tests/cases/m14/tp0209_arguments.tpn:11:1: error TP0209: 'connect' takes 1 to 2 arguments, found 0
+tests/cases/m14/tp0209_arguments.tpn:12:1: error TP0209: 'connect' takes 1 to 2 arguments, found 3
+tests/cases/m14/tp0209_arguments.tpn:13:14: error TP0209: argument 'host' is given more than once
+tests/cases/m14/tp0209_arguments.tpn:14:17: error TP0209: argument 'port' is given more than once
+tests/cases/m14/tp0209_arguments.tpn:15:9: error TP0209: missing field 'y' in 'Point'
+tests/cases/m14/tp0209_arguments.tpn:15:18: error TP0209: field 'x' is given more than once
+tests/cases/m14/tp0209_arguments.tpn:17:3: error TP0209: missing argument 'dx'
+tests/cases/m14/tp0209_arguments.tpn:18:3: error TP0209: 'moved' takes 1 to 2 arguments, found 3

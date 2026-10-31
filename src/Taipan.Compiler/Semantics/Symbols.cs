@@ -47,6 +47,14 @@ public sealed class FunctionSymbol(
     /// <summary>Set for built-in functions (SPEC §6), whose calls are checked specially.</summary>
     public BuiltinFunction? Builtin { get; } = builtin;
 
+    /// <summary>
+    /// Each parameter's default value (SPEC §4.2, M14), null where there's none; empty until bound.
+    /// It's bound once, where the function is defined, and evaluated at each call that omits it.
+    /// </summary>
+    public ImmutableArray<BoundExpr?> Defaults { get; set; } = [];
+
+    public BoundExpr? DefaultFor(int parameter) => parameter < Defaults.Length ? Defaults[parameter] : null;
+
     public static ImmutableArray<FunctionSymbol> CreateBuiltins() =>
     [
         new("print", [], TaipanType.Nothing, BuiltinFunction.Print),

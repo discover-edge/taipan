@@ -80,6 +80,19 @@ public class ParserTests
             "FuncDef(f, [], [Param(a, NamedType(int))], null, Block([PassStmt]))",
             Snapshot("def f(\n    a: int,\n):\n    pass\n"));
 
+    [Fact]
+    public void FuncDefWithDefaults() =>
+        Assert.Equal(
+            "FuncDef(f, [], [Param(a, NamedType(int)), Param(b, ListType(NamedType(str)), ListExpr([])), " +
+            "Param(c, NamedType(int), BinaryExpr(IntLiteral(1), Add, IntLiteral(2)))], null, Block([PassStmt]))",
+            Snapshot("def f(a: int, b: list[str] = [], c: int = 1 + 2):\n    pass\n"));
+
+    [Theory]
+    [InlineData("def f(a: int = 1, b: int):\n    pass\n", "1:19")]
+    [InlineData("def f(a: int, b: int = 1, c: int, d: int):\n    pass\n", "1:27")]
+    public void RequiredParameterAfterDefault(string text, string position) =>
+        Assert.Equal([$"{position} TP0100: parameter without a default follows parameter with a default"], Errors(text));
+
     // ---- struct_def / struct_member ----
 
     [Fact]
@@ -535,7 +548,7 @@ public class ParserTests
     [InlineData("S(a=1, 2)\n", "1:8")]
     [InlineData("S(1, a=1, 2)\n", "1:11")]
     public void PositionalAfterKeyword(string text, string position) =>
-        Assert.Equal([$"{position} TP0100: cannot mix positional and keyword arguments"], Errors(text));
+        Assert.Equal([$"{position} TP0100: positional argument follows keyword argument"], Errors(text));
 
     [Fact]
     public void KeywordAfterPositionalParses() =>

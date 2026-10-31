@@ -85,7 +85,7 @@ const_def     = "const" NAME [ ":" type ] "=" expr NEWLINE ;
 
 func_def      = "def" NAME [ type_params ] "(" [ params ] ")" [ "->" type ] ":" block ;
 params        = param { "," param } [ "," ] ;
-param         = NAME ":" type ;
+param         = NAME ":" type [ "=" expr ] ;                         (* default: M14, §4.2 *)
 type_params   = "[" type_param { "," type_param } "]" ;             (* M8, §3.6 *)
 type_param    = NAME [ ":" "(" type { "," type } [ "," ] ")" ] ;   (* constraints: M8.1; fewer than two types is TP0220 *)
 
@@ -158,7 +158,8 @@ atom          = INT | FLOAT | STRING | FSTRING | "True" | "False" | "None"
 **Grammar notes**
 - `a < b < c` is `TP0212`. Write `a < b and b < c`.
 - An `arm` may take a simple statement on the same line (`Ok: print("ok")`) or an indented block.
-- Keyword arguments are allowed only in struct and enum-variant constructors (§4.3), in calls to `py` values (§10.2), and for the keyword-only parameters `key` and `reverse` of `sorted` and `list.sort` (M11, §6). Within one call, arguments are either all positional or all keyword. Mixing them is `TP0100`. The exceptions are `py` calls and `sorted`/`sort`, where keyword arguments may follow positional ones, as in Python. A positional argument after a keyword argument is always `TP0100`.
+- Keyword arguments are allowed in calls to functions and methods (M14, §4.2), struct and enum-variant constructors (§4.3), `py` values (§10.2), and the keyword parameters of built-ins (`key` and `reverse` of `sorted` and `list.sort`, `start` of `enumerate`; §6). Keyword arguments may follow positional ones, as in Python. A positional argument after a keyword argument is `TP0100`.
+- In a parameter list, a parameter without a default after one with a default is `TP0100`, as in Python.
 - A `def` at the top level is a `top_item`, a hoisted global function. A `def` inside a block is a nested function (§3.7).
 - An `expr_list` of two or more expressions is a tuple, as if parenthesized (§3.8): `return lo, hi`, `let p = 1, 2`, `a, b = b, a`. An expression statement can't be a bare tuple: `a, b` alone is `TP0100`.
 - In a cast (`x as T`), a `??` after the type is the coalescing operator, so `x as int? ?? 0` is `(x as int?) ?? 0`.
@@ -170,7 +171,7 @@ atom          = INT | FLOAT | STRING | FSTRING | "True" | "False" | "None"
   - **X** is a token, or one of the categories `expression`, `type`, `statement`, `pattern`, `indented block`.
   - **Y** describes the token found: a keyword or punctuation token in quotes (`':'`, `'else'`), `name 'x'`, `integer`, `float`, `string`, `f-string`, `newline`, `indent`, `dedent`, or `end of file`.
   - The error points at the start of the token found.
-  - Specific messages: `cannot assign to this expression` (an `assign_stmt` target that isn't a `target`), and `cannot mix positional and keyword arguments`.
+  - Specific messages: `cannot assign to this expression` (an `assign_stmt` target that isn't a `target`), `positional argument follows keyword argument`, and `parameter without a default follows parameter with a default` (M14).
 - A chained comparison is reported by the parser as `TP0212`, with message `chained comparison not supported` and help `write 'a < b and b < c'`. Parsing continues normally.
 - **Recovery:** after a `TP0100`, the parser skips tokens up to and including the next `NEWLINE` at the current block depth. If the next line is indented further (an `INDENT` follows), that whole block is skipped as well. A `DEDENT` that closes the current block stops the skip without being consumed. Parsing then resumes at the next statement. So each statement reports at most one `TP0100`, and independent errors on separate statements are all reported.
 
@@ -282,7 +283,7 @@ There are no other implicit conversions. Explicit conversions use the built-ins 
   - a nested `def`
   - a `lambda`
   - Generic functions, built-in functions, methods, struct constructors and enum variants aren't values (`TP0200`, §9.1). Wrap them in a lambda instead: `lambda s: s.total()`.
-- **Calls:** any expression of function type can be called: `f(x)`, `handlers[0](req)`, or `s.on_done()` for a field. Arguments are positional only (`TP0218`), and are checked against the parameter types. A wrong count is `TP0209`. Calling a `T?` is `TP0203`.
+- **Calls:** any expression of function type can be called: `f(x)`, `handlers[0](req)`, or `s.on_done()` for a field. Arguments are positional only (`TP0218`), since a function type has no parameter names or defaults, as in Python's typing. They're checked against the parameter types. A wrong count is `TP0209`. Calling a `T?` is `TP0203`.
 - **Lambdas:** `lambda x, y: x + y`. The body is a single expression, whose value is the result.
   - Parameters take no annotations. Their types come from the expected type (§4.6), which must be a function type with as many parameters as the lambda has (`TP0209` otherwise).
   - The body is checked against the expected result type. When the result is `None`, the body is checked as an expression statement, and its value is discarded.
@@ -352,12 +353,26 @@ There are no other implicit conversions. Explicit conversions use the built-ins 
 ### 4.2 Functions
 - `def` declares a function. Recursion and mutual recursion are allowed, since functions are hoisted. A `def` inside a block is a nested function, which isn't hoisted (§3.7).
 - Every path in a function with a declared return type must `return` a value (`TP0208`).
-- Arguments are positional only. A wrong count is `TP0209`.
 - Overloading isn't supported. A duplicate name is `TP0214`.
+- **Default values (M14):** `def connect(host: str, port: int = 8080) -> str:`. A parameter with a default may be left out of a call.
+  - Parameters with defaults come after those without (`TP0100`, §2).
+  - The default is checked against the parameter's type as its expected type (§4.6), so `xs: list[int] = []` is valid.
+  - It may use any name visible where the function is defined: constants, functions, built-ins, and, for a nested `def` (§3.7), the bindings it can capture. It can't use the function's parameters (`TP0201`), as in Python. A top-level function's default can't use top-level variables (`TP0211`).
+  - **A default is evaluated on each call that leaves it out**, after the call's own arguments. This differs from Python, which evaluates a default once, when the function is defined, so a mutable default such as `[]` would be shared between calls. In Taipan, every call that omits `xs` gets a new list.
+  - In a generic function, a default is checked once, with every type parameter opaque, even a constrained one (§3.6). It doesn't take part in inference.
+  - A panic while evaluating a default reports the default's line (§7).
+  - Methods' parameters may have defaults too (§4.6). Lambdas' parameters can't.
+- **Arguments (M14)** are matched as in Python:
+  - Positional arguments fill parameters from the left. Then each keyword argument fills the parameter of that name. Any parameter still unfilled takes its default.
+  - Too many positional arguments is `TP0209` (`'<f>' takes <n> arguments, found <m>`, or `<a> to <b> arguments` when some have defaults). So are too few, in a call with only positional arguments.
+  - Otherwise, a parameter without a default that's left unfilled is `TP0209` (`missing argument '<x>'`), unless the call also has an unknown keyword. One filled twice, by position and by keyword or by two keywords, is `TP0209` (`argument '<x>' is given more than once`).
+  - A keyword that isn't a parameter name is `TP0218` (`'<f>' has no parameter '<k>'`).
+  - Arguments are evaluated in source order, then the missing defaults in parameter order.
+  - The same rules apply to functions, nested `def`s and methods. A function used as a value (§3.7) loses its parameter names and defaults: its type lists every parameter, and calls through it pass them all, positionally.
 
 ### 4.3 Structs
 - A struct is a named record with typed fields and, from M5, methods.
-- **Construction:** `Service("api", 3, 3)` or `Service(name="api", replicas=3, healthy=3)`. With keyword form, every field must be given exactly once.
+- **Construction:** `Service("api", 3, 3)`, `Service(name="api", replicas=3, healthy=3)`, or a mix of the two (M14): `Service("api", healthy=3, replicas=3)`. Every field must be given exactly once.
 - Fields are mutable through any binding: `s.healthy = 2` is valid even when `s` is a `let`. `let` fixes the binding, not the object.
 - Structs are reference types with structural equality (`==` compares fields).
 - **Methods** take an explicit `self` as the first parameter, typed implicitly as the enclosing struct. They're called as `s.method(args)`.
@@ -390,7 +405,7 @@ There are no other implicit conversions. Explicit conversions use the built-ins 
 - **Assignment** to anything other than a `var` (a `let`, a parameter, a loop variable, a constant or a function) is `TP0202`. Compound assignment `x op= e` is checked as `x = x op e`, so `var n = 1` then `n /= 2` is `TP0200`.
 - **Use before declaration:** a local or top-level binding referenced before its `let`/`var` is `TP0201`.
 - **Functions as values** follow §3.7 (M11). Calling something that isn't a function is `TP0200`.
-- **Keyword arguments** in a call to anything other than a struct or variant constructor, a `py` value, or `sorted`/`sort` (§6) are `TP0218`. So is a keyword that `sorted` or `sort` doesn't take.
+- **Keyword arguments** in a call to a function value (§3.7) or to a built-in without keyword parameters (§6) are `TP0218`. So is a keyword that a function, method or built-in doesn't take.
 - **Return values:**
   - `return` with a value in a function without a return type, or `return` without one in a function with a return type, is `TP0200`.
   - Using a call to a function without a return type as a value is `TP0200`.
@@ -404,8 +419,8 @@ There are no other implicit conversions. Explicit conversions use the built-ins 
 - **Struct names** live in the type namespace and also in the global value scope, as the struct's constructor. So a struct can't share a name with a function, constant or built-in (`TP0214`), and a local can't take its name (`TP0207`). A struct named `int`, `float`, `bool`, `str`, `list`, `dict`, `py`, `Callable` or `tuple` is also `TP0214`.
 - **Members:** field and method names within one struct must be distinct (`TP0214`). Field types may name any struct, including the struct itself, for example through `list[Node]`.
 - **Construction:**
-  - The positional form takes exactly one argument per field, in declaration order (`TP0209`).
-  - The keyword form must name every field exactly once. A missing or repeated field is `TP0209`, and an unknown name is `TP0210`.
+  - Arguments are matched to fields as to parameters (§4.2): positional ones in declaration order, then keyword ones by name. Fields have no defaults.
+  - Too many positional arguments, or a missing or repeated field, is `TP0209`. An unknown name is `TP0210`.
   - Arguments are evaluated in source order.
 - **Methods** are hoisted with their struct. Inside a method, `self` is an immutable parameter (`TP0202` to reassign), and other methods are reached as `self.m()`. A bare `m()` refers to a global function. `self` outside a method is `TP0201`.
 - **Member access:**
@@ -596,6 +611,7 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 | program | `public static class TaipanProgram { ...constants... static void TopLevel() { ...constant initializers, then top-level stmts... } ...functions... }`, plus `public static class TaipanEntry { static int Main() => Taipan.Runtime.Panic.Run(TaipanProgram.TopLevel); }`. `Panic.Run` turns panics into the §7 output and the exit code. A generated name that clashes with a user name gets a numeric suffix. |
 | identifiers | always verbatim-escaped (`@name`) to avoid C# keyword collisions |
 | `def f(a: int) -> str` | `public static string @f(long @a)` |
+| default values | Each default of a top-level function or method is a static helper method next to it (`connect_port()`, or `scale_by_default()` in a struct's class), called by each call that leaves the parameter out, so every call evaluates its own (M14). A nested `def`'s default is emitted inline at each such call. Arguments are passed positionally while each is its own parameter, then by name (`arg1`, `arg2`, … for a nested `def`'s delegate), which C# evaluates in source order. The C# methods have no optional parameters. |
 | `struct S` | `public sealed class S : Taipan.Runtime.IStruct`, with a mutable `{ get; set; }` property per field, a positional constructor, methods as instance methods (`self` is `this`), and `ToString` overridden to the display form. Not a C# record: Taipan equality is deep (lists inside structs compare by contents), so `==` on structs, lists and dicts calls `Taipan.Runtime.Equality.Equal` rather than C# `Equals`. |
 | `enum E` | `public abstract record E` with a private constructor; each variant is `public sealed record V(...) : E` nested inside |
 | `T?` | `T?` |
@@ -669,7 +685,7 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 | TP0215 | `break`/`continue` outside loop, or `return` outside function |
 | TP0216 | ambiguous enum variant; qualify it |
 | TP0217 | `const` initializer is not a constant expression |
-| TP0218 | keyword arguments outside a constructor |
+| TP0218 | keyword argument not accepted |
 | TP0219 | generic instantiation too deep (polymorphic recursion) |
 | TP0220 | invalid type parameter constraint |
 | TP0221 | module not found |
@@ -712,7 +728,7 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0209 | `'<S>' takes <n> type arguments, found <m>` (`type argument` when n is 1) |
 | TP0209 | `'<v>' has <n> fields, found <m> bindings` (variant patterns; `field` / `binding` when the count is 1) |
 | TP0209 | `<T> has <n> elements, found <m> names` (unpacking) / `a tuple needs at least two elements` (M12) |
-| TP0209 | `'<f>' takes <n> arguments, found <m>` (`argument` when n is 1; `1 or 2 arguments` for `range`; `function takes …` when the callee isn't a name) / `missing field '<f>' in '<S>'` / `field '<f>' is given more than once` / `argument '<k>' is given more than once` |
+| TP0209 | `'<f>' takes <n> arguments, found <m>` (`argument` when n is 1; `1 or 2 arguments` for `range`; `<a> to <b> arguments` for a function with defaults, M14; `function takes …` when the callee isn't a name) / `missing argument '<x>'` (M14) / `missing field '<f>' in '<S>'` / `field '<f>' is given more than once` / `argument '<k>' is given more than once` |
 | TP0209 | `expected a lambda with <n> parameters, found <m>` (`parameter` when n is 1) / `'Callable' takes a parameter list and a result type` |
 | TP0210 | `<T> has no field '<x>'` / `<T> has no method '<x>'` / `<E> has no variant '<x>'` |
 | TP0211 | `'<f>' cannot use top-level variable '<x>'`, with help `pass it as a parameter, or make it a const` |
@@ -721,7 +737,7 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0215 | `'break' outside a loop` / `'continue' outside a loop` / `'return' outside a function` |
 | TP0216 | `'<v>' is ambiguous: it is a variant of <E1> and <E2>`, with help `qualify it, e.g. '<E1>.<v>'` |
 | TP0217 | `const initializer must be a constant expression` |
-| TP0218 | `keyword arguments are only allowed in constructors` / `'<f>' has no keyword argument '<k>'` (`sorted`, `sort`) |
+| TP0218 | `'<f>' takes no keyword arguments` (a built-in) / `a function value takes no keyword arguments` / `'<f>' has no parameter '<k>'` (M14; also for `sorted`, `sort` and `enumerate`) |
 | TP0219 | `instantiating '<f>' needs '<f>[<T>]', which is too deep`, at the call that starts the chain |
 | TP0221 | `module '<m>' not found`, with help `looked for <path>` / `'python' is not a module`, with help `use 'from python import <module>'` |
 | TP0222 | `only the main file can have top-level statements` |
@@ -799,6 +815,7 @@ Types are written as in source: `int`, `str?`, `list[int]`. The type of `None` i
 - slice assignment and `del`
 - `zip` of more than two lists
 - `match` as an expression
+- keyword-only (`*`) and positional-only (`/`) parameters, `*args` and `**kwargs`, and defaults on lambda parameters
 - flow-sensitive narrowing after early return
 - exceptions and `try`
 - format specs in f-strings

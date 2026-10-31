@@ -10,7 +10,7 @@ enum Health:
     Degraded(healthy: int, total: int,)
     Down
 
-def classify(code: int, label: str?) -> str:
+def classify(code: int, label: str? = None) -> str:
     match code:
         0: return "zero"
         -1: return "minus one"

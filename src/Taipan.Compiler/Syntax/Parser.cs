@@ -289,15 +289,30 @@ public sealed class Parser
     }
 
     // params = param { "," param } [ "," ]
-    private ImmutableArray<Param> ParseParams() => ParseCommaList(TokenKind.CloseParen, ParseParam);
+    private ImmutableArray<Param> ParseParams()
+    {
+        var parameters = ParseCommaList(TokenKind.CloseParen, ParseParam);
 
-    // param = NAME ":" type
+        // As in Python, a parameter without a default can't follow one with a default (SPEC §2).
+        var firstDefault = parameters.IndexOf(parameters.FirstOrDefault(p => p.Default is not null)!);
+        if (firstDefault >= 0 && parameters.Skip(firstDefault).FirstOrDefault(p => p.Default is null) is { } required)
+            ReportSyntaxError(bag => bag.ReportRequiredAfterDefault(required.Span));
+        return parameters;
+    }
+
+    // param = NAME ":" type [ "=" expr ]
     private Param ParseParam()
     {
         var name = ExpectIdentifier();
         Expect(TokenKind.Colon);
         var type = ParseType();
-        return new Param(name, type, SpanFrom(name.Span.Start));
+        Expr? defaultValue = null;
+        if (At(TokenKind.Equals))
+        {
+            Next();
+            defaultValue = ParseExpr();
+        }
+        return new Param(name, type, defaultValue, SpanFrom(name.Span.Start));
     }
 
     // struct_def = "struct" NAME [ type_params ] ":" NEWLINE INDENT struct_member { struct_member } DEDENT
@@ -1138,8 +1153,7 @@ public sealed class Parser
         var arguments = ParseCommaList(TokenKind.CloseParen, ParseArg);
         Expect(TokenKind.CloseParen);
 
-        // A positional argument after a keyword argument is never valid. Positional then keyword
-        // is valid only in calls to py values, which the binder checks (SPEC §2, §10.2).
+        // A positional argument after a keyword argument is never valid (SPEC §2).
         var firstKeyword = arguments.IndexOf(arguments.FirstOrDefault(a => a.Name is not null)!);
         if (firstKeyword >= 0 && arguments.Skip(firstKeyword).FirstOrDefault(a => a.Name is null) is { } positional)
             ReportSyntaxError(bag => bag.ReportMixedArguments(positional.Span));

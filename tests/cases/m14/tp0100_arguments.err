@@ -1,0 +1,2 @@
+tests/cases/m14/tp0100_arguments.tpn:1:19: error TP0100: parameter without a default follows parameter with a default
+tests/cases/m14/tp0100_arguments.tpn:4:14: error TP0100: positional argument follows keyword argument

@@ -67,7 +67,10 @@ public sealed class DiagnosticBag
         Add("TP0100", span, "cannot assign to this expression");
 
     public void ReportMixedArguments(TextSpan span) =>
-        Add("TP0100", span, "cannot mix positional and keyword arguments");
+        Add("TP0100", span, "positional argument follows keyword argument");
+
+    public void ReportRequiredAfterDefault(TextSpan span) =>
+        Add("TP0100", span, "parameter without a default follows parameter with a default");
 
     public void ReportChainedComparison(TextSpan span) =>
         Add("TP0212", span, "chained comparison not supported", "write 'a < b and b < c'");
@@ -126,7 +129,10 @@ public sealed class DiagnosticBag
         Add("TP0209", span, "'Callable' takes a parameter list and a result type");
 
     public void ReportNoKeywordArgument(TextSpan span, string function, string name) =>
-        Add("TP0218", span, $"'{function}' has no keyword argument '{name}'");
+        Add("TP0218", span, $"'{function}' has no parameter '{name}'");
+
+    public void ReportMissingArgument(TextSpan span, string name) =>
+        Add("TP0209", span, $"missing argument '{name}'");
 
     public void ReportTupleTooShort(TextSpan span) =>
         Add("TP0209", span, "a tuple needs at least two elements");
@@ -337,8 +343,9 @@ public sealed class DiagnosticBag
     public void ReportNotConstant(TextSpan span) =>
         Add("TP0217", span, "const initializer must be a constant expression");
 
-    public void ReportKeywordArguments(TextSpan span) =>
-        Add("TP0218", span, "keyword arguments are only allowed in constructors");
+    /// <summary>A keyword argument to a built-in, or (with no name) to a function value.</summary>
+    public void ReportKeywordArguments(TextSpan span, string? function) =>
+        Add("TP0218", span, function is null ? "a function value takes no keyword arguments" : $"'{function}' takes no keyword arguments");
 
     public void AddRange(IEnumerable<Diagnostic> diagnostics) => _items.AddRange(diagnostics);
 

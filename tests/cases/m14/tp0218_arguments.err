@@ -1,0 +1,6 @@
+tests/cases/m14/tp0218_arguments.tpn:4:3: error TP0218: 'f' has no parameter 'b'
+tests/cases/m14/tp0218_arguments.tpn:5:6: error TP0218: 'f' has no parameter 'prt'
+tests/cases/m14/tp0218_arguments.tpn:7:3: error TP0218: a function value takes no keyword arguments
+tests/cases/m14/tp0218_arguments.tpn:8:11: error TP0218: 'len' takes no keyword arguments
+tests/cases/m14/tp0218_arguments.tpn:10:11: error TP0218: 'append' takes no keyword arguments
+tests/cases/m14/tp0218_arguments.tpn:11:18: error TP0218: 'sorted' has no parameter 'cmp'

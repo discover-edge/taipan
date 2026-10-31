@@ -67,6 +67,9 @@ public sealed class CSharpEmitter
     // Top-level functions used as values: each has one cached Function object, in a static field (SPEC §8).
     private readonly Dictionary<FunctionSymbol, (string Field, FunctionType Type)> _functionValues = [];
 
+    // The helper method that evaluates each default of a top-level function (or instance), by C# name and parameter.
+    private readonly Dictionary<(string Function, int Parameter), string> _defaultNames = [];
+
     /// <summary>A generic definition to emit with concrete type arguments.</summary>
     private sealed record Instance(Symbol Definition, ImmutableArray<TaipanType> TypeArguments, string Name, int Depth, TextSpan RootSpan, SourceText RootSource);
 
@@ -338,8 +341,47 @@ public sealed class CSharpEmitter
         HiddenDirective();
         _indent--;
         Line("}");
+
+        for (var i = 0; i < symbol.Parameters.Length; i++)
+        {
+            if (symbol.DefaultFor(i) is { } value)
+                EmitDefault(value, symbol.Parameters[i].Type, isMethod ? MethodDefaultName(symbol, i) : DefaultName(name ?? symbol.Name, symbol, i));
+        }
         _self = null;
     }
+
+    // A default is a static helper next to its function, called by each call that leaves it out,
+    // so it's evaluated every time, in the scope where it was defined (SPEC §4.2, §8). In a
+    // method's class, _self stays set so that globals are qualified; a default can't use self.
+    private void EmitDefault(BoundExpr value, TaipanType type, string name)
+    {
+        _locals = LocalNames.For([], new BoundBlock([new BoundExprStmt(value, value.Span)], value.Span), _globalNames);
+        Line();
+        Line($"public static {TypeName(type)} @{name}()");
+        Line("{");
+        _indent++;
+        LineDirective(value.Span);
+        Line($"return {Expr(value)};");
+        HiddenDirective();
+        _indent--;
+        Line("}");
+    }
+
+    /// <summary>The helper for a top-level function's default, by the function's C# name.</summary>
+    private string DefaultName(string function, FunctionSymbol symbol, int parameter)
+    {
+        if (!_defaultNames.TryGetValue((function, parameter), out var name))
+        {
+            name = UniqueGlobal($"{function}_{symbol.Parameters[parameter].Name}");
+            _globalNames.Add(name);
+            _defaultNames[(function, parameter)] = name;
+        }
+        return name;
+    }
+
+    // Inside the struct's class, beside its methods and fields.
+    private static string MethodDefaultName(FunctionSymbol method, int parameter) =>
+        $"{method.Name}_{method.Parameters[parameter].Name}_default";
 
     // A struct is a class with mutable properties, a positional constructor and its methods (SPEC §8).
     private void EmitStruct(BoundStruct structDef, string className)
@@ -742,7 +784,8 @@ public sealed class CSharpEmitter
             BoundConstructVariant construct => ConstructVariant(construct),
             BoundFieldAccess access => $"{Operand(access.Target)}.@{FieldName(ClassName(access.Target.Type), access.Field)}",
             BoundIndex index => $"{Runtime}.Ops.Index({Expr(index.Target)}, {Expr(index.Index)})",
-            BoundMethodCall call => $"{Operand(call.Target)}.@{call.Method.Name}({Arguments(call.Arguments)})",
+            BoundMethodCall call => $"{Operand(call.Target)}.@{call.Method.Name}({ShapedArguments(call.Arguments, call.Shape,
+                p => $"@{call.Method.Parameters[p].Name}", p => $"{TypeName(call.Target.Type)}.@{MethodDefaultName(call.Method, p)}()")})",
             BoundBuiltinMethodCall call => BuiltinMethodCall(call),
             BoundNone => "null",
             BoundPyGetAttr get => $"{Interop}.GetAttr({Expr(get.Target)}, \"{get.Name}\")",
@@ -754,7 +797,8 @@ public sealed class CSharpEmitter
             BoundIsNone isNone => $"{Operand(isNone.Operand)} is null",
             BoundLambda lambda => Lambda(lambda),
             BoundFunctionValue value => FunctionValue(value),
-            BoundInvoke invoke => $"{Operand(invoke.Callee)}.Invoke({Arguments(invoke.Arguments)})",
+            BoundInvoke invoke => $"{Operand(invoke.Callee)}.Invoke({ShapedArguments(invoke.Arguments, invoke.Shape,
+                p => $"arg{p + 1}", p => Expr(invoke.Function!.Defaults[p]!))})",
             BoundSort sort => Sort(sort),
             BoundTupleLiteral tuple => NewTuple(((TupleOfType)Concrete(tuple.Type)).Elements, [.. tuple.Elements.Select(Expr)]),
             BoundTupleElement element => $"{Operand(element.Tuple)}.Item{element.Index + 1}",
@@ -766,10 +810,30 @@ public sealed class CSharpEmitter
     /// <summary>A function or constant: unqualified in the program class, qualified from a struct's methods.</summary>
     private string Global(string name) => _self is null ? $"@{name}" : $"global::{_programClass}.@{name}";
 
-    private string FunctionReference(BoundCall call) =>
-        call.TypeArguments.IsEmpty
-            ? Global(_names[call.Function])
-            : Global(InstanceName(call.Function, [.. call.TypeArguments.Select(Concrete)]));
+    private string FunctionReference(BoundCall call) => Global(FunctionName(call));
+
+    private string FunctionName(BoundCall call) =>
+        call.TypeArguments.IsEmpty ? _names[call.Function] : InstanceName(call.Function, [.. call.TypeArguments.Select(Concrete)]);
+
+    /// <summary>
+    /// A call's arguments (SPEC §4.2): positional while each is its own parameter, then named, so
+    /// they still evaluate in source order; then each missing parameter's <paramref name="default"/>.
+    /// <paramref name="parameterName"/> gives the C# name to pass a parameter by.
+    /// </summary>
+    private string ShapedArguments(
+        ImmutableArray<BoundExpr> arguments, ArgumentShape? shape, Func<int, string> parameterName, Func<int, string> @default)
+    {
+        if (shape is null)
+            return Arguments(arguments);
+        IEnumerable<(int Parameter, string Value)> all =
+            [.. arguments.Select((a, i) => (shape.Parameters[i], Expr(a))), .. shape.Missing.Select(p => (p, @default(p)))];
+        var positional = true;
+        return string.Join(", ", all.Select((a, i) =>
+        {
+            positional = positional && a.Parameter == i;
+            return positional ? a.Value : $"{parameterName(a.Parameter)}: {a.Value}";
+        }));
+    }
 
     private string Arguments(IEnumerable<BoundExpr> arguments) => string.Join(", ", arguments.Select(Expr));
 
@@ -870,6 +934,8 @@ public sealed class CSharpEmitter
         var argumentType = call.Arguments.IsEmpty ? TaipanType.Error : Concrete(call.Arguments[0].Type);
         return call.Function.Builtin switch
         {
+            null when call.Shape is not null => $"{FunctionReference(call)}({ShapedArguments(call.Arguments, call.Shape,
+                p => $"@{call.Function.Parameters[p].Name}", p => $"{Global(DefaultName(FunctionName(call), call.Function, p))}()")})",
             null => $"{FunctionReference(call)}({arguments})",
             BuiltinFunction.Print => $"{Runtime}.Builtins.Print({arguments})",
             BuiltinFunction.Len when argumentType == TaipanType.Py => $"{Interop}.Len({arguments})",

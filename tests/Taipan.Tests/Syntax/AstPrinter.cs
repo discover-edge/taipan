@@ -20,6 +20,7 @@ public static class AstPrinter
         Identifier id => id.Text,
         NameExpr name => $"NameExpr({name.Name})",
         TypeParam { Constraints.IsEmpty: true } parameter => parameter.Name.Text,
+        Param { Default: null } parameter => $"Param({parameter.Name.Text}, {Print(parameter.Type)})",
         bool b => b ? "True" : "False",
         BigInteger i => i.ToString(CultureInfo.InvariantCulture),
         double d => d.ToString("R", CultureInfo.InvariantCulture),

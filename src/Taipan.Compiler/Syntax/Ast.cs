@@ -31,7 +31,8 @@ public sealed record ImportName(Identifier Name, Identifier? Alias, TextSpan Spa
 public sealed record FuncDef(Identifier Name, ImmutableArray<TypeParam> TypeParams, ImmutableArray<Param> Params, TypeSyntax? ReturnType, Block Body, TextSpan Span)
     : TopItem(Span);
 
-public sealed record Param(Identifier Name, TypeSyntax Type, TextSpan Span) : Node(Span);
+/// <summary>A parameter; <see cref="Default"/> is its default value, if any (SPEC §4.2, M14).</summary>
+public sealed record Param(Identifier Name, TypeSyntax Type, Expr? Default, TextSpan Span) : Node(Span);
 
 public sealed record StructDef(Identifier Name, ImmutableArray<TypeParam> TypeParams, ImmutableArray<FieldDef> Fields, ImmutableArray<MethodDef> Methods, TextSpan Span)
     : TopItem(Span);

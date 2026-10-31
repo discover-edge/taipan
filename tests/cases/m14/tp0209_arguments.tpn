@@ -1,0 +1,18 @@
+def connect(host: str, port: int = 80) -> str:
+    return host
+
+struct Point:
+    x: int
+    y: int
+
+    def moved(self, dx: int, dy: int = 0) -> Point:
+        return Point(self.x + dx, self.y + dy)
+
+connect()
+connect("a", 1, 2)
+connect("a", host="b")
+connect(port=1, port=2, host="x")
+let p = Point(1, x=2)
+let q = Point(1, 2)
+q.moved(dy=1)
+q.moved(1, 2, 3)

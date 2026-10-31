@@ -21,6 +21,8 @@ public static class BoundTree
         BoundForEach forEach => [forEach.Iterable],
         BoundMatch match => [match.Scrutinee],
         BoundUnpack unpack => [unpack.Value, .. unpack.Stores.SelectMany(Expressions)],
+        // A nested def's defaults are emitted at its calls, in the same method (SPEC §8).
+        BoundLocalFunction function => function.Function.Defaults.OfType<BoundExpr>(),
         _ => [],
     };
 
