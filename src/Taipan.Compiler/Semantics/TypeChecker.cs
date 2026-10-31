@@ -5,12 +5,28 @@ namespace Taipan.Compiler.Semantics;
 /// <summary>Assignability (SPEC §3.3), operator typing (§5.3) and return-path analysis (§4.5).</summary>
 public static class TypeChecker
 {
+    /// <summary>SPEC §3.3: equal; int to float; S or none to an optional of something S is assignable to.</summary>
     public static bool IsAssignable(TaipanType from, TaipanType to) =>
-        from.ContainsError || to.ContainsError || from == to || (from == TaipanType.Int && to == TaipanType.Float);
+        from.ContainsError || to.ContainsError || from == to
+        || (from == TaipanType.Int && to == TaipanType.Float)
+        || (to is OptionalOf optional && (from is NoneType || (from is not OptionalOf && IsAssignable(from, optional.Inner))));
 
-    /// <summary>Whether <c>==</c> may compare the two types: equal, or both numeric.</summary>
-    public static bool AreComparable(TaipanType left, TaipanType right) =>
-        left.ContainsError || right.ContainsError || left == right || (left.IsNumeric && right.IsNumeric);
+    /// <summary>
+    /// Whether <c>==</c> may compare the two types: equal, or both numeric. A <c>T?</c> may also be
+    /// compared with a <c>T</c> or with <c>none</c> (SPEC §3.4).
+    /// </summary>
+    public static bool AreComparable(TaipanType left, TaipanType right)
+    {
+        if (left.ContainsError || right.ContainsError || left == right || (left.IsNumeric && right.IsNumeric))
+            return true;
+        if (left is not OptionalOf && right is not OptionalOf)
+            return false;
+        if (left is NoneType || right is NoneType)
+            return true;
+        return AreComparable(Unwrap(left), Unwrap(right));
+    }
+
+    public static TaipanType Unwrap(TaipanType type) => type is OptionalOf optional ? optional.Inner : type;
 
     /// <summary>Result of an arithmetic operator, or null if it doesn't apply to these operands.</summary>
     public static TaipanType? Arithmetic(BinaryOp op, TaipanType left, TaipanType right)

@@ -1,3 +1,6 @@
+using System.Globalization;
+using System.Text.RegularExpressions;
+
 namespace Taipan.Runtime;
 
 /// <summary>Operators whose semantics differ from C#'s (SPEC §5.3).</summary>
@@ -122,11 +125,54 @@ public static class Ops
         list.Insert((int)position, value);
     }
 
+    /// <summary><c>d.get(k)</c> for value-type values (int, float, bool): <c>none</c> if missing.</summary>
+    public static TValue? Get<TKey, TValue>(OrderedDictionary<TKey, TValue> dict, TKey key)
+        where TKey : notnull where TValue : struct =>
+        dict.TryGetValue(key, out var value) ? value : null;
+
+    /// <summary><c>d.get(k)</c> for reference-type values: <c>none</c> if missing.</summary>
+    public static TValue? GetOrNull<TKey, TValue>(OrderedDictionary<TKey, TValue> dict, TKey key)
+        where TKey : notnull where TValue : class =>
+        dict.TryGetValue(key, out var value) ? value : null;
+
     public static List<TKey> Keys<TKey, TValue>(OrderedDictionary<TKey, TValue> dict) where TKey : notnull => [.. dict.Keys];
 
     public static List<TValue> Values<TKey, TValue>(OrderedDictionary<TKey, TValue> dict) where TKey : notnull => [.. dict.Values];
 
     // ---- Strings (SPEC §6) ----
+
+    private static readonly Regex IntText = new(@"^[+-]?[0-9](_?[0-9])*$", RegexOptions.CultureInvariant);
+
+    private static readonly Regex FloatText = new(
+        @"^[+-]?(([0-9](_?[0-9])*(\.([0-9](_?[0-9])*)?)?|\.[0-9](_?[0-9])*)([eE][+-]?[0-9](_?[0-9])*)?|inf|infinity|nan)$",
+        RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+
+    /// <summary><c>int(s)</c>: <c>none</c> unless <paramref name="text"/> is a decimal int in range.</summary>
+    public static long? ParseInt(string text)
+    {
+        var trimmed = text.Trim();
+        if (!IntText.IsMatch(trimmed))
+            return null;
+        return long.TryParse(trimmed.Replace("_", ""), NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var value)
+            ? value
+            : null;
+    }
+
+    /// <summary><c>float(s)</c>: <c>none</c> unless <paramref name="text"/> is a decimal float, inf or nan.</summary>
+    public static double? ParseFloat(string text)
+    {
+        var trimmed = text.Trim();
+        if (!FloatText.IsMatch(trimmed))
+            return null;
+        var clean = trimmed.Replace("_", "").ToLowerInvariant();
+        var negative = clean.StartsWith('-');
+        return clean.TrimStart('+', '-') switch
+        {
+            "inf" or "infinity" => negative ? double.NegativeInfinity : double.PositiveInfinity,
+            "nan" => double.NaN,
+            _ => double.Parse(clean, NumberStyles.Float, CultureInfo.InvariantCulture),
+        };
+    }
 
     public static List<string> Split(string value, string separator)
     {

@@ -14,6 +14,9 @@ public abstract record TaipanType
     /// <summary>The type of an expression that already has an error; compatible with everything.</summary>
     public static readonly TaipanType Error = new ErrorType();
 
+    /// <summary>The type of <c>none</c>, assignable to every optional (SPEC §3.4).</summary>
+    public static readonly TaipanType None = new NoneType();
+
     public bool IsError => this is ErrorType;
 
     /// <summary>True for the error type or a collection type built from it, like <c>list[?]</c>.</summary>
@@ -22,6 +25,7 @@ public abstract record TaipanType
         ErrorType => true,
         ListOfType list => list.Element.ContainsError,
         DictOfType dict => dict.Key.ContainsError || dict.Value.ContainsError,
+        OptionalOf optional => optional.Inner.ContainsError,
         _ => false,
     };
 
@@ -61,4 +65,15 @@ public sealed record DictOfType(TaipanType Key, TaipanType Value) : TaipanType
 public sealed record StructType(StructSymbol Symbol) : TaipanType
 {
     public override string ToString() => Symbol.Name;
+}
+
+public sealed record NoneType : TaipanType
+{
+    public override string ToString() => "none";
+}
+
+/// <summary><c>T?</c>. <see cref="Inner"/> is never itself optional (SPEC §3.1).</summary>
+public sealed record OptionalOf(TaipanType Inner) : TaipanType
+{
+    public override string ToString() => $"{Inner}?";
 }

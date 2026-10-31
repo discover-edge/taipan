@@ -106,3 +106,13 @@ public sealed record BoundBuiltinMethodCall(BoundExpr Target, BuiltinMethod Meth
 public sealed record BoundFString(ImmutableArray<BoundExpr> Parts, TextSpan Span) : BoundExpr(TaipanType.Str, Span);
 
 public sealed record BoundErrorExpr(TextSpan Span) : BoundExpr(TaipanType.Error, Span);
+
+public sealed record BoundNone(TextSpan Span) : BoundExpr(TaipanType.None, Span);
+
+/// <summary>
+/// <c>x is some v</c> as an <c>if</c> or <c>while</c> condition; <see cref="Binding"/> is
+/// declared in the guarded body (SPEC §3.4).
+/// </summary>
+public sealed record BoundIsSome(BoundExpr Operand, VariableSymbol Binding, TextSpan Span) : BoundExpr(TaipanType.Bool, Span);
+
+public sealed record BoundIsNone(BoundExpr Operand, TextSpan Span) : BoundExpr(TaipanType.Bool, Span);

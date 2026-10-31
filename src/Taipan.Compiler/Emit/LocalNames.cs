@@ -7,11 +7,14 @@ namespace Taipan.Compiler.Emit;
 /// and again later in the enclosing block; C# doesn't, because a C# local's scope is its whole
 /// block. Such a nested local gets a numeric suffix. So does a local named <c>_</c>, which the
 /// emitter uses as the discard.
+/// An <c>is some</c> binding becomes a C# pattern variable, whose scope C# widens past the
+/// guarded block, so it gets a suffix whenever its name is used by any other local in the method.
 /// </summary>
 public sealed class LocalNames
 {
     private readonly Dictionary<VariableSymbol, string> _names = [];
     private readonly HashSet<string> _used;
+    private readonly Dictionary<string, int> _counts = [];
     private readonly Stack<HashSet<string>> _enclosing = new();
 
     private LocalNames(IEnumerable<string> reserved) => _used = [.. reserved, "_"];
@@ -22,7 +25,7 @@ public sealed class LocalNames
     {
         var names = new LocalNames(globalNames);
         foreach (var parameter in parameters)
-            names._used.Add(parameter.Name);
+            names.Count(parameter);
         names.CollectAll(body);
 
         names.Declare(parameters, []);
@@ -42,14 +45,20 @@ public sealed class LocalNames
         return name;
     }
 
+    private void Count(VariableSymbol symbol)
+    {
+        _used.Add(symbol.Name);
+        _counts[symbol.Name] = _counts.GetValueOrDefault(symbol.Name) + 1;
+    }
+
     private void CollectAll(BoundStmt stmt)
     {
-        foreach (var symbol in DirectDeclarations([stmt]))
-            _used.Add(symbol.Name);
+        foreach (var symbol in DirectDeclarations([stmt]).Concat(Bindings(stmt)))
+            Count(symbol);
         foreach (var (nested, extra) in NestedBlocks(stmt))
         {
             foreach (var symbol in extra)
-                _used.Add(symbol.Name);
+                Count(symbol);
             foreach (var inner in nested)
                 CollectAll(inner);
         }
@@ -62,6 +71,8 @@ public sealed class LocalNames
         _enclosing.Push([.. direct.Select(s => s.Name)]);
         foreach (var stmt in statements)
         {
+            foreach (var binding in Bindings(stmt))
+                _names[binding] = _counts[binding.Name] > 1 || binding.Name == "_" ? Fresh(binding.Name) : binding.Name;
             foreach (var (nested, nestedExtra) in NestedBlocks(stmt))
                 VisitBlock(nested, nestedExtra);
         }
@@ -79,6 +90,14 @@ public sealed class LocalNames
 
     private static IEnumerable<VariableSymbol> DirectDeclarations(IEnumerable<BoundStmt> statements) =>
         statements.OfType<BoundVariableDecl>().Select(d => d.Symbol);
+
+    /// <summary>The <c>is some</c> bindings in a statement's own conditions.</summary>
+    private static IEnumerable<VariableSymbol> Bindings(BoundStmt stmt) => stmt switch
+    {
+        BoundIf ifStmt => ifStmt.Clauses.Select(c => c.Condition).OfType<BoundIsSome>().Select(c => c.Binding),
+        BoundWhile { Condition: BoundIsSome isSome } => [isSome.Binding],
+        _ => [],
+    };
 
     /// <summary>The C# blocks directly inside a statement, with any extra locals they declare.</summary>
     private static IEnumerable<(IReadOnlyList<BoundStmt> Statements, IReadOnlyList<VariableSymbol> Extra)> NestedBlocks(BoundStmt stmt)

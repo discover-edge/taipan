@@ -92,6 +92,26 @@ public sealed class DiagnosticBag
     public void ReportCannotIterate(TextSpan span, object type) =>
         Add("TP0200", span, $"cannot iterate over {type}");
 
+    public void ReportOptionalNotNarrowed(TextSpan span, object expected, object found) =>
+        Add("TP0203", span, $"expected {expected}, found {found}", NarrowHelp);
+
+    public void ReportOptionalUse(TextSpan span, object type) =>
+        Add("TP0203", span, $"{type} must be narrowed before use", NarrowHelp);
+
+    private const string NarrowHelp = "narrow it with 'is some', or give a default with '??'";
+
+    public void ReportNeedsOptional(TextSpan span, string construct, object type) =>
+        Add("TP0200", span, $"'{construct}' needs an optional{(construct == "??" ? " on the left" : "")}, found {type}");
+
+    public void ReportNestedOptional(TextSpan span) =>
+        Add("TP0213", span, "optional types cannot be nested");
+
+    public void ReportNestedOptionalGet(TextSpan span, object dictType) =>
+        Add("TP0213", span, $"'get' on {dictType} would return a nested optional");
+
+    public void ReportCannotInferNone(TextSpan span) =>
+        Add("TP0206", span, "cannot infer the type of none", "add a type annotation");
+
     public void ReportMethodAsValue(TextSpan span, string method) =>
         Add("TP0200", span, $"'{method}' is a method; call it");
 

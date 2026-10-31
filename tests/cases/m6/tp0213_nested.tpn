@@ -1,0 +1,6 @@
+let a: int?? = none
+let b: list[str??] = []
+def f(x: int???) -> bool??:
+    return none
+let d: dict[str, int?] = {"a": none}
+print(d.get("a"))

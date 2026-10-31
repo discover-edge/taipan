@@ -1,0 +1,13 @@
+5 none 5 -1
+True False True True False
+7 5
+[none, "b", "c"] 3
+none here
+got B
+got C
+31 none 0
+["x"] []
+popped 3
+[1]
+6 True
+none 5 none

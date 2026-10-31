@@ -10,7 +10,7 @@ public static class Display
 
     public static string Format(bool value) => value ? "True" : "False";
 
-    public static string Format(string value) => value;
+    public static string Format(string? value) => value ?? "none";
 
     public static string Format(object? value) => value switch
     {

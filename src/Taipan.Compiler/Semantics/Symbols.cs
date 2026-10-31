@@ -77,6 +77,6 @@ public sealed class StructSymbol(string name) : Symbol(name)
 public enum BuiltinMethod
 {
     ListAppend, ListPop, ListInsert, ListContains,
-    DictKeys, DictValues, DictRemove,
+    DictGet, DictKeys, DictValues, DictRemove,
     StrUpper, StrLower, StrStrip, StrSplit, StrStartsWith, StrEndsWith, StrReplace,
 }

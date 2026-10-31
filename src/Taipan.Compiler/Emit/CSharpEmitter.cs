@@ -345,6 +345,9 @@ public sealed class CSharpEmitter
             BoundIndex index => $"{Runtime}.Ops.Index({Expr(index.Target)}, {Expr(index.Index)})",
             BoundMethodCall call => $"{Operand(call.Target)}.@{call.Method.Name}({Arguments(call.Arguments)})",
             BoundBuiltinMethodCall call => BuiltinMethodCall(call),
+            BoundNone => "null",
+            BoundIsSome isSome => $"{Operand(isSome.Operand)} is {{}} @{_locals[isSome.Binding]}",
+            BoundIsNone isNone => $"{Operand(isNone.Operand)} is null",
             _ => throw new InvalidOperationException($"unexpected bound expression {expr.GetType().Name}"),
         };
     }
@@ -409,7 +412,8 @@ public sealed class CSharpEmitter
         var (l, r) = (Expr(binary.Left), Expr(binary.Right));
         var left = Operand(binary.Left);
         var right = Operand(binary.Right);
-        var structural = leftType is ListOfType or DictOfType or StructType;
+        var compared = TypeChecker.Unwrap(leftType) is NoneType ? TypeChecker.Unwrap(binary.Right.Type) : TypeChecker.Unwrap(leftType);
+        var structural = compared is ListOfType or DictOfType or StructType;
         return binary.Op switch
         {
             BinaryOp.Add when leftType is ListOfType => $"{Runtime}.Ops.Concat({l}, {r})",
@@ -431,6 +435,7 @@ public sealed class CSharpEmitter
             BinaryOp.NotIn => $"!{Runtime}.Ops.In({l}, {r})",
             BinaryOp.And => $"{left} && {right}",
             BinaryOp.Or => $"{left} || {right}",
+            BinaryOp.Coalesce => $"{left} ?? {right}",
             _ => throw new InvalidOperationException($"unexpected operator {binary.Op}"),
         };
     }
@@ -441,9 +446,12 @@ public sealed class CSharpEmitter
         return call.Function.Builtin switch
         {
             null => $"{Global(call.Function.Name)}({arguments})",
-            BuiltinFunction.Print => $"{Runtime}.Builtins.Print({arguments})",
+            // `null` alone would bind to the params array itself, not be one of its elements.
+            BuiltinFunction.Print => $"{Runtime}.Builtins.Print({string.Join(", ", call.Arguments.Select(a => a is BoundNone ? "(object?)null" : Expr(a)))})",
             BuiltinFunction.Len => $"{Runtime}.Builtins.Len({arguments})",
             BuiltinFunction.Str => $"{Runtime}.Display.Format({arguments})",
+            BuiltinFunction.Int when call.Arguments[0].Type == TaipanType.Str => $"{Runtime}.Ops.ParseInt({arguments})",
+            BuiltinFunction.Float when call.Arguments[0].Type == TaipanType.Str => $"{Runtime}.Ops.ParseFloat({arguments})",
             BuiltinFunction.Int when call.Arguments[0].Type == TaipanType.Float => $"{Runtime}.Ops.ToInt({arguments})",
             BuiltinFunction.Int => arguments,
             BuiltinFunction.Float when call.Arguments[0].Type == TaipanType.Int => $"(double){Operand(call.Arguments[0])}",
@@ -463,6 +471,8 @@ public sealed class CSharpEmitter
             BuiltinMethod.ListPop => $"{Runtime}.Ops.Pop({Expr(call.Target)})",
             BuiltinMethod.ListInsert => $"{Runtime}.Ops.Insert({Expr(call.Target)}, {args[0]}, {args[1]})",
             BuiltinMethod.ListContains => $"{Runtime}.Ops.Contains({Expr(call.Target)}, {args[0]})",
+            BuiltinMethod.DictGet when IsValueType(((DictOfType)call.Target.Type).Value) => $"{Runtime}.Ops.Get({Expr(call.Target)}, {args[0]})",
+            BuiltinMethod.DictGet => $"{Runtime}.Ops.GetOrNull({Expr(call.Target)}, {args[0]})",
             BuiltinMethod.DictKeys => $"{Runtime}.Ops.Keys({Expr(call.Target)})",
             BuiltinMethod.DictValues => $"{Runtime}.Ops.Values({Expr(call.Target)})",
             BuiltinMethod.DictRemove => $"{target}.Remove({args[0]})",
@@ -557,8 +567,13 @@ public sealed class CSharpEmitter
         ListOfType list => $"{Collections}.List<{TypeName(list.Element)}>",
         DictOfType dict => $"{Collections}.OrderedDictionary<{TypeName(dict.Key)}, {TypeName(dict.Value)}>",
         StructType structType => $"global::@{structType.Symbol.Name}",
+        OptionalOf optional => $"{TypeName(optional.Inner)}?",
         _ => throw new InvalidOperationException($"no C# type for {type}"),
     };
+
+    /// <summary>Whether the C# type is a value type, whose optional is <c>Nullable&lt;T&gt;</c>.</summary>
+    private static bool IsValueType(TaipanType type) =>
+        type == TaipanType.Int || type == TaipanType.Float || type == TaipanType.Bool;
 
     // ---- Output ----
 

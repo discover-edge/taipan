@@ -1,0 +1,23 @@
+# The find(...) example from examples/health.tpn (ROADMAP M6).
+struct Service:
+    name: str
+    replicas: int
+    healthy: int
+
+def find(services: list[Service], name: str) -> Service?:
+    for s in services:
+        if s.name == name:
+            return s
+    return none
+
+let services = [Service("api", 3, 3), Service("worker", 4, 3)]
+let svc = find(services, "worker")
+
+if svc is some s:
+    print(s.name, s.healthy, "/", s.replicas)
+else:
+    print("no such service")
+
+if find(services, "db") is none:
+    print("no db")
+print(find(services, "api"), find(services, "db"))

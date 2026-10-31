@@ -208,11 +208,17 @@ public sealed class Binder
                 break;
             case IfStmt ifStmt:
                 foreach (var clause in ifStmt.Clauses)
+                {
+                    if (clause.Condition is IsSomeCondition isSome)
+                        _scriptNames.Add(isSome.Binding.Text);
                     CollectScriptNames(clause.Body);
+                }
                 if (ifStmt.Else is not null)
                     CollectScriptNames(ifStmt.Else);
                 break;
             case WhileStmt whileStmt:
+                if (whileStmt.Condition is IsSomeCondition whileSome)
+                    _scriptNames.Add(whileSome.Binding.Text);
                 CollectScriptNames(whileStmt.Body);
                 break;
             case ForStmt forStmt:
@@ -288,8 +294,14 @@ public sealed class Binder
                 if (!DictOfType.IsValidKey(key))
                     _diagnostics.ReportInvalidDictKey(dict.Key.Span, key);
                 return new DictOfType(key, BindType(dict.Value));
-            case OptionalType:
-                return Unsupported("optionals");
+            case OptionalType optional:
+                var inner = BindType(optional.Inner);
+                if (inner is OptionalOf)
+                {
+                    _diagnostics.ReportNestedOptional(optional.Span);
+                    return TaipanType.Error;
+                }
+                return new OptionalOf(inner);
             default:
                 return TaipanType.Error;
         }
@@ -340,6 +352,11 @@ public sealed class Binder
     {
         var declared = annotation is null ? null : BindType(annotation);
         var value = declared is null ? BindValue(valueSyntax) : BindExpected(valueSyntax, declared);
+        if (declared is null && value.Type is NoneType)
+        {
+            _diagnostics.ReportCannotInferNone(valueSyntax.Span);
+            declared = TaipanType.Error;
+        }
         var symbol = new VariableSymbol(name.Text, declared ?? value.Type, kind);
         DeclareLocal(name, symbol);
         return new BoundVariableDecl(symbol, value, span);
@@ -382,7 +399,7 @@ public sealed class Binder
     private BoundStmt BindFieldAssign(AssignStmt assign, MemberExpr member)
     {
         var target = BindValue(member.Target);
-        if (target.Type.ContainsError)
+        if (target.Type.ContainsError || ReportIfOptional(target, member.Target.Span))
             return new BoundExprStmt(BindValue(assign.Value), assign.Span);
 
         if (target.Type is StructType { Symbol: var structSymbol })
@@ -479,7 +496,8 @@ public sealed class Binder
     private BoundIf BindIf(IfStmt ifStmt)
     {
         var clauses = ifStmt.Clauses
-            .Select(c => new BoundIfClause(BindCondition(c.Condition), BindBlock(c.Body)))
+            .Select(c => BindGuarded(c.Condition, c.Body, isLoop: false))
+            .Select(g => new BoundIfClause(g.Condition, g.Body))
             .ToImmutableArray();
         var elseBlock = ifStmt.Else is null ? null : BindBlock(ifStmt.Else);
         return new BoundIf(clauses, elseBlock, ifStmt.Span);
@@ -487,11 +505,59 @@ public sealed class Binder
 
     private BoundWhile BindWhile(WhileStmt whileStmt)
     {
-        var condition = BindCondition(whileStmt.Condition);
-        _loopDepth++;
-        var body = BindBlock(whileStmt.Body);
-        _loopDepth--;
+        var (condition, body) = BindGuarded(whileStmt.Condition, whileStmt.Body, isLoop: true);
         return new BoundWhile(condition, body, whileStmt.Span);
+    }
+
+    /// <summary>
+    /// Binds a condition and the block it guards. For <c>x is some v</c>, <c>v</c> is declared in a
+    /// scope around the block, so it's visible in that branch only (SPEC §3.4).
+    /// </summary>
+    private (BoundExpr Condition, BoundBlock Body) BindGuarded(Condition condition, Block body, bool isLoop)
+    {
+        BoundExpr bound;
+        VariableSymbol? binding = null;
+        switch (condition)
+        {
+            case IsSomeCondition isSome:
+                var someOperand = BindValue(isSome.Expr);
+                var inner = RequireOptional(someOperand, isSome.Expr.Span, "is some");
+                binding = new VariableSymbol(isSome.Binding.Text, inner, VariableKind.Let);
+                bound = new BoundIsSome(someOperand, binding, isSome.Span);
+                break;
+            case IsNoneCondition isNone:
+                var noneOperand = BindValue(isNone.Expr);
+                RequireOptional(noneOperand, isNone.Expr.Span, "is none");
+                bound = new BoundIsNone(noneOperand, isNone.Span);
+                break;
+            default:
+                bound = BindCondition((ExprCondition)condition);
+                break;
+        }
+
+        var outer = _scope;
+        if (binding is not null)
+        {
+            _scope = new Scope(outer);
+            DeclareLocal(((IsSomeCondition)condition).Binding, binding);
+        }
+        if (isLoop)
+            _loopDepth++;
+        var block = BindBlock(body);
+        if (isLoop)
+            _loopDepth--;
+        _scope = outer;
+        return (bound, block);
+    }
+
+    /// <summary>The inner type of an optional operand of <c>is some</c> / <c>is none</c>, else TP0200.</summary>
+    private TaipanType RequireOptional(BoundExpr operand, TextSpan span, string construct)
+    {
+        if (operand.Type is OptionalOf optional)
+            return optional.Inner;
+        if (!operand.Type.ContainsError)
+            _diagnostics.ReportNeedsOptional(span, construct, operand.Type);
+        return TaipanType.Error;
     }
 
     private BoundStmt BindFor(ForStmt forStmt)
@@ -515,6 +581,7 @@ public sealed class Binder
                 DictOfType dict => dict.Key,
                 PrimitiveType { Name: "str" } => TaipanType.Str,
                 { ContainsError: true } => TaipanType.Error,
+                OptionalOf when ReportIfOptional(iterable, forStmt.Iterable.Span) => TaipanType.Error,
                 _ => CannotIterate(forStmt.Iterable.Span, iterable.Type),
             };
         }
@@ -557,17 +624,13 @@ public sealed class Binder
         }
     }
 
-    private BoundExpr BindCondition(Condition condition)
+    private BoundExpr BindCondition(ExprCondition condition)
     {
-        if (condition is not ExprCondition exprCondition)
-        {
-            Unsupported("optionals");
-            return new BoundErrorExpr(condition.Span);
-        }
-
-        var value = BindValue(exprCondition.Expr);
-        if (!value.Type.ContainsError && value.Type != TaipanType.Bool)
-            _diagnostics.ReportConditionNotBool(exprCondition.Expr.Span, value.Type);
+        var value = BindValue(condition.Expr);
+        if (value.Type is OptionalOf { Inner: PrimitiveType { Name: "bool" } })
+            _diagnostics.ReportOptionalNotNarrowed(condition.Expr.Span, TaipanType.Bool, value.Type);
+        else if (!value.Type.ContainsError && value.Type != TaipanType.Bool)
+            _diagnostics.ReportConditionNotBool(condition.Expr.Span, value.Type);
         return value;
     }
 
@@ -608,13 +671,14 @@ public sealed class Binder
         FStringExpr fstring => BindFString(fstring),
         NameExpr name => BindName(name),
         UnaryExpr unary => BindUnary(unary),
+        BinaryExpr { Op: BinaryOp.Coalesce } binary => BindCoalesce(binary),
         BinaryExpr binary => BindBinaryOperation(BindValue(binary.Left), binary.Op, BindValue(binary.Right), binary.Span),
         CallExpr call => BindCall(call),
         ListExpr list => BindList(list, expected),
         DictExpr dict => BindDict(dict, expected),
         MemberExpr member => BindMember(member),
         IndexExpr index => BindIndexOf(BindValue(index.Target), index),
-        NoneLiteral => UnsupportedExpr("optionals", expr.Span),
+        NoneLiteral => new BoundNone(expr.Span),
         ErrorExpr => new BoundErrorExpr(expr.Span),
         _ => throw new InvalidOperationException($"unexpected expression {expr.GetType().Name}"),
     };
@@ -667,7 +731,7 @@ public sealed class Binder
             return new BoundLiteral(long.MinValue, TaipanType.Int, unary.Span);
 
         var operand = BindValue(unary.Operand);
-        if (operand.Type.ContainsError)
+        if (operand.Type.ContainsError || ReportIfOptional(operand, unary.Operand.Span))
             return new BoundUnary(unary.Op, operand, TaipanType.Error, unary.Span);
 
         if (unary.Op == UnaryOp.Not)
@@ -687,9 +751,11 @@ public sealed class Binder
 
     private BoundExpr BindBinaryOperation(BoundExpr left, BinaryOp op, BoundExpr right, TextSpan span)
     {
-        if (op == BinaryOp.Coalesce)
-            return UnsupportedExpr("optionals", span);
         if (left.Type.ContainsError || right.Type.ContainsError)
+            return new BoundBinary(left, op, right, TaipanType.Error, span);
+        // Only == and != accept optionals (SPEC §3.4).
+        if (op is not (BinaryOp.Equal or BinaryOp.NotEqual)
+            && (ReportIfOptional(left, left.Span) | ReportIfOptional(right, right.Span)))
             return new BoundBinary(left, op, right, TaipanType.Error, span);
 
         var type = op switch
@@ -702,6 +768,29 @@ public sealed class Binder
             _ => CheckOperands(left, op, right, span, TypeChecker.Arithmetic(op, left.Type, right.Type)),
         };
         return new BoundBinary(left, op, right, type, span);
+    }
+
+    // `x ?? d` (SPEC §3.4): the default is checked against T; a T? default keeps the result optional.
+    private BoundExpr BindCoalesce(BinaryExpr binary)
+    {
+        var left = BindValue(binary.Left);
+        if (left.Type is not OptionalOf optional)
+        {
+            if (!left.Type.ContainsError)
+                _diagnostics.ReportNeedsOptional(binary.Left.Span, "??", left.Type);
+            var orphan = BindValue(binary.Right);
+            return new BoundBinary(left, BinaryOp.Coalesce, orphan, TaipanType.Error, binary.Span);
+        }
+
+        var right = BindValue(binary.Right, optional.Inner);
+        if (right.Type is OptionalOf or NoneType)
+        {
+            if (!TypeChecker.IsAssignable(right.Type, optional))
+                _diagnostics.ReportTypeMismatch(binary.Right.Span, optional.Inner, right.Type);
+            return new BoundBinary(left, BinaryOp.Coalesce, right, optional, binary.Span);
+        }
+        CheckAssignable(right, optional.Inner, binary.Right.Span);
+        return new BoundBinary(left, BinaryOp.Coalesce, right, optional.Inner, binary.Span);
     }
 
     // `x in c` (SPEC §5.3): str in str, T in list[T], K in dict[K, V].
@@ -797,30 +886,54 @@ public sealed class Binder
         return new BoundDictLiteral([.. entries.Select(e => (e.Key, e.Value))], new DictOfType(keyType, valueType), dict.Span);
     }
 
-    /// <summary>The common type of literal elements: all equal, or int and float mixing to float (SPEC §4.6).</summary>
+    /// <summary>
+    /// The common type of literal elements (SPEC §4.6, §3.4): all equal, int and float mixing to
+    /// float, and none or T? mixing with T to T?.
+    /// </summary>
     private TaipanType InferElementType(ImmutableArray<BoundExpr> elements)
     {
-        var type = elements[0].Type;
-        foreach (var element in elements.Skip(1))
+        TaipanType? common = null;
+        var optional = false;
+        foreach (var element in elements)
         {
-            if (element.Type.ContainsError || type.ContainsError || element.Type == type)
-                continue;
-            if (element.Type.IsNumeric && type.IsNumeric)
+            var type = element.Type;
+            if (type.ContainsError)
+                return TaipanType.Error;
+            if (type is NoneType)
             {
-                type = TaipanType.Float;
+                optional = true;
                 continue;
             }
-            _diagnostics.ReportTypeMismatch(element.Span, type, element.Type);
+            if (type is OptionalOf inner)
+            {
+                optional = true;
+                type = inner.Inner;
+            }
+
+            if (common is null || type == common)
+                common = type;
+            else if (type.IsNumeric && common.IsNumeric)
+                common = TaipanType.Float;
+            else
+            {
+                _diagnostics.ReportTypeMismatch(element.Span, optional ? new OptionalOf(common) : common, element.Type);
+                return TaipanType.Error;
+            }
+        }
+
+        if (common is null)
+        {
+            _diagnostics.ReportCannotInferNone(elements[0].Span);
             return TaipanType.Error;
         }
-        return type;
+        return optional ? new OptionalOf(common) : common;
     }
 
     private BoundExpr BindMember(MemberExpr member)
     {
         var target = BindValue(member.Target);
         var name = member.Member.Text;
-        if (target.Type.ContainsError)
+        if (target.Type.ContainsError || ReportIfOptional(target, member.Target.Span))
             return new BoundErrorExpr(member.Span);
 
         if (target.Type is StructType { Symbol: var structSymbol })
@@ -848,6 +961,10 @@ public sealed class Binder
         switch (target.Type)
         {
             case { ContainsError: true }:
+                BindValue(indexExpr.Index);
+                return new BoundErrorExpr(indexExpr.Span);
+            case OptionalOf:
+                ReportIfOptional(target, indexExpr.Target.Span);
                 BindValue(indexExpr.Index);
                 return new BoundErrorExpr(indexExpr.Span);
             case ListOfType list:
@@ -973,7 +1090,7 @@ public sealed class Binder
         var target = BindValue(member.Target);
         var name = member.Member.Text;
         ReportKeywordArguments(call);
-        if (target.Type.ContainsError)
+        if (target.Type.ContainsError || ReportIfOptional(target, member.Target.Span))
         {
             BindArguments(call);
             return new BoundErrorExpr(call.Span);
@@ -994,8 +1111,12 @@ public sealed class Binder
             return new BoundErrorExpr(call.Span);
         }
 
-        if (target.Type is DictOfType && name == "get")
-            return UnsupportedExpr("optionals", call.Span);
+        if (target.Type is DictOfType { Value: OptionalOf } nested && name == "get")
+        {
+            BindArguments(call);
+            _diagnostics.ReportNestedOptionalGet(member.Member.Span, nested);
+            return new BoundErrorExpr(call.Span);
+        }
 
         if (BuiltinMethodOf(target.Type, name) is not { } builtin)
         {
@@ -1020,6 +1141,7 @@ public sealed class Binder
             (ListOfType list, "pop") => (BuiltinMethod.ListPop, [], list.Element),
             (ListOfType list, "insert") => (BuiltinMethod.ListInsert, [TaipanType.Int, list.Element], TaipanType.Nothing),
             (ListOfType list, "contains") => (BuiltinMethod.ListContains, [list.Element], TaipanType.Bool),
+            (DictOfType dict, "get") => (BuiltinMethod.DictGet, [dict.Key], new OptionalOf(dict.Value)),
             (DictOfType dict, "keys") => (BuiltinMethod.DictKeys, [], new ListOfType(dict.Key)),
             (DictOfType dict, "values") => (BuiltinMethod.DictValues, [], new ListOfType(dict.Value)),
             (DictOfType dict, "remove") => (BuiltinMethod.DictRemove, [dict.Key], TaipanType.Bool),
@@ -1055,13 +1177,16 @@ public sealed class Binder
 
         var argument = arguments[0];
         var argumentSpan = call.Arguments[0].Value.Span;
+        if (builtin is not BuiltinFunction.Str && ReportIfOptional(argument, argumentSpan))
+            return new BoundCall(function, arguments, function.ReturnType, call.Span);
         switch (builtin)
         {
             case BuiltinFunction.Len when argument.Type is not (ListOfType or DictOfType) && !argument.Type.ContainsError:
                 CheckAssignable(argument, TaipanType.Str, argumentSpan, "str, list or dict");
                 break;
             case BuiltinFunction.Int or BuiltinFunction.Float when argument.Type == TaipanType.Str:
-                return UnsupportedExpr($"{function.Name}(str)", call.Span);
+                // Parsing returns none on failure (SPEC §6).
+                return new BoundCall(function, arguments, new OptionalOf(function.ReturnType), call.Span);
             case BuiltinFunction.Int or BuiltinFunction.Float:
                 // Both accept int and float (SPEC §6); int widens to float.
                 CheckAssignable(argument, TaipanType.Float, argumentSpan);
@@ -1074,7 +1199,20 @@ public sealed class Binder
 
     private void CheckAssignable(BoundExpr value, TaipanType target, TextSpan span, string? expectedText = null)
     {
-        if (!TypeChecker.IsAssignable(value.Type, target))
+        if (TypeChecker.IsAssignable(value.Type, target))
+            return;
+        if (value.Type is OptionalOf optional && TypeChecker.IsAssignable(optional.Inner, target))
+            _diagnostics.ReportOptionalNotNarrowed(span, expectedText ?? target.ToString(), value.Type);
+        else
             _diagnostics.ReportTypeMismatch(span, expectedText ?? target.ToString(), value.Type);
+    }
+
+    /// <summary>Reports TP0203 for an optional used where its value is needed (SPEC §3.4).</summary>
+    private bool ReportIfOptional(BoundExpr value, TextSpan span)
+    {
+        if (value.Type is not OptionalOf)
+            return false;
+        _diagnostics.ReportOptionalUse(span, value.Type);
+        return true;
     }
 }
