@@ -90,7 +90,7 @@ method_def    = "def" NAME "(" "self" [ "," params ] ")" [ "->" type ] ":" block
 
 enum_def      = "enum" NAME [ type_params ] ":" NEWLINE INDENT variant { variant } DEDENT ;
 variant       = NAME [ "(" named_fields ")" ] NEWLINE ;
-named_fields  = NAME ":" type { "," NAME ":" type } ;
+named_fields  = NAME ":" type { "," NAME ":" type } [ "," ] ;
 
 block         = NEWLINE INDENT stmt { stmt } DEDENT ;
 
@@ -110,11 +110,11 @@ while_stmt    = "while" condition ":" block ;
 for_stmt      = "for" NAME "in" expr ":" block ;
 match_stmt    = "match" expr ":" NEWLINE INDENT arm { arm } DEDENT ;
 arm           = pattern ":" ( simple_stmt NEWLINE | block ) ;
-pattern       = "_" | int_lit | str_lit | "True" | "False"
+pattern       = "_" | [ "-" ] INT | STRING | "True" | "False"
               | qual_name [ "(" [ NAME { "," NAME } ] ")" ] ;
 qual_name     = NAME [ "." NAME ] ;
 
-type          = base_type [ "?" ] ;
+type          = base_type { "?" } ;                               (* more than one "?" is TP0213, §3.1 *)
 base_type     = "int" | "float" | "bool" | "str" | "py"           (* py: M10 *)
               | "list" "[" type "]"
               | "dict" "[" type "," type "]"
@@ -144,7 +144,18 @@ atom          = INT | FLOAT | STRING | FSTRING | "True" | "False" | "none"
 **Grammar notes**
 - `a < b < c` is `TP0212`. Write `a < b and b < c`.
 - An `arm` may take a simple statement on the same line (`Ok: print("ok")`) or an indented block.
-- Keyword arguments are allowed only in struct and enum-variant constructors (§4.3). Within one call, arguments are either all positional or all keyword.
+- Keyword arguments are allowed only in struct and enum-variant constructors (§4.3). Within one call, arguments are either all positional or all keyword. Mixing them is `TP0100`.
+- In a type, the lexer's `??` token counts as two `?`, so `int??` parses and the type checker reports `TP0213`.
+- An f-string hole is parsed as exactly one `expr`. Its tokens come from re-lexing the hole's text (§1.3), and positions in its diagnostics refer to the original file.
+
+### 2.1 Syntax errors
+- A syntax error is `TP0100`. The message is `expected X, found Y`, or one of the specific messages below.
+  - **X** is a token, or one of the categories `expression`, `type`, `statement`, `pattern`, `indented block`.
+  - **Y** describes the token found: a keyword or punctuation token in quotes (`':'`, `'else'`), `name 'x'`, `integer`, `float`, `string`, `f-string`, `newline`, `indent`, `dedent`, or `end of file`.
+  - The error points at the start of the token found.
+  - Specific messages: `cannot assign to this expression` (an `assign_stmt` target that isn't a `target`), and `cannot mix positional and keyword arguments`.
+- A chained comparison is reported by the parser as `TP0212`, with message `chained comparison not supported` and help `write 'a < b and b < c'`. Parsing continues normally.
+- **Recovery:** after a `TP0100`, the parser skips tokens up to and including the next `NEWLINE` at the current block depth. If the next line is indented further (an `INDENT` follows), that whole block is skipped as well. A `DEDENT` that closes the current block stops the skip without being consumed. Parsing then resumes at the next statement. So each statement reports at most one `TP0100`, and independent errors on separate statements are all reported.
 
 ---
 
@@ -362,6 +373,7 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 ```
 - Diagnostics are written to stderr.
 - Lines and columns are 1-based. Columns count Unicode code points.
+- Each compiler stage runs only if the stages before it reported no errors: lexing (§1), then parsing (§2), then type checking. This keeps one mistake from cascading into spurious errors in later stages.
 - `<file>` is the source path exactly as given on the command line.
 
 **Exit codes:**
