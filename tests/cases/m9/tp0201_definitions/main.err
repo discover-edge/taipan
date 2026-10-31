@@ -1,0 +1,7 @@
+tests/cases/m9/tp0201_definitions/main.tpn:3:17: error TP0201: module 'lib' has no definition 'missing'
+tests/cases/m9/tp0201_definitions/main.tpn:3:34: error TP0201: module 'lib' has no definition 'inner'
+tests/cases/m9/tp0201_definitions/main.tpn:6:11: error TP0201: module 'lib' has no definition 'nope'
+tests/cases/m9/tp0201_definitions/main.tpn:6:24: error TP0201: module 'lib' has no definition 'NOPE'
+tests/cases/m9/tp0201_definitions/main.tpn:7:12: error TP0201: module 'lib' has no definition 'Nope'
+tests/cases/m9/tp0201_definitions/main.tpn:8:7: error TP0200: 'lib' is a module, not a value
+tests/cases/m9/tp0201_definitions/aaa_first.tpn:2:12: error TP0200: 'unused' has no return type, so 'return' cannot have a value

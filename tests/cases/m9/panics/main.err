@@ -1,0 +1,2 @@
+panic: division by zero
+  at tests/cases/m9/panics/mathx.tpn:7

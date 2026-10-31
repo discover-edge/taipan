@@ -1,0 +1,5 @@
+struct Thing:
+    v: int
+
+def f():
+    pass

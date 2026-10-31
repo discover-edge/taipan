@@ -2,7 +2,8 @@ namespace Taipan.Tests;
 
 /// <summary>
 /// Runs every <c>tests/cases/**/*.tpn</c>, and every <c>examples/*.tpn</c> that has a
-/// <c>.out</c>, through the CLI and compares against its sidecars:
+/// <c>.out</c>, through the CLI and compares against its sidecars. In a directory with a
+/// <c>main.tpn</c>, only that file is a case and the others are its modules (SPEC §4.7):
 /// <c>.out</c> (stdout; its presence selects <c>run</c> over <c>check</c>),
 /// <c>.err</c> (stderr, exact), <c>.exit</c> (default 0, or 1 when <c>.err</c> exists), and
 /// <c>.cs</c> (the exact output of <c>taipan emit</c>).
@@ -15,7 +16,9 @@ public class GoldenTests
 
     public static TheoryData<string> Cases()
     {
+        // A multi-file case is a directory with a main.tpn; its other files are modules, not cases.
         var cases = Directory.EnumerateFiles(Path.Combine(RepoPaths.Root, "tests", "cases"), "*.tpn", SearchOption.AllDirectories)
+            .Where(file => Path.GetFileName(file) == "main.tpn" || !File.Exists(Path.Combine(Path.GetDirectoryName(file)!, "main.tpn")))
             .Concat(Directory.EnumerateFiles(Path.Combine(RepoPaths.Root, "examples"), "*.tpn")
                 .Where(file => File.Exists(Path.ChangeExtension(file, ".out"))));
 

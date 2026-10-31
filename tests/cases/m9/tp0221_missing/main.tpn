@@ -1,0 +1,5 @@
+import present
+from nowhere import thing
+import gone as g
+
+print(present.VALUE)

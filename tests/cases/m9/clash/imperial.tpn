@@ -1,0 +1,7 @@
+const UNIT = "ft"
+
+struct Size:
+    feet: int
+
+def area(side: float) -> float:
+    return side * side * 10.7639

@@ -1,0 +1,7 @@
+const UNIT = "m"
+
+struct Size:
+    value: int
+
+def area(side: float) -> float:
+    return side * side

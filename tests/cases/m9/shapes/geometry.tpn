@@ -1,0 +1,29 @@
+import colors
+
+const PI = 3.0
+const ORIGIN_X = 0
+
+struct Point:
+    x: int
+    y: int
+
+struct Box[T]:
+    value: T
+
+enum Shape:
+    Circle(radius: float)
+    Square(side: float)
+
+def distance(a: Point, b: Point) -> float:
+    let dx = a.x - b.x
+    let dy = a.y - b.y
+    return float(dx * dx + dy * dy) / 5.0
+
+def area(s: Shape) -> float:
+    match s:
+        Circle(r): return PI * r * r
+        Square(side): return side * side
+
+def tint(s: Shape) -> str:
+    return colors.pick(s)
+

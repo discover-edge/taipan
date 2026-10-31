@@ -164,15 +164,62 @@ public sealed class Parser
         return new CompilationUnit(items.ToImmutable(), new TextSpan(0, _source.Length));
     }
 
-    // top_item = func_def | struct_def | enum_def | const_def | stmt
+    // top_item = import_stmt | func_def | struct_def | enum_def | const_def | stmt
     private TopItem ParseTopItem() => Current.Kind switch
     {
+        TokenKind.ImportKeyword => ParseImportStmt(),
+        TokenKind.FromKeyword => ParseFromImportStmt(),
         TokenKind.DefKeyword => ParseFuncDef(),
         TokenKind.StructKeyword => ParseStructDef(),
         TokenKind.EnumKeyword => ParseEnumDef(),
         TokenKind.ConstKeyword => ParseConstDef(),
         _ => ParseStmt(),
     };
+
+    // import_stmt = "import" NAME [ "as" NAME ] NEWLINE
+    private ImportStmt ParseImportStmt()
+    {
+        var start = Next().Span.Start;
+        var module = ExpectIdentifier();
+        var alias = ParseImportAlias();
+        var span = SpanFrom(start);
+        Expect(TokenKind.Newline);
+        return new ImportStmt(module, alias, span);
+    }
+
+    // import_stmt = "from" NAME "import" import_name { "," import_name } NEWLINE
+    private FromImportStmt ParseFromImportStmt()
+    {
+        var start = Next().Span.Start;
+        var module = ExpectIdentifier();
+        Expect(TokenKind.ImportKeyword);
+        var names = ImmutableArray.CreateBuilder<ImportName>();
+        names.Add(ParseImportName());
+        while (At(TokenKind.Comma))
+        {
+            Next();
+            names.Add(ParseImportName());
+        }
+        var span = SpanFrom(start);
+        Expect(TokenKind.Newline);
+        return new FromImportStmt(module, names.ToImmutable(), span);
+    }
+
+    // import_name = NAME [ "as" NAME ]
+    private ImportName ParseImportName()
+    {
+        var name = ExpectIdentifier();
+        var alias = ParseImportAlias();
+        return new ImportName(name, alias, SpanFrom(name.Span.Start));
+    }
+
+    private Identifier? ParseImportAlias()
+    {
+        if (!At(TokenKind.AsKeyword))
+            return null;
+        Next();
+        return ExpectIdentifier();
+    }
 
     // const_def = "const" NAME [ ":" type ] "=" expr NEWLINE
     private ConstDef ParseConstDef()
@@ -643,18 +690,19 @@ public sealed class Parser
         return new ErrorPattern(Here);
     }
 
-    // qual_name [ "(" [ NAME { "," NAME } ] ")" ]  where  qual_name = NAME [ "." NAME ]
+    // qual_name [ "(" [ NAME { "," NAME } ] ")" ]  where  qual_name = NAME [ "." NAME [ "." NAME ] ]
     private VariantPattern ParseVariantPattern()
     {
         var first = ExpectIdentifier();
-        Identifier? enumName = null;
-        var variant = first;
-        if (At(TokenKind.Dot))
+        var path = new List<Identifier> { first };
+        while (At(TokenKind.Dot) && path.Count < 3)
         {
             Next();
-            enumName = first;
-            variant = ExpectIdentifier();
+            path.Add(ExpectIdentifier());
         }
+        var module = path.Count == 3 ? path[0] : null;
+        var enumName = path.Count >= 2 ? path[^2] : null;
+        var variant = path[^1];
 
         ImmutableArray<Identifier>? bindings = null;
         if (At(TokenKind.OpenParen))
@@ -673,7 +721,7 @@ public sealed class Parser
             Expect(TokenKind.CloseParen);
             bindings = names.ToImmutable();
         }
-        return new VariantPattern(enumName, variant, bindings, SpanFrom(first.Span.Start));
+        return new VariantPattern(module, enumName, variant, bindings, SpanFrom(first.Span.Start));
     }
 
     // ---- Types ----
@@ -704,7 +752,7 @@ public sealed class Parser
     }
 
     // base_type = "int" | "float" | "bool" | "str" | "py" | "list" "[" type "]" | "dict" "[" type "," type "]"
-    //           | NAME [ "[" type { "," type } "]" ]
+    //           | NAME [ "." NAME ] [ "[" type { "," type } "]" ]
     private TypeSyntax ParseBaseType()
     {
         var start = Current.Span.Start;
@@ -734,19 +782,32 @@ public sealed class Parser
                 return new DictType(key, value, SpanFrom(start));
             }
             default:
-                if (!At(TokenKind.OpenBracket))
-                    return new NamedType(name, name.Span);
-                Next();
-                var arguments = ImmutableArray.CreateBuilder<TypeSyntax>();
-                arguments.Add(ParseType());
-                while (At(TokenKind.Comma))
+                if (At(TokenKind.Dot))
                 {
+                    // module.Type (SPEC §4.7)
                     Next();
-                    arguments.Add(ParseType());
+                    var inner = ParseTypeArguments(ExpectIdentifier());
+                    return new QualifiedType(name, inner, SpanFrom(start));
                 }
-                Expect(TokenKind.CloseBracket);
-                return new GenericType(name, arguments.ToImmutable(), SpanFrom(start));
+                return ParseTypeArguments(name);
         }
+    }
+
+    // NAME [ "[" type { "," type } "]" ]
+    private TypeSyntax ParseTypeArguments(Identifier name)
+    {
+        if (!At(TokenKind.OpenBracket))
+            return new NamedType(name, name.Span);
+        Next();
+        var arguments = ImmutableArray.CreateBuilder<TypeSyntax>();
+        arguments.Add(ParseType());
+        while (At(TokenKind.Comma))
+        {
+            Next();
+            arguments.Add(ParseType());
+        }
+        Expect(TokenKind.CloseBracket);
+        return new GenericType(name, arguments.ToImmutable(), SpanFrom(name.Span.Start));
     }
 
     // ---- Expressions ----

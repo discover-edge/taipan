@@ -25,6 +25,13 @@ public sealed class CSharpEmitter
     private const int MaxInstantiationDepth = 32;
 
     private readonly SourceText _source;
+
+    // The file of the code being emitted, for #line directives (SPEC §4.7).
+    private SourceText _lineSource;
+
+    // C# names for functions, constants, structs and enums. Definitions with the same name in
+    // different modules get numeric suffixes (SPEC §8).
+    private readonly Dictionary<Symbol, string> _names = [];
     private readonly BoundProgram _program;
     private readonly StringBuilder _functionsOut = new();
     private readonly StringBuilder _typesOut = new();
@@ -51,11 +58,12 @@ public sealed class CSharpEmitter
     private readonly DiagnosticBag _diagnostics = new();
     private int _depth;
     private TextSpan _rootSpan;
+    private SourceText? _rootSource;
     private TextSpan _statementSpan;
     private bool _tooDeep;
 
     /// <summary>A generic definition to emit with concrete type arguments.</summary>
-    private sealed record Instance(Symbol Definition, ImmutableArray<TaipanType> TypeArguments, string Name, int Depth, TextSpan RootSpan);
+    private sealed record Instance(Symbol Definition, ImmutableArray<TaipanType> TypeArguments, string Name, int Depth, TextSpan RootSpan, SourceText RootSource);
 
     /// <summary>
     /// A loop being emitted. Inside a <c>switch</c>, a C# <c>break</c> would leave the switch, so
@@ -71,15 +79,22 @@ public sealed class CSharpEmitter
     private CSharpEmitter(SourceText source, BoundProgram program)
     {
         _source = source;
+        _lineSource = source;
         _program = program;
-        _globalNames =
+        _globalNames = [.. program.Enums.SelectMany(e => e.Variants.Select(v => v.Name))];
+        IEnumerable<Symbol> definitions =
         [
-            .. program.Constants.Select(c => c.Symbol.Name),
-            .. program.Functions.Select(f => f.Symbol.Name),
-            .. program.Structs.Select(s => s.Symbol.Name),
-            .. program.Enums.Select(e => e.Name),
-            .. program.Enums.SelectMany(e => e.Variants.Select(v => v.Name)),
+            .. program.Constants.Select(c => c.Symbol),
+            .. program.Functions.Select(f => f.Symbol).Distinct(),
+            .. program.Structs.Select(s => s.Symbol),
+            .. program.Enums,
         ];
+        foreach (var definition in definitions)
+        {
+            var name = UniqueGlobal(definition.Name);
+            _globalNames.Add(name);
+            _names[definition] = name;
+        }
         _out = _functionsOut;
         foreach (var function in program.Functions.Where(f => !f.Symbol.TypeParameters.IsEmpty))
         {
@@ -115,7 +130,7 @@ public sealed class CSharpEmitter
     {
         _indent = 1;
         foreach (var constant in _program.Constants)
-            Line($"public static {TypeName(constant.Symbol.Type)} @{constant.Symbol.Name} = default!;");
+            Line($"public static {TypeName(constant.Symbol.Type)} @{_names[constant.Symbol]} = default!;");
         if (!_program.Constants.IsEmpty)
             Line();
 
@@ -123,7 +138,7 @@ public sealed class CSharpEmitter
         foreach (var function in _program.Functions.Where(f => f.Symbol.TypeParameters.IsEmpty))
         {
             Line();
-            EmitFunction(function, isMethod: false);
+            EmitFunction(function, isMethod: false, _names[function.Symbol]);
         }
 
         _out = _typesOut;
@@ -131,12 +146,12 @@ public sealed class CSharpEmitter
         foreach (var structDef in _program.Structs.Where(s => s.Symbol.TypeParameters.IsEmpty))
         {
             Line();
-            EmitStruct(structDef, structDef.Symbol.Name);
+            EmitStruct(structDef, _names[structDef.Symbol]);
         }
         foreach (var enumSymbol in _program.Enums.Where(e => e.TypeParameters.IsEmpty))
         {
             Line();
-            EmitEnum(enumSymbol, enumSymbol.Name);
+            EmitEnum(enumSymbol, _names[enumSymbol]);
         }
 
         while (_pending.TryDequeue(out var instance))
@@ -157,7 +172,7 @@ public sealed class CSharpEmitter
 
     private void EmitInstance(Instance instance)
     {
-        (_depth, _rootSpan) = (instance.Depth, instance.RootSpan);
+        (_depth, _rootSpan, _rootSource) = (instance.Depth, instance.RootSpan, instance.RootSource);
         switch (instance.Definition)
         {
             case FunctionSymbol function:
@@ -205,8 +220,10 @@ public sealed class CSharpEmitter
             return existing;
 
         var root = _depth == 0 ? _statementSpan : _rootSpan;
+        var rootSource = _depth == 0 ? _lineSource : _rootSource!;
         if (_depth + 1 > MaxInstantiationDepth)
         {
+            _diagnostics.Source = rootSource;
             if (!_tooDeep)
                 _diagnostics.ReportInstantiationTooDeep(root, definition.Name, $"{definition.Name}[{string.Join(", ", typeArguments.Select(a => Abbreviate(a, 3)))}]");
             _tooDeep = true;
@@ -216,7 +233,7 @@ public sealed class CSharpEmitter
         var name = UniqueGlobal($"{definition.Name}_{string.Join("_", typeArguments.Select(Mangle))}");
         _globalNames.Add(name);
         _instanceNames[key] = name;
-        _pending.Enqueue(new Instance(definition, typeArguments, name, _depth + 1, root));
+        _pending.Enqueue(new Instance(definition, typeArguments, name, _depth + 1, root, rootSource));
         return name;
     }
 
@@ -253,9 +270,11 @@ public sealed class CSharpEmitter
         _indent++;
         foreach (var constant in _program.Constants)
         {
+            _lineSource = constant.Source ?? _source;
             LineDirective(constant.Span);
-            Line($"@{constant.Symbol.Name} = {Expr(constant.Value)};");
+            Line($"@{_names[constant.Symbol]} = {Expr(constant.Value)};");
         }
+        _lineSource = _source;
         EmitStatements(_program.TopLevel.Statements);
         HiddenDirective();
         _indent--;
@@ -265,6 +284,7 @@ public sealed class CSharpEmitter
     private void EmitFunction(BoundFunction function, bool isMethod, string? name = null)
     {
         var symbol = function.Symbol;
+        _lineSource = function.Source ?? _source;
         _locals = LocalNames.For(function.Parameters, function.Body, _globalNames);
         _self = symbol.Self;
         var parameters = string.Join(", ", function.Parameters.Select(p => $"{TypeName(p.Type)} @{_locals[p]}"));
@@ -571,7 +591,7 @@ public sealed class CSharpEmitter
         {
             BoundLiteral literal => Literal(literal.Value),
             BoundVariable variable when variable.Symbol == _self => "this",
-            BoundVariable { Symbol.Kind: VariableKind.Constant } variable => Global(variable.Symbol.Name),
+            BoundVariable { Symbol.Kind: VariableKind.Constant } variable => Global(_names[variable.Symbol]),
             BoundVariable variable => $"@{_locals[variable.Symbol]}",
             BoundUnary { Op: UnaryOp.Negate } unary when OverflowsAtCompileTime(unary) =>
                 $"{Runtime}.Ops.Negate({Expr(unary.Operand)})",
@@ -599,7 +619,7 @@ public sealed class CSharpEmitter
 
     private string FunctionReference(BoundCall call) =>
         call.TypeArguments.IsEmpty
-            ? Global(call.Function.Name)
+            ? Global(_names[call.Function])
             : Global(InstanceName(call.Function, [.. call.TypeArguments.Select(Concrete)]));
 
     private string Arguments(IEnumerable<BoundExpr> arguments) => string.Join(", ", arguments.Select(Expr));
@@ -825,9 +845,9 @@ public sealed class CSharpEmitter
         NothingType => "void",
         ListOfType list => $"{Collections}.List<{TypeName(list.Element)}>",
         DictOfType dict => $"{Collections}.OrderedDictionary<{TypeName(dict.Key)}, {TypeName(dict.Value)}>",
-        StructType { TypeArguments.IsEmpty: true } structType => $"global::@{structType.Symbol.Name}",
+        StructType { TypeArguments.IsEmpty: true } structType => $"global::@{_names[structType.Symbol]}",
         StructType structType => $"global::@{InstanceName(structType.Symbol, structType.TypeArguments)}",
-        EnumType { TypeArguments.IsEmpty: true } enumType => $"global::@{enumType.Symbol.Name}",
+        EnumType { TypeArguments.IsEmpty: true } enumType => $"global::@{_names[enumType.Symbol]}",
         EnumType enumType => $"global::@{InstanceName(enumType.Symbol, enumType.TypeArguments)}",
         OptionalOf optional => $"{TypeName(optional.Inner)}?",
         var other => throw new InvalidOperationException($"no C# type for {other}"),
@@ -842,8 +862,8 @@ public sealed class CSharpEmitter
     private void LineDirective(TextSpan span)
     {
         _statementSpan = span;
-        var line = _source.GetLinePosition(span.Start).Line;
-        _out.Append($"#line {line} \"{_source.Path}\"\n");
+        var line = _lineSource.GetLinePosition(span.Start).Line;
+        _out.Append($"#line {line} \"{_lineSource.Path}\"\n");
     }
 
     private void HiddenDirective() => _out.Append("#line hidden\n");

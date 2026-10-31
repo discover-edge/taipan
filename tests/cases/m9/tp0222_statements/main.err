@@ -1,0 +1,3 @@
+tests/cases/m9/tp0222_statements/helper.tpn:1:1: error TP0222: only the main file can have top-level statements
+tests/cases/m9/tp0222_statements/helper.tpn:2:1: error TP0222: only the main file can have top-level statements
+tests/cases/m9/tp0222_statements/helper.tpn:7:1: error TP0222: only the main file can have top-level statements

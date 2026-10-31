@@ -124,3 +124,17 @@ public sealed class TypeParameterSymbol(string name) : Symbol(name)
     /// <summary>The types a constrained parameter can stand for (SPEC §3.6); empty if unconstrained.</summary>
     public ImmutableArray<TaipanType> Constraints { get; set; } = [];
 }
+
+/// <summary>
+/// A module bound by <c>import m</c> (SPEC §4.7). Its dictionaries hold only the names the module
+/// itself defines, which are the names it exports.
+/// </summary>
+public sealed class ModuleSymbol(string name, IReadOnlyDictionary<string, Symbol> definitions,
+    IReadOnlyDictionary<string, StructSymbol> structs, IReadOnlyDictionary<string, EnumSymbol> enums) : Symbol(name)
+{
+    public IReadOnlyDictionary<string, Symbol> Definitions { get; } = definitions;
+
+    public IReadOnlyDictionary<string, StructSymbol> Structs { get; } = structs;
+
+    public IReadOnlyDictionary<string, EnumSymbol> Enums { get; } = enums;
+}

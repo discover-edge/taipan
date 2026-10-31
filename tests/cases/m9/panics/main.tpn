@@ -1,0 +1,4 @@
+import mathx
+
+print(mathx.safe(10, 2))
+print(mathx.unsafe(1, 0))

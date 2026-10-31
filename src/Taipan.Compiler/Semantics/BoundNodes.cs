@@ -16,10 +16,17 @@ public sealed record BoundProgram(
 
 public sealed record BoundStruct(StructSymbol Symbol, ImmutableArray<BoundFunction> Methods, TextSpan Span);
 
-public sealed record BoundConstant(VariableSymbol Symbol, BoundExpr Value, TextSpan Span);
+public sealed record BoundConstant(VariableSymbol Symbol, BoundExpr Value, TextSpan Span)
+{
+    /// <summary>The file the constant is defined in (SPEC §4.7).</summary>
+    public SourceText? Source { get; init; }
+}
 
 public sealed record BoundFunction(FunctionSymbol Symbol, BoundBlock Body, TextSpan Span)
 {
+    /// <summary>The file the function is defined in (SPEC §4.7).</summary>
+    public SourceText? Source { get; init; }
+
     /// <summary>The parameters the body refers to; specialized copies for a constrained body.</summary>
     public ImmutableArray<VariableSymbol> Parameters { get; init; } = Symbol.Parameters;
 

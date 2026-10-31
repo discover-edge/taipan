@@ -215,9 +215,9 @@ public class ParserTests
     public void MatchWithInlineAndBlockArms() =>
         Assert.Equal(
             "MatchStmt(NameExpr(h), [" +
-            "MatchArm(VariantPattern(null, Ok, null), Block([ExprStmt(CallExpr(NameExpr(print), [Argument(null, StringLiteral(\"ok\"))]))])), " +
-            "MatchArm(VariantPattern(null, Degraded, [h, t]), Block([PassStmt, ReturnStmt(null)])), " +
-            "MatchArm(VariantPattern(Health, Down, []), Block([PassStmt]))])",
+            "MatchArm(VariantPattern(null, null, Ok, null), Block([ExprStmt(CallExpr(NameExpr(print), [Argument(null, StringLiteral(\"ok\"))]))])), " +
+            "MatchArm(VariantPattern(null, null, Degraded, [h, t]), Block([PassStmt, ReturnStmt(null)])), " +
+            "MatchArm(VariantPattern(null, Health, Down, []), Block([PassStmt]))])",
             Snapshot("match h:\n    Ok: print(\"ok\")\n    Degraded(h, t):\n        pass\n        return\n    Health.Down(): pass\n"));
 
     [Fact]
@@ -559,6 +559,37 @@ public class ParserTests
     [InlineData("def f[](x: int):\n    pass\n", "1:7 TP0100: expected name, found ']'")]
     [InlineData("let b: Box[] = x\n", "1:12 TP0100: expected type, found ']'")]
     public void TypeParamSyntaxErrors(string text, string expected) =>
+        Assert.Equal([expected], Errors(text));
+
+    // ---- import_stmt and qualified names (M9) ----
+
+    [Fact]
+    public void Imports() =>
+        Assert.Equal(
+            "ImportStmt(geometry, null)\nImportStmt(geometry, g)\n" +
+            "FromImportStmt(shapes, [ImportName(area, null), ImportName(Point, P)])",
+            Snapshot("import geometry\nimport geometry as g\nfrom shapes import area, Point as P\n"));
+
+    [Theory]
+    [InlineData("m.Point", "QualifiedType(m, NamedType(Point))")]
+    [InlineData("m.Box[int]?", "OptionalType(QualifiedType(m, GenericType(Box, [NamedType(int)])))")]
+    [InlineData("list[m.Point]", "ListType(QualifiedType(m, NamedType(Point)))")]
+    public void QualifiedTypes(string type, string expected) =>
+        Assert.Equal($"LetStmt(x, {expected}, NameExpr(y))", Snapshot($"let x: {type} = y\n"));
+
+    [Fact]
+    public void ModuleQualifiedPattern() =>
+        Assert.Equal(
+            "MatchStmt(NameExpr(h), [MatchArm(VariantPattern(m, Health, Ok, null), Block([PassStmt])), " +
+            "MatchArm(VariantPattern(m, Health, Degraded, [a, b]), Block([PassStmt]))])",
+            Snapshot("match h:\n    m.Health.Ok: pass\n    m.Health.Degraded(a, b): pass\n"));
+
+    [Theory]
+    [InlineData("from m import *\n", "1:15 TP0100: expected name, found '*'")]
+    [InlineData("def f():\n    import m\n", "2:5 TP0100: expected statement, found 'import'")]
+    [InlineData("import m.n\n", "1:9 TP0100: expected newline, found '.'")]
+    [InlineData("from m import\n", "1:14 TP0100: expected name, found newline")]
+    public void ImportSyntaxErrors(string text, string expected) =>
         Assert.Equal([expected], Errors(text));
 
     // ---- Features from later milestones are syntax errors ----

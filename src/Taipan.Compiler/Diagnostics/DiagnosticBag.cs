@@ -12,8 +12,25 @@ public sealed class DiagnosticBag
 {
     private readonly List<Diagnostic> _items = [];
 
-    /// <summary>Diagnostics in source order (stable for equal positions).</summary>
-    public ImmutableArray<Diagnostic> ToImmutable() => [.. _items.OrderBy(d => d.Span.Start)];
+    /// <summary>The file new diagnostics belong to, when a program has several (SPEC §4.7).</summary>
+    public SourceText? Source { get; set; }
+
+    /// <summary>The order to report files in: the main file first, then its modules (SPEC §4.7).</summary>
+    public IReadOnlyList<SourceText> FileOrder { get; set; } = [];
+
+    /// <summary>Diagnostics grouped by file in <see cref="FileOrder"/>, then in source order (stable for equal positions).</summary>
+    public ImmutableArray<Diagnostic> ToImmutable() =>
+        [.. _items.OrderBy(d => d.Source is { } source ? IndexOf(source) : -1).ThenBy(d => d.Span.Start)];
+
+    private int IndexOf(SourceText source)
+    {
+        for (var i = 0; i < FileOrder.Count; i++)
+        {
+            if (FileOrder[i] == source)
+                return i;
+        }
+        return FileOrder.Count;
+    }
 
     public void ReportTabInIndentation(TextSpan span) =>
         Add("TP0001", span, "tab in indentation");
@@ -137,6 +154,18 @@ public sealed class DiagnosticBag
         return list.Count <= 1 ? string.Concat(list) : $"{string.Join(", ", list[..^1])} or {list[^1]}";
     }
 
+    public void ReportModuleNotFound(TextSpan span, string module, string path) =>
+        Add("TP0221", span, $"module '{module}' not found", $"looked for {path}");
+
+    public void ReportStatementInModule(TextSpan span) =>
+        Add("TP0222", span, "only the main file can have top-level statements");
+
+    public void ReportNoDefinition(TextSpan span, string module, string name) =>
+        Add("TP0201", span, $"module '{module}' has no definition '{name}'");
+
+    public void ReportModuleAsValue(TextSpan span, string module) =>
+        Add("TP0200", span, $"'{module}' is a module, not a value");
+
     public void ReportInstantiationTooDeep(TextSpan span, string function, string instance) =>
         Add("TP0219", span, $"instantiating '{function}' needs '{instance}', which is too deep");
 
@@ -166,7 +195,7 @@ public sealed class DiagnosticBag
     }
 
     public void ReportUnreachableArm(TextSpan span) =>
-        _items.Add(new Diagnostic("TP0300", span, "unreachable match arm", IsWarning: true));
+        _items.Add(new Diagnostic("TP0300", span, "unreachable match arm", IsWarning: true) { Source = Source });
 
     public void ReportMethodAsValue(TextSpan span, string method) =>
         Add("TP0200", span, $"'{method}' is a method; call it");
@@ -244,7 +273,7 @@ public sealed class DiagnosticBag
     public void AddRange(IEnumerable<Diagnostic> diagnostics) => _items.AddRange(diagnostics);
 
     private void Add(string code, TextSpan span, string message, string? help = null) =>
-        _items.Add(new Diagnostic(code, span, message, help));
+        _items.Add(new Diagnostic(code, span, message, help) { Source = Source });
 
     private static string Describe(Rune character) =>
         Rune.IsControl(character) || Rune.IsWhiteSpace(character)

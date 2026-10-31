@@ -1,0 +1,9 @@
+import aaa_first
+import lib
+from lib import missing, helper, inner
+from lib import Thing as T
+
+print(lib.nope(1), lib.NOPE)
+let t: lib.Nope = T(1)
+print(lib)
+let x = lib.Thing(1)

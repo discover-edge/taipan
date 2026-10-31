@@ -90,8 +90,8 @@ public static class Cli
     }
 
     /// <summary>
-    /// Runs lex → parse → bind → emit. Each stage runs only if the previous one reported no
-    /// errors (SPEC §9). Features from later milestones stop compilation as "not implemented".
+    /// Runs load (lex and parse every file) → bind → emit. Each stage runs only if the previous
+    /// one reported no errors (SPEC §9). Features from later milestones stop compilation as "not implemented".
     /// <paramref name="program"/> is set only on success.
     /// </summary>
     private static int Compile(string path, TextWriter stderr, out EmittedProgram? program)
@@ -103,33 +103,29 @@ public static class Cli
             return ExitUsage;
         }
 
-        var source = SourceText.From(File.ReadAllText(path), path);
-        var lexed = Lexer.Lex(source);
-        if (Report(lexed.Diagnostics, source, stderr))
+        var loaded = ModuleLoader.Load(path);
+        if (Report(loaded.Diagnostics, stderr))
             return ExitCompileError;
 
-        var parsed = Parser.Parse(source, lexed.Tokens);
-        if (Report(parsed.Diagnostics, source, stderr))
-            return ExitCompileError;
-
-        var bound = Binder.Bind(source, parsed.Unit);
+        var bound = Binder.Bind(loaded.Modules);
         if (bound.Unsupported is not null)
             return NotImplemented(bound.Unsupported, stderr);
-        if (Report(bound.Diagnostics, source, stderr))
+        if (Report(bound.Diagnostics, stderr))
             return ExitCompileError;
 
+        var source = loaded.Modules[0].Source;
         var emitted = CSharpEmitter.Emit(source, bound.Program);
-        if (Report(emitted.Diagnostics, source, stderr))
+        if (Report(emitted.Diagnostics, stderr))
             return ExitCompileError;
         program = emitted;
         return ExitSuccess;
     }
 
-    /// <summary>Prints diagnostics; true if any is an error. Warnings don't fail compilation (SPEC §9).</summary>
-    private static bool Report(ImmutableArray<Diagnostic> diagnostics, SourceText source, TextWriter stderr)
+    /// <summary>Prints diagnostics, each in its own file; true if any is an error. Warnings don't fail compilation (SPEC §9).</summary>
+    private static bool Report(ImmutableArray<Diagnostic> diagnostics, TextWriter stderr)
     {
         foreach (var diagnostic in diagnostics)
-            stderr.WriteLine(diagnostic.Format(source));
+            stderr.WriteLine(diagnostic.Format(diagnostic.Source!));
         return diagnostics.Any(d => !d.IsWarning);
     }
 

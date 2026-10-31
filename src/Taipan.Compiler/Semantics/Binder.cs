@@ -13,20 +13,54 @@ namespace Taipan.Compiler.Semantics;
 public sealed record BindResult(BoundProgram Program, ImmutableArray<Diagnostic> Diagnostics, string? Unsupported);
 
 /// <summary>
-/// Resolves names and checks types (SPEC §3–§6), producing the bound tree. Works in passes:
-/// struct names; then the hoisted declarations (constants, function signatures, struct fields
-/// and method signatures); then function and method bodies and top-level statements.
+/// Resolves names and checks types (SPEC §3–§6), producing the bound tree for a whole program
+/// (§4.7). Works in passes over every file: type and variant names; type imports; the other
+/// hoisted declarations (constants, function signatures, struct fields and method signatures);
+/// value imports; then function and method bodies, and the main file's top-level statements.
 /// </summary>
 public sealed class Binder
 {
     private static readonly BigInteger MaxInt = long.MaxValue;
     private static readonly HashSet<string> BuiltinTypeNames = ["int", "float", "bool", "str", "list", "dict", "py"];
 
-    private readonly SourceText _source;
     private DiagnosticBag _diagnostics = new();
-    private readonly Scope _global = new(null);
-    private readonly Dictionary<string, StructSymbol> _structs = [];
-    private readonly Dictionary<string, EnumSymbol> _enums = [];
+    private readonly Scope _builtins = new(null);
+
+    // The module being bound: its file, global scope and type names. Switched by Enter.
+    private SourceText _source = null!;
+    private Scope _global = null!;
+    private Dictionary<string, StructSymbol> _structs = null!;
+    private Dictionary<string, EnumSymbol> _enums = null!;
+    private Dictionary<string, Symbol> _definitions = null!;
+
+    /// <summary>One file of the program, with what it defines (and so exports).</summary>
+    private sealed class Module(SourceModule file, Scope global)
+    {
+        public SourceModule File { get; } = file;
+
+        public Scope Global { get; } = global;
+
+        public Dictionary<string, StructSymbol> Structs { get; } = [];
+
+        public Dictionary<string, EnumSymbol> Enums { get; } = [];
+
+        public Dictionary<string, Symbol> Definitions { get; } = [];
+
+        public List<(StructDef Syntax, StructSymbol Symbol)> StructDefs { get; } = [];
+
+        public List<(EnumDef Syntax, EnumSymbol Symbol)> EnumDefs { get; } = [];
+
+        public List<BoundConstant> Constants { get; } = [];
+
+        public List<(FuncDef Syntax, FunctionSymbol Symbol)> Functions { get; } = [];
+
+        public List<(MethodDef Syntax, FunctionSymbol Symbol)> Methods { get; } = [];
+
+        /// <summary><c>from m import x</c> names that weren't types, resolved once functions and constants exist.</summary>
+        public List<(Module Target, ImportName Name)> PendingImports { get; } = [];
+
+        public ModuleSymbol Symbol(string name) => new(name, Definitions, Structs, Enums);
+    }
     // Type names in scope inside a generic definition: each type parameter, or the concrete type it
     // stands for while a constrained body is checked for one combination (SPEC §3.6).
     private Dictionary<string, TaipanType> _typeParameters = [];
@@ -37,76 +71,203 @@ public sealed class Binder
     private int _loopDepth;
     private string? _unsupported;
 
-    private Binder(SourceText source)
+    private Binder()
     {
-        _source = source;
-        _scope = _global;
+        _scope = _builtins;
     }
 
-    public static BindResult Bind(SourceText source, CompilationUnit unit)
+    public static BindResult Bind(SourceText source, CompilationUnit unit) =>
+        Bind([new SourceModule(Path.GetFileNameWithoutExtension(source.Path), source, unit)]);
+
+    /// <summary>Binds a program: the main file first, then its modules (SPEC §4.7).</summary>
+    public static BindResult Bind(ImmutableArray<SourceModule> files)
     {
-        var binder = new Binder(source);
-        var program = binder.BindProgram(unit);
+        var binder = new Binder();
+        var program = binder.BindProgram(files);
         return new BindResult(program, binder._diagnostics.ToImmutable(), binder._unsupported);
     }
 
     // ---- Program ----
 
-    private BoundProgram BindProgram(CompilationUnit unit)
+    private void Enter(Module module)
+    {
+        _source = module.File.Source;
+        _diagnostics.Source = _source;
+        _global = module.Global;
+        _scope = _global;
+        _structs = module.Structs;
+        _enums = module.Enums;
+        _definitions = module.Definitions;
+    }
+
+    private BoundProgram BindProgram(ImmutableArray<SourceModule> files)
     {
         foreach (var builtin in FunctionSymbol.CreateBuiltins())
-            _global.Declare(builtin);
+            _builtins.Declare(builtin);
+        _diagnostics.FileOrder = [.. files.Select(f => f.Source)];
+
+        var modules = files.Select(f => new Module(f, new Scope(_builtins))).ToList();
+        var byName = modules.ToDictionary(m => m.File.Name);
+        var main = modules[0];
 
         // Type names first, in source order, so a clash is reported at the later definition.
-        var structDefs = new List<(StructDef Syntax, StructSymbol Symbol)>();
-        var enumDefs = new List<(EnumDef Syntax, EnumSymbol Symbol)>();
-        foreach (var item in unit.Items)
+        foreach (var module in modules)
         {
-            if (item is StructDef structDef)
-                structDefs.Add((structDef, DeclareStruct(structDef)));
-            else if (item is EnumDef enumDef)
-                enumDefs.Add(DeclareEnum(enumDef));
+            Enter(module);
+            foreach (var item in module.File.Unit.Items)
+            {
+                if (item is StructDef structDef)
+                    module.StructDefs.Add((structDef, DeclareStruct(structDef)));
+                else if (item is EnumDef enumDef)
+                    module.EnumDefs.Add(DeclareEnum(enumDef));
+            }
         }
 
-        var constants = ImmutableArray.CreateBuilder<BoundConstant>();
-        var functions = new List<(FuncDef Syntax, FunctionSymbol Symbol)>();
-        var methods = new List<(MethodDef Syntax, FunctionSymbol Symbol)>();
-        foreach (var item in unit.Items)
+        foreach (var module in modules)
+        {
+            Enter(module);
+            BindImports(module, byName);
+        }
+
+        foreach (var module in modules)
+        {
+            Enter(module);
+            BindDeclarations(module);
+        }
+
+        foreach (var module in modules)
+        {
+            Enter(module);
+            foreach (var (target, name) in module.PendingImports)
+                ImportValue(target, name);
+            if (module != main)
+            {
+                foreach (var stmt in module.File.Unit.Items.OfType<Stmt>())
+                    _diagnostics.ReportStatementInModule(stmt.Span);
+            }
+        }
+
+        Enter(main);
+        foreach (var stmt in main.File.Unit.Items.OfType<Stmt>())
+            CollectScriptNames(stmt);
+
+        var functions = new List<BoundFunction>();
+        var structs = new List<BoundStruct>();
+        foreach (var module in modules)
+        {
+            Enter(module);
+            functions.AddRange(module.Functions.SelectMany(f => BindFunctionBodies(f.Symbol, f.Syntax)));
+            structs.AddRange(module.StructDefs.Select(s => new BoundStruct(
+                s.Symbol,
+                [.. module.Methods.Where(m => m.Symbol.Self!.Type == s.Symbol.Type)
+                    .Select(m => BindBody(m.Symbol, m.Syntax.Params, m.Syntax.Name, m.Syntax.Body, m.Syntax.Span))],
+                s.Syntax.Span)));
+        }
+
+        Enter(main);
+        _scope = new Scope(_global);
+        var unit = main.File.Unit;
+        var topLevel = unit.Items.OfType<Stmt>().Select(BindStmt).ToImmutableArray();
+        return new BoundProgram(
+            [.. modules.SelectMany(m => m.EnumDefs.Select(e => e.Symbol))],
+            [.. structs],
+            [.. InitializationOrder(main, byName).SelectMany(m => m.Constants)],
+            [.. functions],
+            new BoundBlock(topLevel, unit.Span));
+    }
+
+    /// <summary>Constants, function signatures, struct members and variant fields, in source order.</summary>
+    private void BindDeclarations(Module module)
+    {
+        foreach (var item in module.File.Unit.Items)
         {
             switch (item)
             {
                 case ConstDef constDef:
-                    constants.Add(BindConstDef(constDef));
+                    module.Constants.Add(BindConstDef(constDef) with { Source = _source });
                     break;
                 case FuncDef funcDef:
-                    functions.Add((funcDef, BindFunctionSignature(funcDef)));
+                    module.Functions.Add((funcDef, BindFunctionSignature(funcDef)));
                     break;
                 case StructDef structDef:
-                    var symbol = structDefs.First(s => s.Syntax == structDef).Symbol;
-                    methods.AddRange(BindStructMembers(structDef, symbol));
+                    var symbol = module.StructDefs.First(s => s.Syntax == structDef).Symbol;
+                    module.Methods.AddRange(BindStructMembers(structDef, symbol));
                     break;
                 case EnumDef enumDef:
-                    BindVariantFields(enumDef, enumDefs.First(e => e.Syntax == enumDef).Symbol);
+                    BindVariantFields(enumDef, module.EnumDefs.First(e => e.Syntax == enumDef).Symbol);
                     break;
             }
         }
+    }
 
-        foreach (var stmt in unit.Items.OfType<Stmt>())
-            CollectScriptNames(stmt);
+    /// <summary>
+    /// <c>import m</c> binds the module; <c>from m import x</c> binds types (and an enum's variants)
+    /// now, and other names once they're declared (SPEC §4.7).
+    /// </summary>
+    private void BindImports(Module module, Dictionary<string, Module> byName)
+    {
+        foreach (var item in module.File.Unit.Items)
+        {
+            switch (item)
+            {
+                case ImportStmt import when import.Module.Text == ModuleLoader.PythonModule:
+                case FromImportStmt { Module.Text: ModuleLoader.PythonModule }:
+                    Unsupported("Python interop");
+                    break;
+                case ImportStmt import when byName.TryGetValue(import.Module.Text, out var target):
+                    var alias = import.Alias ?? import.Module;
+                    DeclareGlobal(alias, target.Symbol(alias.Text), isDefinition: false);
+                    break;
+                case FromImportStmt from when byName.TryGetValue(from.Module.Text, out var source):
+                    foreach (var name in from.Names)
+                    {
+                        if (source.Structs.TryGetValue(name.Name.Text, out var structSymbol))
+                            DeclareGlobal(name.Alias ?? name.Name, structSymbol, isDefinition: false);
+                        else if (source.Enums.TryGetValue(name.Name.Text, out var enumSymbol))
+                            ImportEnum(name, enumSymbol);
+                        else
+                            module.PendingImports.Add((source, name));
+                    }
+                    break;
+            }
+            // A module that wasn't found was already reported (TP0221) by the loader.
+        }
+    }
 
-        var boundFunctions = functions.SelectMany(f => BindFunctionBodies(f.Symbol, f.Syntax)).ToImmutableArray();
-        var boundStructs = structDefs
-            .Select(s => new BoundStruct(
-                s.Symbol,
-                [.. methods.Where(m => m.Symbol.Self!.Type == s.Symbol.Type)
-                    .Select(m => BindBody(m.Symbol, m.Syntax.Params, m.Syntax.Name, m.Syntax.Body, m.Syntax.Span))],
-                s.Syntax.Span))
-            .ToImmutableArray();
+    private void ImportEnum(ImportName name, EnumSymbol enumSymbol)
+    {
+        if (!DeclareGlobal(name.Alias ?? name.Name, enumSymbol, isDefinition: false))
+            return;
+        foreach (var variant in enumSymbol.Variants)
+            DeclareVariant(variant, name.Span, isDefinition: false);
+    }
 
-        _scope = new Scope(_global);
-        var topLevel = unit.Items.OfType<Stmt>().Select(BindStmt).ToImmutableArray();
-        return new BoundProgram(
-            [.. enumDefs.Select(e => e.Symbol)], boundStructs, constants.ToImmutable(), boundFunctions, new BoundBlock(topLevel, unit.Span));
+    private void ImportValue(Module target, ImportName name)
+    {
+        if (target.Definitions.TryGetValue(name.Name.Text, out var symbol) && symbol is FunctionSymbol or VariableSymbol or VariantSymbol)
+            DeclareGlobal(name.Alias ?? name.Name, symbol, isDefinition: false);
+        else
+            _diagnostics.ReportNoDefinition(name.Name.Span, target.File.Name, name.Name.Text);
+    }
+
+    /// <summary>Modules after the modules they import; a cycle is broken where it's first reached (SPEC §4.7).</summary>
+    private static List<Module> InitializationOrder(Module main, Dictionary<string, Module> byName)
+    {
+        var order = new List<Module>();
+        var visited = new HashSet<Module>();
+        void Visit(Module module)
+        {
+            if (!visited.Add(module))
+                return;
+            foreach (var import in ModuleLoader.Imports(module.File.Unit))
+            {
+                if (byName.TryGetValue(import.Text, out var target))
+                    Visit(target);
+            }
+            order.Add(module);
+        }
+        Visit(main);
+        return order;
     }
 
     private static ImmutableArray<TypeParameterSymbol> NewTypeParameters(ImmutableArray<TypeParam> parameters) =>
@@ -124,7 +285,7 @@ public sealed class Binder
             var name = parameter.Name;
             if (!seen.Add(name.Text))
                 _diagnostics.ReportDuplicateDefinition(name.Span, name.Text);
-            else if (BuiltinTypeNames.Contains(name.Text) || _structs.ContainsKey(name.Text) || _enums.ContainsKey(name.Text))
+            else if (BuiltinTypeNames.Contains(name.Text) || ResolveTypeName(name.Text) is not null)
                 _diagnostics.ReportShadowing(name.Span, name.Text);
             if (!allowConstraints && !parameter.Constraints.IsEmpty)
                 _diagnostics.ReportConstraintNotOnFunction(parameter.Constraints[0].Span);
@@ -208,25 +369,41 @@ public sealed class Binder
                 continue;
             }
             variants.Add(variant);
-
-            switch (_global.LookupLocal(variant.Name))
-            {
-                case null:
-                    _global.Declare(variant);
-                    break;
-                case VariantSymbol other:
-                    _global.Declare(new AmbiguousVariantSymbol(variant.Name, [other, variant]));
-                    break;
-                case AmbiguousVariantSymbol ambiguous:
-                    _global.Declare(new AmbiguousVariantSymbol(variant.Name, [.. ambiguous.Variants, variant]));
-                    break;
-                default:
-                    _diagnostics.ReportDuplicateDefinition(variantDef.Name.Span, variant.Name);
-                    break;
-            }
+            DeclareVariant(variant, variantDef.Name.Span, isDefinition: true);
         }
         symbol.Variants = variants.ToImmutable();
         return (enumDef, symbol);
+    }
+
+    /// <summary>
+    /// A variant's unqualified name. Shared with another enum's variant it becomes ambiguous
+    /// (TP0216 on use); shared with any other global it's TP0214 (SPEC §4.4).
+    /// </summary>
+    private void DeclareVariant(VariantSymbol variant, TextSpan span, bool isDefinition)
+    {
+        Symbol declared;
+        switch (_global.Lookup(variant.Name))
+        {
+            case null:
+                declared = variant;
+                break;
+            case VariantSymbol other when other != variant:
+                declared = new AmbiguousVariantSymbol(variant.Name, [other, variant]);
+                break;
+            case VariantSymbol:
+                return;
+            case AmbiguousVariantSymbol ambiguous when !ambiguous.Variants.Contains(variant):
+                declared = new AmbiguousVariantSymbol(variant.Name, [.. ambiguous.Variants, variant]);
+                break;
+            case AmbiguousVariantSymbol:
+                return;
+            default:
+                _diagnostics.ReportDuplicateDefinition(span, variant.Name);
+                return;
+        }
+        _global.Declare(variant.Name, declared);
+        if (isDefinition)
+            _definitions[variant.Name] = declared;
     }
 
     private void BindVariantFields(EnumDef enumDef, EnumSymbol symbol)
@@ -351,7 +528,7 @@ public sealed class Binder
         var reports = new List<(string When, ImmutableArray<Diagnostic> Diagnostics)>();
         foreach (var combination in combinations)
         {
-            _diagnostics = new DiagnosticBag();
+            _diagnostics = new DiagnosticBag { Source = _source };
             _specialization = new Dictionary<TypeParameterSymbol, TaipanType>(combination);
             var parameters = symbol.Parameters
                 .Select(p => new VariableSymbol(p.Name, TypeChecker.Substitute(p.Type, _specialization), VariableKind.Parameter))
@@ -402,7 +579,7 @@ public sealed class Binder
         _function = null;
         _scope = _global;
         _typeParameters = outerTypeParameters;
-        return new BoundFunction(symbol, boundBody, span);
+        return new BoundFunction(symbol, boundBody, span) { Source = _source };
     }
 
     /// <summary>Records every let/var/loop variable outside functions, for TP0211.</summary>
@@ -454,14 +631,20 @@ public sealed class Binder
 
     // ---- Declarations and lookup ----
 
-    private bool DeclareGlobal(Identifier name, Symbol symbol)
+    /// <summary>
+    /// Declares a name in the module's global scope under <paramref name="name"/> (an import may
+    /// rename it). A definition is also exported (SPEC §4.7).
+    /// </summary>
+    private bool DeclareGlobal(Identifier name, Symbol symbol, bool isDefinition = true)
     {
-        if (_global.LookupLocal(name.Text) is not null)
+        if (_global.Lookup(name.Text) is not null)
         {
             _diagnostics.ReportDuplicateDefinition(name.Span, name.Text);
             return false;
         }
-        _global.Declare(symbol);
+        _global.Declare(name.Text, symbol);
+        if (isDefinition)
+            _definitions[name.Text] = symbol;
         return true;
     }
 
@@ -502,10 +685,12 @@ public sealed class Binder
                 return Unsupported("the py type");
             case NamedType named when _typeParameters.TryGetValue(named.Name.Text, out var typeParameter):
                 return typeParameter;
-            case NamedType named when _structs.ContainsKey(named.Name.Text) || _enums.ContainsKey(named.Name.Text):
-                return BindGenericType(named.Name, [], named.Span);
+            case NamedType named when ResolveTypeName(named.Name.Text) is { } typeSymbol:
+                return BindGenericType(named.Name, [], named.Span, typeSymbol);
             case GenericType generic:
-                return BindGenericType(generic.Name, generic.Arguments, generic.Span);
+                return BindGenericType(generic.Name, generic.Arguments, generic.Span, ResolveTypeName(generic.Name.Text));
+            case QualifiedType qualified:
+                return BindQualifiedType(qualified);
             case NamedType named:
                 _diagnostics.ReportUndefinedType(named.Span, named.Name.Text);
                 return TaipanType.Error;
@@ -529,16 +714,44 @@ public sealed class Binder
         }
     }
 
+    /// <summary>A struct or enum visible in this file, defined or imported (SPEC §4.7).</summary>
+    private Symbol? ResolveTypeName(string name) => _global.Lookup(name) is StructSymbol or EnumSymbol ? _global.Lookup(name) : null;
+
+    /// <summary><c>m.Point</c> or <c>m.Box[int]</c>: a type that module <c>m</c> defines.</summary>
+    private TaipanType BindQualifiedType(QualifiedType qualified)
+    {
+        var (name, arguments) = qualified.Type switch
+        {
+            NamedType named => (named.Name, ImmutableArray<TypeSyntax>.Empty),
+            GenericType generic => (generic.Name, generic.Arguments),
+            _ => throw new InvalidOperationException($"unexpected qualified type {qualified.Type.GetType().Name}"),
+        };
+        if (_scope.Lookup(qualified.Module.Text) is not ModuleSymbol module)
+        {
+            _diagnostics.ReportUndefinedName(qualified.Module.Span, qualified.Module.Text);
+            return TaipanType.Error;
+        }
+        Symbol? symbol = module.Structs.TryGetValue(name.Text, out var structSymbol) ? structSymbol
+            : module.Enums.TryGetValue(name.Text, out var enumSymbol) ? enumSymbol : null;
+        if (symbol is null)
+        {
+            _diagnostics.ReportNoDefinition(name.Span, module.Name, name.Text);
+            return TaipanType.Error;
+        }
+        return BindGenericType(name, arguments, qualified.Span, symbol);
+    }
+
     /// <summary>A struct or enum type with exactly as many type arguments as it has parameters (SPEC §3.6).</summary>
-    private TaipanType BindGenericType(Identifier name, ImmutableArray<TypeSyntax> argumentSyntax, TextSpan span)
+    private TaipanType BindGenericType(Identifier name, ImmutableArray<TypeSyntax> argumentSyntax, TextSpan span, Symbol? symbol)
     {
         var arguments = argumentSyntax.Select(BindType).ToImmutableArray();
-        ImmutableArray<TypeParameterSymbol> parameters;
-        if (_structs.TryGetValue(name.Text, out var structSymbol))
-            parameters = structSymbol.TypeParameters;
-        else if (_enums.TryGetValue(name.Text, out var enumSymbol))
-            parameters = enumSymbol.TypeParameters;
-        else
+        var parameters = symbol switch
+        {
+            StructSymbol structSymbol => structSymbol.TypeParameters,
+            EnumSymbol enumSymbol => enumSymbol.TypeParameters,
+            _ => default,
+        };
+        if (parameters.IsDefault)
         {
             _diagnostics.ReportUndefinedType(name.Span, name.Text);
             return TaipanType.Error;
@@ -549,9 +762,9 @@ public sealed class Binder
             _diagnostics.ReportWrongTypeArgumentCount(span, name.Text, parameters.Length, arguments.Length);
             return TaipanType.Error;
         }
-        return structSymbol is not null
-            ? new StructType(structSymbol, arguments)
-            : new EnumType(_enums[name.Text], arguments);
+        return symbol is StructSymbol s
+            ? new StructType(s, arguments)
+            : new EnumType((EnumSymbol)symbol!, arguments);
     }
 
     private TaipanType Unsupported(string feature)
@@ -716,13 +929,37 @@ public sealed class Binder
             _diagnostics.ReportTypeMismatch(pattern.Span, type, found);
             return null;
         }
-        if (pattern.Enum is { } qualifier && qualifier.Text != enumSymbol.Name)
+        if (pattern.Enum is { } qualifier)
         {
-            if (_scope.Lookup(qualifier.Text) is EnumSymbol)
-                _diagnostics.ReportTypeMismatch(pattern.Span, type, qualifier.Text);
+            EnumSymbol? named;
+            if (pattern.Module is { } moduleName)
+            {
+                if (_scope.Lookup(moduleName.Text) is not ModuleSymbol module)
+                {
+                    _diagnostics.ReportUndefinedName(moduleName.Span, moduleName.Text);
+                    return null;
+                }
+                named = module.Enums.GetValueOrDefault(qualifier.Text);
+                if (named is null)
+                {
+                    _diagnostics.ReportNoDefinition(qualifier.Span, module.Name, qualifier.Text);
+                    return null;
+                }
+            }
             else
-                _diagnostics.ReportUndefinedName(qualifier.Span, qualifier.Text);
-            return null;
+            {
+                named = ResolveTypeName(qualifier.Text) as EnumSymbol;
+                if (named is null)
+                {
+                    _diagnostics.ReportUndefinedName(qualifier.Span, qualifier.Text);
+                    return null;
+                }
+            }
+            if (named != enumSymbol)
+            {
+                _diagnostics.ReportTypeMismatch(pattern.Span, type, named.Name);
+                return null;
+            }
         }
         var variant = enumSymbol.FindVariant(pattern.Variant.Text);
         if (variant is null)
@@ -786,7 +1023,7 @@ public sealed class Binder
         var symbol = LookupName(target.Name, target.Span);
         if (symbol is not VariableSymbol variable)
         {
-            if (symbol is FunctionSymbol or StructSymbol or EnumSymbol or VariantSymbol or AmbiguousVariantSymbol)
+            if (symbol is FunctionSymbol or StructSymbol or EnumSymbol or VariantSymbol or AmbiguousVariantSymbol or ModuleSymbol)
                 _diagnostics.ReportCannotAssign(target.Span, target.Name, "function", null);
             return new BoundExprStmt(BindValue(assign.Value), assign.Span);
         }
@@ -1122,25 +1359,31 @@ public sealed class Binder
         return new BoundFString(parts, fstring.Span);
     }
 
-    private BoundExpr BindName(NameExpr name, TaipanType? expected)
+    private BoundExpr BindName(NameExpr name, TaipanType? expected) =>
+        BindSymbolValue(LookupName(name.Name, name.Span), name.Name, name.Span, expected);
+
+    private BoundExpr BindSymbolValue(Symbol? symbol, string name, TextSpan span, TaipanType? expected)
     {
-        switch (LookupName(name.Name, name.Span))
+        switch (symbol)
         {
             case VariableSymbol variable:
-                return new BoundVariable(variable, name.Span);
+                return new BoundVariable(variable, span);
             case FunctionSymbol or StructSymbol:
-                _diagnostics.ReportFunctionAsValue(name.Span, name.Name);
-                return new BoundErrorExpr(name.Span);
+                _diagnostics.ReportFunctionAsValue(span, name);
+                return new BoundErrorExpr(span);
             case EnumSymbol:
-                _diagnostics.ReportTypeAsValue(name.Span, name.Name);
-                return new BoundErrorExpr(name.Span);
+                _diagnostics.ReportTypeAsValue(span, name);
+                return new BoundErrorExpr(span);
+            case ModuleSymbol:
+                _diagnostics.ReportModuleAsValue(span, name);
+                return new BoundErrorExpr(span);
             case VariantSymbol variant:
-                return BindVariantValue(variant, name.Span, expected);
+                return BindVariantValue(variant, span, expected);
             case AmbiguousVariantSymbol ambiguous:
-                ReportAmbiguous(ambiguous, name.Span);
-                return new BoundErrorExpr(name.Span);
+                ReportAmbiguous(ambiguous, span);
+                return new BoundErrorExpr(span);
             default:
-                return new BoundErrorExpr(name.Span);
+                return new BoundErrorExpr(span);
         }
     }
 
@@ -1353,6 +1596,8 @@ public sealed class Binder
     {
         if (TryQualifiedVariant(member, out var qualified))
             return qualified is null ? new BoundErrorExpr(member.Span) : BindVariantValue(qualified, member.Span, expected);
+        if (TryModuleMember(member, out var definition))
+            return BindSymbolValue(definition, member.Member.Text, member.Span, expected);
 
         var target = BindValue(member.Target);
         var name = member.Member.Text;
@@ -1423,7 +1668,12 @@ public sealed class Binder
             return new BoundErrorExpr(call.Span);
         }
 
-        var symbol = LookupName(calleeName.Name, calleeName.Span);
+        return BindSymbolCall(call, LookupName(calleeName.Name, calleeName.Span), calleeName.Name, calleeName.Span, expected);
+    }
+
+    /// <summary>A call whose callee names <paramref name="symbol"/>, directly or through a module.</summary>
+    private BoundExpr BindSymbolCall(CallExpr call, Symbol? symbol, string name, TextSpan nameSpan, TaipanType? expected)
+    {
         switch (symbol)
         {
             case StructSymbol structSymbol:
@@ -1432,7 +1682,7 @@ public sealed class Binder
                 return BindConstructVariant(call, variant, expected);
             case AmbiguousVariantSymbol ambiguous:
                 BindArguments(call);
-                ReportAmbiguous(ambiguous, calleeName.Span);
+                ReportAmbiguous(ambiguous, nameSpan);
                 return new BoundErrorExpr(call.Span);
             case FunctionSymbol { Builtin: { } builtin } function:
                 ReportKeywordArguments(call);
@@ -1442,8 +1692,8 @@ public sealed class Binder
                 return BindUserCall(call, function, expected);
             default:
                 BindArguments(call);
-                if (symbol is VariableSymbol)
-                    _diagnostics.ReportNotAFunction(calleeName.Span, calleeName.Name);
+                if (symbol is VariableSymbol or EnumSymbol or ModuleSymbol)
+                    _diagnostics.ReportNotAFunction(nameSpan, name);
                 return new BoundErrorExpr(call.Span);
         }
     }
@@ -1718,13 +1968,33 @@ public sealed class Binder
     }
 
     /// <summary>
-    /// <c>Enum.Variant</c>: the variant, when <paramref name="member"/>'s target names an enum
-    /// that isn't shadowed. Reports TP0210 for a variant the enum lacks.
+    /// <c>m.x</c> where <c>m</c> names a module: true, with what <c>m</c> defines as <c>x</c>
+    /// (null, after TP0201, if nothing). False if the target isn't a module (SPEC §4.7).
+    /// </summary>
+    private bool TryModuleMember(MemberExpr member, out Symbol? symbol)
+    {
+        symbol = null;
+        if (member.Target is not NameExpr moduleName || _scope.Lookup(moduleName.Name) is not ModuleSymbol module)
+            return false;
+        if (!module.Definitions.TryGetValue(member.Member.Text, out symbol))
+            _diagnostics.ReportNoDefinition(member.Member.Span, module.Name, member.Member.Text);
+        return true;
+    }
+
+    /// <summary>
+    /// <c>Enum.Variant</c> or <c>m.Enum.Variant</c>: the variant, when <paramref name="member"/>'s
+    /// target names an enum that isn't shadowed. Reports TP0210 for a variant the enum lacks.
     /// </summary>
     private bool TryQualifiedVariant(MemberExpr member, out VariantSymbol? variant)
     {
         variant = null;
-        if (member.Target is not NameExpr enumName || _scope.Lookup(enumName.Name) is not EnumSymbol enumSymbol)
+        var enumSymbol = member.Target switch
+        {
+            NameExpr enumName => _scope.Lookup(enumName.Name) as EnumSymbol,
+            MemberExpr inner when TryModuleMember(inner, out var symbol) => symbol as EnumSymbol,
+            _ => null,
+        };
+        if (enumSymbol is null)
             return false;
         variant = enumSymbol.FindVariant(member.Member.Text);
         if (variant is null)
@@ -1760,6 +2030,13 @@ public sealed class Binder
         {
             if (qualified is not null)
                 return BindConstructVariant(call, qualified, expected);
+            BindArguments(call);
+            return new BoundErrorExpr(call.Span);
+        }
+        if (TryModuleMember(member, out var definition))
+        {
+            if (definition is not null)
+                return BindSymbolCall(call, definition, member.Member.Text, member.Member.Span, expected);
             BindArguments(call);
             return new BoundErrorExpr(call.Span);
         }

@@ -15,6 +15,16 @@ public sealed record CompilationUnit(ImmutableArray<TopItem> Items, TextSpan Spa
 
 public abstract record TopItem(TextSpan Span) : Node(Span);
 
+// ---- Imports (SPEC §4.7) ----
+
+/// <summary><c>import m</c> or <c>import m as alias</c>.</summary>
+public sealed record ImportStmt(Identifier Module, Identifier? Alias, TextSpan Span) : TopItem(Span);
+
+/// <summary><c>from m import a, b as c</c>.</summary>
+public sealed record FromImportStmt(Identifier Module, ImmutableArray<ImportName> Names, TextSpan Span) : TopItem(Span);
+
+public sealed record ImportName(Identifier Name, Identifier? Alias, TextSpan Span) : Node(Span);
+
 // ---- Declarations ----
 
 /// <summary><see cref="TypeParams"/> is empty for a non-generic function (SPEC §3.6).</summary>
@@ -105,10 +115,10 @@ public sealed record StringPattern(string Value, TextSpan Span) : Pattern(Span);
 public sealed record BoolPattern(bool Value, TextSpan Span) : Pattern(Span);
 
 /// <summary>
-/// <c>Variant</c>, <c>Enum.Variant</c>, or either with bindings. <see cref="Bindings"/> is null
+/// <c>Variant</c>, <c>Enum.Variant</c>, <c>module.Enum.Variant</c>, or any of them with bindings. <see cref="Bindings"/> is null
 /// when there are no parentheses.
 /// </summary>
-public sealed record VariantPattern(Identifier? Enum, Identifier Variant, ImmutableArray<Identifier>? Bindings, TextSpan Span)
+public sealed record VariantPattern(Identifier? Module, Identifier? Enum, Identifier Variant, ImmutableArray<Identifier>? Bindings, TextSpan Span)
     : Pattern(Span);
 
 public sealed record ErrorPattern(TextSpan Span) : Pattern(Span);
@@ -119,6 +129,9 @@ public abstract record TypeSyntax(TextSpan Span) : Node(Span);
 
 /// <summary>A built-in scalar type (<c>int</c>, <c>str</c>, …) or a user-defined type name.</summary>
 public sealed record NamedType(Identifier Name, TextSpan Span) : TypeSyntax(Span);
+
+/// <summary>A type from an imported module: <c>m.Point</c> or <c>m.Box[int]</c> (SPEC §4.7).</summary>
+public sealed record QualifiedType(Identifier Module, TypeSyntax Type, TextSpan Span) : TypeSyntax(Span);
 
 /// <summary>An instantiated generic struct or enum: <c>Box[int]</c>.</summary>
 public sealed record GenericType(Identifier Name, ImmutableArray<TypeSyntax> Arguments, TextSpan Span) : TypeSyntax(Span);
