@@ -1,0 +1,2 @@
+panic: missing key "b"
+  at tests/cases/m5/panic_key.tpn:3

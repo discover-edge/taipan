@@ -49,9 +49,98 @@ public static class Ops
 
     public static long Negate(long value) => checked(-value);
 
-    /// <summary><c>item in container</c> for strings, evaluating operands in source order.</summary>
-    public static bool Contains(string item, string container) =>
-        container.Contains(item, StringComparison.Ordinal);
+    // ---- Membership (SPEC §5.3); operands are evaluated in source order ----
+
+    public static bool In(string item, string container) => container.Contains(item, StringComparison.Ordinal);
+
+    public static bool In<T>(T item, List<T> list) => Contains(list, item);
+
+    public static bool In<TKey, TValue>(TKey key, OrderedDictionary<TKey, TValue> dict) where TKey : notnull =>
+        dict.ContainsKey(key);
+
+    /// <summary><c>list.contains(x)</c>, with structural equality.</summary>
+    public static bool Contains<T>(List<T> list, T item)
+    {
+        foreach (var element in list)
+        {
+            if (Equality.Equal(element, item))
+                return true;
+        }
+        return false;
+    }
+
+    // ---- Indexing (SPEC §5.4) ----
+
+    public static T Index<T>(List<T> list, long index) => list[(int)Normalize(index, list.Count)];
+
+    public static TValue Index<TKey, TValue>(OrderedDictionary<TKey, TValue> dict, TKey key) where TKey : notnull =>
+        dict.TryGetValue(key, out var value) ? value : throw Panic.Create($"missing key {Display.Repr(key)}");
+
+    /// <summary><c>s[i]</c>: the code point at <paramref name="index"/>, as a str.</summary>
+    public static string Index(string value, long index)
+    {
+        var runes = value.EnumerateRunes().ToList();
+        return runes[(int)Normalize(index, runes.Count)].ToString();
+    }
+
+    public static void SetIndex<T>(List<T> list, long index, T value) => list[(int)Normalize(index, list.Count)] = value;
+
+    /// <summary><c>d[k] = v</c> inserts or updates; an update keeps the key's position.</summary>
+    public static void SetIndex<TKey, TValue>(OrderedDictionary<TKey, TValue> dict, TKey key, TValue value) where TKey : notnull
+    {
+        if (Iter.IsIterating(dict))
+            throw Panic.Create("dict mutated during iteration");
+        dict[key] = value;
+    }
+
+    // A negative index counts from the end.
+    private static long Normalize(long index, int count)
+    {
+        var normalized = index < 0 ? index + count : index;
+        if (normalized < 0 || normalized >= count)
+            throw Panic.Create($"index {index} out of range for length {count}");
+        return normalized;
+    }
+
+    // ---- Lists and dicts (SPEC §6) ----
+
+    public static List<T> Concat<T>(List<T> left, List<T> right) => [.. left, .. right];
+
+    public static T Pop<T>(List<T> list)
+    {
+        if (list.Count == 0)
+            throw Panic.Create("pop from empty list");
+        var last = list[^1];
+        list.RemoveAt(list.Count - 1);
+        return last;
+    }
+
+    /// <summary>Python's <c>list.insert</c>: negative indices count from the end; out-of-range ones clamp.</summary>
+    public static void Insert<T>(List<T> list, long index, T value)
+    {
+        var position = index < 0 ? Math.Max(0, index + list.Count) : Math.Min(index, list.Count);
+        list.Insert((int)position, value);
+    }
+
+    public static List<TKey> Keys<TKey, TValue>(OrderedDictionary<TKey, TValue> dict) where TKey : notnull => [.. dict.Keys];
+
+    public static List<TValue> Values<TKey, TValue>(OrderedDictionary<TKey, TValue> dict) where TKey : notnull => [.. dict.Values];
+
+    // ---- Strings (SPEC §6) ----
+
+    public static List<string> Split(string value, string separator)
+    {
+        if (separator.Length == 0)
+            throw Panic.Create("empty separator");
+        return [.. value.Split(separator)];
+    }
+
+    public static string Replace(string value, string oldValue, string newValue)
+    {
+        if (oldValue.Length == 0)
+            throw Panic.Create("empty separator");
+        return value.Replace(oldValue, newValue, StringComparison.Ordinal);
+    }
 
     /// <summary><c>int(x)</c> for a float: truncates toward zero (SPEC §6).</summary>
     public static long ToInt(double value)

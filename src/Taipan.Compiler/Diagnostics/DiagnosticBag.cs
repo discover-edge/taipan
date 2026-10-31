@@ -92,6 +92,36 @@ public sealed class DiagnosticBag
     public void ReportCannotIterate(TextSpan span, object type) =>
         Add("TP0200", span, $"cannot iterate over {type}");
 
+    public void ReportMethodAsValue(TextSpan span, string method) =>
+        Add("TP0200", span, $"'{method}' is a method; call it");
+
+    public void ReportFieldNotMethod(TextSpan span, string field) =>
+        Add("TP0200", span, $"'{field}' is a field, not a method");
+
+    public void ReportCannotIndex(TextSpan span, object type) =>
+        Add("TP0200", span, $"cannot index {type}");
+
+    public void ReportInvalidDictKey(TextSpan span, object type) =>
+        Add("TP0200", span, $"dict keys must be int, str, or bool, found {type}");
+
+    public void ReportCannotAssignStrElement(TextSpan span) =>
+        Add("TP0202", span, "cannot assign to an element of str");
+
+    public void ReportCannotInferEmpty(TextSpan span, string collection) =>
+        Add("TP0206", span, $"cannot infer the type of an empty {collection}", "add a type annotation");
+
+    public void ReportMissingField(TextSpan span, string field, string structName) =>
+        Add("TP0209", span, $"missing field '{field}' in '{structName}'");
+
+    public void ReportRepeatedField(TextSpan span, string field) =>
+        Add("TP0209", span, $"field '{field}' is given more than once");
+
+    public void ReportNoField(TextSpan span, object type, string name) =>
+        Add("TP0210", span, $"{type} has no field '{name}'");
+
+    public void ReportNoMethod(TextSpan span, object type, string name) =>
+        Add("TP0210", span, $"{type} has no method '{name}'");
+
     public void ReportUndefinedName(TextSpan span, string name) =>
         Add("TP0201", span, $"undefined name '{name}'");
 

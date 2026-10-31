@@ -1,0 +1,23 @@
+struct Node:
+    name: str
+    children: list[Node]
+
+    def add(self, child: Node) -> Node:
+        self.children.append(child)
+        return self
+
+    def count(self) -> int:
+        var total = 1
+        for c in self.children:
+            total += c.count()
+        return total
+
+    def describe(self) -> str:
+        return f"{self.name}({self.count()})"
+
+def leaf(name: str) -> Node:
+    return Node(name, [])
+
+let tree = leaf("root").add(leaf("a").add(leaf("a1"))).add(leaf("b"))
+print(tree.count(), tree.describe(), tree.children[0].describe())
+print(leaf("x"))

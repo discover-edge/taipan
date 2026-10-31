@@ -22,7 +22,12 @@ public sealed record FuncDef(Identifier Name, ImmutableArray<Param> Params, Type
 
 public sealed record Param(Identifier Name, TypeSyntax Type, TextSpan Span) : Node(Span);
 
-public sealed record StructDef(Identifier Name, ImmutableArray<FieldDef> Fields, TextSpan Span) : TopItem(Span);
+public sealed record StructDef(Identifier Name, ImmutableArray<FieldDef> Fields, ImmutableArray<MethodDef> Methods, TextSpan Span)
+    : TopItem(Span);
+
+/// <summary>A method; <see cref="Params"/> excludes the leading <c>self</c>, whose span is <see cref="Self"/>.</summary>
+public sealed record MethodDef(Identifier Name, TextSpan Self, ImmutableArray<Param> Params, TypeSyntax? ReturnType, Block Body, TextSpan Span)
+    : Node(Span);
 
 public sealed record FieldDef(Identifier Name, TypeSyntax Type, TextSpan Span) : Node(Span);
 

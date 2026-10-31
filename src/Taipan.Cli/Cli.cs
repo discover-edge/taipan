@@ -54,9 +54,9 @@ public static class Cli
     {
         if (args.Length != 1)
             return UsageError(stderr, "emit takes exactly one file");
-        var exit = Compile(args[0], stderr, out var csharp);
-        if (csharp is not null)
-            stdout.Write(csharp);
+        var exit = Compile(args[0], stderr, out var program);
+        if (program is not null)
+            stdout.Write(program.Code);
         return exit;
     }
 
@@ -64,12 +64,12 @@ public static class Cli
     {
         if (args.Length != 3 || args[1] != "-o")
             return UsageError(stderr, "build takes a file and -o <dir>");
-        var exit = Compile(args[0], stderr, out var csharp);
-        if (csharp is null)
+        var exit = Compile(args[0], stderr, out var program);
+        if (program is null)
             return exit;
 
         var name = Path.GetFileNameWithoutExtension(args[0]);
-        var path = RoslynCompiler.Save(RoslynCompiler.Compile(csharp, name), name, args[2]);
+        var path = RoslynCompiler.Save(RoslynCompiler.Compile(program, name), name, args[2]);
         stdout.WriteLine($"built {path}");
         return ExitSuccess;
     }
@@ -81,22 +81,22 @@ public static class Cli
             return UsageError(stderr, "run takes a file");
         if (args.Length > 1 && args[1] != "--")
             return UsageError(stderr, "program arguments must follow '--'");
-        var exit = Compile(args[0], stderr, out var csharp);
-        if (csharp is null)
+        var exit = Compile(args[0], stderr, out var program);
+        if (program is null)
             return exit;
 
-        var image = RoslynCompiler.Compile(csharp, Path.GetFileNameWithoutExtension(args[0]));
+        var image = RoslynCompiler.Compile(program, Path.GetFileNameWithoutExtension(args[0]));
         return RoslynCompiler.Run(image, stdout, stderr);
     }
 
     /// <summary>
     /// Runs lex → parse → bind → emit. Each stage runs only if the previous one reported no
     /// errors (SPEC §9). Features from later milestones stop compilation as "not implemented".
-    /// <paramref name="csharp"/> is set only on success.
+    /// <paramref name="program"/> is set only on success.
     /// </summary>
-    private static int Compile(string path, TextWriter stderr, out string? csharp)
+    private static int Compile(string path, TextWriter stderr, out EmittedProgram? program)
     {
-        csharp = null;
+        program = null;
         if (!File.Exists(path))
         {
             stderr.WriteLine($"taipan: file not found: {path}");
@@ -118,7 +118,7 @@ public static class Cli
         if (Report(bound.Diagnostics, source, stderr))
             return ExitCompileError;
 
-        csharp = CSharpEmitter.Emit(source, bound.Program);
+        program = CSharpEmitter.Emit(source, bound.Program);
         return ExitSuccess;
     }
 

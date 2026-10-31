@@ -2,11 +2,12 @@ using System.Collections;
 using System.Globalization;
 using System.Numerics;
 using Taipan.Compiler.Syntax;
+using Taipan.Compiler.Text;
 
 namespace Taipan.Tests.Syntax;
 
 /// <summary>
-/// Prints an AST as a compact one-line snapshot: <c>Kind(child, child, …)</c>, without spans.
+/// Prints an AST as a compact one-line snapshot: <c>Kind(child, child, …)</c>, without spans (any TextSpan property).
 /// Children print in declaration order; identifiers print as bare text and strings quoted.
 /// Uses reflection so that every node type is covered without a hand-written case per node.
 /// </summary>
@@ -31,7 +32,7 @@ public static class AstPrinter
     {
         var type = node.GetType();
         var children = type.GetProperties()
-            .Where(p => p.Name != nameof(Node.Span))
+            .Where(p => p.PropertyType != typeof(TextSpan))
             .Select(p => Print(p.GetValue(node)))
             .ToList();
         return children.Count == 0 ? type.Name : $"{type.Name}({string.Join(", ", children)})";

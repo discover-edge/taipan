@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Globalization;
 
 namespace Taipan.Runtime;
@@ -18,8 +19,19 @@ public static class Display
         double d => Format(d),
         bool b => Format(b),
         string s => s,
+        IStruct s => $"{s.TypeName}({string.Join(", ", s.Fields.Select(f => $"{f.Name}={Repr(f.Value)}"))})",
+        IDictionary d => "{" + string.Join(", ", d.Keys.Cast<object>().Select(k => $"{Repr(k)}: {Repr(d[k])}")) + "}",
+        IList l => "[" + string.Join(", ", l.Cast<object?>().Select(Repr)) + "]",
         _ => throw new ArgumentException($"no display form for {value.GetType()}"),
     };
+
+    /// <summary>
+    /// The form of a value inside a list, dict or struct: a str is written as a literal, in
+    /// quotes with <c>\ \" \n \t</c> escaped; everything else as <see cref="Format(object?)"/>.
+    /// </summary>
+    public static string Repr(object? value) => value is string s
+        ? "\"" + s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\t", "\\t") + "\""
+        : Format(value);
 
     /// <summary>Python's <c>repr(float)</c>: shortest round-trip digits, fixed notation for decimal exponents in [-4, 16).</summary>
     public static string Format(double value)

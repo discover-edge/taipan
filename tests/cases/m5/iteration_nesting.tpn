@@ -1,0 +1,14 @@
+# Iterating a dict twice at once is fine, and updating it afterwards is allowed again.
+var d = {"a": 1, "b": 2}
+for k in d:
+    for k2 in d:
+        if k == "b":
+            break
+    print(k)
+d["a"] = 10
+for k in d:
+    print(k, d[k])
+    if k == "a":
+        break
+d["b"] = 20
+print(d)

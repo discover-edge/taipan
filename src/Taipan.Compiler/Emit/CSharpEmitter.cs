@@ -6,6 +6,9 @@ using Taipan.Compiler.Text;
 
 namespace Taipan.Compiler.Emit;
 
+/// <param name="EntryClass">The class holding <c>Main</c>, to pass to the C# compiler.</param>
+public sealed record EmittedProgram(string Code, string EntryClass);
+
 /// <summary>
 /// Emits one C# compilation unit for a bound program (SPEC §8). Every statement is preceded by a
 /// <c>#line</c> directive so stack traces, and therefore panics, report <c>.tpn</c> lines.
@@ -13,12 +16,20 @@ namespace Taipan.Compiler.Emit;
 public sealed class CSharpEmitter
 {
     private const string Runtime = "global::Taipan.Runtime";
+    private const string Collections = "global::System.Collections.Generic";
 
     private readonly SourceText _source;
     private readonly BoundProgram _program;
     private readonly StringBuilder _out = new();
     private readonly HashSet<string> _globalNames;
+    private readonly string _programClass;
+    private readonly string _topLevelMethod;
+    private readonly string _entryClass;
+
+    // Per method being emitted.
     private LocalNames _locals = null!;
+    private VariableSymbol? _self;
+    private readonly Dictionary<BoundExpr, string> _hoisted = new(ReferenceEqualityComparer.Instance);
     private int _indent;
 
     private CSharpEmitter(SourceText source, BoundProgram program)
@@ -29,20 +40,18 @@ public sealed class CSharpEmitter
         [
             .. program.Constants.Select(c => c.Symbol.Name),
             .. program.Functions.Select(f => f.Symbol.Name),
+            .. program.Structs.Select(s => s.Symbol.Name),
         ];
-        ProgramClass = UniqueGlobal("TaipanProgram");
-        TopLevelMethod = UniqueGlobal("TopLevel");
+        _programClass = UniqueGlobal("TaipanProgram");
+        _topLevelMethod = UniqueGlobal("TopLevel");
+        _entryClass = UniqueGlobal("TaipanEntry");
     }
 
-    /// <summary>The generated program class, whose <c>Main</c> is in <see cref="EntryClass"/>.</summary>
-    public string ProgramClass { get; }
-
-    public string TopLevelMethod { get; }
-
-    public const string EntryClass = "TaipanEntry";
-
-    public static string Emit(SourceText source, BoundProgram program) =>
-        new CSharpEmitter(source, program).EmitProgram();
+    public static EmittedProgram Emit(SourceText source, BoundProgram program)
+    {
+        var emitter = new CSharpEmitter(source, program);
+        return new EmittedProgram(emitter.EmitProgram(), emitter._entryClass);
+    }
 
     private string UniqueGlobal(string name)
     {
@@ -60,12 +69,12 @@ public sealed class CSharpEmitter
         Line("#nullable enable");
         Line("#line hidden");
         Line();
-        Line($"public static class {ProgramClass}");
+        Line($"public static class {_programClass}");
         Line("{");
         _indent++;
 
         foreach (var constant in _program.Constants)
-            Line($"static {TypeName(constant.Symbol.Type)} @{constant.Symbol.Name};");
+            Line($"public static {TypeName(constant.Symbol.Type)} @{constant.Symbol.Name} = default!;");
         if (!_program.Constants.IsEmpty)
             Line();
 
@@ -73,15 +82,22 @@ public sealed class CSharpEmitter
         foreach (var function in _program.Functions)
         {
             Line();
-            EmitFunction(function);
+            EmitFunction(function, isMethod: false);
         }
 
         _indent--;
         Line("}");
+
+        foreach (var structDef in _program.Structs)
+        {
+            Line();
+            EmitStruct(structDef);
+        }
+
         Line();
-        Line($"public static class {EntryClass}");
+        Line($"public static class {_entryClass}");
         Line("{");
-        Line($"    public static int Main() => {Runtime}.Panic.Run({ProgramClass}.{TopLevelMethod});");
+        Line($"    public static int Main() => {Runtime}.Panic.Run({_programClass}.{_topLevelMethod});");
         Line("}");
         return _out.ToString();
     }
@@ -89,7 +105,7 @@ public sealed class CSharpEmitter
     private void EmitTopLevel()
     {
         _locals = LocalNames.For([], _program.TopLevel, _globalNames);
-        Line($"public static void {TopLevelMethod}()");
+        Line($"public static void {_topLevelMethod}()");
         Line("{");
         _indent++;
         foreach (var constant in _program.Constants)
@@ -103,16 +119,51 @@ public sealed class CSharpEmitter
         Line("}");
     }
 
-    private void EmitFunction(BoundFunction function)
+    private void EmitFunction(BoundFunction function, bool isMethod)
     {
         var symbol = function.Symbol;
         _locals = LocalNames.For(symbol.Parameters, function.Body, _globalNames);
+        _self = symbol.Self;
         var parameters = string.Join(", ", symbol.Parameters.Select(p => $"{TypeName(p.Type)} @{_locals[p]}"));
-        Line($"public static {TypeName(symbol.ReturnType)} @{symbol.Name}({parameters})");
+        Line($"public {(isMethod ? "" : "static ")}{TypeName(symbol.ReturnType)} @{symbol.Name}({parameters})");
         Line("{");
         _indent++;
         EmitStatements(function.Body.Statements);
         HiddenDirective();
+        _indent--;
+        Line("}");
+        _self = null;
+    }
+
+    // A struct is a class with mutable properties, a positional constructor and its methods (SPEC §8).
+    private void EmitStruct(BoundStruct structDef)
+    {
+        var symbol = structDef.Symbol;
+        Line($"public sealed class @{symbol.Name} : {Runtime}.IStruct");
+        Line("{");
+        _indent++;
+        foreach (var field in symbol.Fields)
+            Line($"public {TypeName(field.Type)} @{field.Name} {{ get; set; }}");
+        Line();
+
+        var parameters = string.Join(", ", symbol.Fields.Select(f => $"{TypeName(f.Type)} @{f.Name}"));
+        Line($"public @{symbol.Name}({parameters})");
+        Line("{");
+        foreach (var field in symbol.Fields)
+            Line($"    this.@{field.Name} = @{field.Name};");
+        Line("}");
+        Line();
+
+        var fields = string.Join(", ", symbol.Fields.Select(f => $"(\"{f.Name}\", (object?)this.@{f.Name})"));
+        Line($"string {Runtime}.IStruct.TypeName => \"{symbol.Name}\";");
+        Line($"{Collections}.IReadOnlyList<(string Name, object? Value)> {Runtime}.IStruct.Fields => [{fields}];");
+        Line($"public override string ToString() => {Runtime}.Display.Format(this);");
+
+        foreach (var method in structDef.Methods)
+        {
+            Line();
+            EmitFunction(method, isMethod: true);
+        }
         _indent--;
         Line("}");
     }
@@ -151,6 +202,16 @@ public sealed class CSharpEmitter
                 LineDirective(assign.Span);
                 Line($"@{_locals[assign.Target]} = {Expr(assign.Value)};");
                 break;
+            case BoundFieldAssign assign:
+                LineDirective(assign.Span);
+                EmitCompound(assign.IsCompound, [assign.Target],
+                    () => Line($"{Operand(assign.Target)}.@{assign.Field.Name} = {Expr(assign.Value)};"));
+                break;
+            case BoundIndexAssign assign:
+                LineDirective(assign.Span);
+                EmitCompound(assign.IsCompound, [assign.Target, assign.Index],
+                    () => Line($"{Runtime}.Ops.SetIndex({Expr(assign.Target)}, {Expr(assign.Index)}, {Expr(assign.Value)});"));
+                break;
             case BoundReturn ret:
                 LineDirective(ret.Span);
                 Line(ret.Value is null ? "return;" : $"return {Expr(ret.Value)};");
@@ -163,9 +224,9 @@ public sealed class CSharpEmitter
                 LineDirective(cont.Span);
                 Line("continue;");
                 break;
-            case BoundExprStmt { Expr: BoundCall call } exprStmt:
+            case BoundExprStmt { Expr: BoundCall or BoundMethodCall or BoundBuiltinMethodCall } exprStmt:
                 LineDirective(exprStmt.Span);
-                Line($"{Expr(call)};");
+                Line($"{Expr(exprStmt.Expr)};");
                 break;
             case BoundExprStmt exprStmt:
                 LineDirective(exprStmt.Span);
@@ -182,10 +243,54 @@ public sealed class CSharpEmitter
             case BoundForRange forStmt:
                 EmitForRange(forStmt);
                 break;
+            case BoundForEach forEach:
+                LineDirective(forEach.Span);
+                Line($"foreach ({TypeName(forEach.Variable.Type)} @{_locals[forEach.Variable]} in {Runtime}.Iter.Over({Expr(forEach.Iterable)}))");
+                EmitBody(forEach.Body);
+                break;
             default:
                 throw new InvalidOperationException($"unexpected bound statement {stmt.GetType().Name}");
         }
     }
+
+    /// <summary>
+    /// Emits an assignment. For a compound one, sub-expressions with side effects are first stored
+    /// in temporaries, since the bound value reads them again (SPEC §4.6: evaluated once).
+    /// </summary>
+    private void EmitCompound(bool isCompound, BoundExpr[] parts, Action emitAssignment)
+    {
+        var hoist = isCompound ? parts.Where(p => !IsSimple(p)).ToList() : [];
+        if (hoist.Count == 0)
+        {
+            emitAssignment();
+            return;
+        }
+
+        Line("{");
+        _indent++;
+        foreach (var part in hoist)
+        {
+            var name = $"@{_locals.Fresh("tmp")}";
+            Line($"var {name} = {Expr(part)};");
+            _hoisted[part] = name;
+        }
+        emitAssignment();
+        foreach (var part in hoist)
+            _hoisted.Remove(part);
+        _indent--;
+        Line("}");
+    }
+
+    // Expressions that are safe to evaluate twice: no calls, so no side effects.
+    private static bool IsSimple(BoundExpr expr) => expr switch
+    {
+        BoundVariable or BoundLiteral => true,
+        BoundFieldAccess access => IsSimple(access.Target),
+        BoundIndex index => IsSimple(index.Target) && IsSimple(index.Index),
+        BoundUnary unary => IsSimple(unary.Operand),
+        BoundBinary binary => IsSimple(binary.Left) && IsSimple(binary.Right),
+        _ => false,
+    };
 
     private void EmitIf(BoundIf ifStmt)
     {
@@ -216,23 +321,42 @@ public sealed class CSharpEmitter
 
     // ---- Expressions ----
 
-    private string Expr(BoundExpr expr) => expr switch
+    private string Expr(BoundExpr expr)
     {
-        BoundLiteral literal => Literal(literal.Value),
-        BoundVariable { Symbol.Kind: VariableKind.Constant } variable => $"@{variable.Symbol.Name}",
-        BoundVariable variable => $"@{_locals[variable.Symbol]}",
-        BoundUnary { Op: UnaryOp.Negate } unary when OverflowsAtCompileTime(unary) =>
-            $"{Runtime}.Ops.Negate({Expr(unary.Operand)})",
-        BoundUnary unary => $"{(unary.Op == UnaryOp.Negate ? "-" : "!")}{Operand(unary.Operand)}",
-        BoundBinary binary => Binary(binary),
-        BoundCall call => Call(call),
-        BoundFString fstring => FString(fstring),
-        _ => throw new InvalidOperationException($"unexpected bound expression {expr.GetType().Name}"),
-    };
+        if (_hoisted.TryGetValue(expr, out var temporary))
+            return temporary;
 
-    /// <summary>An operand of an operator, parenthesized when it's itself an operator expression.</summary>
+        return expr switch
+        {
+            BoundLiteral literal => Literal(literal.Value),
+            BoundVariable variable when variable.Symbol == _self => "this",
+            BoundVariable { Symbol.Kind: VariableKind.Constant } variable => Global(variable.Symbol.Name),
+            BoundVariable variable => $"@{_locals[variable.Symbol]}",
+            BoundUnary { Op: UnaryOp.Negate } unary when OverflowsAtCompileTime(unary) =>
+                $"{Runtime}.Ops.Negate({Expr(unary.Operand)})",
+            BoundUnary unary => $"{(unary.Op == UnaryOp.Negate ? "-" : "!")}{Operand(unary.Operand)}",
+            BoundBinary binary => Binary(binary),
+            BoundCall call => Call(call),
+            BoundFString fstring => FString(fstring),
+            BoundListLiteral list => ListLiteral(list),
+            BoundDictLiteral dict => DictLiteral(dict),
+            BoundConstruct construct => Construct(construct),
+            BoundFieldAccess access => $"{Operand(access.Target)}.@{access.Field.Name}",
+            BoundIndex index => $"{Runtime}.Ops.Index({Expr(index.Target)}, {Expr(index.Index)})",
+            BoundMethodCall call => $"{Operand(call.Target)}.@{call.Method.Name}({Arguments(call.Arguments)})",
+            BoundBuiltinMethodCall call => BuiltinMethodCall(call),
+            _ => throw new InvalidOperationException($"unexpected bound expression {expr.GetType().Name}"),
+        };
+    }
+
+    /// <summary>A function or constant: unqualified in the program class, qualified from a struct's methods.</summary>
+    private string Global(string name) => _self is null ? $"@{name}" : $"global::{_programClass}.@{name}";
+
+    private string Arguments(IEnumerable<BoundExpr> arguments) => string.Join(", ", arguments.Select(Expr));
+
+    /// <summary>An operand of an operator or member access, parenthesized when it's an operator expression.</summary>
     private string Operand(BoundExpr expr) =>
-        expr is BoundBinary or BoundUnary ? $"({Expr(expr)})" : Expr(expr);
+        expr is BoundBinary or BoundUnary && !_hoisted.ContainsKey(expr) ? $"({Expr(expr)})" : Expr(expr);
 
     /// <summary>
     /// Whether C# would fold this int expression of literals at compile time and overflow, which
@@ -281,25 +405,30 @@ public sealed class CSharpEmitter
         if (binary.Op is BinaryOp.Add or BinaryOp.Subtract or BinaryOp.Multiply && OverflowsAtCompileTime(binary))
             return $"{Runtime}.Ops.{binary.Op}({Expr(binary.Left)}, {Expr(binary.Right)})";
 
+        var leftType = binary.Left.Type;
+        var (l, r) = (Expr(binary.Left), Expr(binary.Right));
         var left = Operand(binary.Left);
         var right = Operand(binary.Right);
-        var strings = binary.Left.Type == TaipanType.Str;
+        var structural = leftType is ListOfType or DictOfType or StructType;
         return binary.Op switch
         {
+            BinaryOp.Add when leftType is ListOfType => $"{Runtime}.Ops.Concat({l}, {r})",
             BinaryOp.Add => $"{left} + {right}",
             BinaryOp.Subtract => $"{left} - {right}",
             BinaryOp.Multiply => $"{left} * {right}",
-            BinaryOp.Divide => $"{Runtime}.Ops.Div({Expr(binary.Left)}, {Expr(binary.Right)})",
-            BinaryOp.FloorDivide => $"{Runtime}.Ops.FloorDiv({Expr(binary.Left)}, {Expr(binary.Right)})",
-            BinaryOp.Modulo => $"{Runtime}.Ops.Mod({Expr(binary.Left)}, {Expr(binary.Right)})",
+            BinaryOp.Divide => $"{Runtime}.Ops.Div({l}, {r})",
+            BinaryOp.FloorDivide => $"{Runtime}.Ops.FloorDiv({l}, {r})",
+            BinaryOp.Modulo => $"{Runtime}.Ops.Mod({l}, {r})",
+            BinaryOp.Equal when structural => $"{Runtime}.Equality.Equal({l}, {r})",
+            BinaryOp.NotEqual when structural => $"!{Runtime}.Equality.Equal({l}, {r})",
             BinaryOp.Equal => $"{left} == {right}",
             BinaryOp.NotEqual => $"{left} != {right}",
-            BinaryOp.Less or BinaryOp.LessEqual or BinaryOp.Greater or BinaryOp.GreaterEqual when strings =>
-                $"string.CompareOrdinal({Expr(binary.Left)}, {Expr(binary.Right)}) {TypeChecker.Display(binary.Op)} 0",
+            BinaryOp.Less or BinaryOp.LessEqual or BinaryOp.Greater or BinaryOp.GreaterEqual when leftType == TaipanType.Str =>
+                $"string.CompareOrdinal({l}, {r}) {TypeChecker.Display(binary.Op)} 0",
             BinaryOp.Less or BinaryOp.LessEqual or BinaryOp.Greater or BinaryOp.GreaterEqual =>
                 $"{left} {TypeChecker.Display(binary.Op)} {right}",
-            BinaryOp.In => $"{Runtime}.Ops.Contains({Expr(binary.Left)}, {Expr(binary.Right)})",
-            BinaryOp.NotIn => $"!{Runtime}.Ops.Contains({Expr(binary.Left)}, {Expr(binary.Right)})",
+            BinaryOp.In => $"{Runtime}.Ops.In({l}, {r})",
+            BinaryOp.NotIn => $"!{Runtime}.Ops.In({l}, {r})",
             BinaryOp.And => $"{left} && {right}",
             BinaryOp.Or => $"{left} || {right}",
             _ => throw new InvalidOperationException($"unexpected operator {binary.Op}"),
@@ -308,10 +437,10 @@ public sealed class CSharpEmitter
 
     private string Call(BoundCall call)
     {
-        var arguments = string.Join(", ", call.Arguments.Select(Expr));
+        var arguments = Arguments(call.Arguments);
         return call.Function.Builtin switch
         {
-            null => $"@{call.Function.Name}({arguments})",
+            null => $"{Global(call.Function.Name)}({arguments})",
             BuiltinFunction.Print => $"{Runtime}.Builtins.Print({arguments})",
             BuiltinFunction.Len => $"{Runtime}.Builtins.Len({arguments})",
             BuiltinFunction.Str => $"{Runtime}.Display.Format({arguments})",
@@ -321,6 +450,52 @@ public sealed class CSharpEmitter
             BuiltinFunction.Float => arguments,
             _ => throw new InvalidOperationException($"unexpected builtin {call.Function.Builtin}"),
         };
+    }
+
+    private string BuiltinMethodCall(BoundBuiltinMethodCall call)
+    {
+        var target = Operand(call.Target);
+        var args = call.Arguments.Select(Expr).ToList();
+        var ordinal = "global::System.StringComparison.Ordinal";
+        return call.Method switch
+        {
+            BuiltinMethod.ListAppend => $"{target}.Add({args[0]})",
+            BuiltinMethod.ListPop => $"{Runtime}.Ops.Pop({Expr(call.Target)})",
+            BuiltinMethod.ListInsert => $"{Runtime}.Ops.Insert({Expr(call.Target)}, {args[0]}, {args[1]})",
+            BuiltinMethod.ListContains => $"{Runtime}.Ops.Contains({Expr(call.Target)}, {args[0]})",
+            BuiltinMethod.DictKeys => $"{Runtime}.Ops.Keys({Expr(call.Target)})",
+            BuiltinMethod.DictValues => $"{Runtime}.Ops.Values({Expr(call.Target)})",
+            BuiltinMethod.DictRemove => $"{target}.Remove({args[0]})",
+            BuiltinMethod.StrUpper => $"{target}.ToUpperInvariant()",
+            BuiltinMethod.StrLower => $"{target}.ToLowerInvariant()",
+            BuiltinMethod.StrStrip => $"{target}.Trim()",
+            BuiltinMethod.StrSplit => $"{Runtime}.Ops.Split({Expr(call.Target)}, {args[0]})",
+            BuiltinMethod.StrStartsWith => $"{target}.StartsWith({args[0]}, {ordinal})",
+            BuiltinMethod.StrEndsWith => $"{target}.EndsWith({args[0]}, {ordinal})",
+            BuiltinMethod.StrReplace => $"{Runtime}.Ops.Replace({Expr(call.Target)}, {args[0]}, {args[1]})",
+            _ => throw new InvalidOperationException($"unexpected builtin method {call.Method}"),
+        };
+    }
+
+    private string ListLiteral(BoundListLiteral list)
+    {
+        var type = TypeName(list.ListType);
+        return list.Elements.IsEmpty ? $"new {type}()" : $"new {type} {{ {Arguments(list.Elements)} }}";
+    }
+
+    private string DictLiteral(BoundDictLiteral dict)
+    {
+        var type = TypeName(dict.DictType);
+        var entries = string.Join(", ", dict.Entries.Select(e => $"[{Expr(e.Key)}] = {Expr(e.Value)}"));
+        return dict.Entries.IsEmpty ? $"new {type}()" : $"new {type} {{ {entries} }}";
+    }
+
+    // Keyword construction uses C# named arguments, which C# evaluates in source order.
+    private string Construct(BoundConstruct construct)
+    {
+        var arguments = construct.Arguments.Select(a =>
+            construct.IsKeyword ? $"@{a.Field.Name}: {Expr(a.Value)}" : Expr(a.Value));
+        return $"new {TypeName(construct.Struct.Type)}({string.Join(", ", arguments)})";
     }
 
     private string FString(BoundFString fstring)
@@ -372,20 +547,18 @@ public sealed class CSharpEmitter
         return escaped.ToString();
     }
 
-    private static string TypeName(TaipanType type)
+    private static string TypeName(TaipanType type) => type switch
     {
-        if (type == TaipanType.Int)
-            return "long";
-        if (type == TaipanType.Float)
-            return "double";
-        if (type == TaipanType.Bool)
-            return "bool";
-        if (type == TaipanType.Str)
-            return "string";
-        if (type == TaipanType.Nothing)
-            return "void";
-        throw new InvalidOperationException($"no C# type for {type}");
-    }
+        PrimitiveType { Name: "int" } => "long",
+        PrimitiveType { Name: "float" } => "double",
+        PrimitiveType { Name: "bool" } => "bool",
+        PrimitiveType { Name: "str" } => "string",
+        NothingType => "void",
+        ListOfType list => $"{Collections}.List<{TypeName(list.Element)}>",
+        DictOfType dict => $"{Collections}.OrderedDictionary<{TypeName(dict.Key)}, {TypeName(dict.Value)}>",
+        StructType structType => $"global::@{structType.Symbol.Name}",
+        _ => throw new InvalidOperationException($"no C# type for {type}"),
+    };
 
     // ---- Output ----
 

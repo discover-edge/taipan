@@ -16,6 +16,15 @@ public abstract record TaipanType
 
     public bool IsError => this is ErrorType;
 
+    /// <summary>True for the error type or a collection type built from it, like <c>list[?]</c>.</summary>
+    public bool ContainsError => this switch
+    {
+        ErrorType => true,
+        ListOfType list => list.Element.ContainsError,
+        DictOfType dict => dict.Key.ContainsError || dict.Value.ContainsError,
+        _ => false,
+    };
+
     public bool IsNumeric => this == Int || this == Float;
 }
 
@@ -32,4 +41,24 @@ public sealed record NothingType : TaipanType
 public sealed record ErrorType : TaipanType
 {
     public override string ToString() => "?";
+}
+
+public sealed record ListOfType(TaipanType Element) : TaipanType
+{
+    public override string ToString() => $"list[{Element}]";
+}
+
+public sealed record DictOfType(TaipanType Key, TaipanType Value) : TaipanType
+{
+    public override string ToString() => $"dict[{Key}, {Value}]";
+
+    /// <summary>Dict keys are limited to int, str and bool (SPEC §3.1).</summary>
+    public static bool IsValidKey(TaipanType type) =>
+        type.IsError || type == Int || type == Str || type == Bool;
+}
+
+/// <summary>Equal when the symbols are the same struct.</summary>
+public sealed record StructType(StructSymbol Symbol) : TaipanType
+{
+    public override string ToString() => Symbol.Name;
 }

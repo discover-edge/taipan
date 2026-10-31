@@ -100,6 +100,9 @@ public sealed class LocalNames
             case BoundForRange forStmt:
                 yield return (forStmt.Body.Statements, [forStmt.Variable]);
                 break;
+            case BoundForEach forEach:
+                yield return (forEach.Body.Statements, [forEach.Variable]);
+                break;
         }
     }
 }

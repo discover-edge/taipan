@@ -1,0 +1,11 @@
+tests/cases/m5/tp0200_members.tpn:8:11: error TP0200: 'get' is a method; call it
+tests/cases/m5/tp0200_members.tpn:9:9: error TP0200: 'x' is a field, not a method
+tests/cases/m5/tp0200_members.tpn:10:7: error TP0200: cannot index int
+tests/cases/m5/tp0200_members.tpn:11:15: error TP0200: dict keys must be int, str, or bool, found float
+tests/cases/m5/tp0200_members.tpn:12:13: error TP0200: dict keys must be int, str, or bool, found float
+tests/cases/m5/tp0200_members.tpn:13:14: error TP0200: expected int, found str
+tests/cases/m5/tp0200_members.tpn:15:27: error TP0200: expected float, found str
+tests/cases/m5/tp0200_members.tpn:16:7: error TP0200: cannot compare Point and int
+tests/cases/m5/tp0200_members.tpn:17:7: error TP0200: operator '+' cannot be applied to list[int] and list[str]
+tests/cases/m5/tp0200_members.tpn:18:7: error TP0200: operator 'in' cannot be applied to str and list[int]
+tests/cases/m5/tp0200_members.tpn:19:10: error TP0200: cannot iterate over int

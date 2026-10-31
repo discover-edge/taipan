@@ -6,11 +6,11 @@ namespace Taipan.Compiler.Semantics;
 public static class TypeChecker
 {
     public static bool IsAssignable(TaipanType from, TaipanType to) =>
-        from.IsError || to.IsError || from == to || (from == TaipanType.Int && to == TaipanType.Float);
+        from.ContainsError || to.ContainsError || from == to || (from == TaipanType.Int && to == TaipanType.Float);
 
     /// <summary>Whether <c>==</c> may compare the two types: equal, or both numeric.</summary>
     public static bool AreComparable(TaipanType left, TaipanType right) =>
-        left == right || (left.IsNumeric && right.IsNumeric);
+        left.ContainsError || right.ContainsError || left == right || (left.IsNumeric && right.IsNumeric);
 
     /// <summary>Result of an arithmetic operator, or null if it doesn't apply to these operands.</summary>
     public static TaipanType? Arithmetic(BinaryOp op, TaipanType left, TaipanType right)
@@ -20,6 +20,7 @@ public static class TypeChecker
         return op switch
         {
             BinaryOp.Add when left == TaipanType.Str && right == TaipanType.Str => TaipanType.Str,
+            BinaryOp.Add when left is ListOfType && left == right => left,
             BinaryOp.Add or BinaryOp.Subtract or BinaryOp.Multiply when ints => TaipanType.Int,
             BinaryOp.Add or BinaryOp.Subtract or BinaryOp.Multiply when numeric => TaipanType.Float,
             BinaryOp.Divide when numeric => TaipanType.Float,

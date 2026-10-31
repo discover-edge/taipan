@@ -1,0 +1,8 @@
+let a = []
+let b = {}
+var c = [[]]
+print([])
+let ok: list[int] = []
+let ok2: dict[str, list[int]] = {"k": []}
+def f() -> list[str]:
+    return []

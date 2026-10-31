@@ -1,0 +1,2 @@
+panic: pop from empty list
+  at tests/cases/m5/panic_pop.tpn:3

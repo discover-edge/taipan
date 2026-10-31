@@ -1,0 +1,7 @@
+tests/cases/m5/tp0214_structs.tpn:3:5: error TP0214: duplicate definition of 'x'
+tests/cases/m5/tp0214_structs.tpn:5:9: error TP0214: duplicate definition of 'x'
+tests/cases/m5/tp0214_structs.tpn:8:17: error TP0214: duplicate definition of 'self'
+tests/cases/m5/tp0214_structs.tpn:11:8: error TP0214: duplicate definition of 'Point'
+tests/cases/m5/tp0214_structs.tpn:14:5: error TP0214: duplicate definition of 'Point'
+tests/cases/m5/tp0214_structs.tpn:17:8: error TP0214: duplicate definition of 'str'
+tests/cases/m5/tp0214_structs.tpn:21:9: error TP0207: 'Point' shadows an outer binding

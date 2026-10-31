@@ -1,0 +1,2 @@
+panic: dict mutated during iteration
+  at tests/cases/m5/panic_mutate_dict.tpn:4

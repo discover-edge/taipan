@@ -23,12 +23,17 @@ public sealed class VariableSymbol(string name, TaipanType type, VariableKind ki
 
 public enum BuiltinFunction { Print, Len, Str, Int, Float, Range }
 
+/// <summary>A function, or a method when <see cref="Self"/> is set.</summary>
 public sealed class FunctionSymbol(
     string name,
     ImmutableArray<VariableSymbol> parameters,
     TaipanType returnType,
-    BuiltinFunction? builtin = null) : Symbol(name)
+    BuiltinFunction? builtin = null,
+    VariableSymbol? self = null) : Symbol(name)
 {
+    /// <summary>For a method, its implicit <c>self</c> parameter, typed as the struct.</summary>
+    public VariableSymbol? Self { get; } = self;
+
     public ImmutableArray<VariableSymbol> Parameters { get; } = parameters;
 
     /// <summary><see cref="TaipanType.Nothing"/> for a function without a return type.</summary>
@@ -46,4 +51,32 @@ public sealed class FunctionSymbol(
         new("float", [], TaipanType.Float, BuiltinFunction.Float),
         new("range", [], TaipanType.Nothing, BuiltinFunction.Range),
     ];
+}
+
+public sealed class FieldSymbol(string name, TaipanType type) : Symbol(name)
+{
+    public TaipanType Type { get; } = type;
+}
+
+/// <summary>
+/// A struct. It is also the struct's constructor in the value namespace (SPEC §4.6). Fields and
+/// methods are filled in after every struct name is known, since they may refer to each other.
+/// </summary>
+public sealed class StructSymbol(string name) : Symbol(name)
+{
+    public ImmutableArray<FieldSymbol> Fields { get; set; } = [];
+
+    public Dictionary<string, FunctionSymbol> Methods { get; } = [];
+
+    public StructType Type => new(this);
+
+    public FieldSymbol? FindField(string name) => Fields.FirstOrDefault(f => f.Name == name);
+}
+
+/// <summary>Built-in methods of list, dict and str (SPEC §6).</summary>
+public enum BuiltinMethod
+{
+    ListAppend, ListPop, ListInsert, ListContains,
+    DictKeys, DictValues, DictRemove,
+    StrUpper, StrLower, StrStrip, StrSplit, StrStartsWith, StrEndsWith, StrReplace,
 }

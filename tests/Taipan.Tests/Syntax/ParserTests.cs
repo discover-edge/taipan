@@ -85,8 +85,25 @@ public class ParserTests
     [Fact]
     public void StructDef() =>
         Assert.Equal(
-            "StructDef(Service, [FieldDef(name, NamedType(str)), FieldDef(tags, ListType(NamedType(str)))])",
+            "StructDef(Service, [FieldDef(name, NamedType(str)), FieldDef(tags, ListType(NamedType(str)))], [])",
             Snapshot("struct Service:\n    name: str\n    tags: list[str]\n"));
+
+    // ---- method_def ----
+
+    [Fact]
+    public void StructWithMethods() =>
+        Assert.Equal(
+            "StructDef(Counter, [FieldDef(n, NamedType(int))], [" +
+            "MethodDef(bump, [Param(by, NamedType(int))], null, Block([AssignStmt(MemberExpr(NameExpr(self), n), Add, NameExpr(by))])), " +
+            "MethodDef(get, [], NamedType(int), Block([ReturnStmt(MemberExpr(NameExpr(self), n))]))])",
+            Snapshot("struct Counter:\n    n: int\n    def bump(self, by: int,):\n        self.n += by\n    def get(self) -> int:\n        return self.n\n"));
+
+    [Theory]
+    [InlineData("struct S:\n    def m():\n        pass\n", "2:11 TP0100: expected 'self', found ')'")]
+    [InlineData("struct S:\n    def m(x: int):\n        pass\n", "2:11 TP0100: expected 'self', found name 'x'")]
+    [InlineData("struct S:\n    def m(self x: int):\n        pass\n", "2:16 TP0100: expected ')', found name 'x'")]
+    public void MethodNeedsSelf(string text, string expected) =>
+        Assert.Equal([expected], Errors(text));
 
     // ---- enum_def / variant / named_fields ----
 
@@ -512,7 +529,6 @@ public class ParserTests
     [Theory]
     [InlineData("def first[T](xs: list[T]) -> T?:\n    return none\n", "1:10 TP0100: expected '(', found '['")]
     [InlineData("let b: Box[int] = x\n", "1:11 TP0100: expected '=', found '['")]
-    [InlineData("struct S:\n    def m(self):\n        pass\n", "2:5 TP0100: expected name, found 'def'")]
     [InlineData("let n = x as int?\n", "1:11 TP0100: expected newline, found 'as'")]
     public void LaterMilestoneSyntax(string text, string expected) =>
         Assert.Equal([expected], Errors(text));

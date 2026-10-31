@@ -1,0 +1,8 @@
+tests/cases/m5/tp0206_empty.tpn:1:9: error TP0206: cannot infer the type of an empty list
+  help: add a type annotation
+tests/cases/m5/tp0206_empty.tpn:2:9: error TP0206: cannot infer the type of an empty dict
+  help: add a type annotation
+tests/cases/m5/tp0206_empty.tpn:3:10: error TP0206: cannot infer the type of an empty list
+  help: add a type annotation
+tests/cases/m5/tp0206_empty.tpn:4:7: error TP0206: cannot infer the type of an empty list
+  help: add a type annotation

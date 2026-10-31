@@ -226,16 +226,51 @@ public sealed class Parser
         var start = Next().Span.Start;
         var name = ExpectIdentifier();
         Expect(TokenKind.Colon);
-        var fields = ParseIndentedBody(ParseStructMember);
-        return new StructDef(name, fields, SpanFrom(start));
+        var members = ParseIndentedBody(ParseStructMember);
+        return new StructDef(name, [.. members.OfType<FieldDef>()], [.. members.OfType<MethodDef>()], SpanFrom(start));
     }
 
-    // struct_member = NAME ":" type NEWLINE
-    private FieldDef ParseStructMember()
+    // struct_member = NAME ":" type NEWLINE | method_def
+    private Node ParseStructMember()
     {
+        if (At(TokenKind.DefKeyword))
+            return ParseMethodDef();
         var field = ParseNamedField();
         Expect(TokenKind.Newline);
         return field;
+    }
+
+    // method_def = "def" NAME "(" "self" [ "," params ] ")" [ "->" type ] ":" block
+    private MethodDef ParseMethodDef()
+    {
+        var start = Next().Span.Start;
+        var name = ExpectIdentifier();
+        Expect(TokenKind.OpenParen);
+
+        var self = Here;
+        if (At(TokenKind.Name) && Current.Text == "self")
+            self = Next().Span;
+        else
+            ReportExpected("'self'");
+
+        var parameters = ImmutableArray<Param>.Empty;
+        if (At(TokenKind.Comma))
+        {
+            Next();
+            parameters = ParseParams();
+        }
+        Expect(TokenKind.CloseParen);
+
+        TypeSyntax? returnType = null;
+        if (At(TokenKind.Arrow))
+        {
+            Next();
+            returnType = ParseType();
+        }
+
+        Expect(TokenKind.Colon);
+        var body = ParseBlock();
+        return new MethodDef(name, self, parameters, returnType, body, SpanFrom(start));
     }
 
     // enum_def = "enum" NAME ":" NEWLINE INDENT variant { variant } DEDENT

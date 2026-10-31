@@ -1,0 +1,22 @@
+var ages = {"ann": 31, "bob": 27}
+ages["cid"] = 40
+ages["ann"] = 32
+print(ages, len(ages))
+print(ages["bob"], "bob" in ages, "zed" in ages)
+print(ages.keys(), ages.values())
+print(ages.remove("bob"), ages.remove("bob"), ages)
+ages["bob"] = 1
+print(ages)
+for name in ages:
+    print(name, ages[name])
+print({1: "a", 2: "b"} == {2: "b", 1: "a"})
+let flags: dict[bool, list[str]] = {True: ["t"], False: []}
+flags[False].append("f")
+print(flags)
+var counts: dict[str, int] = {}
+for word in "a b a c a".split(" "):
+    if word in counts:
+        counts[word] += 1
+    else:
+        counts[word] = 1
+print(counts)

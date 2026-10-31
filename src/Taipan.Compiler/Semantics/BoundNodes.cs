@@ -8,12 +8,12 @@ namespace Taipan.Compiler.Semantics;
 // this tree only. Spans point back at the source for #line mapping.
 
 public sealed record BoundProgram(
+    ImmutableArray<BoundStruct> Structs,
     ImmutableArray<BoundConstant> Constants,
     ImmutableArray<BoundFunction> Functions,
-    BoundBlock TopLevel)
-{
-    public bool IsEmpty => Constants.IsEmpty && Functions.IsEmpty && TopLevel.Statements.IsEmpty;
-}
+    BoundBlock TopLevel);
+
+public sealed record BoundStruct(StructSymbol Symbol, ImmutableArray<BoundFunction> Methods, TextSpan Span);
 
 public sealed record BoundConstant(VariableSymbol Symbol, BoundExpr Value, TextSpan Span);
 
@@ -30,6 +30,18 @@ public sealed record BoundVariableDecl(VariableSymbol Symbol, BoundExpr Value, T
 
 /// <summary>Compound assignments are lowered: <c>x += e</c> binds as <c>x = x + e</c>.</summary>
 public sealed record BoundAssign(VariableSymbol Target, BoundExpr Value, TextSpan Span) : BoundStmt(Span);
+
+/// <summary>
+/// <c>target.field = value</c>. For a compound assignment, <see cref="Value"/> is a binary
+/// expression whose left side reads the field through this same <see cref="Target"/> instance;
+/// the emitter evaluates that instance once (SPEC §4.6).
+/// </summary>
+public sealed record BoundFieldAssign(BoundExpr Target, FieldSymbol Field, BoundExpr Value, bool IsCompound, TextSpan Span)
+    : BoundStmt(Span);
+
+/// <summary><c>target[index] = value</c>; compound forms share instances as for <see cref="BoundFieldAssign"/>.</summary>
+public sealed record BoundIndexAssign(BoundExpr Target, BoundExpr Index, BoundExpr Value, bool IsCompound, TextSpan Span)
+    : BoundStmt(Span);
 
 public sealed record BoundReturn(BoundExpr? Value, TextSpan Span) : BoundStmt(Span);
 
@@ -49,6 +61,9 @@ public sealed record BoundWhile(BoundExpr Condition, BoundBlock Body, TextSpan S
 public sealed record BoundForRange(VariableSymbol Variable, BoundExpr? Start, BoundExpr Stop, BoundBlock Body, TextSpan Span)
     : BoundStmt(Span);
 
+/// <summary><c>for v in e</c> over a list (elements), dict (keys) or str (characters).</summary>
+public sealed record BoundForEach(VariableSymbol Variable, BoundExpr Iterable, BoundBlock Body, TextSpan Span) : BoundStmt(Span);
+
 // ---- Expressions ----
 
 public abstract record BoundExpr(TaipanType Type, TextSpan Span);
@@ -64,6 +79,27 @@ public sealed record BoundBinary(BoundExpr Left, BinaryOp Op, BoundExpr Right, T
     : BoundExpr(Type, Span);
 
 public sealed record BoundCall(FunctionSymbol Function, ImmutableArray<BoundExpr> Arguments, TaipanType Type, TextSpan Span)
+    : BoundExpr(Type, Span);
+
+public sealed record BoundListLiteral(ImmutableArray<BoundExpr> Elements, ListOfType ListType, TextSpan Span)
+    : BoundExpr(ListType, Span);
+
+public sealed record BoundDictLiteral(ImmutableArray<(BoundExpr Key, BoundExpr Value)> Entries, DictOfType DictType, TextSpan Span)
+    : BoundExpr(DictType, Span);
+
+/// <summary>A struct constructor call. Arguments are in source order, each with the field it sets.</summary>
+public sealed record BoundConstruct(StructSymbol Struct, ImmutableArray<(FieldSymbol Field, BoundExpr Value)> Arguments, bool IsKeyword, TextSpan Span)
+    : BoundExpr(Struct.Type, Span);
+
+public sealed record BoundFieldAccess(BoundExpr Target, FieldSymbol Field, TextSpan Span) : BoundExpr(Field.Type, Span);
+
+/// <summary>Indexing a list, dict or str; <see cref="Target"/>'s type says which.</summary>
+public sealed record BoundIndex(BoundExpr Target, BoundExpr Index, TaipanType Type, TextSpan Span) : BoundExpr(Type, Span);
+
+public sealed record BoundMethodCall(BoundExpr Target, FunctionSymbol Method, ImmutableArray<BoundExpr> Arguments, TextSpan Span)
+    : BoundExpr(Method.ReturnType, Span);
+
+public sealed record BoundBuiltinMethodCall(BoundExpr Target, BuiltinMethod Method, ImmutableArray<BoundExpr> Arguments, TaipanType Type, TextSpan Span)
     : BoundExpr(Type, Span);
 
 /// <summary>Literal text parts are <see cref="BoundLiteral"/> strings; holes are any expression.</summary>
