@@ -1,5 +1,5 @@
 3 a [1]
-none none
+None None
 ["1", "a"] ["True", "[1.5]"]
 True False False True
 ["ab", "ab", "ab"] [0.5, 0.5]

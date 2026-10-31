@@ -642,7 +642,7 @@ public sealed class Parser
         return new IfClause(condition, body, SpanFrom(start));
     }
 
-    // condition = expr "is" "some" NAME | expr "is" "none" | expr
+    // condition = expr "is" "some" NAME | expr "is" "None" | expr
     private Condition ParseCondition()
     {
         var start = Current.Span.Start;
@@ -656,7 +656,7 @@ public sealed class Parser
             Next();
             return new IsNoneCondition(expr, SpanFrom(start));
         }
-        Expect(TokenKind.SomeKeyword);
+        Expect(TokenKind.SomeKeyword, "'some' or 'None'");
         var binding = ExpectIdentifier();
         return new IsSomeCondition(expr, binding, SpanFrom(start));
     }
@@ -812,7 +812,7 @@ public sealed class Parser
     }
 
     // base_type = "int" | "float" | "bool" | "str" | "py" | "list" "[" type "]" | "dict" "[" type "," type "]"
-    //           | "Callable" "[" "[" [ type { "," type } ] "]" "," ( type | "none" ) "]"
+    //           | "Callable" "[" "[" [ type { "," type } ] "]" "," ( type | "None" ) "]"
     //           | NAME [ "." NAME ] [ "[" type { "," type } "]" ]
     private TypeSyntax ParseBaseType()
     {
@@ -1160,7 +1160,7 @@ public sealed class Parser
         return new Argument(name, value, SpanFrom(start));
     }
 
-    // atom = INT | FLOAT | STRING | FSTRING | "True" | "False" | "none" | NAME | "self"
+    // atom = INT | FLOAT | STRING | FSTRING | "True" | "False" | "None" | NAME | "self"
     //      | "(" expr ")" | list literal | dict literal
     private Expr ParseAtom()
     {

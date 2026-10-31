@@ -33,7 +33,7 @@ public class RuntimeTests
 
     [Fact]
     public void ObjectDisplay() =>
-        Assert.Equal(["42", "2.0", "True", "False", "s", "none"],
+        Assert.Equal(["42", "2.0", "True", "False", "s", "None"],
             new object?[] { 42L, 2.0, true, false, "s", null }.Select(Display.Format));
 
     [Theory]

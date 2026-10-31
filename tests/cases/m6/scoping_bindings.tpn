@@ -1,6 +1,6 @@
 # The same binding name in sibling branches and loops; C# needs distinct names.
 let a: int? = 1
-let b: int? = none
+let b: int? = None
 if a is some v:
     print("a", v)
 if b is some v:

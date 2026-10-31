@@ -95,21 +95,45 @@ M0–M10 (with M8.1) make up v0.1 and are complete. M11 and M12 are complete; M1
   - Unpacking with the wrong count is a compile error, and `xs[a:b:0]` panics.
   - Slices are new lists, matching Python for negative and out-of-range bounds.
 
-## M13 — Exceptions
-- `try`/`except`/`finally` and `raise`, with Taipan's runtime errors (index, key, overflow…) as catchable exception types.
+## M13 — `None`
+- Spell the none value and type `None`, as in Python: `x is None`, `return None`, `Callable[[str], None]`, and `None` in display output. `none` is no longer a keyword.
+- Update SPEC first, then the tests and examples.
+- **Accept:**
+  - Every existing case passes with `None`, and `print([1, None])` prints `[1, None]`.
+  - `none` in source reports `TP0201`, with help suggesting `None`.
+
+## M14 — Default and keyword arguments
+- Parameters with default values (`def connect(host: str, port: int = 8080)`) and keyword arguments in calls to user functions and methods (`connect("db", port=5432)`), mixed with positional ones as in Python.
+- Update SPEC first: which defaults are allowed and when they're evaluated, how positional and keyword arguments are matched, and the errors for missing, repeated or unknown arguments.
+- **Accept:**
+  - Defaults and keywords work for functions and methods, and a default isn't shared between calls the way Python's mutable defaults are.
+  - A missing, repeated or unknown argument reports the right code at the right column.
+
+## M15 — Classes
+- `class Animal:` with typed field declarations, `__init__`, methods, and single inheritance (`class Dog(Animal):`, `super().__init__(…)`).
+- `@dataclass class` replaces `struct`: it generates the constructor, field-by-field equality and display, as in Python. Plain classes compare by identity and may be dict keys.
+- Strict initialization: every field is set by the end of `__init__`, and `self` isn't used before then. Overrides need `@override` and a compatible signature.
+- A subclass is assignable to its base. `isinstance(x, Dog)` and `x is not None` narrow a `let` or parameter itself inside the block (`is some v` stays), and `match` class patterns and `as` narrow too. Generic types stay invariant, while function types take parameters contravariantly and results covariantly.
+- Update SPEC first: class declarations and initialization rules, dataclasses, override checking, equality and display of classes, narrowing, and how classes are emitted. Then rewrite the existing `struct` cases.
+- **Accept:**
+  - A `Dog` stored in a `list[Animal]` calls its overriding method, and `isinstance` narrowing reaches a `Dog`-only method.
+  - Reading an unset field, a missing `@override`, and an incompatible override each report the right code at the right column.
+
+## M16 — Exceptions
+- `try`/`except`/`finally` and `raise`, with Taipan's runtime errors (index, key, overflow…) as catchable exception types. Exceptions are classes deriving from `Exception`, as in Python.
 - Python exceptions from `py` operations become catchable instead of panicking.
 - Update SPEC first: the exception types, what is and isn't catchable, and how uncaught exceptions keep §7's panic output and exit code 101.
 - **Accept:**
   - Catching a missing dict key, an overflow, and a Python `json.JSONDecodeError` each work.
   - An uncaught exception still prints `panic: …` with the `.tpn` line and exits 101.
 
-## M14 — Protocols
-- Structural interfaces (`protocol Comparable: def less(self, other: Self) -> bool`) that structs satisfy without declaring it.
+## M17 — Protocols
+- Structural interfaces (`protocol Comparable: def less(self, other: Self) -> bool`) that classes satisfy without declaring it.
 - Protocols as generic bounds (`def largest[T: Comparable](xs: list[T]) -> T?`), complementing M8.1's constraint tuples.
 - Update SPEC first: matching rules, what built-in types satisfy, and error messages for unmet bounds.
 - **Accept:**
-  - `largest` works for a user struct and for `int`/`str` through their built-in protocols.
-  - A struct missing a method reports which one at the call site.
+  - `largest` works for a user class and for `int`/`str` through their built-in protocols.
+  - A class missing a method reports which one at the call site.
 
 ## Later
 - `match` as an expression, type aliases (`type Handler = Callable[[Request], Response]`, as in Python 3.12), an LSP server, NativeAOT publishing, packaging `taipan` as a `dotnet tool` (with the NuGet IDs settled), and CPython extension output.

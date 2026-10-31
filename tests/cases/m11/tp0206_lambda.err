@@ -2,5 +2,5 @@ tests/cases/m11/tp0206_lambda.tpn:4:17: error TP0206: cannot infer the type of l
   help: add a type annotation
 tests/cases/m11/tp0206_lambda.tpn:5:22: error TP0206: cannot infer the type of lambda parameter 'y'
   help: add a type annotation
-tests/cases/m11/tp0206_lambda.tpn:6:26: error TP0206: cannot infer the type of none
+tests/cases/m11/tp0206_lambda.tpn:6:26: error TP0206: cannot infer the type of None
   help: add a type annotation

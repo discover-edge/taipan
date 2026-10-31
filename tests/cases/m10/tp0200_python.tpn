@@ -11,4 +11,4 @@ let s = "text" as str
 let bad = json.loads("1") as Service
 let a: list[py] = [json.loads("1")]
 print(a == a)
-let ok: list[py] = [1, "two", none]
+let ok: list[py] = [1, "two", None]

@@ -162,7 +162,7 @@ public static class Interop
     /// </summary>
     private static string Show(PyObject value, bool nested) => TypeName(value) switch
     {
-        "NoneType" => "none",
+        "NoneType" => "None",
         "float" => Display.Format(value.As<double>()),
         "str" when nested => Display.Repr(value.As<string>()),
         "list" => "[" + string.Join(", ", Items(value).Select(item => Show(item, nested: true))) + "]",

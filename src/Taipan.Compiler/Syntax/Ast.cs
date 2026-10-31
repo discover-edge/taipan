@@ -155,7 +155,7 @@ public sealed record OptionalType(TypeSyntax Inner, TextSpan Span) : TypeSyntax(
 /// <summary><c>tuple[A, B]</c> (SPEC §3.8).</summary>
 public sealed record TupleType(ImmutableArray<TypeSyntax> Elements, TextSpan Span) : TypeSyntax(Span);
 
-/// <summary><c>Callable[[A, B], R]</c>; <see cref="Result"/> is null for a result of <c>none</c> (SPEC §3.7).</summary>
+/// <summary><c>Callable[[A, B], R]</c>; <see cref="Result"/> is null for a result of <c>None</c> (SPEC §3.7).</summary>
 public sealed record CallableType(ImmutableArray<TypeSyntax> Parameters, TypeSyntax? Result, TextSpan Span) : TypeSyntax(Span);
 
 public sealed record ErrorType(TextSpan Span) : TypeSyntax(Span);

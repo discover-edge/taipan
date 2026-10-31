@@ -2,10 +2,10 @@
 def first[T](xs: list[T]) -> T?:
     for x in xs:
         return x
-    return none
+    return None
 
-let opts: list[int?] = [none, 1]
+let opts: list[int?] = [None, 1]
 let got: int? = first(opts)
 print(got, first(opts) ?? -1)
-let scores: dict[str, int?] = {"ann": none, "bob": 7}
+let scores: dict[str, int?] = {"ann": None, "bob": 7}
 print(scores.get("ann"), scores.get("bob"), scores.get("cid"), scores.get("bob") ?? 0)

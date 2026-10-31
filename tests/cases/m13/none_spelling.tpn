@@ -1,0 +1,19 @@
+# None is spelled as in Python, in values, types, conditions and display.
+def find(xs: list[str], target: str) -> int?:
+    for i, x in enumerate(xs):
+        if x == target:
+            return i
+    return None
+
+let names = ["a", "b"]
+let missing = find(names, "z")
+if missing is None:
+    print("missing is", missing)
+let pair: tuple[int?, int] = (None, 2)
+print([1, None], {"k": None, "j": 2}, pair)
+let log: Callable[[str], None] = lambda s: print(s)
+log(f"found {find(names, 'b')} and {missing}")
+
+# Lowercase none is an ordinary name now.
+let none = "just a name"
+print(none)

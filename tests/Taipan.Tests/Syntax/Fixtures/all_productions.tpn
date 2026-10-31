@@ -18,9 +18,9 @@ def classify(code: int, label: str?) -> str:
             pass
     let name = label ?? "none"
     var parts: dict[str, list[int?]] = {}
-    parts["a"] = [1, none, 3,]
+    parts["a"] = [1, None, 3,]
     parts["a"] += [4]
-    if name is none:
+    if name is None:
         return "unreachable"
     elif label is some l:
         return f"{l}: {len(parts["a"])}"
@@ -44,7 +44,7 @@ def main():
         Down: return
     def adder(n: int) -> Callable[[int], int]:
         return lambda x: x + n
-    let pick: Callable[[int, str], none]? = lambda _, s: print(s)
+    let pick: Callable[[int, str], None]? = lambda _, s: print(s)
     print(sorted([2, 1], key=lambda: 0), adder(1)(2))
 
 main()

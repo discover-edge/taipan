@@ -225,7 +225,7 @@ public sealed class DiagnosticBag
         Add("TP0219", span, $"instantiating '{function}' needs '{instance}', which is too deep");
 
     public void ReportCannotInferNone(TextSpan span) =>
-        Add("TP0206", span, "cannot infer the type of none", "add a type annotation");
+        Add("TP0206", span, "cannot infer the type of None", "add a type annotation");
 
     public void ReportCannotMatch(TextSpan span, object type) =>
         Add("TP0200", span, $"cannot match on {type}");
@@ -283,10 +283,13 @@ public sealed class DiagnosticBag
         Add("TP0210", span, $"{type} has no method '{name}'");
 
     public void ReportUndefinedName(TextSpan span, string name) =>
-        Add("TP0201", span, $"undefined name '{name}'");
+        Add("TP0201", span, $"undefined name '{name}'", NoneHelp(name));
 
     public void ReportUndefinedType(TextSpan span, string name) =>
-        Add("TP0201", span, $"undefined type '{name}'");
+        Add("TP0201", span, $"undefined type '{name}'", NoneHelp(name));
+
+    // Python's spelling is None; a lowercase none is just an undefined name (SPEC §3.4).
+    private static string? NoneHelp(string name) => name == "none" ? "use 'None'" : null;
 
     public void ReportCannotAssign(TextSpan span, string name, string what, string? help) =>
         Add("TP0202", span, $"cannot assign to '{name}': it is a {what}", help);

@@ -49,7 +49,7 @@ print(grid[(1, 2)], (0, 0) in grid, grid)
 # Tuples hold any values: other tuples, lists, optionals.
 let nested = ((1, 2), [3, 4], "s")
 print(nested)
-var maybe: tuple[int, str]? = none
+var maybe: tuple[int, str]? = None
 maybe = (1, "x")
 if maybe is some m:
     print(m[1])

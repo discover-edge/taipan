@@ -26,7 +26,7 @@ public static class TokenFacts
         ["not"] = TokenKind.NotKeyword,
         ["is"] = TokenKind.IsKeyword,
         ["some"] = TokenKind.SomeKeyword,
-        ["none"] = TokenKind.NoneKeyword,
+        ["None"] = TokenKind.NoneKeyword,
         ["True"] = TokenKind.TrueKeyword,
         ["False"] = TokenKind.FalseKeyword,
         ["as"] = TokenKind.AsKeyword,

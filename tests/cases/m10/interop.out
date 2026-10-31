@@ -1,9 +1,9 @@
 {"f": 1.5, "none": null, "ok": true, "xs": [3, 1, 2]}
-[3, 1, 2] none 1.5 3.0
+[3, 1, 2] None 1.5 3.0
 42 102.5 -41 8 1
 True False True 3
 4.0 True 2
 6
 a
-{"k": [1, none, 3]} [1, none, 3] has 3 [1, none, 3]
+{"k": [1, None, 3]} [1, None, 3] has 3 [1, None, 3]
 [[1, 2], [3]] {"a": {"b": 1}}

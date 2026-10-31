@@ -19,7 +19,7 @@ public abstract record TaipanType
     /// <summary>A dynamic Python object (SPEC §10.2).</summary>
     public static readonly TaipanType Py = new PrimitiveType("py");
 
-    /// <summary>The type of <c>none</c>, assignable to every optional (SPEC §3.4).</summary>
+    /// <summary>The type of <c>None</c>, assignable to every optional (SPEC §3.4).</summary>
     public static readonly TaipanType None = new NoneType();
 
     public bool IsError => this is ErrorType;
@@ -129,7 +129,7 @@ public sealed record StructType(StructSymbol Symbol, ImmutableArray<TaipanType> 
 
 public sealed record NoneType : TaipanType
 {
-    public override string ToString() => "none";
+    public override string ToString() => "None";
 }
 
 /// <summary><c>T?</c>. <see cref="Inner"/> is never itself optional (SPEC §3.1).</summary>
@@ -151,7 +151,7 @@ public sealed record EnumType(EnumSymbol Symbol, ImmutableArray<TaipanType> Type
 
 /// <summary>
 /// <c>Callable[[A, B], R]</c> (SPEC §3.7). <see cref="Result"/> is <see cref="TaipanType.Nothing"/>
-/// for a function that returns nothing, written <c>none</c>. Equal when every type matches.
+/// for a function that returns nothing, written <c>None</c>. Equal when every type matches.
 /// </summary>
 public sealed record FunctionType(ImmutableArray<TaipanType> Parameters, TaipanType Result) : TaipanType
 {
@@ -161,7 +161,7 @@ public sealed record FunctionType(ImmutableArray<TaipanType> Parameters, TaipanT
     public override int GetHashCode() => HashCode.Combine(Parameters.Length, Result);
 
     public override string ToString() =>
-        $"Callable[[{string.Join(", ", Parameters)}], {(Result is NothingType ? "none" : Result.ToString())}]";
+        $"Callable[[{string.Join(", ", Parameters)}], {(Result is NothingType ? "None" : Result.ToString())}]";
 }
 
 /// <summary><c>tuple[A, B, …]</c>, with at least two elements (SPEC §3.8). Equal when every element matches.</summary>

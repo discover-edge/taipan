@@ -34,4 +34,4 @@ print(total)
 def none_or(n: int) -> int?:
     if n > 0:
         return n
-    return none
+    return None

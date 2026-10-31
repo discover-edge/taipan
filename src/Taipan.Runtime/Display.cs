@@ -11,11 +11,11 @@ public static class Display
 
     public static string Format(bool value) => value ? "True" : "False";
 
-    public static string Format(string? value) => value ?? "none";
+    public static string Format(string? value) => value ?? "None";
 
     public static string Format(object? value) => value switch
     {
-        null => "none",
+        null => "None",
         long l => Format(l),
         double d => Format(d),
         bool b => Format(b),

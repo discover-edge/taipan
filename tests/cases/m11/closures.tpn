@@ -51,7 +51,7 @@ print(power_table(2, 5))
 struct Account:
     balance: int
 
-    def depositor(self) -> Callable[[int], none]:
+    def depositor(self) -> Callable[[int], None]:
         def deposit(amount: int):
             self.balance += amount
         return deposit

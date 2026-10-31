@@ -1,2 +1,2 @@
-var f: Callable[[], int]? = none
+var f: Callable[[], int]? = None
 print(f())

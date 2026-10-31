@@ -3,4 +3,4 @@ def twice[T](f: Callable[[T], T]) -> Callable[[T], T]:
 
 let id = lambda x: x
 let t = twice(lambda y: y)
-let nothing_fn = lambda: none
+let nothing_fn = lambda: None

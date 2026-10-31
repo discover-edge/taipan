@@ -1,0 +1,2 @@
+let a: int? = none
+let f: Callable[[int], none] = lambda x: print(x)
