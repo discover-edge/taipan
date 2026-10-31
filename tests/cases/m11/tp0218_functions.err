@@ -1,0 +1,4 @@
+tests/cases/m11/tp0218_functions.tpn:2:3: error TP0218: keyword arguments are only allowed in constructors
+tests/cases/m11/tp0218_functions.tpn:3:19: error TP0218: 'sorted' has no keyword argument 'cmp'
+tests/cases/m11/tp0218_functions.tpn:5:9: error TP0218: 'sort' has no keyword argument 'by'
+tests/cases/m11/tp0218_functions.tpn:6:11: error TP0218: keyword arguments are only allowed in constructors

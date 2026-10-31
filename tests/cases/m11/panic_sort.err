@@ -1,0 +1,2 @@
+panic: list mutated during iteration
+  at tests/cases/m11/panic_sort.tpn:7

@@ -12,7 +12,8 @@ public abstract class Symbol(string name)
     public override string ToString() => Name;
 }
 
-public enum VariableKind { Let, Var, Parameter, LoopVariable, Constant }
+/// <summary><see cref="Function"/> is a nested <c>def</c>'s name (SPEC §3.7).</summary>
+public enum VariableKind { Let, Var, Parameter, LoopVariable, Constant, Function }
 
 public sealed class VariableSymbol(string name, TaipanType type, VariableKind kind) : Symbol(name)
 {
@@ -21,7 +22,7 @@ public sealed class VariableSymbol(string name, TaipanType type, VariableKind ki
     public VariableKind Kind { get; } = kind;
 }
 
-public enum BuiltinFunction { Print, Len, Str, Int, Float, Range }
+public enum BuiltinFunction { Print, Len, Str, Int, Float, Range, Sorted, Map, Filter }
 
 /// <summary>A function, or a method when <see cref="Self"/> is set.</summary>
 public sealed class FunctionSymbol(
@@ -54,6 +55,9 @@ public sealed class FunctionSymbol(
         new("int", [], TaipanType.Int, BuiltinFunction.Int),
         new("float", [], TaipanType.Float, BuiltinFunction.Float),
         new("range", [], TaipanType.Nothing, BuiltinFunction.Range),
+        new("sorted", [], TaipanType.Error, BuiltinFunction.Sorted),
+        new("map", [], TaipanType.Error, BuiltinFunction.Map),
+        new("filter", [], TaipanType.Error, BuiltinFunction.Filter),
     ];
 }
 
@@ -84,7 +88,7 @@ public sealed class StructSymbol(string name, ImmutableArray<TypeParameterSymbol
 /// <summary>Built-in methods of list, dict and str (SPEC §6).</summary>
 public enum BuiltinMethod
 {
-    ListAppend, ListPop, ListInsert, ListContains,
+    ListAppend, ListPop, ListInsert, ListContains, ListSort,
     DictGet, DictKeys, DictValues, DictRemove,
     StrUpper, StrLower, StrStrip, StrSplit, StrStartsWith, StrEndsWith, StrReplace,
 }

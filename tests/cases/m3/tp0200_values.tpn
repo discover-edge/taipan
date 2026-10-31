@@ -9,7 +9,7 @@ def noisy():
 
 let a = log("x")
 let b = print("y")
-let c = twice
+let c = len
 let d = 5
 d(1)
 "text"(1)

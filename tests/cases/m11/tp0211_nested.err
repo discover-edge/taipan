@@ -1,0 +1,2 @@
+tests/cases/m11/tp0211_nested.tpn:5:20: error TP0211: 'over' cannot use top-level variable 'limit'
+  help: pass it as a parameter, or make it a const

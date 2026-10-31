@@ -1,0 +1,4 @@
+tests/cases/m11/tp0207_lambda.tpn:2:38: error TP0207: 'x' shadows an outer binding
+tests/cases/m11/tp0207_lambda.tpn:3:46: error TP0214: duplicate definition of 'a'
+tests/cases/m11/tp0207_lambda.tpn:7:9: error TP0207: 'n' shadows an outer binding
+tests/cases/m11/tp0207_lambda.tpn:9:16: error TP0207: 'n' shadows an outer binding

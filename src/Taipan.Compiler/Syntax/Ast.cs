@@ -77,6 +77,9 @@ public sealed record ContinueStmt(TextSpan Span) : Stmt(Span);
 
 public sealed record ExprStmt(Expr Expr, TextSpan Span) : Stmt(Span);
 
+/// <summary>A <c>def</c> inside a block: a nested function (SPEC §3.7).</summary>
+public sealed record FuncDefStmt(FuncDef Function, TextSpan Span) : Stmt(Span);
+
 /// <summary>The <c>if</c> clause followed by any <c>elif</c> clauses.</summary>
 public sealed record IfStmt(ImmutableArray<IfClause> Clauses, Block? Else, TextSpan Span) : Stmt(Span);
 
@@ -142,6 +145,9 @@ public sealed record DictType(TypeSyntax Key, TypeSyntax Value, TextSpan Span) :
 
 public sealed record OptionalType(TypeSyntax Inner, TextSpan Span) : TypeSyntax(Span);
 
+/// <summary><c>Callable[[A, B], R]</c>; <see cref="Result"/> is null for a result of <c>none</c> (SPEC §3.7).</summary>
+public sealed record CallableType(ImmutableArray<TypeSyntax> Parameters, TypeSyntax? Result, TextSpan Span) : TypeSyntax(Span);
+
 public sealed record ErrorType(TextSpan Span) : TypeSyntax(Span);
 
 // ---- Expressions ----
@@ -197,6 +203,9 @@ public sealed record Argument(Identifier? Name, Expr Value, TextSpan Span) : Nod
 public sealed record MemberExpr(Expr Target, Identifier Member, TextSpan Span) : Expr(Span);
 
 public sealed record IndexExpr(Expr Target, Expr Index, TextSpan Span) : Expr(Span);
+
+/// <summary><c>lambda x, y: body</c>; a parameter may be <c>_</c> (SPEC §3.7).</summary>
+public sealed record LambdaExpr(ImmutableArray<Identifier> Parameters, Expr Body, TextSpan Span) : Expr(Span);
 
 /// <summary><c>x as T</c>: converts a py value to a Taipan type (SPEC §10.4).</summary>
 public sealed record CastExpr(Expr Value, TypeSyntax Type, TextSpan Span) : Expr(Span);

@@ -76,6 +76,7 @@ Exit codes: `0` success, `1` compile error, `2` usage error, `101` runtime panic
 - **Static types:** annotate function signatures, and locals are inferred. There's no truthiness: conditions must be `bool`.
 - **Optionals instead of null:** a `T?` must be narrowed with `is some`, or given a default with `??`, before use.
 - **Structs and enums:** structs have methods and structural equality. Enums carry payloads, and `match` must cover every variant.
+- **Functions as values:** lambdas, nested `def`s and closures, typed as Python's `Callable[[int], str]`. `sorted(services, key=lambda s: s.healthy)`, `map` and `filter` work as in Python, except that `map` and `filter` return lists.
 - **Checked arithmetic:** int overflow, division by zero, and out-of-range indexing are panics that report the `.tpn` line.
 - **Modules:** `import geometry` or `from geometry import Point` loads `geometry.tpn` from the main file's directory.
 - **Python interop:** `from python import json` gives `py` values. These are dynamic objects that reach static types only through checked conversions (`x as int?`):

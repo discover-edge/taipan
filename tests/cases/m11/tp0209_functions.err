@@ -1,0 +1,6 @@
+tests/cases/m11/tp0209_functions.tpn:2:1: error TP0209: 'f' takes 1 argument, found 2
+tests/cases/m11/tp0209_functions.tpn:3:31: error TP0209: expected a lambda with 1 parameter, found 2
+tests/cases/m11/tp0209_functions.tpn:5:1: error TP0209: function takes 1 argument, found 0
+tests/cases/m11/tp0209_functions.tpn:6:8: error TP0209: 'Callable' takes a parameter list and a result type
+tests/cases/m11/tp0209_functions.tpn:7:7: error TP0209: 'sorted' takes 1 argument, found 2
+tests/cases/m11/tp0209_functions.tpn:8:36: error TP0209: argument 'key' is given more than once

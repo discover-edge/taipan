@@ -33,7 +33,7 @@ Taipan is a statically typed, compiled language with Python's surface syntax. Th
 - **Comments:** `#` to end of line.
 - **Identifiers:** `[A-Za-z_][A-Za-z0-9_]*`. A lone `_` is the wildcard pattern only.
 - **Keywords:**
-  `def struct enum let var const if elif else while for in match return pass break continue and or not is some none True False as from import`
+  `def struct enum let var const if elif else while for in match return pass break continue and or not is some none True False as from import lambda`
 - **Integer literals:** decimal, with `_` separators allowed (`1_000`). They're 64-bit signed, and overflow at compile time is `TP0200`. The range check belongs to the type checker, not the lexer, so `-9223372036854775808` is valid.
 - **Float literals:** `1.5`, `1e9`, `2.5e-3`. A leading digit is required, so `.5` is invalid. Formally: `digits "." digits [exp] | digits exp`, where `exp = ("e" | "E") ["+" | "-"] digits`. `1.` lexes as the int `1` followed by `.`.
 - **Number literal rules:** `_` may appear only between two digits. A multi-digit integer part can't start with `0`. A number immediately followed by a letter, digit-less exponent, or `_` (`12abc`, `1e`, `1_`, `007`) is `TP0007`.
@@ -108,7 +108,7 @@ assign_stmt   = target ( "=" | "+=" | "-=" | "*=" | "/=" ) expr ;
 target        = NAME | postfix "." NAME | postfix "[" expr "]" ;
 return_stmt   = "return" [ expr ] ;
 
-compound_stmt = if_stmt | while_stmt | for_stmt | match_stmt ;
+compound_stmt = if_stmt | while_stmt | for_stmt | match_stmt | func_def ;     (* in a block: nested function, M11 *)
 if_stmt       = "if" condition ":" block { "elif" condition ":" block } [ "else" ":" block ] ;
 condition     = expr "is" "some" NAME | expr "is" "none" | expr ;
 while_stmt    = "while" condition ":" block ;
@@ -123,10 +123,13 @@ type          = base_type { "?" } ;                               (* more than o
 base_type     = "int" | "float" | "bool" | "str" | "py"           (* py: M10 *)
               | "list" "[" type "]"
               | "dict" "[" type "," type "]"
+              | "Callable" "[" "[" [ type { "," type } ] "]" "," ( type | "none" ) "]"   (* M11, §3.7 *)
               | NAME [ "." NAME ] [ "[" type { "," type } "]" ] ;  (* module.Type: M9 *)
 
 (* Expressions, lowest to highest precedence *)
-expr          = coalesce ;
+expr          = lambda_expr | coalesce ;
+lambda_expr   = "lambda" [ lambda_param { "," lambda_param } ] ":" expr ;   (* M11, §3.7 *)
+lambda_param  = NAME | "_" ;
 coalesce      = or_expr [ "??" coalesce ] ;                        (* right-assoc *)
 or_expr       = and_expr { "or" and_expr } ;
 and_expr      = not_expr { "and" not_expr } ;
@@ -149,7 +152,8 @@ atom          = INT | FLOAT | STRING | FSTRING | "True" | "False" | "none"
 **Grammar notes**
 - `a < b < c` is `TP0212`. Write `a < b and b < c`.
 - An `arm` may take a simple statement on the same line (`Ok: print("ok")`) or an indented block.
-- Keyword arguments are allowed only in struct and enum-variant constructors (§4.3), and in calls to `py` values (§10.2). Within one call, arguments are either all positional or all keyword. Mixing them is `TP0100`. The exception is a `py` call, where keyword arguments may follow positional ones, as in Python. A positional argument after a keyword argument is always `TP0100`.
+- Keyword arguments are allowed only in struct and enum-variant constructors (§4.3), in calls to `py` values (§10.2), and for the keyword-only parameters `key` and `reverse` of `sorted` and `list.sort` (M11, §6). Within one call, arguments are either all positional or all keyword. Mixing them is `TP0100`. The exceptions are `py` calls and `sorted`/`sort`, where keyword arguments may follow positional ones, as in Python. A positional argument after a keyword argument is always `TP0100`.
+- A `def` at the top level is a `top_item`, a hoisted global function. A `def` inside a block is a nested function (§3.7).
 - In a cast (`x as T`), a `??` after the type is the coalescing operator, so `x as int? ?? 0` is `(x as int?) ?? 0`.
 - In a type, the lexer's `??` token counts as two `?`, so `int??` parses and the type checker reports `TP0213`.
 - An f-string hole is parsed as exactly one `expr`. Its tokens come from re-lexing the hole's text (§1.3), and positions in its diagnostics refer to the original file.
@@ -179,6 +183,7 @@ atom          = INT | FLOAT | STRING | FSTRING | "True" | "False" | "none"
 | `dict[K, V]` | hash map that keeps insertion order; `K` ∈ {`int`, `str`, `bool`}, otherwise `TP0200` | `OrderedDictionary<K, V>` |
 | `T?` | optional `T` | `T?` (C# nullable) |
 | `py` | dynamic Python object (M10, §10) | `Python.Runtime.PyObject` |
+| `Callable[[A, B], R]` | function value (M11, §3.7) | `Taipan.Runtime.Function<D>` (§8) |
 
 - A function without `-> type` returns nothing (C# `void`). Using its result as a value is `TP0200`.
 - `T??` is `TP0213`. Optionals don't nest.
@@ -237,7 +242,7 @@ There are no other implicit conversions. Explicit conversions use the built-ins 
   - So a body that checks is valid for every type argument. Instantiation never reports new errors (apart from `TP0219`).
 - **Type arguments are always inferred.** There's no explicit call-site syntax.
   - **Expected type first:** if the call has an expected type (§4.6), the return type is unified with it.
-  - **Then arguments:** the remaining parameters are inferred from the argument types, in order.
+  - **Then arguments:** the remaining parameters are inferred from the argument types, in order. Lambda arguments come last (§3.7).
   - An argument whose type doesn't fit what the expected type inferred overrides it. So `let b: Box[float] = Box(1)` keeps `T = float`, but `let x: int? = first(xs)` with `xs: list[int?]` infers `T = int?`.
   - Arguments are then checked against the substituted parameter types, with the usual widening.
   - When two arguments infer `int` and `float` for the same parameter, it's `float`. Any other disagreement is `TP0200`.
@@ -258,6 +263,41 @@ There are no other implicit conversions. Explicit conversions use the built-ins 
   - **Instances:** each instantiation emits the body checked for its combination.
 - **Polymorphic recursion:** a generic function that, through its own calls, needs ever-larger instantiations (for example, `f[T]` calling `f` with a `list[T]`) is `TP0219`. It's reported once the instantiation chain is 32 deep.
 
+### 3.7 Functions as values (M11)
+- **Function types** are written as in Python's `typing`. `Callable[[int, str], bool]` takes an `int` and a `str` and returns a `bool`, and `Callable[[], int]` takes nothing. A result of `none` means the function returns nothing: `Callable[[str], none]`.
+  - `Callable` is a built-in type name, like `list`. A bare `Callable` is `TP0209`.
+  - A function type is assignable only to an identical one. Parameter and result types must match exactly, with no widening. A lambda is checked against its expected type, though, so `lambda x: x` fits `Callable[[int], float]`.
+  - Function types may appear wherever a type can: as `T?`, in lists, as dict values, as fields, and as type arguments. They can't be dict keys, and they aren't convertible to Python (§10.3).
+- **Function values** are:
+  - the name of a top-level function that isn't generic, used without calling it (`apply(double, xs)`)
+  - a nested `def`
+  - a `lambda`
+  - Generic functions, built-in functions, methods, struct constructors and enum variants aren't values (`TP0200`, §9.1). Wrap them in a lambda instead: `lambda s: s.total()`.
+- **Calls:** any expression of function type can be called: `f(x)`, `handlers[0](req)`, or `s.on_done()` for a field. Arguments are positional only (`TP0218`), and are checked against the parameter types. A wrong count is `TP0209`. Calling a `T?` is `TP0203`.
+- **Lambdas:** `lambda x, y: x + y`. The body is a single expression, whose value is the result.
+  - Parameters take no annotations. Their types come from the expected type (§4.6), which must be a function type with as many parameters as the lambda has (`TP0209` otherwise).
+  - The body is checked against the expected result type. When the result is `none`, the body is checked as an expression statement, and its value is discarded.
+  - Without an expected type, a lambda with no parameters takes its body's type (`let f = lambda: 0` is `Callable[[], int]`). One with parameters is `TP0206`.
+  - Where the expected type isn't a function type, a lambda is `TP0200`.
+  - Parameters are immutable and follow the shadowing rules (`TP0207`). A `_` parameter is ignored and may repeat. Any other repeated name is `TP0214`.
+- **Nested functions:** a `def` inside a block, whether a function body or a block of a top-level statement, declares a local function.
+  - Its name is a `let` binding, visible from the `def` to the end of the block and inside its own body, so it may recurse. It follows the usual shadowing rules.
+  - A nested function can't have type parameters (`TP0223`), but it may use those of an enclosing generic function.
+  - `return`, `break` and `continue` in its body belong to the nested function. A loop around the `def` isn't its loop (`TP0215`).
+- **Capture:** a lambda or nested function may use any binding visible where it's written. That includes parameters, `self`, and top-level `let`/`var` bindings when it's written at the top level. A function nested inside a top-level function still can't see top-level variables (`TP0211`).
+  - A captured `var` is shared, not copied. The function sees later assignments to it and may assign to it itself. There is no `nonlocal`, since assignment never declares.
+  - A `let`, a parameter or a loop variable can't change, so capturing one captures its value.
+  - Each loop iteration gets its own loop variable and its own body bindings. So the functions made by `for i in range(3): fs.append(lambda: i)` return 0, 1 and 2, where in Python they'd all return 2.
+- **Equality and display:**
+  - Function values compare by identity, as in Python. A top-level function is always the same value, and each evaluation of a `lambda` or nested `def` makes a new one.
+  - Ordering operators on functions are `TP0200`.
+  - Functions display as `<function name>`, and lambdas as `<function <lambda>>`.
+- **Inference with function arguments:** in a call to a generic function (§3.6), lambda arguments are checked after all other arguments, in order.
+  - Each lambda's expected type is its parameter's type, with the type arguments inferred so far substituted. Its parameter types must then be fully known, otherwise it's `TP0206`.
+  - The body's type then infers type parameters in the result position, so `map(lambda s: s.name, services)` is `list[str]`.
+  - A body that returns nothing can't determine a type parameter (`TP0200`).
+  - A function-valued argument that isn't a lambda infers from its type like any other argument, matching parameter and result types exactly.
+
 ---
 
 ## 4. Declarations
@@ -273,7 +313,7 @@ There are no other implicit conversions. Explicit conversions use the built-ins 
   - Top-level `let` and `var` are script locals. They're visible only to later top-level statements. Referencing one from inside a function is `TP0211`.
 
 ### 4.2 Functions
-- `def` declares a function. Recursion and mutual recursion are allowed, since functions are hoisted.
+- `def` declares a function. Recursion and mutual recursion are allowed, since functions are hoisted. A `def` inside a block is a nested function, which isn't hoisted (§3.7).
 - Every path in a function with a declared return type must `return` a value (`TP0208`).
 - Arguments are positional only. A wrong count is `TP0209`.
 - Overloading isn't supported. A duplicate name is `TP0214`.
@@ -312,8 +352,8 @@ There are no other implicit conversions. Explicit conversions use the built-ins 
 - **Parameters** are immutable, like `let`. They're declared in the function's outermost scope, so `let x` in a body with a parameter `x` is `TP0207`. Two parameters with the same name are `TP0214`.
 - **Assignment** to anything other than a `var` (a `let`, a parameter, a loop variable, a constant or a function) is `TP0202`. Compound assignment `x op= e` is checked as `x = x op e`, so `var n = 1` then `n /= 2` is `TP0200`.
 - **Use before declaration:** a local or top-level binding referenced before its `let`/`var` is `TP0201`.
-- **Functions aren't values.** A function name can only be called. Any other use is `TP0200`. Calling something that isn't a function is also `TP0200`.
-- **Keyword arguments** in a call to anything other than a struct or variant constructor are `TP0218`.
+- **Functions as values** follow §3.7 (M11). Calling something that isn't a function is `TP0200`.
+- **Keyword arguments** in a call to anything other than a struct or variant constructor, a `py` value, or `sorted`/`sort` (§6) are `TP0218`. So is a keyword that `sorted` or `sort` doesn't take.
 - **Return values:**
   - `return` with a value in a function without a return type, or `return` without one in a function with a return type, is `TP0200`.
   - Using a call to a function without a return type as a value is `TP0200`.
@@ -324,7 +364,7 @@ There are no other implicit conversions. Explicit conversions use the built-ins 
 - **Error types:** once an expression has an error, its type is treated as compatible with everything. This means one mistake is reported once, not again at every use.
 
 ### 4.6 Structs, lists and dicts: checking rules
-- **Struct names** live in the type namespace and also in the global value scope, as the struct's constructor. So a struct can't share a name with a function, constant or built-in (`TP0214`), and a local can't take its name (`TP0207`). A struct named `int`, `float`, `bool`, `str`, `list`, `dict` or `py` is also `TP0214`.
+- **Struct names** live in the type namespace and also in the global value scope, as the struct's constructor. So a struct can't share a name with a function, constant or built-in (`TP0214`), and a local can't take its name (`TP0207`). A struct named `int`, `float`, `bool`, `str`, `list`, `dict`, `py` or `Callable` is also `TP0214`.
 - **Members:** field and method names within one struct must be distinct (`TP0214`). Field types may name any struct, including the struct itself, for example through `list[Node]`.
 - **Construction:**
   - The positional form takes exactly one argument per field, in declaration order (`TP0209`).
@@ -333,7 +373,7 @@ There are no other implicit conversions. Explicit conversions use the built-ins 
 - **Methods** are hoisted with their struct. Inside a method, `self` is an immutable parameter (`TP0202` to reassign), and other methods are reached as `self.m()`. A bare `m()` refers to a global function. `self` outside a method is `TP0201`.
 - **Member access:**
   - An unknown field or method is `TP0210`.
-  - A method used without calling it is `TP0200`, and so is calling a field.
+  - A method used without calling it is `TP0200`. So is calling a field, unless the field has a function type (§3.7).
   - Assigning to a method is `TP0202`.
 - **Expected types.** An expression is checked against an expected type when its context supplies one: an annotation, a parameter (including constructor fields and built-in method parameters), a return type, an assignment target (variable, field or element), or an enclosing list or dict literal that has an expected type. `[]` and `{}` need one (`TP0206`). With an expected type, each element is checked against the expected element type, so `let xs: list[float] = [1, 2]` is valid.
 - **Literals without an expected type:** all elements (or all keys, or all values) must have the same type, except that `int` and `float` mix to `float`. A mismatch is `TP0200` at the first element that differs.
@@ -414,7 +454,7 @@ There are no other implicit conversions. Explicit conversions use the built-ins 
 | `%` | int, int | int | result takes the divisor's sign (Python semantics) |
 | `+` | str, str | str | concatenation |
 | `+` | list[T], list[T] | list[T] | new list |
-| `== !=` | same type, or int/float | bool | structural for structs, enums, lists, dicts |
+| `== !=` | same type, or int/float | bool | structural for structs, enums, lists, dicts; identity for functions (§3.7) |
 | `< <= > >=` | numeric, or str (ordinal) | bool | |
 | `in`, `not in` | T in list[T]; K in dict[K,V]; str in str | bool | |
 | `??` | T?, T | T | |
@@ -442,9 +482,17 @@ In `a == b` and `a != b`, `a`'s type is `b`'s expected type (§4.6), so `m == No
 - `int(x: float) -> int` truncates toward zero. An `int` argument is returned unchanged. `int(x: str) -> int?` parses, returning `none` on failure. It accepts an optional sign and decimal digits with `_` only between digits (as in §1.3), with surrounding whitespace allowed. A value outside the int range gives `none`.
 - `float(x: int) -> float`. A `float` argument is returned unchanged. `float(x: str) -> float?` accepts the same forms as `int(str)`, plus an optional fraction and exponent (`1.5`, `2e-3`, `.5`, `5.`), and `inf`, `infinity` and `nan` in any case. Otherwise it returns `none`.
 - `range` can only be used as the iterable of a `for` loop. Any other use is `TP0200`.
+- `sorted(xs: list[T], key=…, reverse=False) -> list[T]` (M11) returns a new list in ascending order.
+  - `key: Callable[[T], K]` gives each element's sort key. It's called once per element, in list order, before any reordering.
+  - The elements, or the keys when `key` is given, must be `int`, `float` or `str`, and are ordered as by `<`. Otherwise it's `TP0200`. A NaN sorts before every other float.
+  - `reverse: bool` sorts in descending order.
+  - The sort is stable: equal elements keep their original order, with `reverse=True` too, as in Python.
+  - `key` and `reverse` are optional and keyword-only.
+- `map(f: Callable[[T], U], xs: list[T]) -> list[U]` and `filter(f: Callable[[T], bool], xs: list[T]) -> list[T]` (M11) call `f` once per element, in order, and return new lists. Python's versions return iterators, which Taipan doesn't have.
+- `sorted`, `sort`, `map` and `filter` iterate their list (§5.2), so a function argument that changes the list panics with `list mutated during iteration`.
 
 **Methods**
-- `list[T]`: `append(x: T)`, `pop() -> T` (removes and returns the last element; panics if empty), `insert(i: int, x: T)` (Python semantics: a negative `i` counts from the end, and out-of-range indices clamp), `contains(x: T) -> bool`
+- `list[T]`: `append(x: T)`, `pop() -> T` (removes and returns the last element; panics if empty), `insert(i: int, x: T)` (Python semantics: a negative `i` counts from the end, and out-of-range indices clamp), `contains(x: T) -> bool`, `sort(key=…, reverse=False)` (M11: sorts in place, with the same rules as `sorted`)
 - `dict[K, V]`: `get(k: K) -> V?` (M6), `keys() -> list[K]`, `values() -> list[V]` (new lists, in insertion order), `remove(k: K) -> bool` (`True` if the key was present)
 - `str`: `upper() -> str`, `lower() -> str` (invariant-culture case mapping), `strip() -> str` (removes leading and trailing whitespace), `split(sep: str) -> list[str]` (an empty `sep` panics), `startswith(p: str) -> bool`, `endswith(p: str) -> bool`, `replace(old: str, new: str) -> str` (every occurrence; an empty `old` panics)
 - Equality inside `contains`, `in`, `==` and `!=` is structural, as for `==`. Dict equality ignores order.
@@ -462,6 +510,7 @@ In `a == b` and `a != b`, `a`'s type is `b`'s expected type (§4.6), so `m == No
 | dict | `{"a": 1}` |
 | struct | `Service(name="api", replicas=3, healthy=3)` |
 | enum | `Ok`, `Degraded(healthy=1, total=4)` |
+| function | `<function name>`, `<function <lambda>>` (M11) |
 
 ---
 
@@ -499,6 +548,8 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 | `T?` | `T?` |
 | `list[T]` / `dict[K, V]` | `List<T>` / `OrderedDictionary<K, V>`. `for` over them goes through a runtime iterator that turns concurrent modification into the §7 panic. |
 | generics | Monomorphized. Each distinct instantiation the program uses becomes its own C# method or type, named after its type arguments: `first_int`, `Box_str`, `Box_list_int`, `Maybe_int_opt` (for `Maybe[int?]`). A clash with another name gets a numeric suffix. Generic definitions that are never instantiated are type-checked but not emitted. |
+| function types | `Taipan.Runtime.Function<D>` (M11), with `D` a `Func<…>` or `Action<…>`. It wraps the delegate and the display name, and calls go through the delegate. A top-level function used as a value is one cached object per function, and each evaluation of a lambda or nested `def` creates a new object, so `==` is reference equality. In generic instance names, a function type is written `fn_` followed by its parameter and result types: `apply_fn_int_str`, `Box_fn_none`. |
+| lambdas, nested `def` | C# lambdas, which capture locals by reference. A `for x in range(…)` loop copies its variable into a fresh local each iteration, so captures see that iteration's value. |
 | `const` | a `static` field, assigned at the start of `TopLevel` in source order |
 | modules | All files go into one C# compilation unit, with no per-module classes. A name defined in two modules gets a numeric suffix in the C# output (`area`, `area2`). |
 | locals | a typed C# local. A Taipan local whose name C# scoping would reject (the same name declared in a nested block and again later in the outer block) is renamed with a numeric suffix. |
@@ -568,6 +619,7 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 | TP0220 | invalid type parameter constraint |
 | TP0221 | module not found |
 | TP0222 | top-level statement in an imported module |
+| TP0223 | nested function with type parameters |
 | TP0300 | warning: unreachable match arm |
 
 New codes go into this table before they're implemented.
@@ -582,7 +634,9 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0200 | `cannot compare <S> and <T>` |
 | TP0200 | `'<f>' does not return a value` |
 | TP0200 | `'<f>' has no return type, so 'return' cannot have a value` / `missing return value; '<f>' returns <T>` |
-| TP0200 | `'<f>' is a function; call it` / `'<x>' is not a function` |
+| TP0200 | `'<x>' is not a function` / `cannot call <T>` (a callee that isn't a name) |
+| TP0200 | `'<f>' is generic, so it cannot be used as a value` / `built-in '<f>' cannot be used as a value`, with help `wrap it in a lambda` (M11) |
+| TP0200 | `expected <T>, found lambda` / `cannot sort <T>`, with help `pass a key, e.g. 'key=lambda x: ...'` / `cannot sort by <K>` (M11) |
 | TP0200 | `integer literal is out of range` |
 | TP0200 | `'range' can only be used in a for loop` / `cannot iterate over <T>` |
 | TP0200 | `'<T>' is inferred as both <A> and <B>` / `'<T>' must be <A> or <B>, found <C>` (type-argument inference and constraints; `A, B or C` for longer tuples) |
@@ -596,12 +650,13 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0203 | `expected <T>, found <T>?` / `<T>? must be narrowed before use`, with help `narrow it with 'is some', or give a default with '??'` |
 | TP0204 | `non-exhaustive match (missing: <a>, <b>)` |
 | TP0205 | `condition must be bool, found <T>` (with help `convert it with 'as bool'` for `py`) |
-| TP0206 | `cannot infer the type of an empty list` / `... empty dict` / `cannot infer the type of none` / `cannot infer '<T>' for '<f>'`, with help `add a type annotation` |
+| TP0206 | `cannot infer the type of an empty list` / `... empty dict` / `cannot infer the type of none` / `cannot infer '<T>' for '<f>'` / `cannot infer the type of lambda parameter '<x>'`, with help `add a type annotation` |
 | TP0207 | `'<x>' shadows an outer binding` |
 | TP0208 | `not all paths in '<f>' return a value` |
 | TP0209 | `'<S>' takes <n> type arguments, found <m>` (`type argument` when n is 1) |
 | TP0209 | `'<v>' has <n> fields, found <m> bindings` (variant patterns; `field` / `binding` when the count is 1) |
-| TP0209 | `'<f>' takes <n> arguments, found <m>` (`argument` when n is 1; `1 or 2 arguments` for `range`) / `missing field '<f>' in '<S>'` / `field '<f>' is given more than once` |
+| TP0209 | `'<f>' takes <n> arguments, found <m>` (`argument` when n is 1; `1 or 2 arguments` for `range`; `function takes …` when the callee isn't a name) / `missing field '<f>' in '<S>'` / `field '<f>' is given more than once` / `argument '<k>' is given more than once` |
+| TP0209 | `expected a lambda with <n> parameters, found <m>` (`parameter` when n is 1) / `'Callable' takes a parameter list and a result type` |
 | TP0210 | `<T> has no field '<x>'` / `<T> has no method '<x>'` / `<E> has no variant '<x>'` |
 | TP0211 | `'<f>' cannot use top-level variable '<x>'`, with help `pass it as a parameter, or make it a const` |
 | TP0213 | `optional types cannot be nested` |
@@ -609,10 +664,11 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0215 | `'break' outside a loop` / `'continue' outside a loop` / `'return' outside a function` |
 | TP0216 | `'<v>' is ambiguous: it is a variant of <E1> and <E2>`, with help `qualify it, e.g. '<E1>.<v>'` |
 | TP0217 | `const initializer must be a constant expression` |
-| TP0218 | `keyword arguments are only allowed in constructors` |
+| TP0218 | `keyword arguments are only allowed in constructors` / `'<f>' has no keyword argument '<k>'` (`sorted`, `sort`) |
 | TP0219 | `instantiating '<f>' needs '<f>[<T>]', which is too deep`, at the call that starts the chain |
 | TP0221 | `module '<m>' not found`, with help `looked for <path>` / `'python' is not a module`, with help `use 'from python import <module>'` |
 | TP0222 | `only the main file can have top-level statements` |
+| TP0223 | `nested functions cannot have type parameters` |
 | TP0220 | `a constraint needs at least two types` / `'<T>' is listed twice in the constraint` / `a constraint cannot be optional or generic` / `constraints are only supported on functions` |
 | TP0300 | `unreachable match arm` |
 
@@ -678,7 +734,8 @@ Types are written as in source: `int`, `str?`, `list[int]`. The type of `none` i
 
 ## 11. Deferred (post-v0.1)
 - protocols (structural interfaces)
-- lambdas and closures
+- generic functions, built-ins, methods and constructors as values (wrap them in a lambda)
+- iterators and generators (`map` and `filter` return lists)
 - tuples
 - slicing
 - `match` as an expression

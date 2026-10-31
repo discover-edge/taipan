@@ -1,0 +1,2 @@
+tests/cases/m11/tp0203_functions.tpn:2:7: error TP0203: Callable[[], int]? must be narrowed before use
+  help: narrow it with 'is some', or give a default with '??'

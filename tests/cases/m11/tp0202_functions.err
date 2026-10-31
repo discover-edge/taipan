@@ -1,0 +1,1 @@
+tests/cases/m11/tp0202_functions.tpn:4:5: error TP0202: cannot assign to 'inner': it is a function

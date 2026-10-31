@@ -19,6 +19,7 @@ public static class Display
         double d => Format(d),
         bool b => Format(b),
         string s => s,
+        IFunction f => $"<function {f.Name}>",
         IVariant { Fields.Count: 0 } v => v.TypeName,
         IStruct s => $"{s.TypeName}({string.Join(", ", s.Fields.Select(f => $"{f.Name}={Repr(f.Value)}"))})",
         IDictionary d => "{" + string.Join(", ", d.Keys.Cast<object>().Select(k => $"{Repr(k)}: {Repr(d[k])}")) + "}",

@@ -107,6 +107,60 @@ public static class Ops
 
     // ---- Lists and dicts (SPEC §6) ----
 
+    /// <summary><c>sorted(xs, reverse=…)</c>: a new list, in a stable order.</summary>
+    public static List<T> Sorted<T>(List<T> list, bool reverse = false) => Order(list, item => item, reverse);
+
+    /// <summary><c>sorted(xs, key=…, reverse=…)</c>.</summary>
+    public static List<T> SortedBy<T, TKey>(List<T> list, Function<Func<T, TKey>> key, bool reverse = false) =>
+        Order(list, key.Invoke, reverse);
+
+    /// <summary><c>xs.sort(reverse=…)</c>: sorts in place, as <see cref="Sorted"/>.</summary>
+    public static void Sort<T>(List<T> list, bool reverse = false) => Replace(list, Sorted(list, reverse));
+
+    /// <summary><c>xs.sort(key=…, reverse=…)</c>.</summary>
+    public static void SortBy<T, TKey>(List<T> list, Function<Func<T, TKey>> key, bool reverse = false) =>
+        Replace(list, SortedBy(list, key, reverse));
+
+    // Keys are computed once per element, in list order, while the list counts as being iterated.
+    // OrderBy and OrderByDescending are stable, so equal keys keep their order either way. Strings
+    // compare by ordinal, and a NaN float sorts first, as .NET compares doubles.
+    private static List<T> Order<T, TKey>(List<T> list, Func<T, TKey> key, bool reverse)
+    {
+        var items = new List<(T Item, TKey Key)>();
+        foreach (var item in Iter.Over(list))
+            items.Add((item, key(item)));
+        var comparer = typeof(TKey) == typeof(string) ? (IComparer<TKey>)StringComparer.Ordinal : Comparer<TKey>.Default;
+        var ordered = reverse ? items.OrderByDescending(p => p.Key, comparer) : items.OrderBy(p => p.Key, comparer);
+        return [.. ordered.Select(p => p.Item)];
+    }
+
+    private static void Replace<T>(List<T> list, List<T> items)
+    {
+        list.Clear();
+        list.AddRange(items);
+    }
+
+    /// <summary><c>map(f, xs)</c>: a new list (SPEC §6).</summary>
+    public static List<TResult> Map<T, TResult>(Function<Func<T, TResult>> function, List<T> list)
+    {
+        var result = new List<TResult>();
+        foreach (var item in Iter.Over(list))
+            result.Add(function.Invoke(item));
+        return result;
+    }
+
+    /// <summary><c>filter(f, xs)</c>: a new list (SPEC §6).</summary>
+    public static List<T> Filter<T>(Function<Func<T, bool>> predicate, List<T> list)
+    {
+        var result = new List<T>();
+        foreach (var item in Iter.Over(list))
+        {
+            if (predicate.Invoke(item))
+                result.Add(item);
+        }
+        return result;
+    }
+
     public static List<T> Concat<T>(List<T> left, List<T> right) => [.. left, .. right];
 
     public static T Pop<T>(List<T> list)

@@ -1,0 +1,8 @@
+def run(d: int) -> int:
+    def inner(x: int) -> int:
+        let y = x + 1
+        return y // d
+    return inner(1)
+
+print(run(1))
+print(run(0))

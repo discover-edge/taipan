@@ -2,7 +2,7 @@
 
 Each milestone is done when **all** of its acceptance criteria pass as golden tests (see CLAUDE.md). Milestones are sequential. Don't start the next one early.
 
-M0–M10 (with M8.1) make up v0.1 and are complete. M11 onward are planned.
+M0–M10 (with M8.1) make up v0.1 and are complete. M11 is complete; M12 onward are planned.
 
 ## M0 — Scaffold
 - Create the solution layout from CLAUDE.md, the `taipan` CLI with `check | emit | build | run` stubs, and the golden-test harness.
@@ -112,4 +112,4 @@ M0–M10 (with M8.1) make up v0.1 and are complete. M11 onward are planned.
   - A struct missing a method reports which one at the call site.
 
 ## Later
-- `match` as an expression, an LSP server, NativeAOT publishing, packaging `taipan` as a `dotnet tool` (with the NuGet IDs settled), and CPython extension output.
+- `match` as an expression, type aliases (`type Handler = Callable[[Request], Response]`, as in Python 3.12), an LSP server, NativeAOT publishing, packaging `taipan` as a `dotnet tool` (with the NuGet IDs settled), and CPython extension output.

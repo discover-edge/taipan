@@ -42,5 +42,9 @@ def main():
         Ok: print("ok")
         Health.Degraded(h, t): print(h, t)
         Down: return
+    def adder(n: int) -> Callable[[int], int]:
+        return lambda x: x + n
+    let pick: Callable[[int, str], none]? = lambda _, s: print(s)
+    print(sorted([2, 1], key=lambda: 0), adder(1)(2))
 
 main()

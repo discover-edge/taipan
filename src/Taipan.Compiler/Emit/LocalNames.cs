@@ -9,6 +9,8 @@ namespace Taipan.Compiler.Emit;
 /// emitter uses as the discard.
 /// An <c>is some</c> or <c>match</c> binding becomes a C# pattern variable, whose scope C# widens past the
 /// guarded block, so it gets a suffix whenever its name is used by any other local in the method.
+/// A nested function's body and a lambda's body are nested blocks whose extra locals are their
+/// parameters (SPEC §3.7).
 /// </summary>
 public sealed class LocalNames
 {
@@ -89,7 +91,12 @@ public sealed class LocalNames
     }
 
     private static IEnumerable<VariableSymbol> DirectDeclarations(IEnumerable<BoundStmt> statements) =>
-        statements.OfType<BoundVariableDecl>().Select(d => d.Symbol);
+        statements.Select(s => s switch
+        {
+            BoundVariableDecl decl => decl.Symbol,
+            BoundLocalFunction function => function.Symbol,
+            _ => null,
+        }).OfType<VariableSymbol>();
 
     /// <summary>The <c>is some</c> bindings in a statement's own conditions.</summary>
     private static IEnumerable<VariableSymbol> Bindings(BoundStmt stmt) => stmt switch
@@ -103,6 +110,9 @@ public sealed class LocalNames
     /// <summary>The C# blocks directly inside a statement, with any extra locals they declare.</summary>
     private static IEnumerable<(IReadOnlyList<BoundStmt> Statements, IReadOnlyList<VariableSymbol> Extra)> NestedBlocks(BoundStmt stmt)
     {
+        // A lambda's body is an expression, seen here as a statement so its own lambdas are found.
+        foreach (var lambda in BoundTree.Lambdas(stmt))
+            yield return ([new BoundExprStmt(lambda.Body, lambda.Span)], lambda.Parameters);
         switch (stmt)
         {
             case BoundBlock block:
@@ -126,6 +136,9 @@ public sealed class LocalNames
             case BoundMatch match:
                 foreach (var arm in match.Arms)
                     yield return (arm.Body.Statements, []);
+                break;
+            case BoundLocalFunction function:
+                yield return (function.Body.Statements, function.Parameters);
                 break;
         }
     }

@@ -1,0 +1,6 @@
+let f: Callable[[int], int] = lambda x: x
+f(x=1)
+print(sorted([1], cmp=lambda x: x))
+var xs = [2, 1]
+xs.sort(by=1)
+print(map(f=f, xs=xs))

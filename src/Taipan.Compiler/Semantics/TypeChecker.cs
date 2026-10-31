@@ -49,6 +49,7 @@ public static class TypeChecker
             DictOfType dict => new DictOfType(Substitute(dict.Key, map), Substitute(dict.Value, map)),
             StructType structType => structType with { TypeArguments = [.. structType.TypeArguments.Select(a => Substitute(a, map))] },
             EnumType enumType => enumType with { TypeArguments = [.. enumType.TypeArguments.Select(a => Substitute(a, map))] },
+            FunctionType function => new FunctionType([.. function.Parameters.Select(p => Substitute(p, map))], Substitute(function.Result, map)),
             _ => type,
         };
     }

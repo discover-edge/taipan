@@ -1,0 +1,72 @@
+# Closures (SPEC §3.7): captured vars are shared; lets and loop variables are captured by value.
+
+def counter() -> Callable[[], int]:
+    var count = 0
+    def bump() -> int:
+        count += 1
+        return count
+    return bump
+
+let c1 = counter()
+let c2 = counter()
+print(c1(), c1(), c1())
+print(c2())
+
+def make_adder(n: int) -> Callable[[int], int]:
+    return lambda x: x + n
+
+let add5 = make_adder(5)
+print(add5(10))
+
+# The closure sees later assignments to a captured var.
+var greeting = "hello"
+let greet = lambda: greeting + "!"
+greeting = "goodbye"
+print(greet())
+
+# Each iteration has its own loop variable and body bindings.
+var fs: list[Callable[[], int]] = []
+for i in range(3):
+    fs.append(lambda: i * 10)
+for word in ["a", "bb"]:
+    let upper = word.upper()
+    fs.append(lambda: len(upper))
+for f in fs:
+    print(f())
+
+# Nested functions may recurse, and use the enclosing function's parameters.
+def power_table(base: int, n: int) -> list[int]:
+    def power(k: int) -> int:
+        if k == 0:
+            return 1
+        return base * power(k - 1)
+    var out: list[int] = []
+    for k in range(n):
+        out.append(power(k))
+    return out
+
+print(power_table(2, 5))
+
+# Methods capture self.
+struct Account:
+    balance: int
+
+    def depositor(self) -> Callable[[int], none]:
+        def deposit(amount: int):
+            self.balance += amount
+        return deposit
+
+let acct = Account(10)
+let dep = acct.depositor()
+dep(5)
+dep(7)
+print(acct.balance)
+
+# A nested def in a top-level block sees top-level bindings, and may assign a captured var.
+var total = 0
+if True:
+    def add(n: int):
+        total += n
+    add(3)
+    add(4)
+print(total)

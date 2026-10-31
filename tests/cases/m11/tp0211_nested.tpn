@@ -1,0 +1,9 @@
+let limit = 3
+
+def check(n: int) -> bool:
+    def over() -> bool:
+        return n > limit
+    return over()
+
+let ok: Callable[[int], bool] = lambda n: n < limit
+print(check(1), ok(1))
