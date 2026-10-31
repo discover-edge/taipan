@@ -82,7 +82,8 @@ const_def     = "const" NAME [ ":" type ] "=" expr NEWLINE ;
 func_def      = "def" NAME [ type_params ] "(" [ params ] ")" [ "->" type ] ":" block ;
 params        = param { "," param } [ "," ] ;
 param         = NAME ":" type ;
-type_params   = "[" NAME { "," NAME } "]" ;                       (* M8, §3.6 *)
+type_params   = "[" type_param { "," type_param } "]" ;             (* M8, §3.6 *)
+type_param    = NAME [ ":" "(" type { "," type } [ "," ] ")" ] ;   (* constraints: M8.1; fewer than two types is TP0220 *)
 
 struct_def    = "struct" NAME [ type_params ] ":" NEWLINE INDENT struct_member { struct_member } DEDENT ;
 struct_member = NAME ":" type NEWLINE | method_def ;
@@ -239,7 +240,17 @@ There are no other implicit conversions. Explicit conversions use the built-ins 
   - A parameter left undetermined is `TP0206`. For example, `Nothing` from `enum Maybe[T]` has no expected type to infer from.
 - Generic enum variants and generic struct constructors infer their type arguments the same way: `Box(5)` is `Box[int]`, and `Just("x")` is `Maybe[str]`.
 - **Optionals don't nest, even through substitution:** `T?` with `T = int?` is `int?`, as in Python's `Optional[Optional[int]]`. Only a literal `T??` in source is `TP0213`.
-- **Constraints** such as `[N: (int, float)]` or `[K: (int, str, bool)]` (PEP 695 constraint tuples) are planned for M8.1. Until then, a type parameter with a constraint is `TP0100`.
+- **Constraints (M8.1):** a function's type parameter may list the types it can stand for, as a PEP 695 constraint tuple: `def total[N: (int, float)](xs: list[N]) -> N:`.
+  - **Valid tuples:** at least two distinct types, none of them optional and none mentioning a type parameter. Otherwise it's `TP0220`.
+  - **Functions only:** constraints on a struct's or enum's type parameters are also `TP0220` in v0.1.
+  - **Checking:** the body is checked once for every combination of its constrained parameters' types, with each one replaced by that concrete type. Unconstrained parameters stay opaque.
+    - So a constrained parameter allows exactly what all of its types support: `+` for `(int, float)`, `<` for `(int, str)`, and so on.
+    - A diagnostic that only some combinations produce is reported once, with ` (when 'N' is str)` appended to its message. One that every combination produces is reported once, as usual.
+  - **Signatures:** `dict[K, V]` is a valid type when every type in `K`'s tuple is a valid key, as with `[K: (int, str, bool)]`.
+  - **Calls:**
+    - After inference (above), each constrained parameter must be one of its listed types. An inferred `int` becomes `float` when `float` is listed and `int` isn't.
+    - Anything else is `TP0200`, at the callee. That includes an opaque type parameter from an enclosing generic body.
+  - **Instances:** each instantiation emits the body checked for its combination.
 - **Polymorphic recursion:** a generic function that, through its own calls, needs ever-larger instantiations (for example, `f[T]` calling `f` with a `list[T]`) is `TP0219`. It's reported once the instantiation chain is 32 deep.
 
 ---
@@ -524,6 +535,7 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 | TP0217 | `const` initializer is not a constant expression |
 | TP0218 | keyword arguments outside a constructor |
 | TP0219 | generic instantiation too deep (polymorphic recursion) |
+| TP0220 | invalid type parameter constraint |
 | TP0300 | warning: unreachable match arm |
 
 New codes go into this table before they're implemented.
@@ -541,7 +553,7 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0200 | `'<f>' is a function; call it` / `'<x>' is not a function` |
 | TP0200 | `integer literal is out of range` |
 | TP0200 | `'range' can only be used in a for loop` / `cannot iterate over <T>` |
-| TP0200 | `'<T>' is inferred as both <A> and <B>` (type-argument inference) |
+| TP0200 | `'<T>' is inferred as both <A> and <B>` / `'<T>' must be <A> or <B>, found <C>` (type-argument inference and constraints; `A, B or C` for longer tuples) |
 | TP0200 | `cannot match on <T>` / `'<E>' is a type, not a value` / `'<v>' is not a function` (a variant without a payload) |
 | TP0200 | `'is some' needs an optional, found <T>` / `'is none' needs an optional, found <T>` / `'??' needs an optional on the left, found <T>` |
 | TP0200 | `'<m>' is a method; call it` / `'<f>' is a field, not a method` / `cannot index <T>` / `dict keys must be int, str, or bool, found <T>` |
@@ -565,6 +577,7 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0217 | `const initializer must be a constant expression` |
 | TP0218 | `keyword arguments are only allowed in constructors` |
 | TP0219 | `instantiating '<f>' needs '<f>[<T>]', which is too deep`, at the call that starts the chain |
+| TP0220 | `a constraint needs at least two types` / `'<T>' is listed twice in the constraint` / `a constraint cannot be optional or generic` / `constraints are only supported on functions` |
 | TP0300 | `unreachable match arm` |
 
 Types are written as in source: `int`, `str?`, `list[int]`. The type of `none` is written `none`, and a missing value is written `nothing`.
