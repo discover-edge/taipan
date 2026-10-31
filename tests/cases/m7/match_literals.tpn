@@ -1,0 +1,25 @@
+def name(n: int) -> str:
+    match n:
+        0: return "zero"
+        1: return "one"
+        -1: return "minus one"
+        _: return "many"
+
+def greet(lang: str) -> str:
+    match lang:
+        "en": return "hello"
+        "fr": return "bonjour"
+        _: return "?"
+
+def flag(b: bool) -> str:
+    match b:
+        True: return "yes"
+        False: return "no"
+
+for i in range(-1, 3):
+    print(i, name(i))
+print(greet("fr"), greet("de"), flag(True), flag(False))
+match 9223372036854775807:
+    -9223372036854775808: print("min")
+    9223372036854775807: print("max")
+    _: pass

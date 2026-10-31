@@ -1,0 +1,2 @@
+panic: empty separator
+  at tests/cases/m5/panic_split.tpn:2

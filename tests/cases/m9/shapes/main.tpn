@@ -1,0 +1,17 @@
+# Both import forms, aliases, qualified types and patterns, and a cycle (geometry <-> colors).
+import geometry
+import colors as c
+from geometry import Point, Shape, area as surface, Box
+
+let p: geometry.Point = Point(3, 4)
+print(p, geometry.distance(p, Point(geometry.ORIGIN_X, 0)), geometry.PI)
+
+let shapes: list[Shape] = [Circle(1.0), geometry.Square(2.0), geometry.Shape.Circle(0.5)]
+for s in shapes:
+    match s:
+        geometry.Shape.Circle(r): print("circle", r, surface(s))
+        Square(side): print("square", side, surface(s))
+
+print(c.describe(Square(3.0)), c.RED)
+let boxed: geometry.Box[str] = Box("x")
+print(boxed, geometry.Box(1).value)

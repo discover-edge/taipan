@@ -1,0 +1,12 @@
+# Generic recursion at the same instantiation is fine.
+def length[T](xs: list[T], i: int) -> int:
+    if i >= len(xs):
+        return 0
+    return 1 + length(xs, i + 1)
+
+def nest[T](x: T, depth: int) -> str:
+    if depth == 0:
+        return str(x)
+    return "(" + nest(x, depth - 1) + ")"
+
+print(length([1, 2, 3], 0), length(["a"], 0), nest(5, 3), nest("x", 1))

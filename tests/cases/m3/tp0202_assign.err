@@ -1,0 +1,8 @@
+tests/cases/m3/tp0202_assign.tpn:4:5: error TP0202: cannot assign to 'p': it is a parameter
+tests/cases/m3/tp0202_assign.tpn:7:1: error TP0202: cannot assign to 'x': it is a let binding
+  help: declare it with 'var'
+tests/cases/m3/tp0202_assign.tpn:8:1: error TP0202: cannot assign to 'x': it is a let binding
+  help: declare it with 'var'
+tests/cases/m3/tp0202_assign.tpn:10:5: error TP0202: cannot assign to 'i': it is a loop variable
+tests/cases/m3/tp0202_assign.tpn:11:1: error TP0202: cannot assign to 'LIMIT': it is a constant
+tests/cases/m3/tp0202_assign.tpn:12:1: error TP0202: cannot assign to 'f': it is a function

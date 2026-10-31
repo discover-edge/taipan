@@ -1,0 +1,10 @@
+# ROADMAP M10: import json from the Python stdlib, parse a string, extract an int via `as int?`.
+from python import json
+
+let data = json.loads("{\"replicas\": 3, \"name\": \"api\", \"healthy\": true}")
+let replicas = data["replicas"] as int?
+let missing = data["name"] as int?
+print(replicas, missing, replicas ?? 0)
+if data["replicas"] as int? is some n:
+    print("replicas:", n * 2)
+print(data["name"] as str, data["healthy"] as bool, data["healthy"] as int?)

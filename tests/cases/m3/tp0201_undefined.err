@@ -1,0 +1,5 @@
+tests/cases/m3/tp0201_undefined.tpn:1:10: error TP0201: undefined type 'Thing'
+tests/cases/m3/tp0201_undefined.tpn:2:12: error TP0201: undefined name 'y'
+tests/cases/m3/tp0201_undefined.tpn:4:7: error TP0201: undefined name 'later'
+tests/cases/m3/tp0201_undefined.tpn:8:7: error TP0201: undefined name 'inner'
+tests/cases/m3/tp0201_undefined.tpn:9:1: error TP0201: undefined name 'undefined_fn'

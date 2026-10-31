@@ -1,0 +1,10 @@
+struct Box[T]:
+    value: T
+
+struct Plain:
+    x: int
+
+let a: Box = Box(1)
+let b: Box[int, str] = Box(1)
+let c: Plain[int] = Plain(1)
+let d: list[Box[int]] = []

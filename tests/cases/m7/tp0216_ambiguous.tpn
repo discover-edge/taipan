@@ -1,0 +1,17 @@
+enum Health:
+    Ok
+    Down
+
+enum Result:
+    Ok
+    Failed(reason: str)
+
+let a = Ok
+let b: Health = Ok
+let c = Health.Ok
+let d = Result.Ok
+let e = Failed("x")
+def check(h: Health) -> str:
+    match h:
+        Ok: return "fine"
+        Down: return "down"

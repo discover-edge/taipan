@@ -1,0 +1,12 @@
+break
+continue
+return
+
+def f():
+    break
+    while True:
+        break
+    continue
+
+if True:
+    return

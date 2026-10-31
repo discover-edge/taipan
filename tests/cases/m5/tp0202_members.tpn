@@ -1,0 +1,13 @@
+struct Point:
+    x: int
+
+    def get(self) -> int:
+        return self.x
+
+    def reset(self):
+        self = Point(0)
+
+let p = Point(1)
+p.get = 2
+let s = "abc"
+s[0] = "z"

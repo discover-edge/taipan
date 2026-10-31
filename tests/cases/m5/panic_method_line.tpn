@@ -1,0 +1,8 @@
+struct Stack:
+    items: list[int]
+
+    def top(self) -> int:
+        return self.items[-1]
+
+let s = Stack([])
+print(s.top())

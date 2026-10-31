@@ -1,0 +1,13 @@
+# comment
+
+def total(a: int, b: int, c: int) -> int:
+    return a + b + c
+
+let n = total(
+    1,
+        2,  # inside brackets
+  3,
+)
+
+let ok = (n > 0 and
+    n < 10)

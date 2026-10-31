@@ -1,0 +1,9 @@
+def f(x: Thing) -> int:
+    return y
+
+print(later)
+let later = 1
+if True:
+    let inner = 2
+print(inner)
+undefined_fn(1)

@@ -1,0 +1,2 @@
+panic: cannot convert 1e+300 to int
+  at tests/cases/m4/panic_int_conversion.tpn:2

@@ -1,0 +1,35 @@
+# The ROADMAP M8 example, plus inference from arguments and from the expected type.
+def first[T](xs: list[T]) -> T?:
+    for x in xs:
+        return x
+    return none
+
+def pair[A, B](a: A, b: B) -> list[str]:
+    return [str(a), str(b)]
+
+def same[T](a: T, b: T) -> bool:
+    return a == b
+
+def repeat[T](x: T, n: int) -> list[T]:
+    var out: list[T] = []
+    for i in range(n):
+        out.append(x)
+    return out
+
+def empty[T]() -> list[T]:
+    return []
+
+def contains[T](xs: list[T], x: T) -> bool:
+    return x in xs
+
+print(first([3, 1, 2]), first(["a"]), first([[1], [2]]))
+let none_yet: list[str] = []
+print(first(none_yet), first([none, 1]))
+print(pair(1, "a"), pair(True, [1.5]))
+print(same(1, 1), same("a", "b"), same(1, 2.5), same([1], [1]))
+print(repeat("ab", 3), repeat(0.5, 2))
+let ints: list[int] = empty()
+let names: list[str] = empty()
+print(ints, names, contains([1, 2], 2), contains(["x"], "y"))
+let widened: float = first([1, 2]) ?? 0
+print(widened)

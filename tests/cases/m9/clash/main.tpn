@@ -1,0 +1,6 @@
+# Two modules define the same names; the C# output keeps them apart.
+import metric
+import imperial
+
+print(metric.area(2.0), imperial.area(2.0), metric.UNIT, imperial.UNIT)
+print(metric.Size(1), imperial.Size(1))

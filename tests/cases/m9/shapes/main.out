@@ -1,0 +1,6 @@
+Point(x=3, y=4) 5.0 3.0
+circle 1.0 3.0
+square 2.0 4.0
+circle 0.5 0.75
+blue shape of area 9.0 red
+Box(value="x") 1

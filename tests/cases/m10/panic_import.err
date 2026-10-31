@@ -1,0 +1,2 @@
+panic: Python ModuleNotFoundError: No module named 'no_such_module_xyz'
+  at tests/cases/m10/panic_import.tpn:2

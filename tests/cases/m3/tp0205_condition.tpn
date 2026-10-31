@@ -1,0 +1,12 @@
+let n = 3
+if n:
+    pass
+while "yes":
+    pass
+let a = n and True
+let b = True or 1.5
+let c = not n
+if n > 0:
+    pass
+elif n:
+    pass

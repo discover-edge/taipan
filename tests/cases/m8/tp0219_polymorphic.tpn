@@ -1,0 +1,6 @@
+def grow[T](x: T, n: int) -> int:
+    if n == 0:
+        return 0
+    return grow([x], n - 1)
+
+print(grow(1, 3))

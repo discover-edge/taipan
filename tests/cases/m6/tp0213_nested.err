@@ -1,0 +1,4 @@
+tests/cases/m6/tp0213_nested.tpn:1:8: error TP0213: optional types cannot be nested
+tests/cases/m6/tp0213_nested.tpn:2:13: error TP0213: optional types cannot be nested
+tests/cases/m6/tp0213_nested.tpn:3:10: error TP0213: optional types cannot be nested
+tests/cases/m6/tp0213_nested.tpn:3:21: error TP0213: optional types cannot be nested

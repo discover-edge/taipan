@@ -1,0 +1,18 @@
+def f(n: int, s: str, b: bool):
+    match n:
+        0: pass
+    match s:
+        "a": pass
+    match b:
+        True: pass
+    match b:
+        False: pass
+
+enum Color:
+    Red
+    Green
+    Blue
+
+def g(c: Color):
+    match c:
+        Green: pass

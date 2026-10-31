@@ -1,0 +1,20 @@
+struct Point:
+    x: int
+
+    def get(self) -> int:
+        return self.x
+
+let p = Point(1)
+let m = p.get
+print(p.x())
+print(5[0])
+let bad: dict[float, int] = {}
+let bad2 = {1.5: "a"}
+let xs = [1, "a"]
+xs.append("b")
+let ys: list[float] = [1, "two"]
+print(Point(1) == 1)
+print([1] + ["a"])
+print("x" in [1])
+for c in 5:
+    pass

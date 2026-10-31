@@ -1,0 +1,23 @@
+struct Box[T]:
+    value: T
+
+def one[T: (int,)](x: T):
+    pass
+
+def twice[T: (int, int)](x: T):
+    pass
+
+def opt[T: (int?, str)](x: T):
+    pass
+
+def nested[A, T: (list[A], str)](x: T):
+    pass
+
+struct Bad[T: (int, str)]:
+    value: T
+
+enum Worse[T: (int, str)]:
+    V(value: T)
+
+def fine[T: (Box[int], str)](x: T) -> T:
+    return x

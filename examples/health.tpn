@@ -1,0 +1,34 @@
+struct Service:
+    name: str
+    replicas: int
+    healthy: int
+
+enum Health:
+    Ok
+    Degraded(healthy: int, total: int)
+    Down
+
+def find(services: list[Service], name: str) -> Service?:
+    for s in services:
+        if s.name == name:
+            return s
+    return none
+
+def status(svc: Service) -> Health:
+    let ratio = svc.healthy / svc.replicas
+    if ratio == 1.0:
+        return Ok
+    elif ratio > 0.5:
+        return Degraded(svc.healthy, svc.replicas)
+    return Down
+
+let services = [Service("api", 3, 3), Service("worker", 4, 3)]
+let svc = find(services, "worker")
+
+if svc is some s:
+    match status(s):
+        Ok: print("ok")
+        Degraded(h, t): print(f"degraded ({h}/{t})")
+        Down: print("down")
+else:
+    print("no such service")

@@ -1,0 +1,7 @@
+# ROADMAP M10: a failed `as int` panics with exit 101.
+from python import json
+
+let data = json.loads("{\"n\": \"three\"}")
+print("before")
+let n = data["n"] as int
+print("never", n)

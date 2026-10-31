@@ -1,0 +1,2 @@
+let a = "tab\t newline\n backslash\\ quotes\" braces\{\}"
+let b = 'it\'s'

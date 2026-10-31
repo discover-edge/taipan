@@ -1,0 +1,2 @@
+tests/cases/m10/tp0221_python.tpn:1:8: error TP0221: 'python' is not a module
+  help: use 'from python import <module>'

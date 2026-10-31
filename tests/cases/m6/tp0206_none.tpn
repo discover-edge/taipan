@@ -1,0 +1,4 @@
+let a = none
+var b = [none]
+let c = {"k": none}
+let ok = [none, 1]

@@ -1,0 +1,3 @@
+tests/cases/m5/tp0202_members.tpn:8:9: error TP0202: cannot assign to 'self': it is a parameter
+tests/cases/m5/tp0202_members.tpn:11:3: error TP0202: cannot assign to 'get': it is a method
+tests/cases/m5/tp0202_members.tpn:13:1: error TP0202: cannot assign to an element of str

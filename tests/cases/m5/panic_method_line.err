@@ -1,0 +1,2 @@
+panic: index -1 out of range for length 0
+  at tests/cases/m5/panic_method_line.tpn:5

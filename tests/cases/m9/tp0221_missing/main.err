@@ -1,0 +1,6 @@
+tests/cases/m9/tp0221_missing/main.tpn:2:6: error TP0221: module 'nowhere' not found
+  help: looked for tests/cases/m9/tp0221_missing/nowhere.tpn
+tests/cases/m9/tp0221_missing/main.tpn:3:8: error TP0221: module 'gone' not found
+  help: looked for tests/cases/m9/tp0221_missing/gone.tpn
+tests/cases/m9/tp0221_missing/present.tpn:1:8: error TP0221: module 'alsogone' not found
+  help: looked for tests/cases/m9/tp0221_missing/alsogone.tpn

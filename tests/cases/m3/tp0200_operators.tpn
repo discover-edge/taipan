@@ -1,0 +1,10 @@
+let a = 1 + "a"
+let b = "a" - "b"
+let c = -"x"
+let d = 1.5 // 2
+let e = 7 % 2.0
+let f = True < False
+let g = 1 == "a"
+let h = "a" < 1
+let i = "a" in 5
+let j = "ab" * 2

@@ -1,0 +1,40 @@
+# The ROADMAP M8.1 examples: total, largest and count, for each of their listed types.
+def total[N: (int, float)](xs: list[N]) -> N:
+    var sum: N = 0
+    for x in xs:
+        sum += x
+    return sum
+
+def largest[T: (int, float, str)](xs: list[T]) -> T?:
+    var best: T? = none
+    for x in xs:
+        if best is some b:
+            if x > b:
+                best = x
+        else:
+            best = x
+    return best
+
+def count[K: (int, str, bool)](xs: list[K]) -> dict[K, int]:
+    var counts: dict[K, int] = {}
+    for x in xs:
+        counts[x] = (counts.get(x) ?? 0) + 1
+    return counts
+
+print(total([1, 2, 3]), total([1.5, 2.5]), total([1, 2.5]))
+let no_ints: list[int] = []
+print(total(no_ints))
+print(largest([3, 9, 2]), largest([0.5, -1.0]), largest(["pear", "apple", "zoo"]), largest(no_ints))
+print(count(["a", "b", "a"]), count([1, 1, 2]), count([True, False, True]))
+
+# An int argument is promoted when only float is listed.
+def half[F: (float, str)](x: F) -> F:
+    return x
+
+print(half(3), half("s"))
+
+# Constrained and unconstrained parameters together.
+def tag[N: (int, float), T](n: N, label: T) -> str:
+    return f"{label}={n + n}"
+
+print(tag(2, "two"), tag(1.5, [1]))

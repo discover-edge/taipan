@@ -1,0 +1,30 @@
+# break and continue inside a match arm apply to the enclosing loop (SPEC §5.1).
+enum Cmd:
+    Skip
+    Stop
+    Say(text: str)
+
+let script = [Say("a"), Skip, Say("b"), Stop, Say("never")]
+for cmd in script:
+    match cmd:
+        Skip: continue
+        Stop: break
+        Say(text): print(text)
+print("after for")
+
+var i = 0
+while True:
+    i += 1
+    match i % 3:
+        0:
+            if i > 5:
+                break
+            print("fizz", i)
+        _: continue
+print("after while", i)
+
+for outer in range(2):
+    for inner in range(3):
+        match inner:
+            1: break
+            _: print(outer, inner)

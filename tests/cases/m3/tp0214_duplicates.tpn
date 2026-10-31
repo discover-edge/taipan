@@ -1,0 +1,18 @@
+def f():
+    pass
+
+def f():
+    pass
+
+def print(x: int):
+    pass
+
+const K = 1
+const K = 2
+
+def g(a: int, a: int):
+    let b = 1
+    let b = 2
+
+let top = 1
+let top = 2

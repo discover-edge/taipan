@@ -1,0 +1,19 @@
+let config = 1
+var counter = 0
+
+def read() -> int:
+    return config
+
+def bump():
+    counter += 1
+
+def late() -> int:
+    return defined_later
+
+if True:
+    let nested = 2
+
+def uses_nested() -> int:
+    return nested
+
+let defined_later = 5

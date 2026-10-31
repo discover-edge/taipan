@@ -1,0 +1,2 @@
+tests/cases/m9/syntax_error_in_module/main.tpn:4:18: error TP0100: expected expression, found newline
+tests/cases/m9/syntax_error_in_module/broken.tpn:1:10: error TP0100: expected name, found ':'

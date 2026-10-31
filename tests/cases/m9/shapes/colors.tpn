@@ -1,0 +1,11 @@
+from geometry import Shape, area
+
+const RED = "red"
+
+def pick(s: Shape) -> str:
+    match s:
+        Circle: return RED
+        Square: return "blue"
+
+def describe(s: Shape) -> str:
+    return f"{pick(s)} shape of area {area(s)}"

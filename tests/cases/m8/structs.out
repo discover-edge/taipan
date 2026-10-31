@@ -1,0 +1,4 @@
+Box(value=6) 6 Box(value="6") 6!
+Box(value="x") Box(value=1.0) Box(value=[1, 2]) Box(value=Box(value=3))
+Pair(first=1, second="one") Pair(first="one", second=1) True
+3

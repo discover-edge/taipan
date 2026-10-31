@@ -1,0 +1,8 @@
+Service(name="api", replicas=3, healthy=3, tags=["web"])
+Service(name="worker", replicas=4, healthy=1, tags=[])
+1.0 0.25
+6 3 ["batch"]
+True
+False
+True
+api has 1 tag(s)

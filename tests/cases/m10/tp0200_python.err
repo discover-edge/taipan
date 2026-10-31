@@ -1,0 +1,6 @@
+tests/cases/m10/tp0200_python.tpn:7:12: error TP0200: cannot pass Service to Python
+tests/cases/m10/tp0200_python.tpn:8:13: error TP0200: cannot pass Service to Python
+tests/cases/m10/tp0200_python.tpn:9:14: error TP0200: expected int, found py
+tests/cases/m10/tp0200_python.tpn:10:9: error TP0200: 'as' converts py values; found str
+tests/cases/m10/tp0200_python.tpn:11:30: error TP0200: cannot convert to Service
+tests/cases/m10/tp0200_python.tpn:13:7: error TP0200: cannot compare list[py] and list[py]

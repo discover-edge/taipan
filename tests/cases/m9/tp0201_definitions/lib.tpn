@@ -1,0 +1,7 @@
+from other import inner
+
+struct Thing:
+    v: int
+
+def helper() -> int:
+    return inner()

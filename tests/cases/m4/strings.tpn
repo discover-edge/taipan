@@ -1,0 +1,10 @@
+let a = "apple"
+let b = "banana"
+print(a < b, a <= a, b > a, a >= b, a == "apple", a != b)
+print("pp" in a, "x" in a, "x" not in a, "" in a)
+print("B" < "a", "é" > "z")
+print(a + " " + b)
+var s = ""
+for i in range(3):
+    s += str(i)
+print(s)

@@ -1,0 +1,11 @@
+let n = 5
+if n is some v:
+    pass
+while n is none:
+    pass
+print(n ?? 0)
+let m: int? = 1
+print(m ?? "zero")
+let s: str? = "a"
+print(s == 1)
+let x: float = m

@@ -1,0 +1,20 @@
+# Names Taipan allows but C# scoping would reject are renamed in the emitted C#.
+if True:
+    let label = "inner"
+    print(label)
+let label = "outer"
+print(label)
+
+for i in range(2):
+    let sq = i * i
+    print(sq)
+let i = 100
+let sq = -1
+print(i, sq)
+
+def end(n: int) -> int:
+    var total = 0
+    for end2 in range(n):
+        total += end2
+    return total
+print(end(4))

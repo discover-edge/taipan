@@ -1,0 +1,13 @@
+import lib
+from lib import f, Thing
+
+def f():
+    pass
+
+struct Thing:
+    v: int
+
+def lib():
+    pass
+
+from lib import f

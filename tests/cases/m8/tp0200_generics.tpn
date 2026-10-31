@@ -1,0 +1,21 @@
+def add[T](a: T, b: T) -> T:
+    return a + b
+
+def less[T](a: T, b: T) -> bool:
+    return a < b
+
+def name_of[T](x: T) -> str:
+    return x.name
+
+def keys[T](x: T) -> dict[T, int]:
+    return {x: 1}
+
+def loop[T](x: T):
+    for y in x:
+        pass
+
+def same[T](a: T, b: T) -> bool:
+    return a == b
+
+print(same(1, "a"))
+let n: int = same(1, 1)

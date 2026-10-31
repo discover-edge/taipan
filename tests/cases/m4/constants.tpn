@@ -1,0 +1,8 @@
+const GREETING = "hi" + "!"
+const LIMIT: float = 10
+const SCALE = 3 * -2 + 7 // 2 % 5
+
+def scaled(n: int) -> int:
+    return n * SCALE
+
+print(GREETING, LIMIT, SCALE, scaled(2))

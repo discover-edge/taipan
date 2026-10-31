@@ -1,0 +1,28 @@
+from python import json, math as m, collections
+
+# Taipan values convert into Python: lists and dicts are copies.
+let xs = [3, 1, 2]
+let encoded = json.dumps({"xs": xs, "ok": True, "none": none, "f": 1.5}, sort_keys=True)
+print(encoded as str)
+let back = json.loads(encoded)
+print(back["xs"] as list[int], back["none"] as int?, back["f"] as float, back["xs"][0] as float)
+
+# Operators, comparisons and len all go through Python; comparison results are py.
+let n: py = 41
+print(n + 1, n * 2.5, -n, n // 5, n % 5)
+print((n == 41) as bool, (n < 10) as bool, (3 in back["xs"]) as bool, len(back["xs"]))
+print(m.sqrt(16) as float, m.pi > 3, str(m.floor(2.7)))
+
+# Iteration, attributes and item assignment.
+var total = 0
+for x in back["xs"]:
+    total += x as int
+print(total)
+let counter = collections.Counter("abracadabra")
+print(counter.most_common(1)[0][0] as str)
+let d = json.loads("{}")
+d["k"] = [1, none]
+d["k"].append(3)
+print(d, f"{d['k']} has {len(d['k'])}", d["k"] as list[int?])
+let nested = json.loads("[[1, 2], [3]]") as list[list[int]]
+print(nested, json.loads("{\"a\": {\"b\": 1}}") as dict[str, dict[str, int]])

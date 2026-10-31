@@ -1,0 +1,2 @@
+panic: integer overflow
+  at tests/cases/m4/panic_overflow.tpn:5

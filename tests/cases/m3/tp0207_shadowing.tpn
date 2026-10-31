@@ -1,0 +1,16 @@
+def helper() -> int:
+    return 1
+
+def f(x: int) -> int:
+    let x = 2
+    if True:
+        let y = 1
+        if True:
+            let y = 2
+    let helper = 3
+    for x in range(2):
+        pass
+    return 0
+
+let len = 3
+let print = 4

@@ -1,0 +1,6 @@
+tests/cases/m6/tp0206_none.tpn:1:9: error TP0206: cannot infer the type of none
+  help: add a type annotation
+tests/cases/m6/tp0206_none.tpn:2:10: error TP0206: cannot infer the type of none
+  help: add a type annotation
+tests/cases/m6/tp0206_none.tpn:3:15: error TP0206: cannot infer the type of none
+  help: add a type annotation

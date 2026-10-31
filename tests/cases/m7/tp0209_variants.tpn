@@ -1,0 +1,19 @@
+enum Shape:
+    Circle(radius: float)
+    Rect(width: float, height: float)
+    Dot
+
+let a = Circle
+let b = Rect(1.0)
+let c = Rect(width=1.0)
+let d = Circle(diameter=2.0)
+match Rect(1.0, 2.0):
+    Circle(r, extra): pass
+    Rect(w): pass
+    Dot(x): pass
+    Square: pass
+    _: pass
+match Dot:
+    Dot(): pass
+    Circle: pass
+    Rect(w, w): pass

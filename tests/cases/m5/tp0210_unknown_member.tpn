@@ -1,0 +1,17 @@
+struct Point:
+    x: int
+    y: int
+
+    def norm(self) -> int:
+        return self.x * self.x + self.y * self.y
+
+let p = Point(1, 2)
+print(p.z)
+p.w = 3
+p.scale(2)
+let q = Point(x=1, y=2, z=3)
+let xs = [1]
+xs.push(2)
+print(xs.length)
+print("s".size())
+print(5.real)

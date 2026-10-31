@@ -1,0 +1,11 @@
+{"ann": 32, "bob": 27, "cid": 40} 3
+27 True False
+["ann", "bob", "cid"] [32, 27, 40]
+True False {"ann": 32, "cid": 40}
+{"ann": 32, "cid": 40, "bob": 1}
+ann 32
+cid 40
+bob 1
+True
+{True: ["t"], False: ["f"]}
+{"a": 3, "b": 1, "c": 1}

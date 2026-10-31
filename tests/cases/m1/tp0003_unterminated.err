@@ -1,0 +1,2 @@
+tests/cases/m1/tp0003_unterminated.tpn:1:9: error TP0003: unterminated string
+tests/cases/m1/tp0003_unterminated.tpn:2:10: error TP0003: unterminated string

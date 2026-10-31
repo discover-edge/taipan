@@ -1,0 +1,3 @@
+tests/cases/m8/tp0207_type_params.tpn:4:7: error TP0207: 'Item' shadows an outer binding
+tests/cases/m8/tp0207_type_params.tpn:7:10: error TP0214: duplicate definition of 'T'
+tests/cases/m8/tp0207_type_params.tpn:10:12: error TP0207: 'int' shadows an outer binding

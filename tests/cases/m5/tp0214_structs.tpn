@@ -1,0 +1,21 @@
+struct Point:
+    x: int
+    x: int
+
+    def x(self):
+        pass
+
+    def m(self, self: int):
+        pass
+
+struct Point:
+    y: int
+
+def Point():
+    pass
+
+struct str:
+    v: int
+
+def f():
+    let Point = 1

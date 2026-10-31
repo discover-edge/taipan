@@ -1,0 +1,30 @@
+struct Service:
+    name: str
+    replicas: int
+    healthy: int
+    tags: list[str]
+
+    def ratio(self) -> float:
+        return self.healthy / self.replicas
+
+    def scale(self, by: int):
+        self.replicas += by
+        self.healthy += by
+
+let api = Service("api", 3, 3, ["web"])
+let worker = Service(name="worker", tags=[], healthy=1, replicas=4)
+print(api)
+print(worker)
+print(api.ratio(), worker.ratio())
+
+# Fields are mutable through a let binding; structs are references.
+worker.scale(2)
+let alias = worker
+alias.tags.append("batch")
+print(worker.replicas, worker.healthy, worker.tags)
+
+# Structural equality compares fields, including list contents.
+print(Service("a", 1, 1, ["x"]) == Service("a", 1, 1, ["x"]))
+print(Service("a", 1, 1, ["x"]) == Service("a", 1, 1, ["y"]))
+print(api != worker)
+print(f"{api.name} has {len(api.tags)} tag(s)")

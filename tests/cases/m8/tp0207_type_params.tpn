@@ -1,0 +1,11 @@
+struct Item:
+    x: int
+
+def f[Item](x: Item) -> Item:
+    return x
+
+def g[T, T](x: T):
+    pass
+
+struct Bad[int]:
+    v: int

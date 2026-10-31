@@ -1,0 +1,5 @@
+let = 1
+if x: pass
+f() = 2
+Service(name="api", 3)
+print(f"{1 +}")

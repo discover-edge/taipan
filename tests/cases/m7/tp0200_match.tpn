@@ -1,0 +1,25 @@
+enum Light:
+    Red
+    Green
+
+enum Other:
+    Red2
+
+let l = Red
+match l:
+    1: pass
+    Other.Red2: pass
+    _: pass
+match 1.5:
+    _: pass
+match [1]:
+    _: pass
+match 3:
+    "x": pass
+    Red: pass
+    _: pass
+let x = Light
+let y = Red()
+let z: Light? = Red
+match z:
+    _: pass

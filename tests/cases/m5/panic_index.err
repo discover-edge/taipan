@@ -1,0 +1,2 @@
+panic: index 3 out of range for length 3
+  at tests/cases/m5/panic_index.tpn:3

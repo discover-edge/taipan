@@ -1,0 +1,10 @@
+let s = "  Hello, Taipan  "
+print(s.strip(), s.upper(), s.lower())
+print("a,b,,c".split(","), "x".split(","), "a--b".split("--"))
+print("taipan".startswith("tai"), "taipan".endswith("pan"), "taipan".startswith("x"))
+print("aaa".replace("a", "b"), "banana".replace("an", "AN"))
+let word = "snake🐍"
+print(word[0], word[-1], word[-2], len(word))
+for c in "héy":
+    print(c)
+print(["quote\"", "tab\t", "back\\slash", "new\nline"])

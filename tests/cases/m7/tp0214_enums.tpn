@@ -1,0 +1,19 @@
+enum Light:
+    Red
+    Red
+    Blink(on: int, on: int)
+
+def Green():
+    pass
+
+enum Signal:
+    Green
+
+struct Light:
+    x: int
+
+enum int:
+    A
+
+def f():
+    let Red = 1

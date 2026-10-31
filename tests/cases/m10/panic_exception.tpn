@@ -1,0 +1,4 @@
+from python import json
+
+print(json.loads("[1]"))
+print(json.loads("{"))

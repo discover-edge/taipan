@@ -1,0 +1,16 @@
+# Compound assignment evaluates the target's sub-expressions once (SPEC §4.6).
+struct Counter:
+    n: int
+
+var calls = 0
+let counters = [Counter(0), Counter(10)]
+
+def pick(i: int, log: list[int]) -> int:
+    log.append(i)
+    return i
+
+let log: list[int] = []
+var xs = [1, 2, 3]
+xs[pick(1, log)] += 100
+counters[pick(0, log)].n += 5
+print(xs, counters, log)

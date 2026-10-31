@@ -1,0 +1,6 @@
+let s: str? = "a"
+let name = "x"
+if s is some name:
+    pass
+if s is some v:
+    let v = 1

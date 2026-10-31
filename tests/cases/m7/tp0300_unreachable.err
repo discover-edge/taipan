@@ -1,0 +1,4 @@
+tests/cases/m7/tp0300_unreachable.tpn:8:9: warning TP0300: unreachable match arm
+tests/cases/m7/tp0300_unreachable.tpn:10:9: warning TP0300: unreachable match arm
+tests/cases/m7/tp0300_unreachable.tpn:15:9: warning TP0300: unreachable match arm
+tests/cases/m7/tp0300_unreachable.tpn:17:9: warning TP0300: unreachable match arm
