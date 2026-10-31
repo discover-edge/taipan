@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Taipan.Cli/Taipan.Cli.csproj" />
+    <Project Path="src/Taipan.Compiler/Taipan.Compiler.csproj" />
+    <Project Path="src/Taipan.Runtime/Taipan.Runtime.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Taipan.Tests/Taipan.Tests.csproj" />
+  </Folder>
+</Solution>

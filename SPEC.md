@@ -335,10 +335,13 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 <file>:<line>:<col>: error TP<code>: <message>
   help: <optional hint>
 ```
+- Diagnostics are written to stderr.
+- `<file>` is the source path exactly as given on the command line.
 
 **Exit codes:**
 - `0` success
 - `1` compile error
+- `2` usage or I/O error (bad arguments, file not found)
 - `101` runtime panic
 
 | Code | Meaning |

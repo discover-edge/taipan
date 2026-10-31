@@ -49,7 +49,8 @@ Exit codes follow SPEC §9.
 ## Testing
 - **Golden tests** are the primary signal. For each `tests/cases/**/*.tpn`, the runner:
   - runs `taipan run` (or `check` if there's no `.out`)
-  - compares stdout to `.out`, diagnostics to `.err` (exact text), and the exit code to `.exit` (default 0, or 1 when `.err` exists)
+  - passes the case path relative to the repo root, so diagnostics read `tests/cases/<milestone>/<name>.tpn:...`
+  - compares stdout to `.out`, stderr to `.err` (exact text; no `.err` means stderr must be empty), and the exit code to `.exit` (default 0, or 1 when `.err` exists)
 - Every feature and every diagnostic code lands with at least one passing and one failing golden case.
 - Lexer and parser also get focused unit tests.
 - `dotnet test` must be green before any milestone is called done.
