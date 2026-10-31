@@ -75,7 +75,11 @@ Terminal names in CAPS come from the lexer.
 
 ```ebnf
 file          = { NEWLINE | top_item } EOF ;
-top_item      = func_def | struct_def | enum_def | const_def | stmt ;
+top_item      = import_stmt | func_def | struct_def | enum_def | const_def | stmt ;
+
+import_stmt   = "import" NAME [ "as" NAME ] NEWLINE                                  (* M9, §4.7 *)
+              | "from" NAME "import" import_name { "," import_name } NEWLINE ;
+import_name   = NAME [ "as" NAME ] ;
 
 const_def     = "const" NAME [ ":" type ] "=" expr NEWLINE ;
 
@@ -113,13 +117,13 @@ match_stmt    = "match" expr ":" NEWLINE INDENT arm { arm } DEDENT ;
 arm           = pattern ":" ( simple_stmt NEWLINE | block ) ;
 pattern       = "_" | [ "-" ] INT | STRING | "True" | "False"
               | qual_name [ "(" [ NAME { "," NAME } ] ")" ] ;
-qual_name     = NAME [ "." NAME ] ;
+qual_name     = NAME [ "." NAME [ "." NAME ] ] ;                    (* module.Enum.Variant: M9 *)
 
 type          = base_type { "?" } ;                               (* more than one "?" is TP0213, §3.1 *)
 base_type     = "int" | "float" | "bool" | "str" | "py"           (* py: M10 *)
               | "list" "[" type "]"
               | "dict" "[" type "," type "]"
-              | NAME [ "[" type { "," type } "]" ] ;
+              | NAME [ "." NAME ] [ "[" type { "," type } "]" ] ;  (* module.Type: M9 *)
 
 (* Expressions, lowest to highest precedence *)
 expr          = coalesce ;
@@ -339,6 +343,27 @@ There are no other implicit conversions. Explicit conversions use the built-ins 
 - **Indexing** applies to `list[T]` (`int` index, gives `T`), `dict[K, V]` (`K` key, gives `V`), and `str` (`int` index, gives `str`). Anything else is `TP0200`.
 - **Built-in methods** follow §6, with argument counts checked by `TP0209`. `d.get` arrives with optionals in M6.
 
+### 4.7 Modules (M9)
+- **A program is a main file plus the modules it imports, directly or indirectly.**
+  - `import geometry` loads `geometry.tpn` from the main file's directory. Every module of a program lives in that one directory, so there are no packages or dotted module names in v0.1.
+  - A missing file is `TP0221`, reported at the import.
+  - The module name `python` is reserved for Python interop (§10). Until M10, importing it is "not implemented".
+- **Module files contain declarations only:** `import`, `def`, `struct`, `enum` and `const`. A top-level statement (including `let` and `var`) in a module other than the main file is `TP0222`. Only the main file has a top level that runs.
+- **Exports:** a module exports every name it defines, meaning its functions, structs, enums, their variants, and constants. There's no privacy, no re-export (a name a module itself imported can't be imported from it), and no `from m import *` (`TP0100`).
+- **Imports:**
+  - `import m` binds `m` in the importing file. Its names are then reached as `m.f(…)`, `m.LIMIT`, `m.Point(…)`, `m.Health.Ok` and `m.Ok` in expressions, `m.Point` and `m.Box[int]` in types, and `m.Health.Ok` in patterns.
+  - `from m import f, Point` binds those names directly. Importing an enum also binds its variants unqualified, under the usual ambiguity rule (`TP0216`).
+  - `as` renames either form: `import geometry as g`, `from m import area as surface`.
+  - A name `m` doesn't define is `TP0201`.
+- **Scope:**
+  - Imports may appear anywhere at a file's top level, and like definitions they take effect throughout the file.
+  - Imported names share the file's global scope. A clash with a definition, another import or a built-in is `TP0214`, and the usual shadowing rules apply (`TP0207`).
+  - `import` inside a function is `TP0100`.
+  - A module name used as a value (`print(geometry)`) is `TP0200`.
+- **Cycles are allowed.** Since definitions are hoisted, `a` may import `b` while `b` imports `a`, and their functions may call each other.
+- **Stages:** every file is lexed and parsed before any is type-checked, and §9's stage gating applies across all of them. Diagnostics name the file they're in, by its path relative to the main file's path as given (for example `tests/cases/m9/shapes/geometry.tpn`).
+- **Order:** constants are initialized module by module, each module after the modules it imports (a cycle is broken at the file reached first), and the main file's last.
+
 ---
 
 ## 5. Statements and expressions
@@ -471,6 +496,7 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 | `list[T]` / `dict[K, V]` | `List<T>` / `OrderedDictionary<K, V>`. `for` over them goes through a runtime iterator that turns concurrent modification into the §7 panic. |
 | generics | Monomorphized. Each distinct instantiation the program uses becomes its own C# method or type, named after its type arguments: `first_int`, `Box_str`, `Box_list_int`, `Maybe_int_opt` (for `Maybe[int?]`). A clash with another name gets a numeric suffix. Generic definitions that are never instantiated are type-checked but not emitted. |
 | `const` | a `static` field, assigned at the start of `TopLevel` in source order |
+| modules | All files go into one C# compilation unit, with no per-module classes. A name defined in two modules gets a numeric suffix in the C# output (`area`, `area2`). |
 | locals | a typed C# local. A Taipan local whose name C# scoping would reject (the same name declared in a nested block and again later in the outer block) is renamed with a numeric suffix. |
 | `for x in range(a, b)` | a C# `for` loop. `a` and `b` are evaluated once, before the loop. |
 | `x is some v` | `x is {} v`. C# scopes pattern variables more widely than Taipan, so a binding whose name is used anywhere else in the method gets a numeric suffix. |
@@ -536,6 +562,8 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 | TP0218 | keyword arguments outside a constructor |
 | TP0219 | generic instantiation too deep (polymorphic recursion) |
 | TP0220 | invalid type parameter constraint |
+| TP0221 | module not found |
+| TP0222 | top-level statement in an imported module |
 | TP0300 | warning: unreachable match arm |
 
 New codes go into this table before they're implemented.
@@ -554,10 +582,11 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0200 | `integer literal is out of range` |
 | TP0200 | `'range' can only be used in a for loop` / `cannot iterate over <T>` |
 | TP0200 | `'<T>' is inferred as both <A> and <B>` / `'<T>' must be <A> or <B>, found <C>` (type-argument inference and constraints; `A, B or C` for longer tuples) |
+| TP0200 | `'<m>' is a module, not a value` |
 | TP0200 | `cannot match on <T>` / `'<E>' is a type, not a value` / `'<v>' is not a function` (a variant without a payload) |
 | TP0200 | `'is some' needs an optional, found <T>` / `'is none' needs an optional, found <T>` / `'??' needs an optional on the left, found <T>` |
 | TP0200 | `'<m>' is a method; call it` / `'<f>' is a field, not a method` / `cannot index <T>` / `dict keys must be int, str, or bool, found <T>` |
-| TP0201 | `undefined name '<x>'` / `undefined type '<T>'` |
+| TP0201 | `undefined name '<x>'` / `undefined type '<T>'` / `module '<m>' has no definition '<x>'` |
 | TP0202 | `cannot assign to '<x>': it is a <let binding\|parameter\|loop variable\|constant\|function\|method>`, with help `declare it with 'var'` for a `let` binding / `cannot assign to an element of str` |
 | TP0203 | `expected <T>, found <T>?` / `<T>? must be narrowed before use`, with help `narrow it with 'is some', or give a default with '??'` |
 | TP0204 | `non-exhaustive match (missing: <a>, <b>)` |
@@ -577,6 +606,8 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0217 | `const initializer must be a constant expression` |
 | TP0218 | `keyword arguments are only allowed in constructors` |
 | TP0219 | `instantiating '<f>' needs '<f>[<T>]', which is too deep`, at the call that starts the chain |
+| TP0221 | `module '<m>' not found`, with help `looked for <path>` |
+| TP0222 | `only the main file can have top-level statements` |
 | TP0220 | `a constraint needs at least two types` / `'<T>' is listed twice in the constraint` / `a constraint cannot be optional or generic` / `constraints are only supported on functions` |
 | TP0300 | `unreachable match arm` |
 
