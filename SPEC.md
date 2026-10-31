@@ -82,7 +82,7 @@ const_def     = "const" NAME [ ":" type ] "=" expr NEWLINE ;
 func_def      = "def" NAME [ type_params ] "(" [ params ] ")" [ "->" type ] ":" block ;
 params        = param { "," param } [ "," ] ;
 param         = NAME ":" type ;
-type_params   = "[" NAME { "," NAME } "]" ;                       (* M8 *)
+type_params   = "[" NAME { "," NAME } "]" ;                       (* M8, §3.6 *)
 
 struct_def    = "struct" NAME [ type_params ] ":" NEWLINE INDENT struct_member { struct_member } DEDENT ;
 struct_member = NAME ":" type NEWLINE | method_def ;
@@ -215,10 +215,31 @@ There are no other implicit conversions. Explicit conversions use the built-ins 
   - `none` has its own type, written `none`, which is assignable to every optional.
   - `let x = none` without an annotation is `TP0206`.
   - In list and dict literals without an expected type, `none` and `T` mix to `T?`, and `T` and `T?` mix to `T?`. So `[1, none]` is `list[int?]`.
-- **Nesting (`TP0213`):** `T??` is reported at the type. `d.get(k)` on a dict whose values are already optional is also `TP0213`, since its result would nest.
+- **Nesting (`TP0213`):** `T??` is reported at the type. Optionals never nest. `d.get(k)` on a dict whose values are already optional returns that same optional type: on a `dict[str, int?]` it gives `int?`, and a missing key and a stored `none` both give `none` (as in Python, and as with generics, §3.6).
 
 ### 3.5 Conditions
 `if`, `elif`, and `while` conditions and the operands of `and`, `or`, and `not` must be `bool`. There's no truthiness, so `if xs:` is `TP0205`.
+
+### 3.6 Generics (M8)
+- **Declarations:** functions, structs and enums may take type parameters, in PEP 695 style: `def first[T](xs: list[T]) -> T?:`, `struct Box[T]:`, `enum Maybe[T]:`.
+  - Type parameter names live in the type namespace of their definition, including a generic struct's methods. Methods take no type parameters of their own.
+  - A repeated type parameter is `TP0214`. One that shadows an existing type name is `TP0207`.
+- **Instantiation in types:** a generic struct or enum must be given exactly as many type arguments as it has parameters (`Box[int]`, `Maybe[list[str]]`). A count mismatch, including a bare `Box` or arguments on a non-generic type, is `TP0209`.
+- **Type parameters are unconstrained.** Bodies are checked once, with each type parameter treated as an opaque type `T`:
+  - A `T` may be assigned, passed, returned, stored in lists and fields, compared with `==`/`!=` against another `T`, tested with `in` on a `list[T]`, and displayed (`print`, `str`, f-strings).
+  - Anything else on a `T` is `TP0200` or `TP0210`, as for any type lacking the operation: arithmetic, ordering, member access, method calls, indexing, iteration, `match`, or use as a dict key.
+  - So a body that checks is valid for every type argument. Instantiation never reports new errors (apart from `TP0219`).
+- **Type arguments are always inferred.** There's no explicit call-site syntax.
+  - **Expected type first:** if the call has an expected type (§4.6), the return type is unified with it.
+  - **Then arguments:** the remaining parameters are inferred from the argument types, in order.
+  - Arguments are then checked against the substituted parameter types, with the usual widening, so `let b: Box[float] = Box(1)` is valid.
+  - When two arguments infer `int` and `float` for the same parameter, it's `float`. Any other disagreement is `TP0200`.
+  - A `none` argument infers nothing, and an argument of type `U?` for a `T?` parameter infers `T = U`.
+  - A parameter left undetermined is `TP0206`. For example, `Nothing` from `enum Maybe[T]` has no expected type to infer from.
+- Generic enum variants and generic struct constructors infer their type arguments the same way: `Box(5)` is `Box[int]`, and `Just("x")` is `Maybe[str]`.
+- **Optionals don't nest, even through substitution:** `T?` with `T = int?` is `int?`, as in Python's `Optional[Optional[int]]`. Only a literal `T??` in source is `TP0213`.
+- **Constraints** such as `[N: (int, float)]` or `[K: (int, str, bool)]` (PEP 695 constraint tuples) are planned for M8.1. Until then, a type parameter with a constraint is `TP0100`.
+- **Polymorphic recursion:** a generic function that, through its own calls, needs ever-larger instantiations (for example, `f[T]` calling `f` with a `list[T]`) is `TP0219`. It's reported once the instantiation chain is 32 deep.
 
 ---
 
@@ -436,6 +457,7 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 | `enum E` | `public abstract record E` with a private constructor; each variant is `public sealed record V(...) : E` nested inside |
 | `T?` | `T?` |
 | `list[T]` / `dict[K, V]` | `List<T>` / `OrderedDictionary<K, V>`. `for` over them goes through a runtime iterator that turns concurrent modification into the §7 panic. |
+| generics | Monomorphized. Each distinct instantiation the program uses becomes its own C# method or type, named after its type arguments: `first_int`, `Box_str`, `Box_list_int`, `Maybe_int_opt` (for `Maybe[int?]`). A clash with another name gets a numeric suffix. Generic definitions that are never instantiated are type-checked but not emitted. |
 | `const` | a `static` field, assigned at the start of `TopLevel` in source order |
 | locals | a typed C# local. A Taipan local whose name C# scoping would reject (the same name declared in a nested block and again later in the outer block) is renamed with a numeric suffix. |
 | `for x in range(a, b)` | a C# `for` loop. `a` and `b` are evaluated once, before the loop. |
@@ -500,6 +522,7 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 | TP0216 | ambiguous enum variant; qualify it |
 | TP0217 | `const` initializer is not a constant expression |
 | TP0218 | keyword arguments outside a constructor |
+| TP0219 | generic instantiation too deep (polymorphic recursion) |
 | TP0300 | warning: unreachable match arm |
 
 New codes go into this table before they're implemented.
@@ -517,6 +540,7 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0200 | `'<f>' is a function; call it` / `'<x>' is not a function` |
 | TP0200 | `integer literal is out of range` |
 | TP0200 | `'range' can only be used in a for loop` / `cannot iterate over <T>` |
+| TP0200 | `'<T>' is inferred as both <A> and <B>` (type-argument inference) |
 | TP0200 | `cannot match on <T>` / `'<E>' is a type, not a value` / `'<v>' is not a function` (a variant without a payload) |
 | TP0200 | `'is some' needs an optional, found <T>` / `'is none' needs an optional, found <T>` / `'??' needs an optional on the left, found <T>` |
 | TP0200 | `'<m>' is a method; call it` / `'<f>' is a field, not a method` / `cannot index <T>` / `dict keys must be int, str, or bool, found <T>` |
@@ -525,19 +549,21 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0203 | `expected <T>, found <T>?` / `<T>? must be narrowed before use`, with help `narrow it with 'is some', or give a default with '??'` |
 | TP0204 | `non-exhaustive match (missing: <a>, <b>)` |
 | TP0205 | `condition must be bool, found <T>` |
-| TP0206 | `cannot infer the type of an empty list` / `... empty dict` / `cannot infer the type of none`, with help `add a type annotation` |
+| TP0206 | `cannot infer the type of an empty list` / `... empty dict` / `cannot infer the type of none` / `cannot infer '<T>' for '<f>'`, with help `add a type annotation` |
 | TP0207 | `'<x>' shadows an outer binding` |
 | TP0208 | `not all paths in '<f>' return a value` |
+| TP0209 | `'<S>' takes <n> type arguments, found <m>` (`type argument` when n is 1) |
 | TP0209 | `'<v>' has <n> fields, found <m> bindings` (variant patterns; `field` / `binding` when the count is 1) |
 | TP0209 | `'<f>' takes <n> arguments, found <m>` (`argument` when n is 1; `1 or 2 arguments` for `range`) / `missing field '<f>' in '<S>'` / `field '<f>' is given more than once` |
 | TP0210 | `<T> has no field '<x>'` / `<T> has no method '<x>'` / `<E> has no variant '<x>'` |
 | TP0211 | `'<f>' cannot use top-level variable '<x>'`, with help `pass it as a parameter, or make it a const` |
-| TP0213 | `optional types cannot be nested` / `'get' on <dict type> would return a nested optional` |
+| TP0213 | `optional types cannot be nested` |
 | TP0214 | `duplicate definition of '<x>'` |
 | TP0215 | `'break' outside a loop` / `'continue' outside a loop` / `'return' outside a function` |
 | TP0216 | `'<v>' is ambiguous: it is a variant of <E1> and <E2>`, with help `qualify it, e.g. '<E1>.<v>'` |
 | TP0217 | `const initializer must be a constant expression` |
 | TP0218 | `keyword arguments are only allowed in constructors` |
+| TP0219 | `instantiating '<f>' needs '<f>[<T>]', which is too deep`, at the call that starts the chain |
 | TP0300 | `unreachable match arm` |
 
 Types are written as in source: `int`, `str?`, `list[int]`. The type of `none` is written `none`, and a missing value is written `nothing`.
