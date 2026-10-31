@@ -47,10 +47,12 @@ taipan run   <file> [-- args]
 Exit codes follow SPEC §9.
 
 ## Testing
-- **Golden tests** are the primary signal. For each `tests/cases/**/*.tpn`, the runner:
+- **Golden tests** are the primary signal. For each `tests/cases/**/*.tpn`, and each `examples/*.tpn` that has a `.out`, the runner:
   - runs `taipan run` (or `check` if there's no `.out`)
   - passes the case path relative to the repo root, so diagnostics read `tests/cases/<milestone>/<name>.tpn:...`
   - compares stdout to `.out`, stderr to `.err` (exact text; no `.err` means stderr must be empty), and the exit code to `.exit` (default 0, or 1 when `.err` exists)
+  - compares `taipan emit` output to `.cs`, when there is one
+- **Multi-file cases** live in their own directory, `tests/cases/<milestone>/<case>/main.tpn` plus its modules. In a directory with a `main.tpn`, only that file is a case, and its sidecars sit next to it (`main.out`, `main.err`, …).
 - Every feature and every diagnostic code lands with at least one passing and one failing golden case.
 - Lexer and parser also get focused unit tests.
 - `dotnet test` must be green before any milestone is called done.
