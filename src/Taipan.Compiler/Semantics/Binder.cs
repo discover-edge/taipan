@@ -21,7 +21,7 @@ public sealed record BindResult(BoundProgram Program, ImmutableArray<Diagnostic>
 public sealed class Binder
 {
     private static readonly BigInteger MaxInt = long.MaxValue;
-    private static readonly HashSet<string> BuiltinTypeNames = ["int", "float", "bool", "str", "list", "dict", "py", "Callable"];
+    private static readonly HashSet<string> BuiltinTypeNames = ["int", "float", "bool", "str", "list", "dict", "py", "Callable", "tuple"];
 
     private DiagnosticBag _diagnostics = new();
     private readonly Scope _builtins = new(null);
@@ -342,6 +342,7 @@ public sealed class Binder
         StructType s => s.TypeArguments.Any(MentionsTypeParameter),
         EnumType e => e.TypeArguments.Any(MentionsTypeParameter),
         FunctionType f => f.Parameters.Any(MentionsTypeParameter) || MentionsTypeParameter(f.Result),
+        TupleOfType t => t.Elements.Any(MentionsTypeParameter),
         _ => false,
     };
 
@@ -629,8 +630,11 @@ public sealed class Binder
                 CollectScriptNames(whileStmt.Body);
                 break;
             case ForStmt forStmt:
-                _scriptNames.Add(forStmt.Variable.Text);
+                _scriptNames.UnionWith(forStmt.Variables.Select(v => v.Text).Where(n => n != "_"));
                 CollectScriptNames(forStmt.Body);
+                break;
+            case UnpackStmt unpack:
+                _scriptNames.UnionWith(unpack.Names.Select(n => n.Text).Where(n => n != "_"));
                 break;
             case FuncDefStmt funcDef:
                 _scriptNames.Add(funcDef.Function.Name.Text);
@@ -708,6 +712,12 @@ public sealed class Binder
                 return TaipanType.Py;
             case NamedType { Name.Text: "Callable" } bare:
                 _diagnostics.ReportBareCallable(bare.Span);
+                return TaipanType.Error;
+            case TupleType tuple:
+                var elements = tuple.Elements.Select(BindType).ToImmutableArray();
+                if (elements.Length >= 2)
+                    return new TupleOfType(elements);
+                _diagnostics.ReportTupleTooShort(tuple.Span);
                 return TaipanType.Error;
             case CallableType callable:
                 return new FunctionType(
@@ -828,8 +838,83 @@ public sealed class Binder
         ForStmt forStmt => BindFor(forStmt),
         MatchStmt match => BindMatch(match),
         FuncDefStmt funcDef => BindLocalFunction(funcDef),
+        UnpackStmt unpack => BindUnpack(unpack),
+        TupleAssignStmt assign => BindTupleAssign(assign),
         _ => throw new InvalidOperationException($"unexpected statement {stmt.GetType().Name}"),
     };
+
+    // ---- Unpacking (SPEC §3.8) ----
+
+    /// <summary>
+    /// The element types of a tuple being unpacked into <paramref name="count"/> names, or null
+    /// after reporting a value that isn't such a tuple (silently, if it already has an error).
+    /// </summary>
+    private ImmutableArray<TaipanType>? UnpackedTypes(BoundExpr value, TextSpan span, int count)
+    {
+        if (value.Type.ContainsError || ReportIfOptional(value, span))
+            return null;
+        if (value.Type is not TupleOfType tuple)
+        {
+            _diagnostics.ReportCannotUnpack(span, value.Type);
+            return null;
+        }
+        if (tuple.Elements.Length != count)
+        {
+            _diagnostics.ReportUnpackCount(span, tuple, tuple.Elements.Length, count);
+            return null;
+        }
+        return tuple.Elements;
+    }
+
+    /// <summary>
+    /// Declarations that unpack <paramref name="temp"/>'s elements into <paramref name="names"/>
+    /// (<c>_</c> declares nothing). The element types are the error type if it can't be unpacked.
+    /// </summary>
+    private ImmutableArray<BoundStmt> UnpackInto(
+        VariableSymbol temp, ImmutableArray<TaipanType>? elements, ImmutableArray<Identifier> names, VariableKind kind, TextSpan span)
+    {
+        var stores = ImmutableArray.CreateBuilder<BoundStmt>();
+        for (var i = 0; i < names.Length; i++)
+        {
+            if (names[i].Text == "_")
+                continue;
+            var type = elements?[i] ?? TaipanType.Error;
+            var symbol = new VariableSymbol(names[i].Text, type, kind);
+            DeclareLocal(names[i], symbol);
+            stores.Add(new BoundVariableDecl(symbol, new BoundTupleElement(new BoundVariable(temp, span), i, type, span), span));
+        }
+        return stores.ToImmutable();
+    }
+
+    // The value is held in a temporary named `_`, which the emitter always renames.
+    private static VariableSymbol UnpackTemp(TaipanType type) => new("_", type, VariableKind.Let);
+
+    private BoundUnpack BindUnpack(UnpackStmt unpack)
+    {
+        var value = BindValue(unpack.Value);
+        var elements = UnpackedTypes(value, unpack.Value.Span, unpack.Names.Length);
+        var temp = UnpackTemp(value.Type);
+        var stores = UnpackInto(temp, elements, unpack.Names, unpack.IsVar ? VariableKind.Var : VariableKind.Let, unpack.Span);
+        return new BoundUnpack(temp, value, stores, unpack.Span);
+    }
+
+    /// <summary>
+    /// <c>a, b = e</c>: the value first, then each target in turn, as for <c>=</c>. A tuple
+    /// literal on the right is bound without expected types; its elements are checked against
+    /// the targets as they're stored.
+    /// </summary>
+    private BoundUnpack BindTupleAssign(TupleAssignStmt assign)
+    {
+        var value = BindValue(assign.Value);
+        var elements = UnpackedTypes(value, assign.Value.Span, assign.Targets.Length);
+        var temp = UnpackTemp(value.Type);
+        var stores = assign.Targets
+            .Select((target, i) => BindAssign(
+                new AssignStmt(target, AssignOp.Assign, assign.Value, assign.Span),
+                new BoundTupleElement(new BoundVariable(temp, assign.Value.Span), i, elements?[i] ?? TaipanType.Error, assign.Value.Span)))
+            .ToImmutableArray();
+        return new BoundUnpack(temp, value, stores, assign.Span);
+    }
 
     /// <summary>
     /// A nested <c>def</c> (SPEC §3.7): a local function value, visible from here to the end of the
@@ -1076,22 +1161,30 @@ public sealed class Binder
         return new BoundVariableDecl(symbol, value, span);
     }
 
-    private BoundStmt BindAssign(AssignStmt assign) => assign.Target switch
+    /// <summary>
+    /// An assignment. <paramref name="value"/>, when given, is the already-bound value to store
+    /// in place of <c>assign.Value</c>: an element being unpacked.
+    /// </summary>
+    private BoundStmt BindAssign(AssignStmt assign, BoundExpr? value = null) => assign.Target switch
     {
-        MemberExpr member => BindFieldAssign(assign, member),
-        IndexExpr index => BindIndexAssign(assign, index),
-        NameExpr name => BindVariableAssign(assign, name),
+        MemberExpr member => BindFieldAssign(assign, member, value),
+        IndexExpr index => BindIndexAssign(assign, index, value),
+        NameExpr name => BindVariableAssign(assign, name, value),
         _ => throw new InvalidOperationException($"unexpected assignment target {assign.Target.GetType().Name}"),
     };
 
-    private BoundStmt BindVariableAssign(AssignStmt assign, NameExpr target)
+    // The value of an assignment whose target is invalid, bound for its own errors.
+    private BoundExprStmt OrphanAssign(AssignStmt assign, BoundExpr? value) =>
+        new(value ?? BindValue(assign.Value), assign.Span);
+
+    private BoundStmt BindVariableAssign(AssignStmt assign, NameExpr target, BoundExpr? preset)
     {
         var symbol = LookupName(target.Name, target.Span);
         if (symbol is not VariableSymbol variable)
         {
             if (symbol is FunctionSymbol or StructSymbol or EnumSymbol or VariantSymbol or AmbiguousVariantSymbol or ModuleSymbol)
                 _diagnostics.ReportCannotAssign(target.Span, target.Name, "function", null);
-            return new BoundExprStmt(BindValue(assign.Value), assign.Span);
+            return OrphanAssign(assign, preset);
         }
 
         if (variable.Kind != VariableKind.Var)
@@ -1107,19 +1200,19 @@ public sealed class Binder
             _diagnostics.ReportCannotAssign(target.Span, target.Name, what, help);
         }
 
-        var value = BindAssignedValue(assign, new BoundVariable(variable, target.Span), variable.Type);
+        var value = BindAssignedValue(assign, new BoundVariable(variable, target.Span), variable.Type, preset);
         return new BoundAssign(variable, value, assign.Span);
     }
 
-    private BoundStmt BindFieldAssign(AssignStmt assign, MemberExpr member)
+    private BoundStmt BindFieldAssign(AssignStmt assign, MemberExpr member, BoundExpr? preset)
     {
         var target = BindValue(member.Target);
         if (target.Type.ContainsError || ReportIfOptional(target, member.Target.Span))
-            return new BoundExprStmt(BindValue(assign.Value), assign.Span);
+            return OrphanAssign(assign, preset);
         if (target.Type == TaipanType.Py)
         {
             var current = new BoundPyGetAttr(target, member.Member.Text, member.Span);
-            var pyValue = BindAssignedValue(assign, current, TaipanType.Py);
+            var pyValue = BindAssignedValue(assign, current, TaipanType.Py, preset);
             return new BoundPySetAttr(target, member.Member.Text, pyValue, assign.Op != AssignOp.Assign, assign.Span);
         }
 
@@ -1128,7 +1221,7 @@ public sealed class Binder
             if (structSymbol.FindField(member.Member.Text) is { } field)
             {
                 var fieldType = FieldType(target.Type, field);
-                var value = BindAssignedValue(assign, new BoundFieldAccess(target, field, fieldType, member.Span), fieldType);
+                var value = BindAssignedValue(assign, new BoundFieldAccess(target, field, fieldType, member.Span), fieldType, preset);
                 return new BoundFieldAssign(target, field, value, assign.Op != AssignOp.Assign, assign.Span);
             }
             if (structSymbol.Methods.ContainsKey(member.Member.Text))
@@ -1140,28 +1233,33 @@ public sealed class Binder
         {
             _diagnostics.ReportNoField(member.Member.Span, target.Type, member.Member.Text);
         }
-        return new BoundExprStmt(BindValue(assign.Value), assign.Span);
+        return OrphanAssign(assign, preset);
     }
 
-    private BoundStmt BindIndexAssign(AssignStmt assign, IndexExpr indexExpr)
+    private BoundStmt BindIndexAssign(AssignStmt assign, IndexExpr indexExpr, BoundExpr? preset)
     {
         var target = BindValue(indexExpr.Target);
+        if (target.Type is TupleOfType)
+        {
+            _diagnostics.ReportCannotAssignTupleElement(indexExpr.Span);
+            return OrphanAssign(assign, preset);
+        }
         if (target.Type == TaipanType.Str)
         {
             _diagnostics.ReportCannotAssignStrElement(indexExpr.Span);
-            return new BoundExprStmt(BindValue(assign.Value), assign.Span);
+            return OrphanAssign(assign, preset);
         }
 
         var read = BindIndexOf(target, indexExpr);
         if (read is BoundPyGetItem pyItem)
         {
-            var pyValue = BindAssignedValue(assign, pyItem, TaipanType.Py);
+            var pyValue = BindAssignedValue(assign, pyItem, TaipanType.Py, preset);
             return new BoundPySetItem(target, pyItem.Index, pyValue, assign.Op != AssignOp.Assign, assign.Span);
         }
         if (read is not BoundIndex index)
-            return new BoundExprStmt(BindValue(assign.Value), assign.Span);
+            return OrphanAssign(assign, preset);
 
-        var value = BindAssignedValue(assign, index, index.Type);
+        var value = BindAssignedValue(assign, index, index.Type, preset);
         return new BoundIndexAssign(target, index.Index, value, assign.Op != AssignOp.Assign, assign.Span);
     }
 
@@ -1169,8 +1267,15 @@ public sealed class Binder
     /// The value stored by an assignment. A compound assignment <c>t op= e</c> binds as
     /// <c>t op e</c>, reading through <paramref name="current"/>.
     /// </summary>
-    private BoundExpr BindAssignedValue(AssignStmt assign, BoundExpr current, TaipanType targetType)
+    private BoundExpr BindAssignedValue(AssignStmt assign, BoundExpr current, TaipanType targetType, BoundExpr? preset)
     {
+        if (preset is not null)
+        {
+            CheckAssignable(preset, targetType, preset.Span);
+            return targetType == TaipanType.Py && preset.Type != TaipanType.Py && !preset.Type.ContainsError
+                ? new BoundToPy(preset, preset.Span)
+                : preset;
+        }
         if (assign.Op == AssignOp.Assign)
             return BindExpected(assign.Value, targetType);
 
@@ -1314,17 +1419,29 @@ public sealed class Binder
             };
         }
 
-        // The loop variable is a let scoped to the body (SPEC §5.2).
+        // The loop variable is a let scoped to the body (SPEC §5.2). With several names, the
+        // element is held in a temporary and unpacked into them at the start of the body.
         var outer = _scope;
         _scope = new Scope(outer);
-        var variable = new VariableSymbol(forStmt.Variable.Text, variableType, VariableKind.LoopVariable);
-        DeclareLocal(forStmt.Variable, variable);
+        VariableSymbol variable;
+        var unpacked = ImmutableArray<BoundStmt>.Empty;
+        if (forStmt.Variables is [var single])
+        {
+            variable = new VariableSymbol(single.Text, variableType, VariableKind.LoopVariable);
+            DeclareLocal(single, variable);
+        }
+        else
+        {
+            variable = UnpackTemp(variableType);
+            var elements = UnpackedTypes(new BoundVariable(variable, forStmt.Iterable.Span), forStmt.Iterable.Span, forStmt.Variables.Length);
+            unpacked = UnpackInto(variable, elements, forStmt.Variables, VariableKind.LoopVariable, forStmt.Span);
+        }
         _loopDepth++;
         var statements = forStmt.Body.Statements.Select(BindStmt).ToImmutableArray();
         _loopDepth--;
         _scope = outer;
 
-        var body = new BoundBlock(statements, forStmt.Body.Span);
+        var body = new BoundBlock([.. unpacked, .. statements], forStmt.Body.Span);
         return isRange
             ? new BoundForRange(variable, start, iterable, body, forStmt.Span)
             : new BoundForEach(variable, iterable, body, forStmt.Span);
@@ -1423,6 +1540,88 @@ public sealed class Binder
             return new BoundErrorExpr(cast.Span);
         }
         return new BoundCast(value, target, cast.Span);
+    }
+
+    // ---- Tuples and slices (SPEC §3.8, §5.4) ----
+
+    /// <summary>A tuple literal, checked element by element against an expected tuple type of its length.</summary>
+    private BoundExpr BindTuple(TupleExpr tuple, TaipanType? expected)
+    {
+        if (tuple.Elements.Length < 2)
+        {
+            _diagnostics.ReportTupleTooShort(tuple.Span);
+            BindArguments(tuple.Elements);
+            return new BoundErrorExpr(tuple.Span);
+        }
+        if (expected is not null && TypeChecker.Unwrap(expected) is TupleOfType target && target.Elements.Length == tuple.Elements.Length)
+            return new BoundTupleLiteral([.. tuple.Elements.Select((e, i) => BindExpected(e, target.Elements[i]))], target, tuple.Span);
+
+        var elements = tuple.Elements.Select(e => BindValue(e)).ToImmutableArray();
+        var types = ImmutableArray.CreateBuilder<TaipanType>();
+        foreach (var element in elements)
+        {
+            if (element.Type is NoneType)
+            {
+                _diagnostics.ReportCannotInferNone(element.Span);
+                types.Add(TaipanType.Error);
+            }
+            else
+            {
+                types.Add(element.Type);
+            }
+        }
+        return new BoundTupleLiteral(elements, new TupleOfType(types.ToImmutable()), tuple.Span);
+    }
+
+    /// <summary>
+    /// <c>t[i]</c> on a tuple: <c>i</c> must be an integer literal, optionally negative, within the
+    /// tuple's length, so the element's type is known.
+    /// </summary>
+    private BoundExpr BindTupleElement(BoundExpr target, TupleOfType tuple, IndexExpr indexExpr)
+    {
+        BigInteger? literal = indexExpr.Index switch
+        {
+            IntLiteral l => l.Value,
+            UnaryExpr { Op: UnaryOp.Negate, Operand: IntLiteral l } => -l.Value,
+            _ => null,
+        };
+        if (literal is not { } index)
+        {
+            BindValue(indexExpr.Index);
+            _diagnostics.ReportTupleIndexNotLiteral(indexExpr.Index.Span);
+            return new BoundErrorExpr(indexExpr.Span);
+        }
+        var length = tuple.Elements.Length;
+        var normalized = index < 0 ? index + length : index;
+        if (normalized < 0 || normalized >= length)
+        {
+            _diagnostics.ReportTupleIndexOutOfRange(indexExpr.Index.Span, index, tuple);
+            return new BoundErrorExpr(indexExpr.Span);
+        }
+        return new BoundTupleElement(target, (int)normalized, tuple.Elements[(int)normalized], indexExpr.Span);
+    }
+
+    /// <summary>
+    /// <c>xs[a:b:c]</c> on a list or str, each part an int or int?; on a py value, any convertible
+    /// parts (SPEC §5.4).
+    /// </summary>
+    private BoundExpr BindSlice(SliceExpr slice)
+    {
+        var target = BindValue(slice.Target);
+        var isPy = target.Type == TaipanType.Py;
+        BoundExpr? Part(Expr? part) => part is null ? null : isPy ? BindPyArgument(part) : BindExpected(part, new OptionalOf(TaipanType.Int));
+        var (start, stop, step) = (Part(slice.Start), Part(slice.Stop), Part(slice.Step));
+
+        var type = target.Type;
+        if (type is not (ListOfType or PrimitiveType { Name: "str" or "py" }) && !type.ContainsError)
+        {
+            if (!ReportIfOptional(target, slice.Target.Span))
+                _diagnostics.ReportCannotSlice(slice.Target.Span, type);
+            type = TaipanType.Error;
+        }
+        return type.ContainsError
+            ? new BoundErrorExpr(slice.Span)
+            : new BoundSlice(target, start, stop, step, type, slice.Span);
     }
 
     // ---- Lambdas (SPEC §3.7) ----
@@ -1565,6 +1764,8 @@ public sealed class Binder
         NoneLiteral => new BoundNone(expr.Span),
         CastExpr cast => BindCast(cast),
         LambdaExpr lambda => BindLambda(lambda, expected),
+        TupleExpr tuple => BindTuple(tuple, expected),
+        SliceExpr slice => BindSlice(slice),
         ErrorExpr => new BoundErrorExpr(expr.Span),
         _ => throw new InvalidOperationException($"unexpected expression {expr.GetType().Name}"),
     };
@@ -1695,10 +1896,11 @@ public sealed class Binder
     }
 
     // In `a == b` and `a != b`, a's type is b's expected type, so `m == Nothing` and `xs == []` work (SPEC §5.3).
+    // A tuple's isn't: its elements need only be comparable, so `(1, 2) == (1.0, 2)` works (§3.8).
     private BoundExpr BindEquality(BinaryExpr binary)
     {
         var left = BindValue(binary.Left);
-        var expected = left.Type.ContainsError || left.Type == TaipanType.Py ? null : left.Type;
+        var expected = left.Type.ContainsError || left.Type == TaipanType.Py || left.Type is TupleOfType ? null : left.Type;
         return BindBinaryOperation(left, binary.Op, BindValue(binary.Right, expected), binary.Span);
     }
 
@@ -1760,7 +1962,7 @@ public sealed class Binder
             _diagnostics.ReportCannotCompare(span, left.Type, right.Type);
             return TaipanType.Error;
         }
-        var ordered = left.Type.IsNumeric || left.Type == TaipanType.Str;
+        var ordered = left.Type.IsOrdered && right.Type.IsOrdered;
         return CheckOperands(left, op, right, span, ordered ? TaipanType.Bool : null);
     }
 
@@ -1925,6 +2127,8 @@ public sealed class Binder
                 return new BoundErrorExpr(indexExpr.Span);
             case PrimitiveType { Name: "py" }:
                 return new BoundPyGetItem(target, BindPyArgument(indexExpr.Index), indexExpr.Span);
+            case TupleOfType tuple:
+                return BindTupleElement(target, tuple, indexExpr);
             case ListOfType list:
                 return new BoundIndex(target, BindExpected(indexExpr.Index, TaipanType.Int), list.Element, indexExpr.Span);
             case DictOfType dict:
@@ -1973,6 +2177,8 @@ public sealed class Binder
         // sorted's keyword arguments may follow its positional one, as in Python (SPEC §2).
         if (symbol is FunctionSymbol { Builtin: BuiltinFunction.Sorted })
             return BindSort(call, name, nameSpan, target: null);
+        if (symbol is FunctionSymbol { Builtin: BuiltinFunction.Enumerate } enumerate)
+            return BindEnumerate(call, enumerate, nameSpan);
         if (ReportMixedArguments(call))
         {
             BindArguments(call);
@@ -2140,6 +2346,7 @@ public sealed class Binder
             StructType s => s.TypeArguments.All(IsKnown),
             EnumType e => e.TypeArguments.All(IsKnown),
             FunctionType f => f.Parameters.All(IsKnown) && IsKnown(f.Result),
+            TupleOfType t => t.Elements.All(IsKnown),
             _ => true,
         };
 
@@ -2170,6 +2377,9 @@ public sealed class Binder
                 case FunctionType f:
                     f.Parameters.ToList().ForEach(GiveUp);
                     GiveUp(f.Result);
+                    break;
+                case TupleOfType t:
+                    t.Elements.ToList().ForEach(GiveUp);
                     break;
             }
         }
@@ -2210,6 +2420,10 @@ public sealed class Binder
                 case (EnumType p, EnumType a) when p.Symbol == a.Symbol:
                     foreach (var (pa, aa) in p.TypeArguments.Zip(a.TypeArguments))
                         Unify(pa, aa, fromArgument);
+                    break;
+                case (TupleOfType p, TupleOfType a) when p.Elements.Length == a.Elements.Length:
+                    foreach (var (pe, ae) in p.Elements.Zip(a.Elements))
+                        Unify(pe, ae, fromArgument);
                     break;
                 case (FunctionType p, FunctionType a) when p.Parameters.Length == a.Parameters.Length:
                     foreach (var (pa, aa) in p.Parameters.Zip(a.Parameters))
@@ -2261,8 +2475,9 @@ public sealed class Binder
     /// Binds the arguments of a call that has already been reported, for their own errors. A
     /// lambda among them has nothing to infer its parameter types from, so they're the error type.
     /// </summary>
-    private ImmutableArray<BoundExpr> BindArguments(CallExpr call) =>
-        [.. call.Arguments.Select(a => BindIgnored(a.Value))];
+    private ImmutableArray<BoundExpr> BindArguments(CallExpr call) => BindArguments([.. call.Arguments.Select(a => a.Value)]);
+
+    private ImmutableArray<BoundExpr> BindArguments(ImmutableArray<Expr> expressions) => [.. expressions.Select(BindIgnored)];
 
     private BoundExpr BindIgnored(Expr expr) =>
         expr is LambdaExpr lambda
@@ -2512,6 +2727,7 @@ public sealed class Binder
             (DictOfType dict, "get") => (BuiltinMethod.DictGet, [dict.Key], dict.Value is OptionalOf ? dict.Value : new OptionalOf(dict.Value)),
             (DictOfType dict, "keys") => (BuiltinMethod.DictKeys, [], new ListOfType(dict.Key)),
             (DictOfType dict, "values") => (BuiltinMethod.DictValues, [], new ListOfType(dict.Value)),
+            (DictOfType dict, "items") => (BuiltinMethod.DictItems, [], new ListOfType(new TupleOfType([dict.Key, dict.Value]))),
             (DictOfType dict, "remove") => (BuiltinMethod.DictRemove, [dict.Key], TaipanType.Bool),
             (PrimitiveType { Name: "str" }, "upper") => (BuiltinMethod.StrUpper, [], str),
             (PrimitiveType { Name: "str" }, "lower") => (BuiltinMethod.StrLower, [], str),
@@ -2577,7 +2793,7 @@ public sealed class Binder
         return new BoundSort(list, keywords.ToImmutable(), InPlace: target is not null, type, call.Span);
     }
 
-    private static bool IsSortable(TaipanType type) => type == TaipanType.Int || type == TaipanType.Float || type == TaipanType.Str;
+    private static bool IsSortable(TaipanType type) => type.IsOrdered;
 
     /// <summary>The element type of a list argument; TP0200 (or TP0203) and the error type for anything else.</summary>
     private TaipanType RequireList(BoundExpr list, TextSpan span)
@@ -2613,10 +2829,74 @@ public sealed class Binder
         return new BoundCall(function, [mapper, list], new ListOfType(result), call.Span);
     }
 
+    /// <summary>
+    /// <c>enumerate(xs)</c>, <c>enumerate(xs, start)</c> or <c>enumerate(xs, start=n)</c> on a list
+    /// or str: a list of (index, element) tuples (SPEC §6).
+    /// </summary>
+    private BoundExpr BindEnumerate(CallExpr call, FunctionSymbol function, TextSpan nameSpan)
+    {
+        var positional = call.Arguments.Where(a => a.Name is null).ToList();
+        if (positional.Count is < 1 or > 2)
+        {
+            _diagnostics.ReportWrongArgumentCount(nameSpan, function.Name, "1 or 2 arguments", call.Arguments.Length);
+            BindArguments(call);
+            return new BoundErrorExpr(call.Span);
+        }
+
+        var items = BindValue(positional[0].Value);
+        var itemsSpan = positional[0].Value.Span;
+        TaipanType element = TaipanType.Error;
+        if (items.Type is ListOfType list)
+            element = list.Element;
+        else if (items.Type == TaipanType.Str)
+            element = TaipanType.Str;
+        else if (!items.Type.ContainsError && !ReportIfOptional(items, itemsSpan))
+            _diagnostics.ReportTypeMismatch(itemsSpan, "list or str", items.Type);
+
+        BoundExpr? start = positional.Count == 2 ? BindExpected(positional[1].Value, TaipanType.Int) : null;
+        foreach (var argument in call.Arguments.Where(a => a.Name is not null))
+        {
+            var keyword = argument.Name!;
+            if (keyword.Text != "start")
+            {
+                _diagnostics.ReportNoKeywordArgument(keyword.Span, function.Name, keyword.Text);
+                BindIgnored(argument.Value);
+            }
+            else if (start is not null)
+            {
+                _diagnostics.ReportRepeatedArgument(keyword.Span, keyword.Text);
+                BindIgnored(argument.Value);
+            }
+            else
+            {
+                start = BindExpected(argument.Value, TaipanType.Int);
+            }
+        }
+        var type = element.ContainsError ? TaipanType.Error : new ListOfType(new TupleOfType([TaipanType.Int, element]));
+        return new BoundCall(function, start is null ? [items] : [items, start], type, call.Span);
+    }
+
+    // zip(xs, ys): a list of pairs, as long as the shorter list (SPEC §6).
+    private BoundExpr BindZip(CallExpr call, FunctionSymbol function)
+    {
+        if (call.Arguments.Length != 2)
+        {
+            _diagnostics.ReportWrongArgumentCount(call.Callee.Span, function.Name, Arguments(2), call.Arguments.Length);
+            BindArguments(call);
+            return new BoundErrorExpr(call.Span);
+        }
+        var lists = call.Arguments.Select(a => BindValue(a.Value)).ToImmutableArray();
+        var elements = lists.Select((l, i) => RequireList(l, call.Arguments[i].Value.Span)).ToImmutableArray();
+        var type = elements.Any(e => e.ContainsError) ? TaipanType.Error : new ListOfType(new TupleOfType(elements));
+        return new BoundCall(function, lists, type, call.Span);
+    }
+
     private BoundExpr BindBuiltinCall(CallExpr call, FunctionSymbol function, BuiltinFunction builtin, TaipanType? expected)
     {
         switch (builtin)
         {
+            case BuiltinFunction.Zip:
+                return BindZip(call, function);
             case BuiltinFunction.Map or BuiltinFunction.Filter:
                 return BindMapFilter(call, function, builtin, expected);
             case BuiltinFunction.Print:

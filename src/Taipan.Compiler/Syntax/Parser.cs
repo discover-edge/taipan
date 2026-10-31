@@ -493,26 +493,56 @@ public sealed class Parser
         return ParseAssignStmt();
     }
 
-    // let_stmt = "let" NAME [ ":" type ] "=" expr
-    private LetStmt ParseLetStmt()
+    // let_stmt = "let" ( NAME [ ":" type ] | names ) "=" expr_list
+    private Stmt ParseLetStmt() => ParseBindingStmt(isVar: false);
+
+    // var_stmt = "var" ( NAME [ ":" type ] | names ) "=" expr_list
+    private Stmt ParseVarStmt() => ParseBindingStmt(isVar: true);
+
+    // names = NAME "," NAME { "," NAME }
+    private Stmt ParseBindingStmt(bool isVar)
     {
         var start = Next().Span.Start;
         var name = ExpectIdentifier();
+        if (At(TokenKind.Comma))
+        {
+            var names = ParseMoreNames(name);
+            Expect(TokenKind.Equals);
+            return new UnpackStmt(isVar, names, ParseExprList(), SpanFrom(start));
+        }
         var type = ParseOptionalAnnotation();
         Expect(TokenKind.Equals);
-        var value = ParseExpr();
-        return new LetStmt(name, type, value, SpanFrom(start));
+        var value = ParseExprList();
+        return isVar ? new VarStmt(name, type, value, SpanFrom(start)) : new LetStmt(name, type, value, SpanFrom(start));
     }
 
-    // var_stmt = "var" NAME [ ":" type ] "=" expr
-    private VarStmt ParseVarStmt()
+    // The rest of a comma-separated list of names, after the first.
+    private ImmutableArray<Identifier> ParseMoreNames(Identifier first)
     {
-        var start = Next().Span.Start;
-        var name = ExpectIdentifier();
-        var type = ParseOptionalAnnotation();
-        Expect(TokenKind.Equals);
-        var value = ParseExpr();
-        return new VarStmt(name, type, value, SpanFrom(start));
+        var names = ImmutableArray.CreateBuilder<Identifier>();
+        names.Add(first);
+        while (At(TokenKind.Comma))
+        {
+            Next();
+            names.Add(ExpectIdentifier());
+        }
+        return names.ToImmutable();
+    }
+
+    // expr_list = expr { "," expr }; two or more make a tuple (SPEC §3.8)
+    private Expr ParseExprList()
+    {
+        var first = ParseExpr();
+        if (!At(TokenKind.Comma))
+            return first;
+        var elements = ImmutableArray.CreateBuilder<Expr>();
+        elements.Add(first);
+        while (At(TokenKind.Comma))
+        {
+            Next();
+            elements.Add(ParseExpr());
+        }
+        return new TupleExpr(elements.ToImmutable(), SpanFrom(first.Span.Start));
     }
 
     private TypeSyntax? ParseOptionalAnnotation()
@@ -523,11 +553,14 @@ public sealed class Parser
         return ParseType();
     }
 
-    // assign_stmt = target ( "=" | "+=" | "-=" | "*=" | "/=" ) expr ;  also the bare `expr` statement
+    // assign_stmt = target ( "=" | "+=" | "-=" | "*=" | "/=" ) expr
+    //             | target "," target { "," target } "=" expr_list ;  also the bare `expr` statement
     private Stmt ParseAssignStmt()
     {
         var start = Current.Span.Start;
         var target = ParseExpr();
+        if (!_recovering && At(TokenKind.Comma))
+            return ParseTupleAssignStmt(start, target);
 
         AssignOp? op = _recovering ? null : Current.Kind switch
         {
@@ -544,18 +577,40 @@ public sealed class Parser
         if (!IsTarget(target))
             ReportSyntaxError(bag => bag.ReportInvalidAssignmentTarget(target.Span));
         Next();
-        var value = ParseExpr();
+        var value = op == AssignOp.Assign ? ParseExprList() : ParseExpr();
         return new AssignStmt(target, op.Value, value, SpanFrom(start));
+    }
+
+    private Stmt ParseTupleAssignStmt(int start, Expr first)
+    {
+        var targets = ImmutableArray.CreateBuilder<Expr>();
+        targets.Add(first);
+        while (At(TokenKind.Comma))
+        {
+            Next();
+            targets.Add(ParseExpr());
+        }
+        foreach (var target in targets)
+        {
+            if (!IsTarget(target))
+            {
+                ReportSyntaxError(bag => bag.ReportInvalidAssignmentTarget(target.Span));
+                break;
+            }
+        }
+        Expect(TokenKind.Equals);
+        var value = ParseExprList();
+        return new TupleAssignStmt(targets.ToImmutable(), value, SpanFrom(start));
     }
 
     // target = NAME | postfix "." NAME | postfix "[" expr "]"
     private static bool IsTarget(Expr expr) => expr is NameExpr or MemberExpr or IndexExpr;
 
-    // return_stmt = "return" [ expr ]
+    // return_stmt = "return" [ expr_list ]
     private ReturnStmt ParseReturnStmt()
     {
         var start = Next().Span.Start;
-        var value = !_recovering && CanStartExpression(Current.Kind) ? ParseExpr() : null;
+        var value = !_recovering && CanStartExpression(Current.Kind) ? ParseExprList() : null;
         return new ReturnStmt(value, SpanFrom(start));
     }
 
@@ -616,16 +671,16 @@ public sealed class Parser
         return new WhileStmt(condition, body, SpanFrom(start));
     }
 
-    // for_stmt = "for" NAME "in" expr ":" block
+    // for_stmt = "for" ( NAME | names ) "in" expr ":" block
     private ForStmt ParseForStmt()
     {
         var start = Next().Span.Start;
-        var variable = ExpectIdentifier();
+        var variables = ParseMoreNames(ExpectIdentifier());
         Expect(TokenKind.InKeyword);
         var iterable = ParseExpr();
         Expect(TokenKind.Colon);
         var body = ParseBlock();
-        return new ForStmt(variable, iterable, body, SpanFrom(start));
+        return new ForStmt(variables, iterable, body, SpanFrom(start));
     }
 
     // match_stmt = "match" expr ":" NEWLINE INDENT arm { arm } DEDENT
@@ -786,6 +841,20 @@ public sealed class Parser
                 var value = ParseType();
                 Expect(TokenKind.CloseBracket);
                 return new DictType(key, value, SpanFrom(start));
+            }
+            case "tuple":
+            {
+                // One element parses; the binder reports it (TP0209).
+                Expect(TokenKind.OpenBracket);
+                var elements = ImmutableArray.CreateBuilder<TypeSyntax>();
+                elements.Add(ParseType());
+                while (At(TokenKind.Comma))
+                {
+                    Next();
+                    elements.Add(ParseType());
+                }
+                Expect(TokenKind.CloseBracket);
+                return new TupleType(elements.ToImmutable(), SpanFrom(start));
             }
             // A bare `Callable` is a NamedType, which the binder reports (TP0209).
             case "Callable" when At(TokenKind.OpenBracket):
@@ -1032,15 +1101,34 @@ public sealed class Parser
             else if (At(TokenKind.OpenBracket))
             {
                 Next();
-                var index = ParseExpr();
-                Expect(TokenKind.CloseBracket);
-                expr = new IndexExpr(expr, index, SpanFrom(start));
+                expr = ParseSubscript(expr, start);
             }
             else
             {
                 return expr;
             }
         }
+    }
+
+    // subscript = expr | [ expr ] ":" [ expr ] [ ":" [ expr ] ], after the "["
+    private Expr ParseSubscript(Expr target, int start)
+    {
+        var first = At(TokenKind.Colon) ? null : ParseExpr();
+        if (first is not null && !At(TokenKind.Colon))
+        {
+            Expect(TokenKind.CloseBracket);
+            return new IndexExpr(target, first, SpanFrom(start));
+        }
+        Expect(TokenKind.Colon);
+        var stop = At(TokenKind.Colon) || At(TokenKind.CloseBracket) ? null : ParseExpr();
+        Expr? step = null;
+        if (At(TokenKind.Colon))
+        {
+            Next();
+            step = At(TokenKind.CloseBracket) ? null : ParseExpr();
+        }
+        Expect(TokenKind.CloseBracket);
+        return new SliceExpr(target, first, stop, step, SpanFrom(start));
     }
 
     // call = "(" [ arg { "," arg } [ "," ] ] ")"
@@ -1103,12 +1191,27 @@ public sealed class Parser
             case TokenKind.Name:
                 Next();
                 return new NameExpr(token.Text, token.Span);
+            // "(" expr ")" | "(" expr "," [ expr { "," expr } [ "," ] ] ")"
             case TokenKind.OpenParen:
             {
                 Next();
                 var inner = ParseExpr();
+                if (!At(TokenKind.Comma))
+                {
+                    Expect(TokenKind.CloseParen);
+                    return inner;
+                }
+                var elements = ImmutableArray.CreateBuilder<Expr>();
+                elements.Add(inner);
+                while (At(TokenKind.Comma))
+                {
+                    Next();
+                    if (At(TokenKind.CloseParen))
+                        break;
+                    elements.Add(ParseExpr());
+                }
                 Expect(TokenKind.CloseParen);
-                return inner;
+                return new TupleExpr(elements.ToImmutable(), SpanFrom(token.Span.Start));
             }
             case TokenKind.OpenBracket:
             {

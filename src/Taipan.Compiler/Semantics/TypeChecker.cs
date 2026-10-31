@@ -24,6 +24,9 @@ public static class TypeChecker
             return false;
         if (left.ContainsError || right.ContainsError || left == right || (left.IsNumeric && right.IsNumeric))
             return true;
+        // Element by element (SPEC §3.8).
+        if (left is TupleOfType l && right is TupleOfType r)
+            return l.Elements.Length == r.Elements.Length && l.Elements.Zip(r.Elements).All(pair => AreComparable(pair.First, pair.Second));
         if (left is not OptionalOf && right is not OptionalOf)
             return false;
         if (left is NoneType || right is NoneType)
@@ -50,6 +53,7 @@ public static class TypeChecker
             StructType structType => structType with { TypeArguments = [.. structType.TypeArguments.Select(a => Substitute(a, map))] },
             EnumType enumType => enumType with { TypeArguments = [.. enumType.TypeArguments.Select(a => Substitute(a, map))] },
             FunctionType function => new FunctionType([.. function.Parameters.Select(p => Substitute(p, map))], Substitute(function.Result, map)),
+            TupleOfType tuple => new TupleOfType([.. tuple.Elements.Select(e => Substitute(e, map))]),
             _ => type,
         };
     }

@@ -34,6 +34,7 @@ public abstract record TaipanType
         StructType structType => structType.TypeArguments.Any(a => a.ContainsError),
         EnumType enumType => enumType.TypeArguments.Any(a => a.ContainsError),
         FunctionType function => function.Parameters.Any(p => p.ContainsError) || function.Result.ContainsError,
+        TupleOfType tuple => tuple.Elements.Any(e => e.ContainsError),
         _ => false,
     };
 
@@ -50,6 +51,7 @@ public abstract record TaipanType
         ListOfType list => list.Element.IsConvertibleToPython,
         DictOfType dict => dict.Key.IsConvertibleToPython && dict.Value.IsConvertibleToPython,
         OptionalOf optional => optional.Inner.IsConvertibleToPython,
+        TupleOfType tuple => tuple.Elements.All(e => e.IsConvertibleToPython),
         _ => false,
     };
 
@@ -60,6 +62,7 @@ public abstract record TaipanType
         ListOfType list => list.Element.IsCastTarget,
         DictOfType dict => dict.Key.IsCastTarget && dict.Value.IsCastTarget,
         OptionalOf optional => optional.Inner.IsCastTarget,
+        TupleOfType tuple => tuple.Elements.All(e => e.IsCastTarget),
         _ => false,
     };
 
@@ -71,8 +74,12 @@ public abstract record TaipanType
         OptionalOf optional => optional.Inner == Py || optional.Inner.ContainsPy,
         StructType s => s.TypeArguments.Any(a => a == Py || a.ContainsPy),
         EnumType e => e.TypeArguments.Any(a => a == Py || a.ContainsPy),
+        TupleOfType tuple => tuple.Elements.Any(e => e == Py || e.ContainsPy),
         _ => false,
     };
+
+    /// <summary>Whether <c>&lt;</c> orders values of this type: int, float, str, and tuples of those (SPEC §5.3).</summary>
+    public bool IsOrdered => this == Int || this == Float || this == Str || this is TupleOfType { Elements: var elements } && elements.All(e => e.IsOrdered);
 }
 
 public sealed record PrimitiveType(string Name) : TaipanType
@@ -102,6 +109,7 @@ public sealed record DictOfType(TaipanType Key, TaipanType Value) : TaipanType
     /// <summary>Dict keys are limited to int, str and bool (SPEC §3.1).</summary>
     public static bool IsValidKey(TaipanType type) =>
         type.IsError || type == Int || type == Str || type == Bool
+        || type is TupleOfType tuple && tuple.Elements.All(IsValidKey)
         || type is TypeParameterType { Symbol.Constraints: [_, ..] constraints } && constraints.All(IsValidKey);
 }
 
@@ -154,6 +162,16 @@ public sealed record FunctionType(ImmutableArray<TaipanType> Parameters, TaipanT
 
     public override string ToString() =>
         $"Callable[[{string.Join(", ", Parameters)}], {(Result is NothingType ? "none" : Result.ToString())}]";
+}
+
+/// <summary><c>tuple[A, B, …]</c>, with at least two elements (SPEC §3.8). Equal when every element matches.</summary>
+public sealed record TupleOfType(ImmutableArray<TaipanType> Elements) : TaipanType
+{
+    public bool Equals(TupleOfType? other) => other is not null && other.Elements.SequenceEqual(Elements);
+
+    public override int GetHashCode() => Elements.Length;
+
+    public override string ToString() => $"tuple[{string.Join(", ", Elements)}]";
 }
 
 /// <summary>A type parameter inside a generic definition: an opaque type (SPEC §3.6).</summary>

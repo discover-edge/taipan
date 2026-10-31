@@ -291,6 +291,7 @@ public sealed class CSharpEmitter
         StructType structType => string.Join("_", [structType.Symbol.Name, .. structType.TypeArguments.Select(Mangle)]),
         EnumType enumType => string.Join("_", [enumType.Symbol.Name, .. enumType.TypeArguments.Select(Mangle)]),
         FunctionType function => string.Join("_", ["fn", .. function.Parameters.Select(Mangle), function.Result is NothingType ? "none" : Mangle(function.Result)]),
+        TupleOfType tuple => string.Join("_", ["tuple", .. tuple.Elements.Select(Mangle)]),
         _ => "error",
     };
 
@@ -508,6 +509,11 @@ public sealed class CSharpEmitter
             case BoundLocalFunction function:
                 EmitLocalFunction(function);
                 break;
+            case BoundUnpack unpack:
+                LineDirective(unpack.Span);
+                Line($"{TypeName(unpack.Temp.Type)} @{_locals[unpack.Temp]} = {Expr(unpack.Value)};");
+                EmitStatements(unpack.Stores);
+                break;
             default:
                 throw new InvalidOperationException($"unexpected bound statement {stmt.GetType().Name}");
         }
@@ -634,6 +640,25 @@ public sealed class CSharpEmitter
         return $"global::{_programClass}.@{cached.Field}";
     }
 
+    // A value tuple with explicit element types, so each value converts to its element's type.
+    // Past seven elements, C# nests the rest in an eighth.
+    private string NewTuple(ImmutableArray<TaipanType> types, IReadOnlyList<string> values)
+    {
+        var names = types.Select(TypeName).ToList();
+        if (types.Length <= 7)
+            return $"global::System.ValueTuple.Create<{string.Join(", ", names)}>({string.Join(", ", values)})";
+        var rest = $"({string.Join(", ", names.Skip(7))})";
+        var restValue = types.Length == 8 ? $"global::System.ValueTuple.Create<{names[7]}>({values[7]})" : NewTuple([.. types.Skip(7)], [.. values.Skip(7)]);
+        return $"new global::System.ValueTuple<{string.Join(", ", names.Take(7))}, {(types.Length == 8 ? $"global::System.ValueTuple<{names[7]}>" : rest)}>({string.Join(", ", values.Take(7))}, {restValue})";
+    }
+
+    private string Slice(BoundSlice slice)
+    {
+        var parts = string.Join(", ", ((BoundExpr?[])[slice.Start, slice.Stop, slice.Step]).Select(p => p is null ? "null" : Expr(p)));
+        var owner = Concrete(slice.Target.Type) == TaipanType.Py ? Interop : $"{Runtime}.Ops";
+        return $"{owner}.Slice({Expr(slice.Target)}, {parts})";
+    }
+
     // sorted(xs, …) and xs.sort(…): key and reverse are C# named arguments, kept in source order.
     private string Sort(BoundSort sort)
     {
@@ -731,6 +756,9 @@ public sealed class CSharpEmitter
             BoundFunctionValue value => FunctionValue(value),
             BoundInvoke invoke => $"{Operand(invoke.Callee)}.Invoke({Arguments(invoke.Arguments)})",
             BoundSort sort => Sort(sort),
+            BoundTupleLiteral tuple => NewTuple(((TupleOfType)Concrete(tuple.Type)).Elements, [.. tuple.Elements.Select(Expr)]),
+            BoundTupleElement element => $"{Operand(element.Tuple)}.Item{element.Index + 1}",
+            BoundSlice slice => Slice(slice),
             _ => throw new InvalidOperationException($"unexpected bound expression {expr.GetType().Name}"),
         };
     }
@@ -805,7 +833,8 @@ public sealed class CSharpEmitter
         var left = Operand(binary.Left);
         var right = Operand(binary.Right);
         var compared = TypeChecker.Unwrap(leftType) is NoneType ? TypeChecker.Unwrap(Concrete(binary.Right.Type)) : TypeChecker.Unwrap(leftType);
-        var structural = compared is ListOfType or DictOfType or StructType or EnumType;
+        var structural = compared is ListOfType or DictOfType or StructType or EnumType or TupleOfType;
+        var tuple = leftType is TupleOfType;
         return binary.Op switch
         {
             BinaryOp.Add when leftType is ListOfType => $"{Runtime}.Ops.Concat({l}, {r})",
@@ -819,6 +848,7 @@ public sealed class CSharpEmitter
             BinaryOp.NotEqual when structural => $"!{Runtime}.Equality.Equal({l}, {r})",
             BinaryOp.Equal => $"{left} == {right}",
             BinaryOp.NotEqual => $"{left} != {right}",
+            BinaryOp.Less or BinaryOp.LessEqual or BinaryOp.Greater or BinaryOp.GreaterEqual when tuple => $"{Runtime}.Ops.{binary.Op}({l}, {r})",
             BinaryOp.Less or BinaryOp.LessEqual or BinaryOp.Greater or BinaryOp.GreaterEqual when leftType == TaipanType.Str =>
                 $"string.CompareOrdinal({l}, {r}) {TypeChecker.Display(binary.Op)} 0",
             BinaryOp.Less or BinaryOp.LessEqual or BinaryOp.Greater or BinaryOp.GreaterEqual =>
@@ -853,6 +883,8 @@ public sealed class CSharpEmitter
             BuiltinFunction.Float => arguments,
             BuiltinFunction.Map => $"{Runtime}.Ops.Map({arguments})",
             BuiltinFunction.Filter => $"{Runtime}.Ops.Filter({arguments})",
+            BuiltinFunction.Enumerate => $"{Runtime}.Ops.Enumerate({arguments})",
+            BuiltinFunction.Zip => $"{Runtime}.Ops.Zip({arguments})",
             _ => throw new InvalidOperationException($"unexpected builtin {call.Function.Builtin}"),
         };
     }
@@ -876,6 +908,7 @@ public sealed class CSharpEmitter
             BuiltinMethod.DictGet => $"{Runtime}.Ops.GetOrNull({Expr(call.Target)}, {args[0]})",
             BuiltinMethod.DictKeys => $"{Runtime}.Ops.Keys({Expr(call.Target)})",
             BuiltinMethod.DictValues => $"{Runtime}.Ops.Values({Expr(call.Target)})",
+            BuiltinMethod.DictItems => $"{Runtime}.Ops.Items({Expr(call.Target)})",
             BuiltinMethod.DictRemove => $"{target}.Remove({args[0]})",
             BuiltinMethod.StrUpper => $"{target}.ToUpperInvariant()",
             BuiltinMethod.StrLower => $"{target}.ToLowerInvariant()",
@@ -934,6 +967,12 @@ public sealed class CSharpEmitter
             {
                 var (k, e) = ($"@{_locals.Fresh("k")}", $"@{_locals.Fresh("e")}");
                 return $"{Interop}.ToDict({value}, {k} => {Converter(dict.Key, k)}, {e} => {Converter(dict.Value, e)})";
+            }
+            case TupleOfType tuple:
+            {
+                var items = $"@{_locals.Fresh("items")}";
+                var elements = tuple.Elements.Select((element, i) => Converter(element, $"{items}[{i}]"));
+                return $"{Interop}.ToTuple({value}, {tuple.Elements.Length}, {items} => {NewTuple(tuple.Elements, [.. elements])})";
             }
             case OptionalOf optional:
             {
@@ -1040,6 +1079,7 @@ public sealed class CSharpEmitter
         EnumType enumType => $"global::@{InstanceName(enumType.Symbol, enumType.TypeArguments)}",
         OptionalOf optional => $"{TypeName(optional.Inner)}?",
         FunctionType function => $"{Runtime}.Function<{DelegateName(function)}>",
+        TupleOfType tuple => $"({string.Join(", ", tuple.Elements.Select(TypeName))})",
         var other => throw new InvalidOperationException($"no C# type for {other}"),
     };
 
@@ -1053,7 +1093,7 @@ public sealed class CSharpEmitter
 
     /// <summary>Whether the C# type is a value type, whose optional is <c>Nullable&lt;T&gt;</c>.</summary>
     private static bool IsValueType(TaipanType type) =>
-        type == TaipanType.Int || type == TaipanType.Float || type == TaipanType.Bool;
+        type == TaipanType.Int || type == TaipanType.Float || type == TaipanType.Bool || type is TupleOfType;
 
     // ---- Output ----
 

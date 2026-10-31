@@ -1,0 +1,19 @@
+# Slicing (SPEC §5.4), with Python's semantics.
+
+let xs = [0, 1, 2, 3, 4, 5]
+print(xs[1:3], xs[:2], xs[4:], xs[:], xs[::2], xs[::-1])
+print(xs[-2:], xs[:-2], xs[-100:100], xs[5:1], xs[5:1:-1], xs[1:5:-1])
+print(xs[::-2], xs[10:], xs[-1:-3:-1])
+
+let s = "héllo"
+print(s[:2], s[1:], s[::-1], len(s[10:]))
+
+# none means omitted.
+let start: int? = none
+let stop: int? = 2
+print(xs[start:stop])
+
+# A slice is a new list.
+var copy = xs[:]
+copy.append(6)
+print(len(xs), len(copy))

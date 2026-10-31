@@ -1,0 +1,5 @@
+tests/cases/m12/tp0100_tuples.tpn:1:8: error TP0100: expected name, found '='
+tests/cases/m12/tp0100_tuples.tpn:2:5: error TP0100: expected '=', found newline
+tests/cases/m12/tp0100_tuples.tpn:3:6: error TP0100: expected '=', found '+='
+tests/cases/m12/tp0100_tuples.tpn:4:10: error TP0100: expected expression, found ')'
+tests/cases/m12/tp0100_tuples.tpn:5:1: error TP0100: cannot assign to this expression

@@ -62,6 +62,12 @@ public sealed record LetStmt(Identifier Name, TypeSyntax? Type, Expr Value, Text
 
 public sealed record VarStmt(Identifier Name, TypeSyntax? Type, Expr Value, TextSpan Span) : Stmt(Span);
 
+/// <summary><c>let a, b = e</c> or <c>var a, b = e</c>: unpacks a tuple (SPEC §3.8).</summary>
+public sealed record UnpackStmt(bool IsVar, ImmutableArray<Identifier> Names, Expr Value, TextSpan Span) : Stmt(Span);
+
+/// <summary><c>a, b = e</c>: assigns a tuple's elements to the targets, left to right (SPEC §3.8).</summary>
+public sealed record TupleAssignStmt(ImmutableArray<Expr> Targets, Expr Value, TextSpan Span) : Stmt(Span);
+
 public enum AssignOp { Assign, Add, Subtract, Multiply, Divide }
 
 /// <summary><see cref="Target"/> is a <see cref="NameExpr"/>, <see cref="MemberExpr"/> or <see cref="IndexExpr"/>.</summary>
@@ -87,7 +93,8 @@ public sealed record IfClause(Condition Condition, Block Body, TextSpan Span) : 
 
 public sealed record WhileStmt(Condition Condition, Block Body, TextSpan Span) : Stmt(Span);
 
-public sealed record ForStmt(Identifier Variable, Expr Iterable, Block Body, TextSpan Span) : Stmt(Span);
+/// <summary>More than one variable unpacks each element (SPEC §5.2).</summary>
+public sealed record ForStmt(ImmutableArray<Identifier> Variables, Expr Iterable, Block Body, TextSpan Span) : Stmt(Span);
 
 public sealed record MatchStmt(Expr Scrutinee, ImmutableArray<MatchArm> Arms, TextSpan Span) : Stmt(Span);
 
@@ -144,6 +151,9 @@ public sealed record ListType(TypeSyntax Element, TextSpan Span) : TypeSyntax(Sp
 public sealed record DictType(TypeSyntax Key, TypeSyntax Value, TextSpan Span) : TypeSyntax(Span);
 
 public sealed record OptionalType(TypeSyntax Inner, TextSpan Span) : TypeSyntax(Span);
+
+/// <summary><c>tuple[A, B]</c> (SPEC §3.8).</summary>
+public sealed record TupleType(ImmutableArray<TypeSyntax> Elements, TextSpan Span) : TypeSyntax(Span);
 
 /// <summary><c>Callable[[A, B], R]</c>; <see cref="Result"/> is null for a result of <c>none</c> (SPEC §3.7).</summary>
 public sealed record CallableType(ImmutableArray<TypeSyntax> Parameters, TypeSyntax? Result, TextSpan Span) : TypeSyntax(Span);
@@ -203,6 +213,12 @@ public sealed record Argument(Identifier? Name, Expr Value, TextSpan Span) : Nod
 public sealed record MemberExpr(Expr Target, Identifier Member, TextSpan Span) : Expr(Span);
 
 public sealed record IndexExpr(Expr Target, Expr Index, TextSpan Span) : Expr(Span);
+
+/// <summary><c>target[start:stop:step]</c>, with omitted parts null (SPEC §5.4).</summary>
+public sealed record SliceExpr(Expr Target, Expr? Start, Expr? Stop, Expr? Step, TextSpan Span) : Expr(Span);
+
+/// <summary>A tuple, parenthesized or not (SPEC §3.8). The parser accepts one element; the binder reports it.</summary>
+public sealed record TupleExpr(ImmutableArray<Expr> Elements, TextSpan Span) : Expr(Span);
 
 /// <summary><c>lambda x, y: body</c>; a parameter may be <c>_</c> (SPEC §3.7).</summary>
 public sealed record LambdaExpr(ImmutableArray<Identifier> Parameters, Expr Body, TextSpan Span) : Expr(Span);

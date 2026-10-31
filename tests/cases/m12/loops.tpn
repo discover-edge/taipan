@@ -1,0 +1,33 @@
+# enumerate, zip, dict.items and unpacking in for loops (SPEC §5.2, §6).
+
+let names = ["api", "worker", "cron"]
+for i, name in enumerate(names):
+    print(i, name)
+for i, ch in enumerate("hé", 1):
+    print(i, ch)
+for n, ch in enumerate("ab", start=10):
+    print(n, ch)
+
+let counts = {"a": 2, "b": 1}
+for k, v in counts.items():
+    print(k, v)
+print(counts.items())
+print(zip([1, 2, 3], ["x", "y"]))
+for x, y in zip(names, [1, 2, 3]):
+    print(x, y)
+
+# Tuples sort lexicographically, so they make good sort keys.
+struct Service:
+    name: str
+    healthy: int
+
+let services = [Service("web", 2), Service("api", 3), Service("cron", 2)]
+print(map(lambda s: s.name, sorted(services, key=lambda s: (s.healthy, s.name))))
+print(sorted([(2, "b"), (1, "z"), (2, "a")]))
+print(sorted([(1, 1), (1, 2)], reverse=True))
+
+# Each iteration's unpacked names are captured separately.
+var fs: list[Callable[[], str]] = []
+for i, name in enumerate(names):
+    fs.append(lambda: f"{i}:{name}")
+print(map(lambda f: f(), fs))

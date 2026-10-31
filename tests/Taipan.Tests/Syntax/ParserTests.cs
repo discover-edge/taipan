@@ -205,9 +205,60 @@ public class ParserTests
     [Fact]
     public void ForStmt() =>
         Assert.Equal(
-            "ForStmt(i, CallExpr(NameExpr(range), [Argument(null, IntLiteral(1)), Argument(null, IntLiteral(16))]), " +
+            "ForStmt([i], CallExpr(NameExpr(range), [Argument(null, IntLiteral(1)), Argument(null, IntLiteral(16))]), " +
             "Block([ExprStmt(CallExpr(NameExpr(print), [Argument(null, NameExpr(i))]))]))",
             Snapshot("for i in range(1, 16):\n    print(i)\n"));
+
+    // ---- tuples, unpacking and slices (SPEC §3.8, §5.4) ----
+
+    [Theory]
+    [InlineData("(1, (a, b,))", "TupleExpr([IntLiteral(1), TupleExpr([NameExpr(a), NameExpr(b)])])")]
+    [InlineData("(x,)", "TupleExpr([NameExpr(x)])")]
+    [InlineData("(y)", "NameExpr(y)")]
+    public void TupleLiterals(string text, string expected) =>
+        Assert.Equal(expected, Expr(text));
+
+    [Fact]
+    public void UnparenthesizedTuples() =>
+        Assert.Equal(
+            "ReturnStmt(TupleExpr([NameExpr(a), NameExpr(b)]))\n" +
+            "LetStmt(p, null, TupleExpr([IntLiteral(1), IntLiteral(2)]))\n" +
+            "UnpackStmt(True, [x, _], NameExpr(p))\n" +
+            "TupleAssignStmt([NameExpr(x), IndexExpr(NameExpr(xs), IntLiteral(0))], TupleExpr([NameExpr(y), NameExpr(x)]))",
+            Snapshot("return a, b\nlet p = 1, 2\nvar x, _ = p\nx, xs[0] = y, x\n"));
+
+    [Fact]
+    public void ForUnpacking() =>
+        Assert.Equal(
+            "ForStmt([i, x], CallExpr(NameExpr(enumerate), [Argument(null, NameExpr(xs))]), Block([PassStmt]))",
+            Snapshot("for i, x in enumerate(xs):\n    pass\n"));
+
+    [Fact]
+    public void TupleTypes() =>
+        Assert.Equal(
+            "LetStmt(t, OptionalType(TupleType([NamedType(int), ListType(NamedType(str))])), NameExpr(u))",
+            Snapshot("let t: tuple[int, list[str]]? = u\n"));
+
+    [Theory]
+    [InlineData("xs[1:2]", "SliceExpr(NameExpr(xs), IntLiteral(1), IntLiteral(2), null)")]
+    [InlineData("xs[:]", "SliceExpr(NameExpr(xs), null, null, null)")]
+    [InlineData("xs[::]", "SliceExpr(NameExpr(xs), null, null, null)")]
+    [InlineData("xs[::-1]", "SliceExpr(NameExpr(xs), null, null, UnaryExpr(Negate, IntLiteral(1)))")]
+    [InlineData("xs[a:]", "SliceExpr(NameExpr(xs), NameExpr(a), null, null)")]
+    [InlineData("xs[:b:c]", "SliceExpr(NameExpr(xs), null, NameExpr(b), NameExpr(c))")]
+    public void Slices(string text, string expected) =>
+        Assert.Equal(expected, Expr(text));
+
+    [Theory]
+    [InlineData("let a, = t\n", "1:8 TP0100: expected name, found '='")]
+    [InlineData("a, b\n", "1:5 TP0100: expected '=', found newline")]
+    [InlineData("a, b += 1\n", "1:6 TP0100: expected '=', found '+='")]
+    [InlineData("a, f() = 1, 2\n", "1:4 TP0100: cannot assign to this expression")]
+    [InlineData("xs[1:] = ys\n", "1:1 TP0100: cannot assign to this expression")]
+    [InlineData("let t = ()\n", "1:10 TP0100: expected expression, found ')'")]
+    [InlineData("for a, in xs:\n    pass\n", "1:8 TP0100: expected name, found 'in'")]
+    public void TupleSyntaxErrors(string text, string expected) =>
+        Assert.Equal([expected], Errors(text));
 
     // ---- match_stmt / arm / pattern / qual_name ----
 

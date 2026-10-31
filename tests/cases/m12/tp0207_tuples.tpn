@@ -1,0 +1,4 @@
+let a = 1
+if True:
+    let a, b = (1, 2)
+let c, c = (1, 2)

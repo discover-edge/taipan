@@ -1,0 +1,14 @@
+# The C# for tuples, unpacking and slices (SPEC §8).
+
+def divide(a: int, b: int) -> tuple[int, int]:
+    return a // b, a % b
+
+let q, r = divide(7, 2)
+var x = q
+var y = r
+x, y = y, x
+let t = (1, "a")
+print(q, r, x, y, t[1], t == (1, "a"), t < (2, ""))
+for i, c in enumerate("ab"):
+    print(i, c)
+print([1, 2, 3][::-1])

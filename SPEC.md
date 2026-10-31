@@ -102,17 +102,20 @@ block         = NEWLINE INDENT stmt { stmt } DEDENT ;
 stmt          = simple_stmt NEWLINE | compound_stmt ;
 simple_stmt   = let_stmt | var_stmt | assign_stmt | return_stmt
               | "pass" | "break" | "continue" | expr ;
-let_stmt      = "let" NAME [ ":" type ] "=" expr ;
-var_stmt      = "var" NAME [ ":" type ] "=" expr ;
-assign_stmt   = target ( "=" | "+=" | "-=" | "*=" | "/=" ) expr ;
+let_stmt      = "let" ( NAME [ ":" type ] | names ) "=" expr_list ;
+var_stmt      = "var" ( NAME [ ":" type ] | names ) "=" expr_list ;
+names         = NAME "," NAME { "," NAME } ;                         (* unpacking: M12, §3.8 *)
+assign_stmt   = target ( "=" | "+=" | "-=" | "*=" | "/=" ) expr
+              | target "," target { "," target } "=" expr_list ;     (* M12 *)
 target        = NAME | postfix "." NAME | postfix "[" expr "]" ;
-return_stmt   = "return" [ expr ] ;
+return_stmt   = "return" [ expr_list ] ;
+expr_list     = expr { "," expr } ;                                  (* two or more make a tuple: M12 *)
 
 compound_stmt = if_stmt | while_stmt | for_stmt | match_stmt | func_def ;     (* in a block: nested function, M11 *)
 if_stmt       = "if" condition ":" block { "elif" condition ":" block } [ "else" ":" block ] ;
 condition     = expr "is" "some" NAME | expr "is" "none" | expr ;
 while_stmt    = "while" condition ":" block ;
-for_stmt      = "for" NAME "in" expr ":" block ;
+for_stmt      = "for" ( NAME | names ) "in" expr ":" block ;
 match_stmt    = "match" expr ":" NEWLINE INDENT arm { arm } DEDENT ;
 arm           = pattern ":" ( simple_stmt NEWLINE | block ) ;
 pattern       = "_" | [ "-" ] INT | STRING | "True" | "False"
@@ -123,6 +126,7 @@ type          = base_type { "?" } ;                               (* more than o
 base_type     = "int" | "float" | "bool" | "str" | "py"           (* py: M10 *)
               | "list" "[" type "]"
               | "dict" "[" type "," type "]"
+              | "tuple" "[" type { "," type } "]"                    (* M12; fewer than two types is TP0209 *)
               | "Callable" "[" "[" [ type { "," type } ] "]" "," ( type | "none" ) "]"   (* M11, §3.7 *)
               | NAME [ "." NAME ] [ "[" type { "," type } "]" ] ;  (* module.Type: M9 *)
 
@@ -140,11 +144,13 @@ additive      = term { ( "+" | "-" ) term } ;
 term          = unary { ( "*" | "/" | "//" | "%" ) unary } ;
 unary         = "-" unary | cast ;
 cast          = postfix [ "as" type ] ;                            (* M10 *)
-postfix       = atom { call | "." NAME | "[" expr "]" } ;
+postfix       = atom { call | "." NAME | "[" subscript "]" } ;
+subscript     = expr | [ expr ] ":" [ expr ] [ ":" [ expr ] ] ;      (* a slice: M12, §5.4 *)
 call          = "(" [ arg { "," arg } [ "," ] ] ")" ;
 arg           = expr | NAME "=" expr ;
 atom          = INT | FLOAT | STRING | FSTRING | "True" | "False" | "none"
               | NAME | "self" | "(" expr ")"
+              | "(" expr "," [ expr { "," expr } [ "," ] ] ")"         (* a tuple: M12; one element is TP0209 *)
               | "[" [ expr { "," expr } [ "," ] ] "]"
               | "{" [ expr ":" expr { "," expr ":" expr } [ "," ] ] "}" ;
 ```
@@ -154,6 +160,7 @@ atom          = INT | FLOAT | STRING | FSTRING | "True" | "False" | "none"
 - An `arm` may take a simple statement on the same line (`Ok: print("ok")`) or an indented block.
 - Keyword arguments are allowed only in struct and enum-variant constructors (§4.3), in calls to `py` values (§10.2), and for the keyword-only parameters `key` and `reverse` of `sorted` and `list.sort` (M11, §6). Within one call, arguments are either all positional or all keyword. Mixing them is `TP0100`. The exceptions are `py` calls and `sorted`/`sort`, where keyword arguments may follow positional ones, as in Python. A positional argument after a keyword argument is always `TP0100`.
 - A `def` at the top level is a `top_item`, a hoisted global function. A `def` inside a block is a nested function (§3.7).
+- An `expr_list` of two or more expressions is a tuple, as if parenthesized (§3.8): `return lo, hi`, `let p = 1, 2`, `a, b = b, a`. An expression statement can't be a bare tuple: `a, b` alone is `TP0100`.
 - In a cast (`x as T`), a `??` after the type is the coalescing operator, so `x as int? ?? 0` is `(x as int?) ?? 0`.
 - In a type, the lexer's `??` token counts as two `?`, so `int??` parses and the type checker reports `TP0213`.
 - An f-string hole is parsed as exactly one `expr`. Its tokens come from re-lexing the hole's text (§1.3), and positions in its diagnostics refer to the original file.
@@ -180,7 +187,8 @@ atom          = INT | FLOAT | STRING | FSTRING | "True" | "False" | "none"
 | `bool` | `True` / `False` | `bool` |
 | `str` | immutable Unicode string | `string` |
 | `list[T]` | growable array | `List<T>` |
-| `dict[K, V]` | hash map that keeps insertion order; `K` ∈ {`int`, `str`, `bool`}, otherwise `TP0200` | `OrderedDictionary<K, V>` |
+| `dict[K, V]` | hash map that keeps insertion order; `K` ∈ {`int`, `str`, `bool`}, or a tuple of valid keys (M12), otherwise `TP0200` | `OrderedDictionary<K, V>` |
+| `tuple[A, B, …]` | fixed-size, immutable group of values (M12, §3.8) | `ValueTuple<A, B, …>` |
 | `T?` | optional `T` | `T?` (C# nullable) |
 | `py` | dynamic Python object (M10, §10) | `Python.Runtime.PyObject` |
 | `Callable[[A, B], R]` | function value (M11, §3.7) | `Taipan.Runtime.Function<D>` (§8) |
@@ -298,6 +306,34 @@ There are no other implicit conversions. Explicit conversions use the built-ins 
   - A body that returns nothing can't determine a type parameter (`TP0200`).
   - A function-valued argument that isn't a lambda infers from its type like any other argument, matching parameter and result types exactly.
 
+### 3.8 Tuples (M12)
+- **Types:** `tuple[int, str]` holds an `int` and a `str`, as in Python.
+  - A tuple has a fixed number of elements, at least two. `tuple[int]` is `TP0209`. Variable-length `tuple[int, ...]` isn't supported; use a list.
+  - `tuple` is a built-in type name, like `list`.
+  - Elements may have any type that has values, including optionals, lists, functions and other tuples.
+  - A tuple type is assignable only to an identical one, as for lists. A literal is checked against its expected type, though, so `let p: tuple[float, float] = (1, 2)` is valid.
+- **Literals:** `(1, "a")`, with an optional trailing comma.
+  - `(x,)` is `TP0209`. `()` is `TP0100`.
+  - Without parentheses, a tuple can follow `return` or the `=` of a `let`, `var` or assignment (§2): `return lo, hi`, `a, b = b, a`.
+  - Elements are evaluated left to right. With an expected tuple type, each element is checked against its element type. A literal with the wrong number of elements is `TP0200`.
+- **Element access:** `t[0]`, or `t[-1]` from the end.
+  - The index must be an integer literal, optionally negative, within the tuple's length. Otherwise it's `TP0200`.
+  - Tuples are immutable: `t[0] = x` is `TP0202`.
+- **Unpacking:**
+  - `let lo, hi = bounds(xs)` and `var a, b = pair` declare one binding per element.
+  - `for i, x in enumerate(xs)` unpacks each element into loop variables.
+  - `a, b = b, a` assigns to existing targets.
+  - The value must be a tuple (`TP0200` otherwise), with exactly as many elements as there are names (`TP0209`). Lists can't be unpacked, since their length isn't known when compiling. This differs from Python.
+  - `_` ignores an element and may repeat. Unpacking declarations take no annotation: each binding gets its element's type.
+  - In an assignment, the right side is evaluated first. Then, left to right, each target's own sub-expressions are evaluated and the value is stored, so `a, b = b, a` swaps. Every target follows the rules for `=` (`TP0202`). A compound form such as `a, b += 1` is `TP0100`.
+- **Equality and ordering:**
+  - `==` and `!=` compare tuples element by element, structurally, as for lists. Two tuple types are comparable when they have the same length and each pair of element types is comparable.
+  - `<`, `<=`, `>` and `>=` compare lexicographically, as in Python, when every element type is ordered: `int`, `float`, `str`, or a tuple of those. So `sorted(xs, key=lambda s: (s.healthy, s.name))` works.
+- **Dict keys:** a tuple of valid keys is itself a valid key: `dict[tuple[int, int], str]`.
+- **`match`:** a tuple can't be matched on (`TP0200`). Tuple patterns are post-M12.
+- **Display:** `(1, "a")`, with elements written as inside a list.
+- **Generics:** tuple types may be type arguments, and inference matches them element by element.
+
 ---
 
 ## 4. Declarations
@@ -364,7 +400,7 @@ There are no other implicit conversions. Explicit conversions use the built-ins 
 - **Error types:** once an expression has an error, its type is treated as compatible with everything. This means one mistake is reported once, not again at every use.
 
 ### 4.6 Structs, lists and dicts: checking rules
-- **Struct names** live in the type namespace and also in the global value scope, as the struct's constructor. So a struct can't share a name with a function, constant or built-in (`TP0214`), and a local can't take its name (`TP0207`). A struct named `int`, `float`, `bool`, `str`, `list`, `dict`, `py` or `Callable` is also `TP0214`.
+- **Struct names** live in the type namespace and also in the global value scope, as the struct's constructor. So a struct can't share a name with a function, constant or built-in (`TP0214`), and a local can't take its name (`TP0207`). A struct named `int`, `float`, `bool`, `str`, `list`, `dict`, `py`, `Callable` or `tuple` is also `TP0214`.
 - **Members:** field and method names within one struct must be distinct (`TP0214`). Field types may name any struct, including the struct itself, for example through `list[Node]`.
 - **Construction:**
   - The positional form takes exactly one argument per field, in declaration order (`TP0209`).
@@ -379,9 +415,10 @@ There are no other implicit conversions. Explicit conversions use the built-ins 
 - **Literals without an expected type:** all elements (or all keys, or all values) must have the same type, except that `int` and `float` mix to `float`. A mismatch is `TP0200` at the first element that differs.
 - **Assignment targets:**
   - `xs[i] = v` and `d[k] = v` are allowed (a `d[k]` assignment inserts or updates).
-  - `s[i] = v` on a `str` is `TP0202`.
+  - `s[i] = v` on a `str` is `TP0202`, and so is `t[i] = v` on a tuple (M12).
+  - A slice isn't a target (`TP0100`). Slice assignment is post-M12.
   - Compound forms (`xs[f()] += 1`, `make().count += 1`) evaluate the target's sub-expressions once.
-- **Indexing** applies to `list[T]` (`int` index, gives `T`), `dict[K, V]` (`K` key, gives `V`), and `str` (`int` index, gives `str`). Anything else is `TP0200`.
+- **Indexing** applies to `list[T]` (`int` index, gives `T`), `dict[K, V]` (`K` key, gives `V`), `str` (`int` index, gives `str`), and tuples (§3.8). Anything else is `TP0200`.
 - **Built-in methods** follow §6, with argument counts checked by `TP0209`. `d.get` arrives with optionals in M6.
 
 ### 4.7 Modules (M9)
@@ -441,6 +478,7 @@ There are no other implicit conversions. Explicit conversions use the built-ins 
   - `str`, giving `x: str` (one character each)
   - `range(...)`, giving `x: int`
 - The loop variable is a `let` scoped to the body.
+- `for a, b in e` unpacks each element, which must be a tuple with that many elements (§3.8). Each name is a loop variable.
 - Mutating a list or dict while iterating over it panics.
 
 ### 5.3 Operators
@@ -454,8 +492,8 @@ There are no other implicit conversions. Explicit conversions use the built-ins 
 | `%` | int, int | int | result takes the divisor's sign (Python semantics) |
 | `+` | str, str | str | concatenation |
 | `+` | list[T], list[T] | list[T] | new list |
-| `== !=` | same type, or int/float | bool | structural for structs, enums, lists, dicts; identity for functions (§3.7) |
-| `< <= > >=` | numeric, or str (ordinal) | bool | |
+| `== !=` | same type, or int/float | bool | structural for structs, enums, lists, dicts, tuples; identity for functions (§3.7) |
+| `< <= > >=` | numeric, or str (ordinal), or tuples of those (M12) | bool | tuples compare lexicographically |
 | `in`, `not in` | T in list[T]; K in dict[K,V]; str in str | bool | |
 | `??` | T?, T | T | |
 | `and or not` | bool | bool | short-circuit |
@@ -468,7 +506,17 @@ In `a == b` and `a != b`, `a`'s type is `b`'s expected type (§4.6), so `m == No
 - `list[i]` with an int index: out of range panics. Negative indices count from the end, as in Python.
 - `dict[k]`: a missing key panics. Use `d.get(k) -> V?` instead.
 - `str[i] -> str`, one character, with the same rules as list. Characters are Unicode code points, as for `len`.
-- Slicing is post-v0.1.
+- **Slicing (M12):** `xs[a:b]` and `xs[a:b:c]`, with any of the three parts omitted.
+  - It applies to `list[T]`, giving a new `list[T]`, and to `str`, giving a `str`.
+  - Each part is an `int`, or an `int?` where `none` means omitted.
+  - The semantics are Python's:
+    - Negative bounds count from the end, and out-of-range bounds clamp.
+    - A negative step walks backwards, with the omitted bounds defaulting to the ends, so `xs[::-1]` reverses.
+    - A step of 0 panics.
+  - The result is always a new list, never shared with the original.
+  - The target is evaluated first, then the parts, left to right.
+  - Slicing a `py` value slices it in Python and gives `py`.
+  - Anything else, including a tuple or a dict, is `TP0200`.
 
 ---
 
@@ -484,16 +532,18 @@ In `a == b` and `a != b`, `a`'s type is `b`'s expected type (§4.6), so `m == No
 - `range` can only be used as the iterable of a `for` loop. Any other use is `TP0200`.
 - `sorted(xs: list[T], key=…, reverse=False) -> list[T]` (M11) returns a new list in ascending order.
   - `key: Callable[[T], K]` gives each element's sort key. It's called once per element, in list order, before any reordering.
-  - The elements, or the keys when `key` is given, must be `int`, `float` or `str`, and are ordered as by `<`. Otherwise it's `TP0200`. A NaN sorts before every other float.
+  - The elements, or the keys when `key` is given, must be `int`, `float` or `str`, or tuples of those (M12), and are ordered as by `<`. Otherwise it's `TP0200`. A NaN sorts before every other float.
   - `reverse: bool` sorts in descending order.
   - The sort is stable: equal elements keep their original order, with `reverse=True` too, as in Python.
   - `key` and `reverse` are optional and keyword-only.
 - `map(f: Callable[[T], U], xs: list[T]) -> list[U]` and `filter(f: Callable[[T], bool], xs: list[T]) -> list[T]` (M11) call `f` once per element, in order, and return new lists. Python's versions return iterators, which Taipan doesn't have.
-- `sorted`, `sort`, `map` and `filter` iterate their list (§5.2), so a function argument that changes the list panics with `list mutated during iteration`.
+- `enumerate(xs)` and `enumerate(xs, start)` (M12) give a new list of `(index, element)` tuples: `list[tuple[int, T]]` for a `list[T]`, or `list[tuple[int, str]]` for a `str`'s characters. `start` is an `int` that defaults to 0. It may be given by position, or as the keyword argument `start=`, as in Python.
+- `zip(xs: list[A], ys: list[B]) -> list[tuple[A, B]]` (M12) pairs the elements up, stopping at the shorter list, as in Python. It takes exactly two lists.
+- `sorted`, `sort`, `map`, `filter`, `enumerate` and `zip` iterate their lists (§5.2), so a function argument that changes a list panics with `list mutated during iteration`.
 
 **Methods**
 - `list[T]`: `append(x: T)`, `pop() -> T` (removes and returns the last element; panics if empty), `insert(i: int, x: T)` (Python semantics: a negative `i` counts from the end, and out-of-range indices clamp), `contains(x: T) -> bool`, `sort(key=…, reverse=False)` (M11: sorts in place, with the same rules as `sorted`)
-- `dict[K, V]`: `get(k: K) -> V?` (M6), `keys() -> list[K]`, `values() -> list[V]` (new lists, in insertion order), `remove(k: K) -> bool` (`True` if the key was present)
+- `dict[K, V]`: `get(k: K) -> V?` (M6), `keys() -> list[K]`, `values() -> list[V]`, `items() -> list[tuple[K, V]]` (M12) (new lists, in insertion order), `remove(k: K) -> bool` (`True` if the key was present)
 - `str`: `upper() -> str`, `lower() -> str` (invariant-culture case mapping), `strip() -> str` (removes leading and trailing whitespace), `split(sep: str) -> list[str]` (an empty `sep` panics), `startswith(p: str) -> bool`, `endswith(p: str) -> bool`, `replace(old: str, new: str) -> str` (every occurrence; an empty `old` panics)
 - Equality inside `contains`, `in`, `==` and `!=` is structural, as for `==`. Dict equality ignores order.
 
@@ -507,6 +557,7 @@ In `a == b` and `a != b`, `a`'s type is `b`'s expected type (§4.6), so `m == No
 | `none` | `none` |
 | `str` | as-is at top level. Inside a list, dict or struct, written as a literal: in `"` quotes, with `\\`, `\"`, `\n` and `\t` escaped |
 | list | `[1, 2, 3]` |
+| tuple | `(1, "a")` (M12) |
 | dict | `{"a": 1}` |
 | struct | `Service(name="api", replicas=3, healthy=3)` |
 | enum | `Ok`, `Degraded(healthy=1, total=4)` |
@@ -526,6 +577,7 @@ In `a == b` and `a != b`, `a`'s type is `b`'s expected type (§4.6), so `m == No
   - `pop()` on an empty list: `pop from empty list`
   - mutation during iteration: `list mutated during iteration` / `dict mutated during iteration`. Any change to the list or dict being iterated counts, including assigning to an existing element.
   - `split("")` / `replace("", …)`: `empty separator`
+  - a slice step of 0: `slice step cannot be zero` (M12)
   - Python interop (§10.5): `cannot convert Python <type> to <T>`, `Python <ExceptionType>: <message>`, `cannot load Python: <reason>`
   - failed non-optional `as` (M10)
 
@@ -547,6 +599,8 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 | `enum E` | `public abstract record E` with a private constructor; each variant is `public sealed record V(...) : E` nested inside |
 | `T?` | `T?` |
 | `list[T]` / `dict[K, V]` | `List<T>` / `OrderedDictionary<K, V>`. `for` over them goes through a runtime iterator that turns concurrent modification into the §7 panic. |
+| `tuple[A, B]` | a C# value tuple `(A, B)` (M12), with elements read as `Item1`, `Item2`, …. Unpacking stores the value in a temporary first. `==` uses `Taipan.Runtime.Equality.Equal`, and ordering uses a runtime comparison that orders strings by ordinal. In generic instance names, a tuple type is written `tuple_` followed by its element types: `first_tuple_int_str`. |
+| slices | `Taipan.Runtime.Ops.Slice(target, start, stop, step)`, with `null` for an omitted part (M12) |
 | generics | Monomorphized. Each distinct instantiation the program uses becomes its own C# method or type, named after its type arguments: `first_int`, `Box_str`, `Box_list_int`, `Maybe_int_opt` (for `Maybe[int?]`). A clash with another name gets a numeric suffix. Generic definitions that are never instantiated are type-checked but not emitted. |
 | function types | `Taipan.Runtime.Function<D>` (M11), with `D` a `Func<…>` or `Action<…>`. It wraps the delegate and the display name, and calls go through the delegate. A top-level function used as a value is one cached object per function, and each evaluation of a lambda or nested `def` creates a new object, so `==` is reference equality. In generic instance names, a function type is written `fn_` followed by its parameter and result types: `apply_fn_int_str`, `Box_fn_none`. |
 | lambdas, nested `def` | C# lambdas, which capture locals by reference. A `for x in range(…)` loop copies its variable into a fresh local each iteration, so captures see that iteration's value. |
@@ -637,6 +691,7 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0200 | `'<x>' is not a function` / `cannot call <T>` (a callee that isn't a name) |
 | TP0200 | `'<f>' is generic, so it cannot be used as a value` / `built-in '<f>' cannot be used as a value`, with help `wrap it in a lambda` (M11) |
 | TP0200 | `expected <T>, found lambda` / `cannot sort <T>`, with help `pass a key, e.g. 'key=lambda x: ...'` / `cannot sort by <K>` (M11) |
+| TP0200 | `tuple index must be an integer literal` / `index <i> out of range for <T>` (a tuple) / `cannot unpack <T>` / `cannot slice <T>` (M12) |
 | TP0200 | `integer literal is out of range` |
 | TP0200 | `'range' can only be used in a for loop` / `cannot iterate over <T>` |
 | TP0200 | `'<T>' is inferred as both <A> and <B>` / `'<T>' must be <A> or <B>, found <C>` (type-argument inference and constraints; `A, B or C` for longer tuples) |
@@ -646,7 +701,7 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0200 | `'is some' needs an optional, found <T>` / `'is none' needs an optional, found <T>` / `'??' needs an optional on the left, found <T>` |
 | TP0200 | `'<m>' is a method; call it` / `'<f>' is a field, not a method` / `cannot index <T>` / `dict keys must be int, str, or bool, found <T>` |
 | TP0201 | `undefined name '<x>'` / `undefined type '<T>'` / `module '<m>' has no definition '<x>'` |
-| TP0202 | `cannot assign to '<x>': it is a <let binding\|parameter\|loop variable\|constant\|function\|method>`, with help `declare it with 'var'` for a `let` binding / `cannot assign to an element of str` |
+| TP0202 | `cannot assign to '<x>': it is a <let binding\|parameter\|loop variable\|constant\|function\|method>`, with help `declare it with 'var'` for a `let` binding / `cannot assign to an element of str` / `cannot assign to an element of a tuple` |
 | TP0203 | `expected <T>, found <T>?` / `<T>? must be narrowed before use`, with help `narrow it with 'is some', or give a default with '??'` |
 | TP0204 | `non-exhaustive match (missing: <a>, <b>)` |
 | TP0205 | `condition must be bool, found <T>` (with help `convert it with 'as bool'` for `py`) |
@@ -655,6 +710,7 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0208 | `not all paths in '<f>' return a value` |
 | TP0209 | `'<S>' takes <n> type arguments, found <m>` (`type argument` when n is 1) |
 | TP0209 | `'<v>' has <n> fields, found <m> bindings` (variant patterns; `field` / `binding` when the count is 1) |
+| TP0209 | `<T> has <n> elements, found <m> names` (unpacking) / `a tuple needs at least two elements` (M12) |
 | TP0209 | `'<f>' takes <n> arguments, found <m>` (`argument` when n is 1; `1 or 2 arguments` for `range`; `function takes …` when the callee isn't a name) / `missing field '<f>' in '<S>'` / `field '<f>' is given more than once` / `argument '<k>' is given more than once` |
 | TP0209 | `expected a lambda with <n> parameters, found <m>` (`parameter` when n is 1) / `'Callable' takes a parameter list and a result type` |
 | TP0210 | `<T> has no field '<x>'` / `<T> has no method '<x>'` / `<E> has no variant '<x>'` |
@@ -697,7 +753,7 @@ Types are written as in source: `int`, `str?`, `list[int]`. The type of `none` i
 - `py` may annotate variables, parameters, return types, fields and collection elements (`list[py]`). It can't be a dict key (§3.1). A list, dict or optional containing `py` can't be compared with `==` (`TP0200`), since Python objects have no Taipan equality.
 
 ### 10.3 Taipan → Python
-- These Taipan types are *convertible*: `int`, `float`, `bool`, `str`, `none`, `list[T]` and `dict[K, V]` of convertible types, `T?` of a convertible `T`, and `py` itself.
+- These Taipan types are *convertible*: `int`, `float`, `bool`, `str`, `none`, `list[T]` and `dict[K, V]` of convertible types, tuples of convertible types (M12, converted to a Python `tuple`), `T?` of a convertible `T`, and `py` itself.
 - A convertible value is converted when it's passed into a `py` operation, and when it's assigned to something of type `py` (so `let x: py = [1, 2]` is valid).
 - Lists and dicts are copied, so changes on either side aren't seen by the other.
 - **Mixed literals:** in a `py` operation's arguments and operands, a list literal has element type `py` and a dict literal has value type `py`, so their elements may mix types: `json.dumps({"xs": [1, 2], "ok": True, "none": none})`.
@@ -713,6 +769,7 @@ Types are written as in source: `int`, `str?`, `list[int]`. The type of `none` i
   - `str`: a Python `str`.
   - `list[T]`: a Python `list` or `tuple` whose every element converts to `T`.
   - `dict[K, V]`: a Python `dict` whose every key converts to `K` and every value to `V`.
+  - `tuple[A, B, …]` (M12): a Python `tuple` or `list` with exactly that many elements, each converting to its type.
   - `T?` inside another target (for example `list[int?]`): Python `None` becomes `none`, and anything else converts as `T`. As the outer target, `x as int?` gives `none` both for `None` and on a mismatch.
   - `py`: always succeeds, so `x as py` is allowed but pointless.
   - Any other target (a struct, an enum) is `TP0200`.
@@ -736,8 +793,10 @@ Types are written as in source: `int`, `str?`, `list[int]`. The type of `none` i
 - protocols (structural interfaces)
 - generic functions, built-ins, methods and constructors as values (wrap them in a lambda)
 - iterators and generators (`map` and `filter` return lists)
-- tuples
-- slicing
+- tuple patterns in `match`
+- nested unpacking (`let (a, b), c = …`) and unpacking lists
+- slice assignment and `del`
+- `zip` of more than two lists
 - `match` as an expression
 - flow-sensitive narrowing after early return
 - exceptions and `try`

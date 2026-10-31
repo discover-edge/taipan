@@ -1,0 +1,6 @@
+let t = (1, 2)
+t[0] = 5
+let a, b = t
+a = 3
+for x, y in [t]:
+    x = 1

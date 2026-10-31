@@ -1,0 +1,18 @@
+0 api
+1 worker
+2 cron
+1 h
+2 é
+10 a
+11 b
+a 2
+b 1
+[("a", 2), ("b", 1)]
+[(1, "x"), (2, "y")]
+api 1
+worker 2
+cron 3
+["cron", "web", "api"]
+[(1, "z"), (2, "a"), (2, "b")]
+[(1, 2), (1, 1)]
+["0:api", "1:worker", "2:cron"]

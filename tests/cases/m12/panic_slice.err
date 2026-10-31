@@ -1,0 +1,2 @@
+panic: slice step cannot be zero
+  at tests/cases/m12/panic_slice.tpn:4

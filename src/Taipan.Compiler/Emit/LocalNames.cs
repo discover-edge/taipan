@@ -91,12 +91,14 @@ public sealed class LocalNames
     }
 
     private static IEnumerable<VariableSymbol> DirectDeclarations(IEnumerable<BoundStmt> statements) =>
-        statements.Select(s => s switch
+        statements.SelectMany(s => s switch
         {
-            BoundVariableDecl decl => decl.Symbol,
-            BoundLocalFunction function => function.Symbol,
-            _ => null,
-        }).OfType<VariableSymbol>();
+            BoundVariableDecl decl => [decl.Symbol],
+            BoundLocalFunction function => [function.Symbol],
+            // An unpacking's temporary and declarations are emitted in the enclosing block.
+            BoundUnpack unpack => [unpack.Temp, .. DirectDeclarations(unpack.Stores)],
+            _ => (IEnumerable<VariableSymbol>)[],
+        });
 
     /// <summary>The <c>is some</c> bindings in a statement's own conditions.</summary>
     private static IEnumerable<VariableSymbol> Bindings(BoundStmt stmt) => stmt switch
