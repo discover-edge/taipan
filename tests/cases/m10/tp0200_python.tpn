@@ -1,0 +1,14 @@
+from python import json
+
+struct Service:
+    name: str
+
+let svc = Service("api")
+json.dumps(svc)
+let x: py = svc
+let n: int = json.loads("1")
+let s = "text" as str
+let bad = json.loads("1") as Service
+let a: list[py] = [json.loads("1")]
+print(a == a)
+let ok: list[py] = [1, "two", none]

@@ -1,0 +1,6 @@
+tests/cases/m10/tp0205_python.tpn:4:4: error TP0205: condition must be bool, found py
+  help: convert it with 'as bool'
+tests/cases/m10/tp0205_python.tpn:6:11: error TP0205: condition must be bool, found py
+  help: convert it with 'as bool'
+tests/cases/m10/tp0205_python.tpn:8:12: error TP0205: condition must be bool, found py
+  help: convert it with 'as bool'

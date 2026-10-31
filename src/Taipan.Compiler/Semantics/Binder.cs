@@ -56,6 +56,8 @@ public sealed class Binder
 
         public List<(MethodDef Syntax, FunctionSymbol Symbol)> Methods { get; } = [];
 
+        public List<BoundPythonImport> PythonImports { get; } = [];
+
         /// <summary><c>from m import x</c> names that weren't types, resolved once functions and constants exist.</summary>
         public List<(Module Target, ImportName Name)> PendingImports { get; } = [];
 
@@ -168,10 +170,12 @@ public sealed class Binder
         _scope = new Scope(_global);
         var unit = main.File.Unit;
         var topLevel = unit.Items.OfType<Stmt>().Select(BindStmt).ToImmutableArray();
+        var order = InitializationOrder(main, byName);
         return new BoundProgram(
+            [.. order.SelectMany(m => m.PythonImports)],
             [.. modules.SelectMany(m => m.EnumDefs.Select(e => e.Symbol))],
             [.. structs],
-            [.. InitializationOrder(main, byName).SelectMany(m => m.Constants)],
+            [.. order.SelectMany(m => m.Constants)],
             [.. functions],
             new BoundBlock(topLevel, unit.Span));
     }
@@ -211,8 +215,17 @@ public sealed class Binder
             switch (item)
             {
                 case ImportStmt import when import.Module.Text == ModuleLoader.PythonModule:
-                case FromImportStmt { Module.Text: ModuleLoader.PythonModule }:
-                    Unsupported("Python interop");
+                    _diagnostics.ReportPythonNotModule(import.Module.Span);
+                    break;
+                case FromImportStmt { Module.Text: ModuleLoader.PythonModule } fromPython:
+                    // Each name holds a Python module, imported at startup (SPEC §10.1).
+                    foreach (var name in fromPython.Names)
+                    {
+                        var bound = name.Alias ?? name.Name;
+                        var symbol = new VariableSymbol(bound.Text, TaipanType.Py, VariableKind.Constant);
+                        if (DeclareGlobal(bound, symbol, isDefinition: false))
+                            module.PythonImports.Add(new BoundPythonImport(symbol, name.Name.Text, name.Span, _source));
+                    }
                     break;
                 case ImportStmt import when byName.TryGetValue(import.Module.Text, out var target):
                     var alias = import.Alias ?? import.Module;
@@ -682,7 +695,7 @@ public sealed class Binder
             case NamedType { Name.Text: "str" }:
                 return TaipanType.Str;
             case NamedType { Name.Text: "py" }:
-                return Unsupported("the py type");
+                return TaipanType.Py;
             case NamedType named when _typeParameters.TryGetValue(named.Name.Text, out var typeParameter):
                 return typeParameter;
             case NamedType named when ResolveTypeName(named.Name.Text) is { } typeSymbol:
@@ -1049,6 +1062,12 @@ public sealed class Binder
         var target = BindValue(member.Target);
         if (target.Type.ContainsError || ReportIfOptional(target, member.Target.Span))
             return new BoundExprStmt(BindValue(assign.Value), assign.Span);
+        if (target.Type == TaipanType.Py)
+        {
+            var current = new BoundPyGetAttr(target, member.Member.Text, member.Span);
+            var pyValue = BindAssignedValue(assign, current, TaipanType.Py);
+            return new BoundPySetAttr(target, member.Member.Text, pyValue, assign.Op != AssignOp.Assign, assign.Span);
+        }
 
         if (target.Type is StructType { Symbol: var structSymbol })
         {
@@ -1080,6 +1099,11 @@ public sealed class Binder
         }
 
         var read = BindIndexOf(target, indexExpr);
+        if (read is BoundPyGetItem pyItem)
+        {
+            var pyValue = BindAssignedValue(assign, pyItem, TaipanType.Py);
+            return new BoundPySetItem(target, pyItem.Index, pyValue, assign.Op != AssignOp.Assign, assign.Span);
+        }
         if (read is not BoundIndex index)
             return new BoundExprStmt(BindValue(assign.Value), assign.Span);
 
@@ -1229,6 +1253,7 @@ public sealed class Binder
                 ListOfType list => list.Element,
                 DictOfType dict => dict.Key,
                 PrimitiveType { Name: "str" } => TaipanType.Str,
+                PrimitiveType { Name: "py" } => TaipanType.Py,
                 { ContainsError: true } => TaipanType.Error,
                 OptionalOf when ReportIfOptional(iterable, forStmt.Iterable.Span) => TaipanType.Error,
                 _ => CannotIterate(forStmt.Iterable.Span, iterable.Type),
@@ -1290,7 +1315,60 @@ public sealed class Binder
     {
         var value = BindValue(expr, expected);
         CheckAssignable(value, expected, expr.Span);
+        // A Taipan value where a py is expected is converted to Python (SPEC §10.3).
+        if (expected == TaipanType.Py && value.Type != TaipanType.Py && !value.Type.ContainsError && value.Type.IsConvertibleToPython)
+            return new BoundToPy(value, value.Span);
         return value;
+    }
+
+    /// <summary>
+    /// A value passed into a py operation: it must be convertible to Python (SPEC §10.3). py is its
+    /// expected type, so list and dict literals here may mix element types.
+    /// </summary>
+    private BoundExpr BindPyArgument(Expr expr)
+    {
+        var value = BindValue(expr, TaipanType.Py);
+        if (!value.Type.IsConvertibleToPython)
+            _diagnostics.ReportCannotPassToPython(expr.Span, value.Type);
+        return value;
+    }
+
+    /// <summary>A call to a py value: positional then keyword arguments, all converted (SPEC §10.2).</summary>
+    private BoundPyCall BindPyCall(CallExpr call, BoundExpr callee)
+    {
+        var positional = call.Arguments.Where(a => a.Name is null).Select(a => BindPyArgument(a.Value)).ToImmutableArray();
+        var keywords = call.Arguments.Where(a => a.Name is not null).Select(a => (a.Name!.Text, BindPyArgument(a.Value))).ToImmutableArray();
+        return new BoundPyCall(callee, positional, keywords, call.Span);
+    }
+
+    /// <summary>
+    /// Positional then keyword arguments are only valid in calls to py values (SPEC §2): TP0100
+    /// anywhere else. (The parser rejects a positional argument after a keyword.)
+    /// </summary>
+    private bool ReportMixedArguments(CallExpr call)
+    {
+        if (!call.Arguments.Any(a => a.Name is null) || call.Arguments.FirstOrDefault(a => a.Name is not null) is not { } keyword)
+            return false;
+        _diagnostics.ReportMixedArguments(keyword.Span);
+        return true;
+    }
+
+    // `x as T` (SPEC §10.4): x must be py, and T a type Python values can convert to.
+    private BoundExpr BindCast(CastExpr cast)
+    {
+        var value = BindValue(cast.Value);
+        var target = BindType(cast.Type);
+        if (value.Type != TaipanType.Py && !value.Type.ContainsError)
+        {
+            _diagnostics.ReportCastNeedsPy(cast.Value.Span, value.Type);
+            return new BoundErrorExpr(cast.Span);
+        }
+        if (!target.IsCastTarget)
+        {
+            _diagnostics.ReportCannotCastTo(cast.Type.Span, target);
+            return new BoundErrorExpr(cast.Span);
+        }
+        return new BoundCast(value, target, cast.Span);
     }
 
     /// <summary>Binds an expression whose value is used: a call without a return type is TP0200.</summary>
@@ -1328,6 +1406,7 @@ public sealed class Binder
         MemberExpr member => BindMember(member, expected),
         IndexExpr index => BindIndexOf(BindValue(index.Target), index),
         NoneLiteral => new BoundNone(expr.Span),
+        CastExpr cast => BindCast(cast),
         ErrorExpr => new BoundErrorExpr(expr.Span),
         _ => throw new InvalidOperationException($"unexpected expression {expr.GetType().Name}"),
     };
@@ -1404,6 +1483,8 @@ public sealed class Binder
             return new BoundUnary(unary.Op, operand, TaipanType.Bool, unary.Span);
         }
 
+        if (operand.Type == TaipanType.Py)
+            return new BoundUnary(unary.Op, operand, TaipanType.Py, unary.Span);
         if (!operand.Type.IsNumeric)
         {
             _diagnostics.ReportUnaryOperatorType(unary.Span, "-", operand.Type);
@@ -1416,6 +1497,8 @@ public sealed class Binder
     {
         if (left.Type.ContainsError || right.Type.ContainsError)
             return new BoundBinary(left, op, right, TaipanType.Error, span);
+        if (left.Type == TaipanType.Py || right.Type == TaipanType.Py)
+            return BindPyBinary(left, op, right, span);
         // Only == and != accept optionals (SPEC §3.4).
         if (op is not (BinaryOp.Equal or BinaryOp.NotEqual)
             && (ReportIfOptional(left, left.Span) | ReportIfOptional(right, right.Span)))
@@ -1431,6 +1514,20 @@ public sealed class Binder
             _ => CheckOperands(left, op, right, span, TypeChecker.Arithmetic(op, left.Type, right.Type)),
         };
         return new BoundBinary(left, op, right, type, span);
+    }
+
+    // With a py operand, Python does the operation and the result is py, comparisons included.
+    // `and`/`or` need bool operands, so a py one is TP0205 (SPEC §10.2).
+    private BoundExpr BindPyBinary(BoundExpr left, BinaryOp op, BoundExpr right, TextSpan span)
+    {
+        if (op is BinaryOp.And or BinaryOp.Or)
+            return new BoundBinary(left, op, right, CheckLogicalOperands(left, right), span);
+        foreach (var operand in (ReadOnlySpan<BoundExpr>)[left, right])
+        {
+            if (!operand.Type.IsConvertibleToPython)
+                _diagnostics.ReportCannotPassToPython(operand.Span, operand.Type);
+        }
+        return new BoundBinary(left, op, right, TaipanType.Py, span);
     }
 
     // `x ?? d` (SPEC §3.4): the default is checked against T; a T? default keeps the result optional.
@@ -1507,6 +1604,9 @@ public sealed class Binder
 
     private BoundExpr BindList(ListExpr list, TaipanType? expected)
     {
+        // Bound for Python: a list[py] whose elements may have any convertible types (SPEC §10.3).
+        if (expected == TaipanType.Py)
+            expected = new ListOfType(TaipanType.Py);
         if (expected is ListOfType expectedList)
         {
             var checkedElements = list.Elements.Select(e => BindExpected(e, expectedList.Element)).ToImmutableArray();
@@ -1525,6 +1625,16 @@ public sealed class Binder
 
     private BoundExpr BindDict(DictExpr dict, TaipanType? expected)
     {
+        // Bound for Python: values may have any convertible types; keys keep the usual rules.
+        if (expected == TaipanType.Py && !dict.Entries.IsEmpty)
+        {
+            var pyKeys = dict.Entries.Select(e => BindValue(e.Key)).ToImmutableArray();
+            var pyKeyType = InferElementType(pyKeys);
+            if (!DictOfType.IsValidKey(pyKeyType))
+                _diagnostics.ReportInvalidDictKey(dict.Entries[0].Key.Span, pyKeyType);
+            var pyValues = dict.Entries.Select(e => BindExpected(e.Value, TaipanType.Py)).ToImmutableArray();
+            return new BoundDictLiteral([.. pyKeys.Zip(pyValues)], new DictOfType(pyKeyType, TaipanType.Py), dict.Span);
+        }
         if (expected is DictOfType expectedDict)
         {
             var checkedEntries = dict.Entries
@@ -1603,6 +1713,8 @@ public sealed class Binder
         var name = member.Member.Text;
         if (target.Type.ContainsError || ReportIfOptional(target, member.Target.Span))
             return new BoundErrorExpr(member.Span);
+        if (target.Type == TaipanType.Py)
+            return new BoundPyGetAttr(target, name, member.Span);
 
         if (target.Type is StructType { Symbol: var structSymbol })
         {
@@ -1639,6 +1751,8 @@ public sealed class Binder
                 ReportIfOptional(target, indexExpr.Target.Span);
                 BindValue(indexExpr.Index);
                 return new BoundErrorExpr(indexExpr.Span);
+            case PrimitiveType { Name: "py" }:
+                return new BoundPyGetItem(target, BindPyArgument(indexExpr.Index), indexExpr.Span);
             case ListOfType list:
                 return new BoundIndex(target, BindExpected(indexExpr.Index, TaipanType.Int), list.Element, indexExpr.Span);
             case DictOfType dict:
@@ -1662,6 +1776,8 @@ public sealed class Binder
         if (call.Callee is not NameExpr calleeName)
         {
             var callee = BindValue(call.Callee);
+            if (callee.Type == TaipanType.Py)
+                return BindPyCall(call, callee);
             BindArguments(call);
             if (!callee.Type.ContainsError)
                 _diagnostics.ReportNotAFunction(call.Callee.Span, _source.ToString(call.Callee.Span));
@@ -1674,6 +1790,13 @@ public sealed class Binder
     /// <summary>A call whose callee names <paramref name="symbol"/>, directly or through a module.</summary>
     private BoundExpr BindSymbolCall(CallExpr call, Symbol? symbol, string name, TextSpan nameSpan, TaipanType? expected)
     {
+        if (symbol is VariableSymbol { Type: PrimitiveType { Name: "py" } } python)
+            return BindPyCall(call, new BoundVariable(python, nameSpan));
+        if (ReportMixedArguments(call))
+        {
+            BindArguments(call);
+            return new BoundErrorExpr(call.Span);
+        }
         switch (symbol)
         {
             case StructSymbol structSymbol:
@@ -2043,6 +2166,13 @@ public sealed class Binder
 
         var target = BindValue(member.Target);
         var name = member.Member.Text;
+        if (target.Type == TaipanType.Py)
+            return BindPyCall(call, new BoundPyGetAttr(target, name, member.Span));
+        if (ReportMixedArguments(call))
+        {
+            BindArguments(call);
+            return new BoundErrorExpr(call.Span);
+        }
         ReportKeywordArguments(call);
         if (target.Type.ContainsError || ReportIfOptional(target, member.Target.Span))
         {
@@ -2130,7 +2260,7 @@ public sealed class Binder
             return new BoundCall(function, arguments, function.ReturnType, call.Span);
         switch (builtin)
         {
-            case BuiltinFunction.Len when argument.Type is not (ListOfType or DictOfType) && !argument.Type.ContainsError:
+            case BuiltinFunction.Len when argument.Type is not (ListOfType or DictOfType) && argument.Type != TaipanType.Py && !argument.Type.ContainsError:
                 CheckAssignable(argument, TaipanType.Str, argumentSpan, "str, list or dict");
                 break;
             case BuiltinFunction.Int or BuiltinFunction.Float when argument.Type == TaipanType.Str:
@@ -2150,6 +2280,11 @@ public sealed class Binder
     {
         if (TypeChecker.IsAssignable(value.Type, target))
             return;
+        if (target == TaipanType.Py)
+        {
+            _diagnostics.ReportCannotPassToPython(span, value.Type);
+            return;
+        }
         if (value.Type is OptionalOf optional && TypeChecker.IsAssignable(optional.Inner, target))
             _diagnostics.ReportOptionalNotNarrowed(span, expectedText ?? target.ToString(), value.Type);
         else

@@ -198,4 +198,7 @@ public sealed record MemberExpr(Expr Target, Identifier Member, TextSpan Span) :
 
 public sealed record IndexExpr(Expr Target, Expr Index, TextSpan Span) : Expr(Span);
 
+/// <summary><c>x as T</c>: converts a py value to a Taipan type (SPEC §10.4).</summary>
+public sealed record CastExpr(Expr Value, TypeSyntax Type, TextSpan Span) : Expr(Span);
+
 public sealed record ErrorExpr(TextSpan Span) : Expr(Span);

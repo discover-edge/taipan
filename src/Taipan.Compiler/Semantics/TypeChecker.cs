@@ -10,6 +10,7 @@ public static class TypeChecker
     public static bool IsAssignable(TaipanType from, TaipanType to) =>
         from.ContainsError || to.ContainsError || from == to
         || (from == TaipanType.Int && to == TaipanType.Float)
+        || (to == TaipanType.Py && from.IsConvertibleToPython)
         || (to is OptionalOf optional && (from is NoneType || (from is not OptionalOf && IsAssignable(from, optional.Inner))));
 
     /// <summary>
@@ -18,6 +19,9 @@ public static class TypeChecker
     /// </summary>
     public static bool AreComparable(TaipanType left, TaipanType right)
     {
+        // Python objects inside Taipan collections have no Taipan equality (SPEC §10.2).
+        if (left.ContainsPy || right.ContainsPy)
+            return false;
         if (left.ContainsError || right.ContainsError || left == right || (left.IsNumeric && right.IsNumeric))
             return true;
         if (left is not OptionalOf && right is not OptionalOf)

@@ -16,6 +16,9 @@ public abstract record TaipanType
     /// <summary>The type of an expression that already has an error; compatible with everything.</summary>
     public static readonly TaipanType Error = new ErrorType();
 
+    /// <summary>A dynamic Python object (SPEC §10.2).</summary>
+    public static readonly TaipanType Py = new PrimitiveType("py");
+
     /// <summary>The type of <c>none</c>, assignable to every optional (SPEC §3.4).</summary>
     public static readonly TaipanType None = new NoneType();
 
@@ -34,6 +37,41 @@ public abstract record TaipanType
     };
 
     public bool IsNumeric => this == Int || this == Float;
+
+    /// <summary>
+    /// Whether values of this type can be passed to Python (SPEC §10.3): int, float, bool, str,
+    /// none, py, and lists, dicts and optionals of convertible types.
+    /// </summary>
+    public bool IsConvertibleToPython => this switch
+    {
+        ErrorType or NoneType => true,
+        PrimitiveType => true,
+        ListOfType list => list.Element.IsConvertibleToPython,
+        DictOfType dict => dict.Key.IsConvertibleToPython && dict.Value.IsConvertibleToPython,
+        OptionalOf optional => optional.Inner.IsConvertibleToPython,
+        _ => false,
+    };
+
+    /// <summary>Whether <c>as</c> can convert a py value to this type (SPEC §10.4).</summary>
+    public bool IsCastTarget => this switch
+    {
+        ErrorType or PrimitiveType => true,
+        ListOfType list => list.Element.IsCastTarget,
+        DictOfType dict => dict.Key.IsCastTarget && dict.Value.IsCastTarget,
+        OptionalOf optional => optional.Inner.IsCastTarget,
+        _ => false,
+    };
+
+    /// <summary>True for a list, dict or optional with py somewhere inside (not py itself).</summary>
+    public bool ContainsPy => this switch
+    {
+        ListOfType list => list.Element == Py || list.Element.ContainsPy,
+        DictOfType dict => dict.Value == Py || dict.Value.ContainsPy,
+        OptionalOf optional => optional.Inner == Py || optional.Inner.ContainsPy,
+        StructType s => s.TypeArguments.Any(a => a == Py || a.ContainsPy),
+        EnumType e => e.TypeArguments.Any(a => a == Py || a.ContainsPy),
+        _ => false,
+    };
 }
 
 public sealed record PrimitiveType(string Name) : TaipanType

@@ -20,6 +20,8 @@ public sealed class CSharpEmitter
 {
     private const string Runtime = "global::Taipan.Runtime";
     private const string Collections = "global::System.Collections.Generic";
+    private const string Interop = "global::Taipan.Runtime.Interop";
+    private const string PyObject = "global::Python.Runtime.PyObject";
 
     // Generic instantiations nested deeper than this are polymorphic recursion (SPEC §3.6, TP0219).
     private const int MaxInstantiationDepth = 32;
@@ -84,6 +86,7 @@ public sealed class CSharpEmitter
         _globalNames = [.. program.Enums.SelectMany(e => e.Variants.Select(v => v.Name))];
         IEnumerable<Symbol> definitions =
         [
+            .. program.PythonImports.Select(p => p.Symbol),
             .. program.Constants.Select(c => c.Symbol),
             .. program.Functions.Select(f => f.Symbol).Distinct(),
             .. program.Structs.Select(s => s.Symbol),
@@ -129,9 +132,11 @@ public sealed class CSharpEmitter
     private string EmitProgram()
     {
         _indent = 1;
+        foreach (var import in _program.PythonImports)
+            Line($"public static {PyObject} @{_names[import.Symbol]} = default!;");
         foreach (var constant in _program.Constants)
             Line($"public static {TypeName(constant.Symbol.Type)} @{_names[constant.Symbol]} = default!;");
-        if (!_program.Constants.IsEmpty)
+        if (!_program.Constants.IsEmpty || !_program.PythonImports.IsEmpty)
             Line();
 
         EmitTopLevel();
@@ -268,6 +273,13 @@ public sealed class CSharpEmitter
         Line($"public static void {_topLevelMethod}()");
         Line("{");
         _indent++;
+        // Python modules are imported first, then constants are initialized (SPEC §10.1).
+        foreach (var import in _program.PythonImports)
+        {
+            _lineSource = import.Source;
+            LineDirective(import.Span);
+            Line($"@{_names[import.Symbol]} = {Interop}.Import(\"{import.Module}\");");
+        }
         foreach (var constant in _program.Constants)
         {
             _lineSource = constant.Source ?? _source;
@@ -403,6 +415,16 @@ public sealed class CSharpEmitter
                 EmitCompound(assign.IsCompound, [assign.Target, assign.Index],
                     () => Line($"{Runtime}.Ops.SetIndex({Expr(assign.Target)}, {Expr(assign.Index)}, {Expr(assign.Value)});"));
                 break;
+            case BoundPySetAttr assign:
+                LineDirective(assign.Span);
+                EmitCompound(assign.IsCompound, [assign.Target],
+                    () => Line($"{Interop}.SetAttr({Expr(assign.Target)}, \"{assign.Name}\", {Expr(assign.Value)});"));
+                break;
+            case BoundPySetItem assign:
+                LineDirective(assign.Span);
+                EmitCompound(assign.IsCompound, [assign.Target, assign.Index],
+                    () => Line($"{Interop}.SetItem({Expr(assign.Target)}, {Expr(assign.Index)}, {Expr(assign.Value)});"));
+                break;
             case BoundReturn ret:
                 LineDirective(ret.Span);
                 Line(ret.Value is null ? "return;" : $"return {Expr(ret.Value)};");
@@ -423,7 +445,7 @@ public sealed class CSharpEmitter
                 LineDirective(cont.Span);
                 Line("continue;");
                 break;
-            case BoundExprStmt { Expr: BoundCall or BoundMethodCall or BoundBuiltinMethodCall } exprStmt:
+            case BoundExprStmt { Expr: BoundCall or BoundMethodCall or BoundBuiltinMethodCall or BoundPyCall } exprStmt:
                 LineDirective(exprStmt.Span);
                 Line($"{Expr(exprStmt.Expr)};");
                 break;
@@ -444,7 +466,8 @@ public sealed class CSharpEmitter
                 break;
             case BoundForEach forEach:
                 LineDirective(forEach.Span);
-                Line($"foreach ({TypeName(forEach.Variable.Type)} @{_locals[forEach.Variable]} in {Runtime}.Iter.Over({Expr(forEach.Iterable)}))");
+                var iterate = Concrete(forEach.Iterable.Type) == TaipanType.Py ? $"{Interop}.Iterate" : $"{Runtime}.Iter.Over";
+                Line($"foreach ({TypeName(forEach.Variable.Type)} @{_locals[forEach.Variable]} in {iterate}({Expr(forEach.Iterable)}))");
                 EmitLoopBody(forEach.Body);
                 break;
             case BoundMatch match:
@@ -593,6 +616,7 @@ public sealed class CSharpEmitter
             BoundVariable variable when variable.Symbol == _self => "this",
             BoundVariable { Symbol.Kind: VariableKind.Constant } variable => Global(_names[variable.Symbol]),
             BoundVariable variable => $"@{_locals[variable.Symbol]}",
+            BoundUnary { Op: UnaryOp.Negate, Type: PrimitiveType { Name: "py" } } unary => $"{Interop}.Negate({Expr(unary.Operand)})",
             BoundUnary { Op: UnaryOp.Negate } unary when OverflowsAtCompileTime(unary) =>
                 $"{Runtime}.Ops.Negate({Expr(unary.Operand)})",
             BoundUnary unary => $"{(unary.Op == UnaryOp.Negate ? "-" : "!")}{Operand(unary.Operand)}",
@@ -608,6 +632,11 @@ public sealed class CSharpEmitter
             BoundMethodCall call => $"{Operand(call.Target)}.@{call.Method.Name}({Arguments(call.Arguments)})",
             BoundBuiltinMethodCall call => BuiltinMethodCall(call),
             BoundNone => "null",
+            BoundPyGetAttr get => $"{Interop}.GetAttr({Expr(get.Target)}, \"{get.Name}\")",
+            BoundPyGetItem get => $"{Interop}.GetItem({Expr(get.Target)}, {Expr(get.Index)})",
+            BoundPyCall call => PyCall(call),
+            BoundToPy convert => $"{Interop}.From({Expr(convert.Value)})",
+            BoundCast cast => Cast(cast),
             BoundIsSome isSome => $"{Operand(isSome.Operand)} is {{}} @{_locals[isSome.Binding]}",
             BoundIsNone isNone => $"{Operand(isNone.Operand)} is null",
             _ => throw new InvalidOperationException($"unexpected bound expression {expr.GetType().Name}"),
@@ -677,6 +706,10 @@ public sealed class CSharpEmitter
 
         var leftType = Concrete(binary.Left.Type);
         var (l, r) = (Expr(binary.Left), Expr(binary.Right));
+        if (leftType == TaipanType.Py || Concrete(binary.Right.Type) == TaipanType.Py)
+            return binary.Op is BinaryOp.And or BinaryOp.Or
+                ? $"{Operand(binary.Left)} {(binary.Op == BinaryOp.And ? "&&" : "||")} {Operand(binary.Right)}"
+                : $"{Interop}.Binary(\"{TypeChecker.Display(binary.Op)}\", {l}, {r})";
         var left = Operand(binary.Left);
         var right = Operand(binary.Right);
         var compared = TypeChecker.Unwrap(leftType) is NoneType ? TypeChecker.Unwrap(Concrete(binary.Right.Type)) : TypeChecker.Unwrap(leftType);
@@ -709,13 +742,15 @@ public sealed class CSharpEmitter
 
     private string Call(BoundCall call)
     {
-        var arguments = Arguments(call.Arguments);
+        // A bare `null` passed to print would bind to its params array itself, not be an element.
+        var arguments = string.Join(", ", call.Arguments.Select(a =>
+            a is BoundNone && call.Function.Builtin == BuiltinFunction.Print ? "(object?)null" : Expr(a)));
         var argumentType = call.Arguments.IsEmpty ? TaipanType.Error : Concrete(call.Arguments[0].Type);
         return call.Function.Builtin switch
         {
             null => $"{FunctionReference(call)}({arguments})",
-            // `null` alone would bind to the params array itself, not be one of its elements.
-            BuiltinFunction.Print => $"{Runtime}.Builtins.Print({string.Join(", ", call.Arguments.Select(a => a is BoundNone ? "(object?)null" : Expr(a)))})",
+            BuiltinFunction.Print => $"{Runtime}.Builtins.Print({arguments})",
+            BuiltinFunction.Len when argumentType == TaipanType.Py => $"{Interop}.Len({arguments})",
             BuiltinFunction.Len => $"{Runtime}.Builtins.Len({arguments})",
             BuiltinFunction.Str => $"{Runtime}.Display.Format({arguments})",
             BuiltinFunction.Int when argumentType == TaipanType.Str => $"{Runtime}.Ops.ParseInt({arguments})",
@@ -757,6 +792,64 @@ public sealed class CSharpEmitter
             BuiltinMethod.StrReplace => $"{Runtime}.Ops.Replace({Expr(call.Target)}, {args[0]}, {args[1]})",
             _ => throw new InvalidOperationException($"unexpected builtin method {call.Method}"),
         };
+    }
+
+    // Positional arguments as an object?[], keywords as (name, value) pairs (SPEC §10.2).
+    private string PyCall(BoundPyCall call)
+    {
+        var positional = string.Join(", ", call.Arguments.Select(Expr));
+        var keywords = string.Join(", ", call.Keywords.Select(k => $"(\"{k.Name}\", {Expr(k.Value)})"));
+        return $"{Interop}.Call({Expr(call.Callee)}, [{positional}], [{keywords}])";
+    }
+
+    // `x as T` (SPEC §10.4): a converter lambda built from T. An optional target gives none on a
+    // mismatch; any other panics, naming T.
+    private string Cast(BoundCast cast)
+    {
+        var target = Concrete(cast.Type);
+        var value = Expr(cast.Value);
+        var v = $"@{_locals.Fresh("v")}";
+        if (target is OptionalOf optional)
+        {
+            var method = IsValueType(optional.Inner) ? "AsOptionalValue" : "AsOptionalRef";
+            return $"{Interop}.{method}({value}, {v} => {Converter(optional.Inner, v)})";
+        }
+        return $"{Interop}.As({value}, {v} => {Converter(target, v)}, \"{target}\")";
+    }
+
+    private string Converter(TaipanType type, string value)
+    {
+        switch (type)
+        {
+            case PrimitiveType { Name: "int" }:
+                return $"{Interop}.ToInt({value})";
+            case PrimitiveType { Name: "float" }:
+                return $"{Interop}.ToFloat({value})";
+            case PrimitiveType { Name: "bool" }:
+                return $"{Interop}.ToBool({value})";
+            case PrimitiveType { Name: "str" }:
+                return $"{Interop}.ToStr({value})";
+            case PrimitiveType { Name: "py" }:
+                return value;
+            case ListOfType list:
+            {
+                var e = $"@{_locals.Fresh("e")}";
+                return $"{Interop}.ToList({value}, {e} => {Converter(list.Element, e)})";
+            }
+            case DictOfType dict:
+            {
+                var (k, e) = ($"@{_locals.Fresh("k")}", $"@{_locals.Fresh("e")}");
+                return $"{Interop}.ToDict({value}, {k} => {Converter(dict.Key, k)}, {e} => {Converter(dict.Value, e)})";
+            }
+            case OptionalOf optional:
+            {
+                var e = $"@{_locals.Fresh("e")}";
+                var method = IsValueType(optional.Inner) ? "NoneOrValue" : "NoneOrRef";
+                return $"{Interop}.{method}({value}, {e} => {Converter(optional.Inner, e)})";
+            }
+            default:
+                throw new InvalidOperationException($"no Python conversion to {type}");
+        }
     }
 
     private string ListLiteral(BoundListLiteral list)
@@ -842,6 +935,7 @@ public sealed class CSharpEmitter
         PrimitiveType { Name: "float" } => "double",
         PrimitiveType { Name: "bool" } => "bool",
         PrimitiveType { Name: "str" } => "string",
+        PrimitiveType { Name: "py" } => PyObject,
         NothingType => "void",
         ListOfType list => $"{Collections}.List<{TypeName(list.Element)}>",
         DictOfType dict => $"{Collections}.OrderedDictionary<{TypeName(dict.Key)}, {TypeName(dict.Value)}>",

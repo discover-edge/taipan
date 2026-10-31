@@ -1,0 +1,10 @@
+from python import json
+
+let v = json.loads("true")
+if v:
+    pass
+while not v:
+    pass
+let both = v and True
+if v as bool:
+    pass

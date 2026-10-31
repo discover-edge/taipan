@@ -6,7 +6,8 @@ namespace Taipan.Tests;
 /// <c>main.tpn</c>, only that file is a case and the others are its modules (SPEC §4.7):
 /// <c>.out</c> (stdout; its presence selects <c>run</c> over <c>check</c>),
 /// <c>.err</c> (stderr, exact), <c>.exit</c> (default 0, or 1 when <c>.err</c> exists), and
-/// <c>.cs</c> (the exact output of <c>taipan emit</c>).
+/// <c>.cs</c> (the exact output of <c>taipan emit</c>), and <c>.requires</c> (naming <c>python</c>
+/// for a case that needs CPython).
 /// </summary>
 public class GoldenTests
 {
@@ -32,6 +33,14 @@ public class GoldenTests
     [MemberData(nameof(Cases))]
     public void Golden(string casePath)
     {
+        // A `.requires` sidecar naming `python` marks a case that needs CPython (SPEC §10.6).
+        // Without one installed, the case passes with a note rather than failing.
+        if (ReadSidecar(casePath, ".requires")?.Contains("python") == true && Taipan.Runtime.Interop.FindLibrary() is null)
+        {
+            Console.WriteLine($"skipped {casePath}: no Python installation found");
+            return;
+        }
+
         var expectedOut = ReadSidecar(casePath, ".out");
         var expectedErr = ReadSidecar(casePath, ".err");
         var exitText = ReadSidecar(casePath, ".exit");

@@ -727,7 +727,9 @@ public sealed class Parser
     // ---- Types ----
 
     // type = base_type { "?" }   — a `??` token counts as two `?` (SPEC §2)
-    private TypeSyntax ParseType()
+    private TypeSyntax ParseType() => ParseType(splitDoubleQuestion: true);
+
+    private TypeSyntax ParseType(bool splitDoubleQuestion)
     {
         var start = Current.Span.Start;
         var type = ParseBaseType();
@@ -738,7 +740,7 @@ public sealed class Parser
                 Next();
                 type = new OptionalType(type, SpanFrom(start));
             }
-            else if (At(TokenKind.QuestionQuestion))
+            else if (splitDoubleQuestion && At(TokenKind.QuestionQuestion))
             {
                 var question = Next();
                 type = new OptionalType(type, new TextSpan(start, question.Span.Start + 1 - start));
@@ -950,14 +952,26 @@ public sealed class Parser
         }
     }
 
-    // unary = "-" unary | cast   — `as` is M10, so cast is just postfix for now
+    // unary = "-" unary | cast
     private Expr ParseUnary()
     {
         if (!At(TokenKind.Minus))
-            return ParsePostfix();
+            return ParseCast();
         var start = Next().Span.Start;
         var operand = ParseUnary();
         return new UnaryExpr(UnaryOp.Negate, operand, SpanFrom(start));
+    }
+
+    // cast = postfix [ "as" type ]
+    private Expr ParseCast()
+    {
+        var value = ParsePostfix();
+        if (!At(TokenKind.AsKeyword))
+            return value;
+        Next();
+        // In a cast, `??` after the type is the coalescing operator: `x as int? ?? 0` (SPEC §2).
+        var type = ParseType(splitDoubleQuestion: false);
+        return new CastExpr(value, type, SpanFrom(value.Span.Start));
     }
 
     // postfix = atom { call | "." NAME | "[" expr "]" }
@@ -999,13 +1013,11 @@ public sealed class Parser
         var arguments = ParseCommaList(TokenKind.CloseParen, ParseArg);
         Expect(TokenKind.CloseParen);
 
-        if (arguments.Length > 0)
-        {
-            var keyword = arguments[0].Name is not null;
-            var mismatch = arguments.FirstOrDefault(a => a.Name is not null != keyword);
-            if (mismatch is not null)
-                ReportSyntaxError(bag => bag.ReportMixedArguments(mismatch.Span));
-        }
+        // A positional argument after a keyword argument is never valid. Positional then keyword
+        // is valid only in calls to py values, which the binder checks (SPEC §2, §10.2).
+        var firstKeyword = arguments.IndexOf(arguments.FirstOrDefault(a => a.Name is not null)!);
+        if (firstKeyword >= 0 && arguments.Skip(firstKeyword).FirstOrDefault(a => a.Name is null) is { } positional)
+            ReportSyntaxError(bag => bag.ReportMixedArguments(positional.Span));
         return arguments;
     }
 

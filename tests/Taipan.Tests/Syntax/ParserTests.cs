@@ -437,10 +437,27 @@ public class ParserTests
         Assert.Equal([$"{position} TP0100: cannot assign to this expression"], Errors(text));
 
     [Theory]
-    [InlineData("S(1, b=2)\n", "1:6")]
     [InlineData("S(a=1, 2)\n", "1:8")]
-    public void MixedArguments(string text, string position) =>
+    [InlineData("S(1, a=1, 2)\n", "1:11")]
+    public void PositionalAfterKeyword(string text, string position) =>
         Assert.Equal([$"{position} TP0100: cannot mix positional and keyword arguments"], Errors(text));
+
+    [Fact]
+    public void KeywordAfterPositionalParses() =>
+        Assert.Equal(
+            "CallExpr(MemberExpr(NameExpr(json), dumps), [Argument(null, NameExpr(v)), Argument(indent, IntLiteral(2))])",
+            Expr("json.dumps(v, indent=2)"));
+
+    // ---- cast (M10) ----
+
+    [Theory]
+    [InlineData("x as int", "CastExpr(NameExpr(x), NamedType(int))")]
+    [InlineData("d[\"n\"] as list[int?]?", "CastExpr(IndexExpr(NameExpr(d), StringLiteral(\"n\")), OptionalType(ListType(OptionalType(NamedType(int)))))")]
+    [InlineData("-x as float", "UnaryExpr(Negate, CastExpr(NameExpr(x), NamedType(float)))")]
+    [InlineData("a.b() as str ?? \"\"", "BinaryExpr(CastExpr(CallExpr(MemberExpr(NameExpr(a), b), []), NamedType(str)), Coalesce, StringLiteral(\"\"))")]
+    [InlineData("x as int? ?? 0", "BinaryExpr(CastExpr(NameExpr(x), OptionalType(NamedType(int))), Coalesce, IntLiteral(0))")]
+    public void Casts(string text, string expected) =>
+        Assert.Equal(expected, Expr(text));
 
     // ---- TP0212 ----
 
@@ -592,11 +609,5 @@ public class ParserTests
     public void ImportSyntaxErrors(string text, string expected) =>
         Assert.Equal([expected], Errors(text));
 
-    // ---- Features from later milestones are syntax errors ----
-
-    [Theory]
-    [InlineData("let n = x as int?\n", "1:11 TP0100: expected newline, found 'as'")]
-    public void LaterMilestoneSyntax(string text, string expected) =>
-        Assert.Equal([expected], Errors(text));
 
 }

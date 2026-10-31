@@ -84,8 +84,8 @@ public static class RoslynCompiler
         var path = Path.Combine(directory, assemblyName + ".dll");
         File.WriteAllBytes(path, image);
 
-        var runtime = typeof(Panic).Assembly.Location;
-        File.Copy(runtime, Path.Combine(directory, Path.GetFileName(runtime)), overwrite: true);
+        foreach (var dependency in (string[])[typeof(Panic).Assembly.Location, Interop.PythonRuntimeAssembly])
+            File.Copy(dependency, Path.Combine(directory, Path.GetFileName(dependency)), overwrite: true);
 
         var version = Environment.Version;
         File.WriteAllText(Path.Combine(directory, assemblyName + ".runtimeconfig.json"), $$"""
@@ -103,11 +103,18 @@ public static class RoslynCompiler
     private static ImmutableArray<MetadataReference> LoadReferences()
     {
         var frameworkDirectory = Path.GetDirectoryName(typeof(object).Assembly.Location)!;
-        string[] framework = ["System.Private.CoreLib.dll", "System.Runtime.dll", "System.Collections.dll"];
+        // netstandard for Python.Runtime, which targets .NET Standard, and System.Linq.Expressions
+        // because its PyObject derives from DynamicObject (SPEC §10).
+        string[] framework =
+        [
+            "System.Private.CoreLib.dll", "System.Runtime.dll", "System.Collections.dll",
+            "netstandard.dll", "System.Linq.Expressions.dll",
+        ];
         return
         [
             .. framework.Select(name => MetadataReference.CreateFromFile(Path.Combine(frameworkDirectory, name))),
             MetadataReference.CreateFromFile(typeof(Panic).Assembly.Location),
+            MetadataReference.CreateFromFile(Interop.PythonRuntimeAssembly),
         ];
     }
 }

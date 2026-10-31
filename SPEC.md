@@ -149,7 +149,8 @@ atom          = INT | FLOAT | STRING | FSTRING | "True" | "False" | "none"
 **Grammar notes**
 - `a < b < c` is `TP0212`. Write `a < b and b < c`.
 - An `arm` may take a simple statement on the same line (`Ok: print("ok")`) or an indented block.
-- Keyword arguments are allowed only in struct and enum-variant constructors (§4.3). Within one call, arguments are either all positional or all keyword. Mixing them is `TP0100`.
+- Keyword arguments are allowed only in struct and enum-variant constructors (§4.3), and in calls to `py` values (§10.2). Within one call, arguments are either all positional or all keyword. Mixing them is `TP0100`. The exception is a `py` call, where keyword arguments may follow positional ones, as in Python. A positional argument after a keyword argument is always `TP0100`.
+- In a cast (`x as T`), a `??` after the type is the coalescing operator, so `x as int? ?? 0` is `(x as int?) ?? 0`.
 - In a type, the lexer's `??` token counts as two `?`, so `int??` parses and the type checker reports `TP0213`.
 - An f-string hole is parsed as exactly one `expr`. Its tokens come from re-lexing the hole's text (§1.3), and positions in its diagnostics refer to the original file.
 
@@ -634,12 +635,13 @@ Types are written as in source: `int`, `str?`, `list[int]`. The type of `none` i
   - `for v in x`, giving `v: py`
   - `len(x)`, which gives `int`, and `print`, `str()` and f-string holes, which use Python's `str(x)`
 - **The result of every `py` operation is `py`, including comparisons.** A `py` used as a condition, or with `and`, `or` or `not`, is `TP0205`, with help `convert it with 'as bool'`.
-- `py` may annotate variables, parameters, return types, fields and collection elements (`list[py]`). It can't be a dict key (§3.1).
+- `py` may annotate variables, parameters, return types, fields and collection elements (`list[py]`). It can't be a dict key (§3.1). A list, dict or optional containing `py` can't be compared with `==` (`TP0200`), since Python objects have no Taipan equality.
 
 ### 10.3 Taipan → Python
 - These Taipan types are *convertible*: `int`, `float`, `bool`, `str`, `none`, `list[T]` and `dict[K, V]` of convertible types, `T?` of a convertible `T`, and `py` itself.
 - A convertible value is converted when it's passed into a `py` operation, and when it's assigned to something of type `py` (so `let x: py = [1, 2]` is valid).
 - Lists and dicts are copied, so changes on either side aren't seen by the other.
+- **Mixed literals:** in a `py` operation's arguments and operands, a list literal has element type `py` and a dict literal has value type `py`, so their elements may mix types: `json.dumps({"xs": [1, 2], "ok": True, "none": none})`.
 - A struct or enum value, or any other non-convertible type, passed to Python is `TP0200` (`cannot pass <T> to Python`).
 
 ### 10.4 Python → Taipan: `as`
@@ -667,7 +669,7 @@ Types are written as in source: `int`, `str?`, `list[int]`. The type of `none` i
 - The runtime embeds CPython through Python.NET (pythonnet). It looks for the CPython shared library in this order:
   1. the `PYTHONNET_PYDLL` environment variable (pythonnet's own setting)
   2. the library reported by the first of `python3` or `python` found on `PATH` (`sysconfig`'s `LIBDIR` and `LDLIBRARY`)
-- Python is initialized once per process and never shut down. Taipan programs are single-threaded, so the GIL is taken when Python is first used and held from then on.
+- Python is initialized once per process and never shut down. The GIL is taken around each Python operation, so `taipan run` can run programs on different threads of one process.
 
 ---
 

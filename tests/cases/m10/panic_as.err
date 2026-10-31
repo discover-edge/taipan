@@ -1,0 +1,2 @@
+panic: cannot convert Python str to int
+  at tests/cases/m10/panic_as.tpn:6

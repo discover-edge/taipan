@@ -8,6 +8,7 @@ namespace Taipan.Compiler.Semantics;
 // this tree only. Spans point back at the source for #line mapping.
 
 public sealed record BoundProgram(
+    ImmutableArray<BoundPythonImport> PythonImports,
     ImmutableArray<EnumSymbol> Enums,
     ImmutableArray<BoundStruct> Structs,
     ImmutableArray<BoundConstant> Constants,
@@ -15,6 +16,9 @@ public sealed record BoundProgram(
     BoundBlock TopLevel);
 
 public sealed record BoundStruct(StructSymbol Symbol, ImmutableArray<BoundFunction> Methods, TextSpan Span);
+
+/// <summary><c>from python import m</c>: <see cref="Symbol"/> holds the module, imported at startup (SPEC §10.1).</summary>
+public sealed record BoundPythonImport(VariableSymbol Symbol, string Module, TextSpan Span, SourceText Source);
 
 public sealed record BoundConstant(VariableSymbol Symbol, BoundExpr Value, TextSpan Span)
 {
@@ -60,6 +64,12 @@ public sealed record BoundFieldAssign(BoundExpr Target, FieldSymbol Field, Bound
 /// <summary><c>target[index] = value</c>; compound forms share instances as for <see cref="BoundFieldAssign"/>.</summary>
 public sealed record BoundIndexAssign(BoundExpr Target, BoundExpr Index, BoundExpr Value, bool IsCompound, TextSpan Span)
     : BoundStmt(Span);
+
+/// <summary><c>x.name = v</c> on a py value; compound forms share instances as for <see cref="BoundFieldAssign"/>.</summary>
+public sealed record BoundPySetAttr(BoundExpr Target, string Name, BoundExpr Value, bool IsCompound, TextSpan Span) : BoundStmt(Span);
+
+/// <summary><c>x[k] = v</c> on a py value.</summary>
+public sealed record BoundPySetItem(BoundExpr Target, BoundExpr Index, BoundExpr Value, bool IsCompound, TextSpan Span) : BoundStmt(Span);
 
 public sealed record BoundReturn(BoundExpr? Value, TextSpan Span) : BoundStmt(Span);
 
@@ -153,6 +163,21 @@ public sealed record BoundFString(ImmutableArray<BoundExpr> Parts, TextSpan Span
 public sealed record BoundErrorExpr(TextSpan Span) : BoundExpr(TaipanType.Error, Span);
 
 public sealed record BoundNone(TextSpan Span) : BoundExpr(TaipanType.None, Span);
+
+// ---- Python (SPEC §10) ----
+
+public sealed record BoundPyGetAttr(BoundExpr Target, string Name, TextSpan Span) : BoundExpr(TaipanType.Py, Span);
+
+public sealed record BoundPyGetItem(BoundExpr Target, BoundExpr Index, TextSpan Span) : BoundExpr(TaipanType.Py, Span);
+
+public sealed record BoundPyCall(BoundExpr Callee, ImmutableArray<BoundExpr> Arguments, ImmutableArray<(string Name, BoundExpr Value)> Keywords, TextSpan Span)
+    : BoundExpr(TaipanType.Py, Span);
+
+/// <summary>A Taipan value converted to Python where a py is expected (SPEC §10.3).</summary>
+public sealed record BoundToPy(BoundExpr Value, TextSpan Span) : BoundExpr(TaipanType.Py, Span);
+
+/// <summary><c>x as T</c> (SPEC §10.4); <see cref="BoundExpr.Type"/> is the target.</summary>
+public sealed record BoundCast(BoundExpr Value, TaipanType Type, TextSpan Span) : BoundExpr(Type, Span);
 
 /// <summary>
 /// <c>x is some v</c> as an <c>if</c> or <c>while</c> condition; <see cref="Binding"/> is

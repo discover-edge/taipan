@@ -237,7 +237,19 @@ public sealed class DiagnosticBag
         Add("TP0202", span, $"cannot assign to '{name}': it is a {what}", help);
 
     public void ReportConditionNotBool(TextSpan span, object type) =>
-        Add("TP0205", span, $"condition must be bool, found {type}");
+        Add("TP0205", span, $"condition must be bool, found {type}", type.ToString() == "py" ? "convert it with 'as bool'" : null);
+
+    public void ReportCannotPassToPython(TextSpan span, object type) =>
+        Add("TP0200", span, $"cannot pass {type} to Python");
+
+    public void ReportCastNeedsPy(TextSpan span, object type) =>
+        Add("TP0200", span, $"'as' converts py values; found {type}");
+
+    public void ReportCannotCastTo(TextSpan span, object type) =>
+        Add("TP0200", span, $"cannot convert to {type}");
+
+    public void ReportPythonNotModule(TextSpan span) =>
+        Add("TP0221", span, "'python' is not a module", "use 'from python import <module>'");
 
     public void ReportShadowing(TextSpan span, string name) =>
         Add("TP0207", span, $"'{name}' shadows an outer binding");

@@ -23,8 +23,15 @@ public static class Display
         IStruct s => $"{s.TypeName}({string.Join(", ", s.Fields.Select(f => $"{f.Name}={Repr(f.Value)}"))})",
         IDictionary d => "{" + string.Join(", ", d.Keys.Cast<object>().Select(k => $"{Repr(k)}: {Repr(d[k])}")) + "}",
         IList l => "[" + string.Join(", ", l.Cast<object?>().Select(Repr)) + "]",
-        _ => throw new ArgumentException($"no display form for {value.GetType()}"),
+        _ => ExternalFormat?.Invoke(value) ?? throw new ArgumentException($"no display form for {value.GetType()}"),
     };
+
+    /// <summary>
+    /// Formats values from outside Taipan: Python objects, whose display is Python's <c>str()</c>
+    /// (SPEC §10.2). Set by <see cref="Interop"/> once Python starts, so Display never refers to
+    /// pythonnet's types.
+    /// </summary>
+    public static Func<object, string?>? ExternalFormat { get; set; }
 
     /// <summary>
     /// The form of a value inside a list, dict or struct: a str is written as a literal, in
