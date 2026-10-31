@@ -1,0 +1,7 @@
+def add(a: int, b: int) -> int:
+    return a + b
+
+add(a=1, b=2)
+print(sep=" ")
+for i in range(stop=3):
+    pass

@@ -1,0 +1,34 @@
+const LIMIT: int = 1_000
+const RATE = 2.5 * 4 - -1 + 10 // 3 % 2
+const NAME = "tai" + "pan"
+const ON = True
+
+let min = -9223372036854775808
+let max = 9223372036854775807
+let mixed = 1 + 2.5 * 3
+let ratio: float = 3 / 4
+let whole = 7 // 2 + 7 % 2
+let joined = NAME + "!"
+let same = 1 == 1.0 and "a" != "b" and not (2 < 1)
+let ordered = "apple" < "banana" or 1.5 >= 1
+let found = "pan" in NAME and "x" not in NAME
+let chars = len(NAME)
+let back = int(2.9) + int(3)
+let wide = float(2) + float(2.5)
+let shown = str(42) + str(1.5) + str(True)
+var acc = 0.0
+acc += 1
+acc /= 2
+acc *= ratio
+var s = "a"
+s += "b"
+var i = 0
+while i < LIMIT:
+    i += 1
+    if i == 3:
+        continue
+    if i > 5:
+        break
+print(min, max, mixed, ratio, whole, joined, same, ordered, found, chars, back, wide, shown, acc, s, i, RATE, ON)
+print()
+print(f"{NAME} has {chars} chars, {mixed * 2}")

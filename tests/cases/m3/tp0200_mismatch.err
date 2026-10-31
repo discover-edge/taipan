@@ -1,0 +1,6 @@
+tests/cases/m3/tp0200_mismatch.tpn:2:12: error TP0200: expected float, found str
+tests/cases/m3/tp0200_mismatch.tpn:4:14: error TP0200: expected int, found str
+tests/cases/m3/tp0200_mismatch.tpn:5:14: error TP0200: expected int, found float
+tests/cases/m3/tp0200_mismatch.tpn:7:6: error TP0200: expected int, found float
+tests/cases/m3/tp0200_mismatch.tpn:9:6: error TP0200: expected int, found float
+tests/cases/m3/tp0200_mismatch.tpn:10:5: error TP0200: expected int, found bool

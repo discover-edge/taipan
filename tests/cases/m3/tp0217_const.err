@@ -1,0 +1,4 @@
+tests/cases/m3/tp0217_const.tpn:2:11: error TP0217: const initializer must be a constant expression
+tests/cases/m3/tp0217_const.tpn:3:11: error TP0217: const initializer must be a constant expression
+tests/cases/m3/tp0217_const.tpn:4:11: error TP0217: const initializer must be a constant expression
+tests/cases/m3/tp0217_const.tpn:5:11: error TP0217: const initializer must be a constant expression

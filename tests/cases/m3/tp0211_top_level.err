@@ -1,0 +1,8 @@
+tests/cases/m3/tp0211_top_level.tpn:5:12: error TP0211: 'read' cannot use top-level variable 'config'
+  help: pass it as a parameter, or make it a const
+tests/cases/m3/tp0211_top_level.tpn:8:5: error TP0211: 'bump' cannot use top-level variable 'counter'
+  help: pass it as a parameter, or make it a const
+tests/cases/m3/tp0211_top_level.tpn:11:12: error TP0211: 'late' cannot use top-level variable 'defined_later'
+  help: pass it as a parameter, or make it a const
+tests/cases/m3/tp0211_top_level.tpn:17:12: error TP0211: 'uses_nested' cannot use top-level variable 'nested'
+  help: pass it as a parameter, or make it a const

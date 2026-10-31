@@ -1,0 +1,6 @@
+tests/cases/m3/tp0209_arguments.tpn:7:1: error TP0209: 'add' takes 2 arguments, found 1
+tests/cases/m3/tp0209_arguments.tpn:8:1: error TP0209: 'add' takes 2 arguments, found 3
+tests/cases/m3/tp0209_arguments.tpn:9:1: error TP0209: 'zero' takes 0 arguments, found 1
+tests/cases/m3/tp0209_arguments.tpn:10:1: error TP0209: 'len' takes 1 argument, found 2
+tests/cases/m3/tp0209_arguments.tpn:11:1: error TP0209: 'str' takes 1 argument, found 0
+tests/cases/m3/tp0209_arguments.tpn:12:10: error TP0209: 'range' takes 1 or 2 arguments, found 3

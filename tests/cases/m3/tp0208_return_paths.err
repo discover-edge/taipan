@@ -1,0 +1,5 @@
+tests/cases/m3/tp0208_return_paths.tpn:1:5: error TP0208: not all paths in 'a' return a value
+tests/cases/m3/tp0208_return_paths.tpn:5:5: error TP0208: not all paths in 'b' return a value
+tests/cases/m3/tp0208_return_paths.tpn:9:5: error TP0208: not all paths in 'c' return a value
+tests/cases/m3/tp0208_return_paths.tpn:15:5: error TP0208: not all paths in 'd' return a value
+tests/cases/m3/tp0208_return_paths.tpn:18:5: error TP0208: not all paths in 'e' return a value

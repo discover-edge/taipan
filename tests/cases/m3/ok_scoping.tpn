@@ -1,0 +1,25 @@
+# Sibling blocks can reuse a name; functions can reuse top-level names.
+let total = 10
+
+def count(n: int) -> int:
+    var total = 0
+    for i in range(n):
+        total += i
+    return total
+
+if total > 5:
+    let label = "big"
+    print(label)
+else:
+    let label = "small"
+    print(label)
+
+for i in range(3):
+    let sq = i * i
+    print(sq)
+for i in range(2):
+    let sq = i + i
+    print(sq)
+
+let label = "after"
+print(label, count(4))

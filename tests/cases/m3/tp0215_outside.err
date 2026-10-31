@@ -1,0 +1,6 @@
+tests/cases/m3/tp0215_outside.tpn:1:1: error TP0215: 'break' outside a loop
+tests/cases/m3/tp0215_outside.tpn:2:1: error TP0215: 'continue' outside a loop
+tests/cases/m3/tp0215_outside.tpn:3:1: error TP0215: 'return' outside a function
+tests/cases/m3/tp0215_outside.tpn:6:5: error TP0215: 'break' outside a loop
+tests/cases/m3/tp0215_outside.tpn:9:5: error TP0215: 'continue' outside a loop
+tests/cases/m3/tp0215_outside.tpn:12:5: error TP0215: 'return' outside a function

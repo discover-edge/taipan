@@ -54,6 +54,87 @@ public sealed class DiagnosticBag
     public void ReportChainedComparison(TextSpan span) =>
         Add("TP0212", span, "chained comparison not supported", "write 'a < b and b < c'");
 
+    // ---- Type checking (SPEC §9.1). Types are passed pre-rendered as source text. ----
+
+    public void ReportTypeMismatch(TextSpan span, object expected, object found) =>
+        Add("TP0200", span, $"expected {expected}, found {found}");
+
+    public void ReportBinaryOperatorTypes(TextSpan span, string op, object left, object right) =>
+        Add("TP0200", span, $"operator '{op}' cannot be applied to {left} and {right}");
+
+    public void ReportUnaryOperatorType(TextSpan span, string op, object operand) =>
+        Add("TP0200", span, $"operator '{op}' cannot be applied to {operand}");
+
+    public void ReportCannotCompare(TextSpan span, object left, object right) =>
+        Add("TP0200", span, $"cannot compare {left} and {right}");
+
+    public void ReportNoValue(TextSpan span, string function) =>
+        Add("TP0200", span, $"'{function}' does not return a value");
+
+    public void ReportUnexpectedReturnValue(TextSpan span, string function) =>
+        Add("TP0200", span, $"'{function}' has no return type, so 'return' cannot have a value");
+
+    public void ReportMissingReturnValue(TextSpan span, string function, object returnType) =>
+        Add("TP0200", span, $"missing return value; '{function}' returns {returnType}");
+
+    public void ReportFunctionAsValue(TextSpan span, string function) =>
+        Add("TP0200", span, $"'{function}' is a function; call it");
+
+    public void ReportNotAFunction(TextSpan span, string text) =>
+        Add("TP0200", span, $"'{text}' is not a function");
+
+    public void ReportIntegerOutOfRange(TextSpan span) =>
+        Add("TP0200", span, "integer literal is out of range");
+
+    public void ReportRangeOutsideFor(TextSpan span) =>
+        Add("TP0200", span, "'range' can only be used in a for loop");
+
+    public void ReportCannotIterate(TextSpan span, object type) =>
+        Add("TP0200", span, $"cannot iterate over {type}");
+
+    public void ReportUndefinedName(TextSpan span, string name) =>
+        Add("TP0201", span, $"undefined name '{name}'");
+
+    public void ReportUndefinedType(TextSpan span, string name) =>
+        Add("TP0201", span, $"undefined type '{name}'");
+
+    public void ReportCannotAssign(TextSpan span, string name, string what, string? help) =>
+        Add("TP0202", span, $"cannot assign to '{name}': it is a {what}", help);
+
+    public void ReportConditionNotBool(TextSpan span, object type) =>
+        Add("TP0205", span, $"condition must be bool, found {type}");
+
+    public void ReportShadowing(TextSpan span, string name) =>
+        Add("TP0207", span, $"'{name}' shadows an outer binding");
+
+    public void ReportNotAllPathsReturn(TextSpan span, string function) =>
+        Add("TP0208", span, $"not all paths in '{function}' return a value");
+
+    public void ReportWrongArgumentCount(TextSpan span, string function, string expected, int found) =>
+        Add("TP0209", span, $"'{function}' takes {expected}, found {found}");
+
+    public void ReportTopLevelVariableInFunction(TextSpan span, string function, string name) =>
+        Add("TP0211", span, $"'{function}' cannot use top-level variable '{name}'",
+            "pass it as a parameter, or make it a const");
+
+    public void ReportDuplicateDefinition(TextSpan span, string name) =>
+        Add("TP0214", span, $"duplicate definition of '{name}'");
+
+    public void ReportBreakOutsideLoop(TextSpan span) =>
+        Add("TP0215", span, "'break' outside a loop");
+
+    public void ReportContinueOutsideLoop(TextSpan span) =>
+        Add("TP0215", span, "'continue' outside a loop");
+
+    public void ReportReturnOutsideFunction(TextSpan span) =>
+        Add("TP0215", span, "'return' outside a function");
+
+    public void ReportNotConstant(TextSpan span) =>
+        Add("TP0217", span, "const initializer must be a constant expression");
+
+    public void ReportKeywordArguments(TextSpan span) =>
+        Add("TP0218", span, "keyword arguments are only allowed in constructors");
+
     public void AddRange(IEnumerable<Diagnostic> diagnostics) => _items.AddRange(diagnostics);
 
     private void Add(string code, TextSpan span, string message, string? help = null) =>

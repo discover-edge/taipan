@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using Taipan.Compiler.Diagnostics;
 using Taipan.Compiler.Lexing;
+using Taipan.Compiler.Semantics;
 using Taipan.Compiler.Syntax;
 using Taipan.Compiler.Text;
 
@@ -52,14 +53,14 @@ public static class Cli
     {
         if (args.Length != 1)
             return UsageError(stderr, "emit takes exactly one file");
-        return NotImplemented("emit", stderr);
+        return NotImplemented("'emit'", stderr);
     }
 
     private static int Build(string[] args, TextWriter stderr)
     {
         if (args.Length != 3 || args[1] != "-o")
             return UsageError(stderr, "build takes a file and -o <dir>");
-        return NotImplemented("build", stderr);
+        return NotImplemented("'build'", stderr);
     }
 
     private static int RunFile(string[] args, TextWriter stderr)
@@ -71,9 +72,9 @@ public static class Cli
         return Compile("run", args[0], stderr);
     }
 
-    // The pipeline currently ends at the parser: `check` reports lexical and syntax errors, and
-    // `run` can only execute a program with no items. Each stage runs only if the previous one
-    // reported no errors (SPEC §9).
+    // The pipeline currently ends at the type checker: `check` reports all compile errors, and
+    // `run` can only execute an empty program. Each stage runs only if the previous one reported
+    // no errors (SPEC §9). Features from later milestones stop compilation as "not implemented".
     private static int Compile(string command, string path, TextWriter stderr)
     {
         if (!File.Exists(path))
@@ -91,10 +92,16 @@ public static class Cli
         if (Report(parsed.Diagnostics, source, stderr))
             return ExitCompileError;
 
-        if (command == "check" || parsed.Unit.Items.IsEmpty)
+        var bound = Binder.Bind(source, parsed.Unit);
+        if (bound.Unsupported is not null)
+            return NotImplemented(bound.Unsupported, stderr);
+        if (Report(bound.Diagnostics, source, stderr))
+            return ExitCompileError;
+
+        if (command == "check" || bound.Program.IsEmpty)
             return ExitSuccess;
 
-        return NotImplemented(command, stderr);
+        return NotImplemented($"'{command}'", stderr);
     }
 
     private static bool Report(ImmutableArray<Diagnostic> diagnostics, SourceText source, TextWriter stderr)
@@ -104,9 +111,9 @@ public static class Cli
         return diagnostics.Length > 0;
     }
 
-    private static int NotImplemented(string command, TextWriter stderr)
+    private static int NotImplemented(string feature, TextWriter stderr)
     {
-        stderr.WriteLine($"taipan: '{command}' is not implemented yet");
+        stderr.WriteLine($"taipan: {feature} is not implemented yet");
         return ExitUsage;
     }
 

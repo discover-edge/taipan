@@ -365,7 +365,14 @@ public class ParserTests
         Assert.Equal(new TextSpan(5, 5), hole.Expr.Span);
     }
 
-    // ---- examples ----
+    // ---- examples and fixtures ----
+
+    [Fact]
+    public void AllProductionsFixtureParses()
+    {
+        var path = Path.Combine(RepoPaths.Root, "tests", "Taipan.Tests", "Syntax", "Fixtures", "all_productions.tpn");
+        Assert.Empty(ParseText(File.ReadAllText(path)).Diagnostics);
+    }
 
     [Theory]
     [InlineData("fizzbuzz.tpn")]

@@ -1,0 +1,10 @@
+tests/cases/m3/tp0200_operators.tpn:1:9: error TP0200: operator '+' cannot be applied to int and str
+tests/cases/m3/tp0200_operators.tpn:2:9: error TP0200: operator '-' cannot be applied to str and str
+tests/cases/m3/tp0200_operators.tpn:3:9: error TP0200: operator '-' cannot be applied to str
+tests/cases/m3/tp0200_operators.tpn:4:9: error TP0200: operator '//' cannot be applied to float and int
+tests/cases/m3/tp0200_operators.tpn:5:9: error TP0200: operator '%' cannot be applied to int and float
+tests/cases/m3/tp0200_operators.tpn:6:9: error TP0200: operator '<' cannot be applied to bool and bool
+tests/cases/m3/tp0200_operators.tpn:7:9: error TP0200: cannot compare int and str
+tests/cases/m3/tp0200_operators.tpn:8:9: error TP0200: cannot compare str and int
+tests/cases/m3/tp0200_operators.tpn:9:9: error TP0200: operator 'in' cannot be applied to str and int
+tests/cases/m3/tp0200_operators.tpn:10:9: error TP0200: operator '*' cannot be applied to str and int

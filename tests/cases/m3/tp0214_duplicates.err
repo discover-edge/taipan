@@ -1,0 +1,6 @@
+tests/cases/m3/tp0214_duplicates.tpn:4:5: error TP0214: duplicate definition of 'f'
+tests/cases/m3/tp0214_duplicates.tpn:7:5: error TP0214: duplicate definition of 'print'
+tests/cases/m3/tp0214_duplicates.tpn:11:7: error TP0214: duplicate definition of 'K'
+tests/cases/m3/tp0214_duplicates.tpn:13:15: error TP0214: duplicate definition of 'a'
+tests/cases/m3/tp0214_duplicates.tpn:15:9: error TP0214: duplicate definition of 'b'
+tests/cases/m3/tp0214_duplicates.tpn:18:5: error TP0214: duplicate definition of 'top'

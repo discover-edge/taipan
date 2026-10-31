@@ -1,0 +1,13 @@
+def add(a: int, b: int) -> int:
+    return a + b
+
+def zero() -> int:
+    return 0
+
+add(1)
+add(1, 2, 3)
+zero(1)
+len("a", "b")
+str()
+for i in range(1, 2, 3):
+    pass

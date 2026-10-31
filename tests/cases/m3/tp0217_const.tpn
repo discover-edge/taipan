@@ -1,0 +1,8 @@
+const A = 2
+const B = A * 2
+const C = len("abc")
+const D = 1 < 2
+const E = f"x"
+const F = (1 + 2) * -3 // 4 % 5 - 6.5 / 2
+const G = "a" + "b"
+const H = True

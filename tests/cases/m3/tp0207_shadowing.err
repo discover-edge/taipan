@@ -1,0 +1,6 @@
+tests/cases/m3/tp0207_shadowing.tpn:5:9: error TP0207: 'x' shadows an outer binding
+tests/cases/m3/tp0207_shadowing.tpn:9:17: error TP0207: 'y' shadows an outer binding
+tests/cases/m3/tp0207_shadowing.tpn:10:9: error TP0207: 'helper' shadows an outer binding
+tests/cases/m3/tp0207_shadowing.tpn:11:9: error TP0207: 'x' shadows an outer binding
+tests/cases/m3/tp0207_shadowing.tpn:15:5: error TP0207: 'len' shadows an outer binding
+tests/cases/m3/tp0207_shadowing.tpn:16:5: error TP0207: 'print' shadows an outer binding
