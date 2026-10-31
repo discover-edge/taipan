@@ -316,7 +316,7 @@ Comparing values of unrelated types is `TP0200`.
 
 **Functions**
 - `print(*args)` writes each argument's display form, space-separated, then a newline.
-- `len(x) -> int` takes a list, dict, or str.
+- `len(x) -> int` takes a list, dict, or str. For a `str` it counts Unicode code points, so `len("🐍")` is `1`.
 - `range(stop)` and `range(start, stop)` iterate only (they're not a list).
 - `str(x) -> str` gives the display form.
 - `int(x: float) -> int` truncates toward zero. An `int` argument is returned unchanged. `int(x: str) -> int?` parses, returning `none` on failure.
@@ -333,7 +333,7 @@ Comparing values of unrelated types is `TP0200`.
 | Type | Format |
 |---|---|
 | `int` | decimal |
-| `float` | shortest round-trip form, with `.0` appended when integral; `inf`, `-inf`, `nan` |
+| `float` | as Python's `repr`: the shortest digits that round-trip. Fixed notation when the decimal exponent is in [-4, 16), with `.0` appended when integral (`1.0`, `0.0001`, `1000000000000000.0`, `-0.0`). Otherwise scientific notation, with a lowercase `e`, a sign, and at least two exponent digits (`1e+16`, `1e-05`, `1.5e-07`). Also `inf`, `-inf`, `nan` |
 | `bool` | `True` / `False` |
 | `none` | `none` |
 | `str` | as-is at top level; quoted with `"` inside containers |
@@ -345,11 +345,12 @@ Comparing values of unrelated types is `TP0200`.
 ---
 
 ## 7. Runtime errors (panics)
-- A panic prints `panic: <message>\n  at <file>.tpn:<line>` to stderr and exits with code **101**.
+- A panic prints `panic: <message>\n  at <file>.tpn:<line>` to stderr and exits with code **101**. Output the program printed before the panic still appears. `<file>` is the source path as given on the command line (§9). `<line>` is the line of the statement that panicked, in the innermost Taipan function.
 - The emitted C# carries `#line` directives so .NET stack traces map back to `.tpn` lines.
-- **Panic sources:**
-  - int overflow
-  - division by zero
+- **Panic sources and messages:**
+  - int overflow: `integer overflow`. This includes `-x` and `x // -1` for the most negative int.
+  - division by zero (`/`, `//`, `%`): `division by zero`
+  - `int(x)` of a float that is NaN, infinite, or outside the int range: `cannot convert <x> to int`, with `<x>` in display form
   - index out of range
   - missing dict key
   - `pop()` on an empty list
@@ -367,12 +368,15 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 
 | Taipan | Emitted C# |
 |---|---|
-| program | `public static class TaipanProgram { static void Main() { ...top-level stmts... } ...functions... }` |
+| program | `public static class TaipanProgram { ...constants... static void TopLevel() { ...constant initializers, then top-level stmts... } ...functions... }`, plus `public static class TaipanEntry { static int Main() => Taipan.Runtime.Panic.Run(TaipanProgram.TopLevel); }`. `Panic.Run` turns panics into the §7 output and the exit code. A generated name that clashes with a user name gets a numeric suffix. |
 | identifiers | always verbatim-escaped (`@name`) to avoid C# keyword collisions |
 | `def f(a: int) -> str` | `public static string @f(long @a)` |
 | `struct S` | `public sealed record class S(...)` with mutable `{ get; set; }` properties; `ToString` overridden to the display form |
 | `enum E` | `public abstract record E` with a private constructor; each variant is `public sealed record V(...) : E` nested inside |
 | `T?` | `T?` |
+| `const` | a `static` field, assigned at the start of `TopLevel` in source order |
+| locals | a typed C# local. A Taipan local whose name C# scoping would reject (the same name declared in a nested block and again later in the outer block) is renamed with a numeric suffix. |
+| `for x in range(a, b)` | a C# `for` loop. `a` and `b` are evaluated once, before the loop. |
 | `x is some v` | `x is {} v` |
 | `match` | `switch` statement with type and constant patterns; emitted `default:` throws `UnreachableException` (exhaustiveness is guaranteed by the Taipan checker) |
 | `/` `//` `%` | `Taipan.Runtime.Ops.Div / FloorDiv / Mod` |
