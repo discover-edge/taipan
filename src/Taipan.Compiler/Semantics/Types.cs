@@ -77,3 +77,9 @@ public sealed record OptionalOf(TaipanType Inner) : TaipanType
 {
     public override string ToString() => $"{Inner}?";
 }
+
+/// <summary>Equal when the symbols are the same enum.</summary>
+public sealed record EnumType(EnumSymbol Symbol) : TaipanType
+{
+    public override string ToString() => Symbol.Name;
+}

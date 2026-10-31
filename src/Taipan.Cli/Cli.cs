@@ -122,11 +122,12 @@ public static class Cli
         return ExitSuccess;
     }
 
+    /// <summary>Prints diagnostics; true if any is an error. Warnings don't fail compilation (SPEC §9).</summary>
     private static bool Report(ImmutableArray<Diagnostic> diagnostics, SourceText source, TextWriter stderr)
     {
         foreach (var diagnostic in diagnostics)
             stderr.WriteLine(diagnostic.Format(source));
-        return diagnostics.Length > 0;
+        return diagnostics.Any(d => !d.IsWarning);
     }
 
     private static int NotImplemented(string feature, TextWriter stderr)

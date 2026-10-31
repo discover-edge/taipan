@@ -1,0 +1,9 @@
+Circle(radius=1.0) 3.0
+Rect(width=2.0, height=3.0) 6.0
+Dot 0.0
+Dot 0.0
+True False True True
+[Circle(radius=1.0), Rect(width=2.0, height=3.0), Dot, Dot]
+10 3
+Node(left=Leaf, value=1, right=Leaf)
+Dot True

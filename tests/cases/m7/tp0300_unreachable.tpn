@@ -1,0 +1,19 @@
+enum Light:
+    Red
+    Green
+
+def show(l: Light) -> str:
+    match l:
+        Red: return "stop"
+        Red: return "again"
+        _: return "go"
+        Green: return "never"
+
+def count(n: int) -> str:
+    match n:
+        1: return "one"
+        1: return "uno"
+        _: return "other"
+        _: return "twice"
+
+print(show(Red), show(Green), count(1), count(5))

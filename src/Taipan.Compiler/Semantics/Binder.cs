@@ -26,6 +26,7 @@ public sealed class Binder
     private readonly DiagnosticBag _diagnostics = new();
     private readonly Scope _global = new(null);
     private readonly Dictionary<string, StructSymbol> _structs = [];
+    private readonly Dictionary<string, EnumSymbol> _enums = [];
     private readonly HashSet<string> _scriptNames = [];
     private Scope _scope;
     private FunctionSymbol? _function;
@@ -52,15 +53,15 @@ public sealed class Binder
         foreach (var builtin in FunctionSymbol.CreateBuiltins())
             _global.Declare(builtin);
 
+        // Type names first, in source order, so a clash is reported at the later definition.
         var structDefs = new List<(StructDef Syntax, StructSymbol Symbol)>();
-        foreach (var structDef in unit.Items.OfType<StructDef>())
+        var enumDefs = new List<(EnumDef Syntax, EnumSymbol Symbol)>();
+        foreach (var item in unit.Items)
         {
-            var symbol = new StructSymbol(structDef.Name.Text);
-            if (BuiltinTypeNames.Contains(symbol.Name))
-                _diagnostics.ReportDuplicateDefinition(structDef.Name.Span, symbol.Name);
-            else if (DeclareGlobal(structDef.Name, symbol))
-                _structs[symbol.Name] = symbol;
-            structDefs.Add((structDef, symbol));
+            if (item is StructDef structDef)
+                structDefs.Add((structDef, DeclareStruct(structDef)));
+            else if (item is EnumDef enumDef)
+                enumDefs.Add(DeclareEnum(enumDef));
         }
 
         var constants = ImmutableArray.CreateBuilder<BoundConstant>();
@@ -80,8 +81,8 @@ public sealed class Binder
                     var symbol = structDefs.First(s => s.Syntax == structDef).Symbol;
                     methods.AddRange(BindStructMembers(structDef, symbol));
                     break;
-                case EnumDef:
-                    Unsupported("enums");
+                case EnumDef enumDef:
+                    BindVariantFields(enumDef, enumDefs.First(e => e.Syntax == enumDef).Symbol);
                     break;
             }
         }
@@ -100,7 +101,79 @@ public sealed class Binder
 
         _scope = new Scope(_global);
         var topLevel = unit.Items.OfType<Stmt>().Select(BindStmt).ToImmutableArray();
-        return new BoundProgram(boundStructs, constants.ToImmutable(), boundFunctions, new BoundBlock(topLevel, unit.Span));
+        return new BoundProgram(
+            [.. enumDefs.Select(e => e.Symbol)], boundStructs, constants.ToImmutable(), boundFunctions, new BoundBlock(topLevel, unit.Span));
+    }
+
+    private StructSymbol DeclareStruct(StructDef structDef)
+    {
+        var symbol = new StructSymbol(structDef.Name.Text);
+        if (BuiltinTypeNames.Contains(symbol.Name))
+            _diagnostics.ReportDuplicateDefinition(structDef.Name.Span, symbol.Name);
+        else if (DeclareGlobal(structDef.Name, symbol))
+            _structs[symbol.Name] = symbol;
+        return symbol;
+    }
+
+    /// <summary>
+    /// Declares an enum and its variant names (SPEC §4.4). A variant name shared with another enum
+    /// becomes ambiguous; one shared with any other global is TP0214.
+    /// </summary>
+    private (EnumDef Syntax, EnumSymbol Symbol) DeclareEnum(EnumDef enumDef)
+    {
+        var symbol = new EnumSymbol(enumDef.Name.Text);
+        if (BuiltinTypeNames.Contains(symbol.Name))
+            _diagnostics.ReportDuplicateDefinition(enumDef.Name.Span, symbol.Name);
+        else if (DeclareGlobal(enumDef.Name, symbol))
+            _enums[symbol.Name] = symbol;
+
+        var variants = ImmutableArray.CreateBuilder<VariantSymbol>();
+        foreach (var variantDef in enumDef.Variants)
+        {
+            var variant = new VariantSymbol(variantDef.Name.Text, symbol);
+            if (variants.Any(v => v.Name == variant.Name))
+            {
+                _diagnostics.ReportDuplicateDefinition(variantDef.Name.Span, variant.Name);
+                continue;
+            }
+            variants.Add(variant);
+
+            switch (_global.LookupLocal(variant.Name))
+            {
+                case null:
+                    _global.Declare(variant);
+                    break;
+                case VariantSymbol other:
+                    _global.Declare(new AmbiguousVariantSymbol(variant.Name, [other, variant]));
+                    break;
+                case AmbiguousVariantSymbol ambiguous:
+                    _global.Declare(new AmbiguousVariantSymbol(variant.Name, [.. ambiguous.Variants, variant]));
+                    break;
+                default:
+                    _diagnostics.ReportDuplicateDefinition(variantDef.Name.Span, variant.Name);
+                    break;
+            }
+        }
+        symbol.Variants = variants.ToImmutable();
+        return (enumDef, symbol);
+    }
+
+    private void BindVariantFields(EnumDef enumDef, EnumSymbol symbol)
+    {
+        foreach (var variantDef in enumDef.Variants)
+        {
+            if (symbol.FindVariant(variantDef.Name.Text) is not { } variant || !variant.Fields.IsEmpty)
+                continue;
+            var fields = ImmutableArray.CreateBuilder<FieldSymbol>();
+            foreach (var field in variantDef.Fields)
+            {
+                if (fields.Any(f => f.Name == field.Name.Text))
+                    _diagnostics.ReportDuplicateDefinition(field.Name.Span, field.Name.Text);
+                else
+                    fields.Add(new FieldSymbol(field.Name.Text, BindType(field.Type)));
+            }
+            variant.Fields = fields.ToImmutable();
+        }
     }
 
     private BoundConstant BindConstDef(ConstDef constDef)
@@ -225,6 +298,14 @@ public sealed class Binder
                 _scriptNames.Add(forStmt.Variable.Text);
                 CollectScriptNames(forStmt.Body);
                 break;
+            case MatchStmt match:
+                foreach (var arm in match.Arms)
+                {
+                    if (arm.Pattern is VariantPattern { Bindings: { } names })
+                        _scriptNames.UnionWith(names.Select(n => n.Text).Where(n => n != "_"));
+                    CollectScriptNames(arm.Body);
+                }
+                break;
         }
     }
 
@@ -284,6 +365,8 @@ public sealed class Binder
                 return Unsupported("the py type");
             case NamedType named when _structs.TryGetValue(named.Name.Text, out var structSymbol):
                 return structSymbol.Type;
+            case NamedType named when _enums.TryGetValue(named.Name.Text, out var enumSymbol):
+                return enumSymbol.Type;
             case NamedType named:
                 _diagnostics.ReportUndefinedType(named.Span, named.Name.Text);
                 return TaipanType.Error;
@@ -337,14 +420,178 @@ public sealed class Binder
         IfStmt ifStmt => BindIf(ifStmt),
         WhileStmt whileStmt => BindWhile(whileStmt),
         ForStmt forStmt => BindFor(forStmt),
-        MatchStmt match => UnsupportedStmt("match", match.Span),
+        MatchStmt match => BindMatch(match),
         _ => throw new InvalidOperationException($"unexpected statement {stmt.GetType().Name}"),
     };
 
-    private BoundBlock UnsupportedStmt(string feature, TextSpan span)
+    // ---- match (SPEC §5.1) ----
+
+    private BoundMatch BindMatch(MatchStmt match)
     {
-        Unsupported(feature);
-        return new BoundBlock([], span);
+        var scrutinee = BindValue(match.Scrutinee);
+        var type = scrutinee.Type;
+        if (ReportIfOptional(scrutinee, match.Scrutinee.Span))
+            type = TaipanType.Error;
+        else if (!type.ContainsError && type is not EnumType && type != TaipanType.Int && type != TaipanType.Str && type != TaipanType.Bool)
+        {
+            _diagnostics.ReportCannotMatch(match.Scrutinee.Span, type);
+            type = TaipanType.Error;
+        }
+
+        var covered = new MatchCoverage();
+        var arms = ImmutableArray.CreateBuilder<BoundArm>();
+        var allValid = true;
+        foreach (var arm in match.Arms)
+        {
+            var (pattern, bindings, key) = BindPattern(arm.Pattern, type);
+            allValid &= key is not null;
+            var reachable = covered.Add(key);
+            if (!reachable)
+                _diagnostics.ReportUnreachableArm(arm.Pattern.Span);
+
+            var outer = _scope;
+            _scope = new Scope(outer);
+            foreach (var (identifier, symbol) in bindings)
+                DeclareLocal(identifier, symbol);
+            var body = BindBlock(arm.Body);
+            _scope = outer;
+            arms.Add(new BoundArm(pattern, body, reachable));
+        }
+
+        // An invalid pattern was already reported; don't also call its variant missing.
+        if (allValid && !type.ContainsError && covered.Missing(type) is { Count: > 0 } missing)
+            _diagnostics.ReportNonExhaustiveMatch(new TextSpan(match.Span.Start, "match".Length), missing);
+        return new BoundMatch(scrutinee, arms.ToImmutable(), match.Span);
+    }
+
+    /// <summary>
+    /// Binds a pattern against the scrutinee type. Returns its bindings to declare in the arm, and
+    /// a coverage key: <c>_</c>, the variant, or the literal value (null if the pattern is invalid).
+    /// </summary>
+    private (BoundPattern Pattern, List<(Identifier, VariableSymbol)> Bindings, object? Key) BindPattern(Pattern pattern, TaipanType type)
+    {
+        var bindings = new List<(Identifier, VariableSymbol)>();
+        switch (pattern)
+        {
+            case WildcardPattern:
+                return (new BoundWildcardPattern(), bindings, MatchCoverage.Wildcard);
+            case IntPattern intPattern:
+                return LiteralPattern(pattern, TaipanType.Int, type, intPattern.Value >= long.MinValue && intPattern.Value <= long.MaxValue
+                    ? (long)intPattern.Value
+                    : OutOfRange(intPattern.Span));
+            case StringPattern stringPattern:
+                return LiteralPattern(pattern, TaipanType.Str, type, stringPattern.Value);
+            case BoolPattern boolPattern:
+                return LiteralPattern(pattern, TaipanType.Bool, type, boolPattern.Value);
+            case VariantPattern variantPattern:
+                var variant = ResolveVariantPattern(variantPattern, type);
+                if (variant is null)
+                {
+                    return (new BoundWildcardPattern(), bindings, null);
+                }
+                var symbols = ImmutableArray<VariableSymbol?>.Empty;
+                if (variantPattern.Bindings is { } names && !(names.IsEmpty && variant.Fields.IsEmpty))
+                {
+                    if (names.Length != variant.Fields.Length)
+                    {
+                        _diagnostics.ReportBindingCount(variantPattern.Span, variant.Name, variant.Fields.Length, names.Length);
+                        return (new BoundWildcardPattern(), bindings, null);
+                    }
+                    var builder = ImmutableArray.CreateBuilder<VariableSymbol?>();
+                    foreach (var (name, field) in names.Zip(variant.Fields))
+                    {
+                        if (name.Text == "_")
+                        {
+                            builder.Add(null);
+                            continue;
+                        }
+                        var symbol = new VariableSymbol(name.Text, field.Type, VariableKind.Let);
+                        if (bindings.Any(b => b.Item1.Text == name.Text))
+                            _diagnostics.ReportDuplicateDefinition(name.Span, name.Text);
+                        else
+                            bindings.Add((name, symbol));
+                        builder.Add(symbol);
+                    }
+                    symbols = builder.ToImmutable();
+                }
+                return (new BoundVariantPattern(variant, symbols), bindings, variant);
+            default:
+                return (new BoundWildcardPattern(), bindings, null);
+        }
+    }
+
+    private object? OutOfRange(TextSpan span)
+    {
+        _diagnostics.ReportIntegerOutOfRange(span);
+        return null;
+    }
+
+    private (BoundPattern, List<(Identifier, VariableSymbol)>, object?) LiteralPattern(Pattern pattern, TaipanType patternType, TaipanType type, object? value)
+    {
+        if (!type.ContainsError && type != patternType)
+        {
+            _diagnostics.ReportTypeMismatch(pattern.Span, type, patternType);
+            value = null;
+        }
+        return (value is null ? new BoundWildcardPattern() : new BoundLiteralPattern(value), [], value);
+    }
+
+    /// <summary>Variant patterns resolve against the scrutinee's enum, so they're never ambiguous (SPEC §5.1).</summary>
+    private VariantSymbol? ResolveVariantPattern(VariantPattern pattern, TaipanType type)
+    {
+        if (type.ContainsError)
+            return null;
+        if (type is not EnumType { Symbol: var enumSymbol })
+        {
+            var found = pattern.Enum?.Text ?? (_global.Lookup(pattern.Variant.Text) switch
+            {
+                VariantSymbol v => v.Enum.Name,
+                AmbiguousVariantSymbol a => a.Variants[0].Enum.Name,
+                _ => $"variant '{pattern.Variant.Text}'",
+            });
+            _diagnostics.ReportTypeMismatch(pattern.Span, type, found);
+            return null;
+        }
+        if (pattern.Enum is { } qualifier && qualifier.Text != enumSymbol.Name)
+        {
+            if (_scope.Lookup(qualifier.Text) is EnumSymbol)
+                _diagnostics.ReportTypeMismatch(pattern.Span, type, qualifier.Text);
+            else
+                _diagnostics.ReportUndefinedName(qualifier.Span, qualifier.Text);
+            return null;
+        }
+        var variant = enumSymbol.FindVariant(pattern.Variant.Text);
+        if (variant is null)
+            _diagnostics.ReportNoVariant(pattern.Variant.Span, type, pattern.Variant.Text);
+        return variant;
+    }
+
+    /// <summary>Which arms a match has covered so far, for TP0300 and TP0204.</summary>
+    private sealed class MatchCoverage
+    {
+        public static readonly object Wildcard = new();
+
+        private readonly HashSet<object> _keys = [];
+
+        /// <summary>Records an arm; false if an earlier arm already covers it (unreachable).</summary>
+        public bool Add(object? key)
+        {
+            if (_keys.Contains(Wildcard))
+                return false;
+            return key is null || _keys.Add(key);
+        }
+
+        public List<string> Missing(TaipanType type)
+        {
+            if (_keys.Contains(Wildcard))
+                return [];
+            return type switch
+            {
+                EnumType e => [.. e.Symbol.Variants.Where(v => !_keys.Contains(v)).Select(v => v.Name)],
+                PrimitiveType { Name: "bool" } => [.. new[] { true, false }.Where(b => !_keys.Contains(b)).Select(b => b ? "True" : "False")],
+                _ => ["_"],
+            };
+        }
     }
 
     private BoundVariableDecl BindVariableDecl(
@@ -375,7 +622,7 @@ public sealed class Binder
         var symbol = LookupName(target.Name, target.Span);
         if (symbol is not VariableSymbol variable)
         {
-            if (symbol is FunctionSymbol or StructSymbol)
+            if (symbol is FunctionSymbol or StructSymbol or EnumSymbol or VariantSymbol or AmbiguousVariantSymbol)
                 _diagnostics.ReportCannotAssign(target.Span, target.Name, "function", null);
             return new BoundExprStmt(BindValue(assign.Value), assign.Span);
         }
@@ -719,6 +966,14 @@ public sealed class Binder
             case FunctionSymbol or StructSymbol:
                 _diagnostics.ReportFunctionAsValue(name.Span, name.Name);
                 return new BoundErrorExpr(name.Span);
+            case EnumSymbol:
+                _diagnostics.ReportTypeAsValue(name.Span, name.Name);
+                return new BoundErrorExpr(name.Span);
+            case VariantSymbol variant:
+                return BindVariantValue(variant, name.Span);
+            case AmbiguousVariantSymbol ambiguous:
+                ReportAmbiguous(ambiguous, name.Span);
+                return new BoundErrorExpr(name.Span);
             default:
                 return new BoundErrorExpr(name.Span);
         }
@@ -931,6 +1186,9 @@ public sealed class Binder
 
     private BoundExpr BindMember(MemberExpr member)
     {
+        if (TryQualifiedVariant(member, out var qualified))
+            return qualified is null ? new BoundErrorExpr(member.Span) : BindVariantValue(qualified, member.Span);
+
         var target = BindValue(member.Target);
         var name = member.Member.Text;
         if (target.Type.ContainsError || ReportIfOptional(target, member.Target.Span))
@@ -1001,6 +1259,12 @@ public sealed class Binder
         {
             case StructSymbol structSymbol:
                 return BindConstruct(call, structSymbol);
+            case VariantSymbol variant:
+                return BindConstructVariant(call, variant);
+            case AmbiguousVariantSymbol ambiguous:
+                BindArguments(call);
+                ReportAmbiguous(ambiguous, calleeName.Span);
+                return new BoundErrorExpr(call.Span);
             case FunctionSymbol { Builtin: { } builtin } function:
                 ReportKeywordArguments(call);
                 return BindBuiltinCall(call, function, builtin);
@@ -1015,6 +1279,9 @@ public sealed class Binder
                 return new BoundErrorExpr(call.Span);
         }
     }
+
+    private void ReportAmbiguous(AmbiguousVariantSymbol ambiguous, TextSpan span) =>
+        _diagnostics.ReportAmbiguousVariant(span, ambiguous.Name, ambiguous.Variants.Select(v => v.Enum.Name));
 
     private ImmutableArray<BoundExpr> BindArguments(CallExpr call) =>
         [.. call.Arguments.Select(a => BindValue(a.Value))];
@@ -1040,17 +1307,39 @@ public sealed class Binder
             _diagnostics.ReportKeywordArguments(keyword.Span);
     }
 
-    // Positional: one argument per field in order. Keyword: every field exactly once (SPEC §4.6).
-    private BoundExpr BindConstruct(CallExpr call, StructSymbol structSymbol)
+    private BoundExpr BindConstruct(CallExpr call, StructSymbol structSymbol) =>
+        BindFieldArguments(call, structSymbol.Name, structSymbol.Fields) is var (arguments, isKeyword) && arguments is { } valid
+            ? new BoundConstruct(structSymbol, valid, isKeyword, call.Span)
+            : new BoundErrorExpr(call.Span);
+
+    private BoundExpr BindConstructVariant(CallExpr call, VariantSymbol variant)
     {
-        var fields = structSymbol.Fields;
+        if (variant.Fields.IsEmpty)
+        {
+            // A variant without a payload is a value, not a function (SPEC §4.4).
+            BindArguments(call);
+            _diagnostics.ReportNotAFunction(call.Callee.Span, variant.Name);
+            return new BoundErrorExpr(call.Span);
+        }
+        return BindFieldArguments(call, variant.Name, variant.Fields) is var (arguments, isKeyword) && arguments is { } valid
+            ? new BoundConstructVariant(variant, valid, isKeyword, call.Span)
+            : new BoundErrorExpr(call.Span);
+    }
+
+    /// <summary>
+    /// Constructor arguments for a struct or variant (SPEC §4.6). Positional: one per field, in
+    /// order. Keyword: every field exactly once. Null if any argument is wrong.
+    /// </summary>
+    private (ImmutableArray<(FieldSymbol, BoundExpr)>? Arguments, bool IsKeyword) BindFieldArguments(
+        CallExpr call, string owner, ImmutableArray<FieldSymbol> fields)
+    {
         var isKeyword = call.Arguments.Any(a => a.Name is not null);
         if (!isKeyword)
         {
-            var positional = BindParameterArguments(call, structSymbol.Name, [.. fields.Select(f => f.Type)]);
+            var positional = BindParameterArguments(call, owner, [.. fields.Select(f => f.Type)]);
             if (positional.Length != fields.Length)
-                return new BoundErrorExpr(call.Span);
-            return new BoundConstruct(structSymbol, [.. fields.Zip(positional)], IsKeyword: false, call.Span);
+                return (null, false);
+            return ([.. fields.Zip(positional)], false);
         }
 
         var arguments = ImmutableArray.CreateBuilder<(FieldSymbol, BoundExpr)>();
@@ -1059,10 +1348,10 @@ public sealed class Binder
         foreach (var argument in call.Arguments)
         {
             var name = argument.Name!;
-            var field = structSymbol.FindField(name.Text);
+            var field = fields.FirstOrDefault(f => f.Name == name.Text);
             if (field is null)
             {
-                _diagnostics.ReportNoField(name.Span, structSymbol.Type, name.Text);
+                _diagnostics.ReportNoField(name.Span, owner, name.Text);
                 BindValue(argument.Value);
                 valid = false;
                 continue;
@@ -1077,16 +1366,46 @@ public sealed class Binder
 
         foreach (var missing in fields.Where(f => !given.Contains(f.Name)))
         {
-            _diagnostics.ReportMissingField(call.Callee.Span, missing.Name, structSymbol.Name);
+            _diagnostics.ReportMissingField(call.Callee.Span, missing.Name, owner);
             valid = false;
         }
-        return valid
-            ? new BoundConstruct(structSymbol, arguments.ToImmutable(), IsKeyword: true, call.Span)
-            : new BoundErrorExpr(call.Span);
+        return (valid ? arguments.ToImmutable() : null, true);
+    }
+
+    /// <summary>
+    /// <c>Enum.Variant</c>: the variant, when <paramref name="member"/>'s target names an enum
+    /// that isn't shadowed. Reports TP0210 for a variant the enum lacks.
+    /// </summary>
+    private bool TryQualifiedVariant(MemberExpr member, out VariantSymbol? variant)
+    {
+        variant = null;
+        if (member.Target is not NameExpr enumName || _scope.Lookup(enumName.Name) is not EnumSymbol enumSymbol)
+            return false;
+        variant = enumSymbol.FindVariant(member.Member.Text);
+        if (variant is null)
+            _diagnostics.ReportNoVariant(member.Member.Span, enumSymbol.Type, member.Member.Text);
+        return true;
+    }
+
+    /// <summary>A variant used as a value: only one without a payload is a value by itself.</summary>
+    private BoundExpr BindVariantValue(VariantSymbol variant, TextSpan span)
+    {
+        if (variant.Fields.IsEmpty)
+            return new BoundConstructVariant(variant, [], IsKeyword: false, span);
+        _diagnostics.ReportWrongArgumentCount(span, variant.Name, Arguments(variant.Fields.Length), 0);
+        return new BoundErrorExpr(span);
     }
 
     private BoundExpr BindMethodCall(CallExpr call, MemberExpr member)
     {
+        if (TryQualifiedVariant(member, out var qualified))
+        {
+            if (qualified is not null)
+                return BindConstructVariant(call, qualified);
+            BindArguments(call);
+            return new BoundErrorExpr(call.Span);
+        }
+
         var target = BindValue(member.Target);
         var name = member.Member.Text;
         ReportKeywordArguments(call);

@@ -1,0 +1,10 @@
+tests/cases/m7/tp0209_variants.tpn:6:9: error TP0209: 'Circle' takes 1 argument, found 0
+tests/cases/m7/tp0209_variants.tpn:7:9: error TP0209: 'Rect' takes 2 arguments, found 1
+tests/cases/m7/tp0209_variants.tpn:8:9: error TP0209: missing field 'height' in 'Rect'
+tests/cases/m7/tp0209_variants.tpn:9:9: error TP0209: missing field 'radius' in 'Circle'
+tests/cases/m7/tp0209_variants.tpn:9:16: error TP0210: Circle has no field 'diameter'
+tests/cases/m7/tp0209_variants.tpn:11:5: error TP0209: 'Circle' has 1 field, found 2 bindings
+tests/cases/m7/tp0209_variants.tpn:12:5: error TP0209: 'Rect' has 2 fields, found 1 binding
+tests/cases/m7/tp0209_variants.tpn:13:5: error TP0209: 'Dot' has 0 fields, found 1 binding
+tests/cases/m7/tp0209_variants.tpn:14:5: error TP0210: Shape has no variant 'Square'
+tests/cases/m7/tp0209_variants.tpn:19:13: error TP0214: duplicate definition of 'w'

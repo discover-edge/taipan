@@ -1,0 +1,1 @@
+tests/cases/m7/tp0204_health_without_ok.tpn:29:5: error TP0204: non-exhaustive match (missing: Ok)

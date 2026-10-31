@@ -1,0 +1,10 @@
+tests/cases/m7/tp0200_match.tpn:10:5: error TP0200: expected Light, found int
+tests/cases/m7/tp0200_match.tpn:11:5: error TP0200: expected Light, found Other
+tests/cases/m7/tp0200_match.tpn:13:7: error TP0200: cannot match on float
+tests/cases/m7/tp0200_match.tpn:15:7: error TP0200: cannot match on list[int]
+tests/cases/m7/tp0200_match.tpn:18:5: error TP0200: expected int, found str
+tests/cases/m7/tp0200_match.tpn:19:5: error TP0200: expected int, found Light
+tests/cases/m7/tp0200_match.tpn:21:9: error TP0200: 'Light' is a type, not a value
+tests/cases/m7/tp0200_match.tpn:22:9: error TP0200: 'Red' is not a function
+tests/cases/m7/tp0200_match.tpn:24:7: error TP0203: Light? must be narrowed before use
+  help: narrow it with 'is some', or give a default with '??'

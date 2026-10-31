@@ -30,7 +30,19 @@ public sealed class CSharpEmitter
     private LocalNames _locals = null!;
     private VariableSymbol? _self;
     private readonly Dictionary<BoundExpr, string> _hoisted = new(ReferenceEqualityComparer.Instance);
+    private readonly Stack<LoopContext> _loops = new();
     private int _indent;
+
+    /// <summary>
+    /// A loop being emitted. Inside a <c>switch</c>, a C# <c>break</c> would leave the switch, so
+    /// a Taipan <c>break</c> there jumps to <see cref="BreakLabel"/> after the loop instead.
+    /// </summary>
+    private sealed class LoopContext
+    {
+        public int SwitchDepth { get; set; }
+
+        public string? BreakLabel { get; set; }
+    }
 
     private CSharpEmitter(SourceText source, BoundProgram program)
     {
@@ -41,6 +53,8 @@ public sealed class CSharpEmitter
             .. program.Constants.Select(c => c.Symbol.Name),
             .. program.Functions.Select(f => f.Symbol.Name),
             .. program.Structs.Select(s => s.Symbol.Name),
+            .. program.Enums.Select(e => e.Name),
+            .. program.Enums.SelectMany(e => e.Variants.Select(v => v.Name)),
         ];
         _programClass = UniqueGlobal("TaipanProgram");
         _topLevelMethod = UniqueGlobal("TopLevel");
@@ -92,6 +106,12 @@ public sealed class CSharpEmitter
         {
             Line();
             EmitStruct(structDef);
+        }
+
+        foreach (var enumSymbol in _program.Enums)
+        {
+            Line();
+            EmitEnum(enumSymbol);
         }
 
         Line();
@@ -168,6 +188,34 @@ public sealed class CSharpEmitter
         Line("}");
     }
 
+    // An enum is an abstract record with a private constructor; each variant is a sealed record
+    // nested inside it (SPEC §8). Variants implement IVariant for display and equality.
+    private void EmitEnum(EnumSymbol symbol)
+    {
+        var variantInterface = $"{Runtime}.IVariant";
+        Line($"public abstract record @{symbol.Name}");
+        Line("{");
+        _indent++;
+        Line($"private @{symbol.Name}() {{ }}");
+        Line();
+        Line($"public sealed override string ToString() => {Runtime}.Display.Format(this);");
+        foreach (var variant in symbol.Variants)
+        {
+            Line();
+            var parameters = string.Join(", ", variant.Fields.Select(f => $"{TypeName(f.Type)} @{f.Name}"));
+            Line($"public sealed record @{variant.Name}({parameters}) : @{symbol.Name}, {variantInterface}");
+            Line("{");
+            _indent++;
+            var fields = string.Join(", ", variant.Fields.Select(f => $"(\"{f.Name}\", (object?)this.@{f.Name})"));
+            Line($"string {Runtime}.IStruct.TypeName => \"{variant.Name}\";");
+            Line($"{Collections}.IReadOnlyList<(string Name, object? Value)> {Runtime}.IStruct.Fields => [{fields}];");
+            _indent--;
+            Line("}");
+        }
+        _indent--;
+        Line("}");
+    }
+
     // ---- Statements ----
 
     private void EmitStatements(IEnumerable<BoundStmt> statements)
@@ -218,7 +266,15 @@ public sealed class CSharpEmitter
                 break;
             case BoundBreak brk:
                 LineDirective(brk.Span);
-                Line("break;");
+                if (_loops.TryPeek(out var loop) && loop.SwitchDepth > 0)
+                {
+                    loop.BreakLabel ??= _locals.Fresh("break_loop");
+                    Line($"goto {loop.BreakLabel};");
+                }
+                else
+                {
+                    Line("break;");
+                }
                 break;
             case BoundContinue cont:
                 LineDirective(cont.Span);
@@ -238,7 +294,7 @@ public sealed class CSharpEmitter
             case BoundWhile whileStmt:
                 LineDirective(whileStmt.Span);
                 Line($"while ({Expr(whileStmt.Condition)})");
-                EmitBody(whileStmt.Body);
+                EmitLoopBody(whileStmt.Body);
                 break;
             case BoundForRange forStmt:
                 EmitForRange(forStmt);
@@ -246,7 +302,10 @@ public sealed class CSharpEmitter
             case BoundForEach forEach:
                 LineDirective(forEach.Span);
                 Line($"foreach ({TypeName(forEach.Variable.Type)} @{_locals[forEach.Variable]} in {Runtime}.Iter.Over({Expr(forEach.Iterable)}))");
-                EmitBody(forEach.Body);
+                EmitLoopBody(forEach.Body);
+                break;
+            case BoundMatch match:
+                EmitMatch(match);
                 break;
             default:
                 throw new InvalidOperationException($"unexpected bound statement {stmt.GetType().Name}");
@@ -316,8 +375,66 @@ public sealed class CSharpEmitter
         var start = forStmt.Start is null ? "0L" : Expr(forStmt.Start);
         LineDirective(forStmt.Span);
         Line($"for (long {variable} = {start}, {end} = {Expr(forStmt.Stop)}; {variable} < {end}; {variable}++)");
-        EmitBody(forStmt.Body);
+        EmitLoopBody(forStmt.Body);
     }
+
+    private void EmitLoopBody(BoundBlock body)
+    {
+        var loop = new LoopContext();
+        _loops.Push(loop);
+        EmitBody(body);
+        _loops.Pop();
+        if (loop.BreakLabel is { } label)
+            Line($"{label}: ;");
+    }
+
+    // A switch statement; each arm's body gets its own braces so their locals don't clash (SPEC §8).
+    private void EmitMatch(BoundMatch match)
+    {
+        LineDirective(match.Span);
+        Line($"switch ({Expr(match.Scrutinee)})");
+        Line("{");
+        _indent++;
+        if (_loops.TryPeek(out var loop))
+            loop.SwitchDepth++;
+
+        var hasDefault = false;
+        foreach (var arm in match.Arms.Where(a => a.IsReachable))
+        {
+            hasDefault |= arm.Pattern is BoundWildcardPattern;
+            Line(CaseLabel(arm.Pattern));
+            Line("{");
+            _indent++;
+            EmitStatements(arm.Body.Statements);
+            var jumpsAway = TypeChecker.Terminates(arm.Body) || arm.Body.Statements.LastOrDefault() is BoundBreak or BoundContinue;
+            if (!jumpsAway)
+                Line("break;");
+            _indent--;
+            Line("}");
+        }
+        if (!hasDefault)
+        {
+            Line("default:");
+            Line("    throw new global::System.Diagnostics.UnreachableException();");
+        }
+
+        if (loop is not null)
+            loop.SwitchDepth--;
+        _indent--;
+        Line("}");
+    }
+
+    private string CaseLabel(BoundPattern pattern) => pattern switch
+    {
+        BoundWildcardPattern => "default:",
+        BoundLiteralPattern literal => $"case {Literal(literal.Value)}:",
+        BoundVariantPattern { Bindings.IsEmpty: true } variant => $"case {VariantTypeName(variant.Variant)}:",
+        BoundVariantPattern variant =>
+            $"case {VariantTypeName(variant.Variant)}({string.Join(", ", variant.Bindings.Select(b => b is null ? "_" : $"var @{_locals[b]}"))}):",
+        _ => throw new InvalidOperationException($"unexpected pattern {pattern.GetType().Name}"),
+    };
+
+    private static string VariantTypeName(VariantSymbol variant) => $"global::@{variant.Enum.Name}.@{variant.Name}";
 
     // ---- Expressions ----
 
@@ -341,6 +458,7 @@ public sealed class CSharpEmitter
             BoundListLiteral list => ListLiteral(list),
             BoundDictLiteral dict => DictLiteral(dict),
             BoundConstruct construct => Construct(construct),
+            BoundConstructVariant construct => ConstructVariant(construct),
             BoundFieldAccess access => $"{Operand(access.Target)}.@{access.Field.Name}",
             BoundIndex index => $"{Runtime}.Ops.Index({Expr(index.Target)}, {Expr(index.Index)})",
             BoundMethodCall call => $"{Operand(call.Target)}.@{call.Method.Name}({Arguments(call.Arguments)})",
@@ -413,7 +531,7 @@ public sealed class CSharpEmitter
         var left = Operand(binary.Left);
         var right = Operand(binary.Right);
         var compared = TypeChecker.Unwrap(leftType) is NoneType ? TypeChecker.Unwrap(binary.Right.Type) : TypeChecker.Unwrap(leftType);
-        var structural = compared is ListOfType or DictOfType or StructType;
+        var structural = compared is ListOfType or DictOfType or StructType or EnumType;
         return binary.Op switch
         {
             BinaryOp.Add when leftType is ListOfType => $"{Runtime}.Ops.Concat({l}, {r})",
@@ -508,6 +626,13 @@ public sealed class CSharpEmitter
         return $"new {TypeName(construct.Struct.Type)}({string.Join(", ", arguments)})";
     }
 
+    private string ConstructVariant(BoundConstructVariant construct)
+    {
+        var arguments = construct.Arguments.Select(a =>
+            construct.IsKeyword ? $"@{a.Field.Name}: {Expr(a.Value)}" : Expr(a.Value));
+        return $"new {VariantTypeName(construct.Variant)}({string.Join(", ", arguments)})";
+    }
+
     private string FString(BoundFString fstring)
     {
         var text = new StringBuilder("$\"");
@@ -567,6 +692,7 @@ public sealed class CSharpEmitter
         ListOfType list => $"{Collections}.List<{TypeName(list.Element)}>",
         DictOfType dict => $"{Collections}.OrderedDictionary<{TypeName(dict.Key)}, {TypeName(dict.Value)}>",
         StructType structType => $"global::@{structType.Symbol.Name}",
+        EnumType enumType => $"global::@{enumType.Symbol.Name}",
         OptionalOf optional => $"{TypeName(optional.Inner)}?",
         _ => throw new InvalidOperationException($"no C# type for {type}"),
     };

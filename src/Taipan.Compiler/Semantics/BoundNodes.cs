@@ -8,6 +8,7 @@ namespace Taipan.Compiler.Semantics;
 // this tree only. Spans point back at the source for #line mapping.
 
 public sealed record BoundProgram(
+    ImmutableArray<EnumSymbol> Enums,
     ImmutableArray<BoundStruct> Structs,
     ImmutableArray<BoundConstant> Constants,
     ImmutableArray<BoundFunction> Functions,
@@ -64,6 +65,24 @@ public sealed record BoundForRange(VariableSymbol Variable, BoundExpr? Start, Bo
 /// <summary><c>for v in e</c> over a list (elements), dict (keys) or str (characters).</summary>
 public sealed record BoundForEach(VariableSymbol Variable, BoundExpr Iterable, BoundBlock Body, TextSpan Span) : BoundStmt(Span);
 
+/// <summary>A <c>match</c>; arms marked unreachable (TP0300) are checked but not emitted.</summary>
+public sealed record BoundMatch(BoundExpr Scrutinee, ImmutableArray<BoundArm> Arms, TextSpan Span) : BoundStmt(Span);
+
+public sealed record BoundArm(BoundPattern Pattern, BoundBlock Body, bool IsReachable);
+
+public abstract record BoundPattern;
+
+public sealed record BoundWildcardPattern : BoundPattern;
+
+/// <summary>An int, str or bool literal pattern; <see cref="Value"/> is a <c>long</c>, <c>string</c> or <c>bool</c>.</summary>
+public sealed record BoundLiteralPattern(object Value) : BoundPattern;
+
+/// <summary>
+/// A variant pattern. <see cref="Bindings"/> has one entry per payload field (null for <c>_</c>),
+/// or is empty when the pattern binds nothing.
+/// </summary>
+public sealed record BoundVariantPattern(VariantSymbol Variant, ImmutableArray<VariableSymbol?> Bindings) : BoundPattern;
+
 // ---- Expressions ----
 
 public abstract record BoundExpr(TaipanType Type, TextSpan Span);
@@ -90,6 +109,10 @@ public sealed record BoundDictLiteral(ImmutableArray<(BoundExpr Key, BoundExpr V
 /// <summary>A struct constructor call. Arguments are in source order, each with the field it sets.</summary>
 public sealed record BoundConstruct(StructSymbol Struct, ImmutableArray<(FieldSymbol Field, BoundExpr Value)> Arguments, bool IsKeyword, TextSpan Span)
     : BoundExpr(Struct.Type, Span);
+
+/// <summary>An enum value; arguments are in source order as for <see cref="BoundConstruct"/>.</summary>
+public sealed record BoundConstructVariant(VariantSymbol Variant, ImmutableArray<(FieldSymbol Field, BoundExpr Value)> Arguments, bool IsKeyword, TextSpan Span)
+    : BoundExpr(Variant.Enum.Type, Span);
 
 public sealed record BoundFieldAccess(BoundExpr Target, FieldSymbol Field, TextSpan Span) : BoundExpr(Field.Type, Span);
 

@@ -78,7 +78,7 @@ public static class TypeChecker
 
     /// <summary>
     /// Whether control can't fall off the end of <paramref name="stmt"/>: a <c>return</c>, an
-    /// <c>if</c> with <c>else</c> whose branches all terminate, or a block containing one.
+    /// <c>if</c> with <c>else</c> or a <c>match</c> whose branches all terminate, or a block containing one.
     /// Loops never count (SPEC §4.5).
     /// </summary>
     public static bool Terminates(BoundStmt stmt) => stmt switch
@@ -86,6 +86,8 @@ public static class TypeChecker
         BoundReturn => true,
         BoundBlock block => block.Statements.Any(Terminates),
         BoundIf { Else: { } elseBlock } ifStmt => ifStmt.Clauses.All(c => Terminates(c.Body)) && Terminates(elseBlock),
+        // Exhaustive once it type-checks (SPEC §5.1).
+        BoundMatch match => match.Arms.Where(a => a.IsReachable).All(a => Terminates(a.Body)),
         _ => false,
     };
 }

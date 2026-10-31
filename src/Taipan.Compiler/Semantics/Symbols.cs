@@ -80,3 +80,27 @@ public enum BuiltinMethod
     DictGet, DictKeys, DictValues, DictRemove,
     StrUpper, StrLower, StrStrip, StrSplit, StrStartsWith, StrEndsWith, StrReplace,
 }
+
+/// <summary>An enum (SPEC §4.4). Variants are filled in once every type name is known.</summary>
+public sealed class EnumSymbol(string name) : Symbol(name)
+{
+    public ImmutableArray<VariantSymbol> Variants { get; set; } = [];
+
+    public EnumType Type => new(this);
+
+    public VariantSymbol? FindVariant(string name) => Variants.FirstOrDefault(v => v.Name == name);
+}
+
+/// <summary>An enum variant; <see cref="Fields"/> is empty for a variant without a payload.</summary>
+public sealed class VariantSymbol(string name, EnumSymbol @enum) : Symbol(name)
+{
+    public EnumSymbol Enum { get; } = @enum;
+
+    public ImmutableArray<FieldSymbol> Fields { get; set; } = [];
+}
+
+/// <summary>A variant name shared by several enums: only the qualified forms are valid (TP0216).</summary>
+public sealed class AmbiguousVariantSymbol(string name, ImmutableArray<VariantSymbol> variants) : Symbol(name)
+{
+    public ImmutableArray<VariantSymbol> Variants { get; } = variants;
+}

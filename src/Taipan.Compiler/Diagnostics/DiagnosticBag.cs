@@ -112,6 +112,31 @@ public sealed class DiagnosticBag
     public void ReportCannotInferNone(TextSpan span) =>
         Add("TP0206", span, "cannot infer the type of none", "add a type annotation");
 
+    public void ReportCannotMatch(TextSpan span, object type) =>
+        Add("TP0200", span, $"cannot match on {type}");
+
+    public void ReportTypeAsValue(TextSpan span, string name) =>
+        Add("TP0200", span, $"'{name}' is a type, not a value");
+
+    public void ReportNoVariant(TextSpan span, object enumType, string name) =>
+        Add("TP0210", span, $"{enumType} has no variant '{name}'");
+
+    public void ReportBindingCount(TextSpan span, string variant, int fields, int bindings) =>
+        Add("TP0209", span, $"'{variant}' has {fields} {(fields == 1 ? "field" : "fields")}, found {bindings} {(bindings == 1 ? "binding" : "bindings")}");
+
+    public void ReportNonExhaustiveMatch(TextSpan span, IEnumerable<string> missing) =>
+        Add("TP0204", span, $"non-exhaustive match (missing: {string.Join(", ", missing)})");
+
+    public void ReportAmbiguousVariant(TextSpan span, string variant, IEnumerable<string> enums)
+    {
+        var names = enums.ToList();
+        Add("TP0216", span, $"'{variant}' is ambiguous: it is a variant of {string.Join(" and ", names)}",
+            $"qualify it, e.g. '{names[0]}.{variant}'");
+    }
+
+    public void ReportUnreachableArm(TextSpan span) =>
+        _items.Add(new Diagnostic("TP0300", span, "unreachable match arm", IsWarning: true));
+
     public void ReportMethodAsValue(TextSpan span, string method) =>
         Add("TP0200", span, $"'{method}' is a method; call it");
 

@@ -7,7 +7,7 @@ namespace Taipan.Compiler.Emit;
 /// and again later in the enclosing block; C# doesn't, because a C# local's scope is its whole
 /// block. Such a nested local gets a numeric suffix. So does a local named <c>_</c>, which the
 /// emitter uses as the discard.
-/// An <c>is some</c> binding becomes a C# pattern variable, whose scope C# widens past the
+/// An <c>is some</c> or <c>match</c> binding becomes a C# pattern variable, whose scope C# widens past the
 /// guarded block, so it gets a suffix whenever its name is used by any other local in the method.
 /// </summary>
 public sealed class LocalNames
@@ -96,6 +96,7 @@ public sealed class LocalNames
     {
         BoundIf ifStmt => ifStmt.Clauses.Select(c => c.Condition).OfType<BoundIsSome>().Select(c => c.Binding),
         BoundWhile { Condition: BoundIsSome isSome } => [isSome.Binding],
+        BoundMatch match => match.Arms.SelectMany(a => a.Pattern is BoundVariantPattern p ? p.Bindings.OfType<VariableSymbol>() : []),
         _ => [],
     };
 
@@ -121,6 +122,10 @@ public sealed class LocalNames
                 break;
             case BoundForEach forEach:
                 yield return (forEach.Body.Statements, [forEach.Variable]);
+                break;
+            case BoundMatch match:
+                foreach (var arm in match.Arms)
+                    yield return (arm.Body.Statements, []);
                 break;
         }
     }
