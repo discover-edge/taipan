@@ -241,6 +241,24 @@ There are no other implicit conversions. Explicit conversions use the built-ins 
 - Payload fields are read-only and reachable only through `match` bindings.
 - Enums have structural equality.
 
+### 4.5 Names and checking rules
+- **Namespaces:** types (`int`, `float`, `bool`, `str`, user structs and enums) and values (functions, constants, variables, parameters, built-in functions) are separate. An unknown type name is `TP0201`.
+- **Global scope:** functions, constants and built-in functions share one global scope. Defining a name twice there, including a `def` or `const` with a built-in function's name, is `TP0214`.
+- **Shadowing (`TP0207`)** covers every name visible at the declaration, including globals and built-ins: `let len = 3` is `TP0207`. A function body can't see top-level `let`/`var` bindings (§4.1), so declaring the same name inside a function is allowed.
+- **Parameters** are immutable, like `let`. They're declared in the function's outermost scope, so `let x` in a body with a parameter `x` is `TP0207`. Two parameters with the same name are `TP0214`.
+- **Assignment** to anything other than a `var` (a `let`, a parameter, a loop variable, a constant or a function) is `TP0202`. Compound assignment `x op= e` is checked as `x = x op e`, so `var n = 1` then `n /= 2` is `TP0200`.
+- **Use before declaration:** a local or top-level binding referenced before its `let`/`var` is `TP0201`.
+- **Functions aren't values.** A function name can only be called. Any other use is `TP0200`. Calling something that isn't a function is also `TP0200`.
+- **Keyword arguments** in a call to anything other than a struct or variant constructor are `TP0218`.
+- **Return values:**
+  - `return` with a value in a function without a return type, or `return` without one in a function with a return type, is `TP0200`.
+  - Using a call to a function without a return type as a value is `TP0200`.
+- **Return-path analysis (`TP0208`).** A statement *terminates* if it is a `return`, or an `if` with an `else` whose every branch ends in a terminating statement. (In M7, a `match` whose arms all terminate also counts.) A block terminates if any statement in it does. A function with a return type whose body doesn't terminate is `TP0208`. Loops never terminate for this purpose, including `while True:`.
+- **Constants:** a `const` initializer may contain only literals, unary `-`, and the operators `+ - * / // %`. Anything else, including a reference to another constant, is `TP0217`. Evaluation happens at run time, so `const X = 1 // 0` panics at startup.
+- **Integer literals:** a literal outside the 64-bit signed range is `TP0200`. The exception is `-9223372036854775808`, where `-` is applied directly to the literal.
+- **Expression statements:** any expression may be used as a statement, and its value is discarded.
+- **Error types:** once an expression has an error, its type is treated as compatible with everything. This means one mistake is reported once, not again at every use.
+
 ---
 
 ## 5. Statements and expressions
@@ -301,8 +319,9 @@ Comparing values of unrelated types is `TP0200`.
 - `len(x) -> int` takes a list, dict, or str.
 - `range(stop)` and `range(start, stop)` iterate only (they're not a list).
 - `str(x) -> str` gives the display form.
-- `int(x: float) -> int` truncates toward zero. `int(x: str) -> int?` parses, returning `none` on failure.
-- `float(x: int) -> float`. `float(x: str) -> float?`.
+- `int(x: float) -> int` truncates toward zero. An `int` argument is returned unchanged. `int(x: str) -> int?` parses, returning `none` on failure.
+- `float(x: int) -> float`. A `float` argument is returned unchanged. `float(x: str) -> float?`.
+- `range` can only be used as the iterable of a `for` loop. Any other use is `TP0200`.
 
 **Methods**
 - `list[T]`: `append(x: T)`, `pop() -> T` (panics if empty), `insert(i: int, x: T)`, `contains(x: T) -> bool`
@@ -409,9 +428,38 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 | TP0214 | duplicate definition |
 | TP0215 | `break`/`continue` outside loop, or `return` outside function |
 | TP0216 | ambiguous enum variant; qualify it |
+| TP0217 | `const` initializer is not a constant expression |
+| TP0218 | keyword arguments outside a constructor |
 | TP0300 | warning: unreachable match arm |
 
 New codes go into this table before they're implemented.
+
+### 9.1 Type-checking messages
+Each diagnostic points at the expression, name or keyword at fault. TP0208 points at the function's name, and TP0209 at the call's callee.
+
+| Code | Message |
+|---|---|
+| TP0200 | `expected <T>, found <S>` (annotations, arguments, return values, assignments) |
+| TP0200 | `operator '<op>' cannot be applied to <S> and <T>` / `operator '<op>' cannot be applied to <S>` |
+| TP0200 | `cannot compare <S> and <T>` |
+| TP0200 | `'<f>' does not return a value` |
+| TP0200 | `'<f>' has no return type, so 'return' cannot have a value` / `missing return value; '<f>' returns <T>` |
+| TP0200 | `'<f>' is a function; call it` / `'<x>' is not a function` |
+| TP0200 | `integer literal is out of range` |
+| TP0200 | `'range' can only be used in a for loop` / `cannot iterate over <T>` |
+| TP0201 | `undefined name '<x>'` / `undefined type '<T>'` |
+| TP0202 | `cannot assign to '<x>': it is a <let binding\|parameter\|loop variable\|constant\|function>`, with help `declare it with 'var'` for a `let` binding |
+| TP0205 | `condition must be bool, found <T>` |
+| TP0207 | `'<x>' shadows an outer binding` |
+| TP0208 | `not all paths in '<f>' return a value` |
+| TP0209 | `'<f>' takes <n> arguments, found <m>` (`argument` when n is 1; `1 or 2 arguments` for `range`) |
+| TP0211 | `'<f>' cannot use top-level variable '<x>'`, with help `pass it as a parameter, or make it a const` |
+| TP0214 | `duplicate definition of '<x>'` |
+| TP0215 | `'break' outside a loop` / `'continue' outside a loop` / `'return' outside a function` |
+| TP0217 | `const initializer must be a constant expression` |
+| TP0218 | `keyword arguments are only allowed in constructors` |
+
+Types are written as in source: `int`, `str?`, `list[int]`. The type of `none` is written `none`, and a missing value is written `nothing`.
 
 ---
 
