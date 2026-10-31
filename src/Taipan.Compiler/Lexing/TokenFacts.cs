@@ -32,6 +32,7 @@ public static class TokenFacts
         ["as"] = TokenKind.AsKeyword,
         ["from"] = TokenKind.FromKeyword,
         ["import"] = TokenKind.ImportKeyword,
+        ["lambda"] = TokenKind.LambdaKeyword,
     };
 
     private static readonly Dictionary<TokenKind, string> KeywordText =

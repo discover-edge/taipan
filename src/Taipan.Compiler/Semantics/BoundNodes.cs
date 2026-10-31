@@ -79,6 +79,14 @@ public sealed record BoundContinue(TextSpan Span) : BoundStmt(Span);
 
 public sealed record BoundExprStmt(BoundExpr Expr, TextSpan Span) : BoundStmt(Span);
 
+/// <summary>
+/// A nested <c>def</c> (SPEC §3.7). <see cref="Symbol"/> holds the function value; it's declared
+/// before the body, which may refer to it.
+/// </summary>
+public sealed record BoundLocalFunction(
+    VariableSymbol Symbol, FunctionSymbol Function, ImmutableArray<VariableSymbol> Parameters, BoundBlock Body, TextSpan Span)
+    : BoundStmt(Span);
+
 public sealed record BoundIf(ImmutableArray<BoundIfClause> Clauses, BoundBlock? Else, TextSpan Span) : BoundStmt(Span);
 
 public sealed record BoundIfClause(BoundExpr Condition, BoundBlock Body);
@@ -161,6 +169,25 @@ public sealed record BoundBuiltinMethodCall(BoundExpr Target, BuiltinMethod Meth
 public sealed record BoundFString(ImmutableArray<BoundExpr> Parts, TextSpan Span) : BoundExpr(TaipanType.Str, Span);
 
 public sealed record BoundErrorExpr(TextSpan Span) : BoundExpr(TaipanType.Error, Span);
+
+// ---- Functions as values (SPEC §3.7) ----
+
+/// <summary>A lambda. A parameter named <c>_</c> is never referred to.</summary>
+public sealed record BoundLambda(ImmutableArray<VariableSymbol> Parameters, BoundExpr Body, FunctionType FunctionType, TextSpan Span)
+    : BoundExpr(FunctionType, Span);
+
+/// <summary>A top-level function used as a value.</summary>
+public sealed record BoundFunctionValue(FunctionSymbol Function, FunctionType FunctionType, TextSpan Span) : BoundExpr(FunctionType, Span);
+
+/// <summary>A call to a function value.</summary>
+public sealed record BoundInvoke(BoundExpr Callee, ImmutableArray<BoundExpr> Arguments, TaipanType Type, TextSpan Span) : BoundExpr(Type, Span);
+
+/// <summary>
+/// <c>sorted(xs, …)</c>, or <c>xs.sort(…)</c> when <see cref="InPlace"/>. <see cref="Keywords"/>
+/// are <c>key</c> and <c>reverse</c>, in source order (SPEC §6).
+/// </summary>
+public sealed record BoundSort(BoundExpr List, ImmutableArray<(string Name, BoundExpr Value)> Keywords, bool InPlace, TaipanType Type, TextSpan Span)
+    : BoundExpr(Type, Span);
 
 public sealed record BoundNone(TextSpan Span) : BoundExpr(TaipanType.None, Span);
 

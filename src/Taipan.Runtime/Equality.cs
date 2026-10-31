@@ -15,6 +15,7 @@ public static class Equality
         (double l, long r) => l == r,
         (string l, string r) => string.Equals(l, r, StringComparison.Ordinal),
         (bool l, bool r) => l == r,
+        (IFunction l, IFunction r) => ReferenceEquals(l, r),
         (IStruct l, IStruct r) => l.GetType() == r.GetType() && FieldsEqual(l, r),
         (IDictionary l, IDictionary r) => DictsEqual(l, r),
         (IList l, IList r) => ListsEqual(l, r),

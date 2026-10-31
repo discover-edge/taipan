@@ -33,6 +33,7 @@ public abstract record TaipanType
         OptionalOf optional => optional.Inner.ContainsError,
         StructType structType => structType.TypeArguments.Any(a => a.ContainsError),
         EnumType enumType => enumType.TypeArguments.Any(a => a.ContainsError),
+        FunctionType function => function.Parameters.Any(p => p.ContainsError) || function.Result.ContainsError,
         _ => false,
     };
 
@@ -138,6 +139,21 @@ public sealed record EnumType(EnumSymbol Symbol, ImmutableArray<TaipanType> Type
     public override int GetHashCode() => Symbol.GetHashCode();
 
     public override string ToString() => StructType.GenericName(Symbol.Name, TypeArguments);
+}
+
+/// <summary>
+/// <c>Callable[[A, B], R]</c> (SPEC §3.7). <see cref="Result"/> is <see cref="TaipanType.Nothing"/>
+/// for a function that returns nothing, written <c>none</c>. Equal when every type matches.
+/// </summary>
+public sealed record FunctionType(ImmutableArray<TaipanType> Parameters, TaipanType Result) : TaipanType
+{
+    public bool Equals(FunctionType? other) =>
+        other is not null && other.Parameters.SequenceEqual(Parameters) && other.Result == Result;
+
+    public override int GetHashCode() => HashCode.Combine(Parameters.Length, Result);
+
+    public override string ToString() =>
+        $"Callable[[{string.Join(", ", Parameters)}], {(Result is NothingType ? "none" : Result.ToString())}]";
 }
 
 /// <summary>A type parameter inside a generic definition: an opaque type (SPEC §3.6).</summary>

@@ -1,0 +1,25 @@
+def double(x: int) -> int:
+    return x * 2
+
+def first[T](xs: list[T]) -> T:
+    return xs[0]
+
+struct Point:
+    x: int
+
+let f = double
+f("two")
+let n = 5
+n(1)
+(n + 1)(2)
+let g = first
+let h = len
+let p = Point
+let k: int = lambda: 1
+print(f < f)
+print(sorted([Point(1)]))
+print(sorted([1], key=lambda x: x > 0))
+let m = map(lambda x: x, 5)
+let d: dict[Callable[[], int], int] = {}
+let w = map(double, ["a"])
+let u = map(lambda x: print(x), [1])

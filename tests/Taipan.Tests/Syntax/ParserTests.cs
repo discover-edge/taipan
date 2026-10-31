@@ -257,6 +257,50 @@ public class ParserTests
         Assert.Equal(new TextSpan(7, 4), inner.Span);
     }
 
+    // ---- functions as values (SPEC §3.7) ----
+
+    [Fact]
+    public void LambdaBodyIsAWholeExpression() =>
+        Assert.Equal(
+            "LambdaExpr([x, _], BinaryExpr(NameExpr(x), Coalesce, NameExpr(y)))",
+            Expr("lambda x, _: x ?? y"));
+
+    [Fact]
+    public void LambdaWithoutParameters() =>
+        Assert.Equal("LambdaExpr([], LambdaExpr([], IntLiteral(1)))", Expr("lambda: lambda: 1"));
+
+    [Fact]
+    public void LambdaArgumentsEndAtComma() =>
+        Assert.Equal(
+            "CallExpr(NameExpr(f), [Argument(null, LambdaExpr([x], NameExpr(x))), Argument(key, LambdaExpr([], IntLiteral(0)))])",
+            Expr("f(lambda x: x, key=lambda: 0)"));
+
+    [Fact]
+    public void CallableTypes() =>
+        Assert.Equal(
+            "LetStmt(f, CallableType([NamedType(int), NamedType(str)], null), NameExpr(g))\n" +
+            "LetStmt(h, OptionalType(CallableType([], ListType(NamedType(int)))), NameExpr(g))",
+            Snapshot("let f: Callable[[int, str], none] = g\nlet h: Callable[[], list[int]]? = g\n"));
+
+    [Fact]
+    public void BareCallableIsANamedType() =>
+        Assert.Equal("LetStmt(f, NamedType(Callable), NameExpr(g))", Snapshot("let f: Callable = g\n"));
+
+    [Fact]
+    public void DefInABlockIsANestedFunction() =>
+        Assert.Equal(
+            "FuncDef(f, [], [], null, Block([FuncDefStmt(FuncDef(g, [], [Param(x, NamedType(int))], NamedType(int), Block([ReturnStmt(NameExpr(x))])))]))",
+            Snapshot("def f():\n    def g(x: int) -> int:\n        return x\n"));
+
+    [Theory]
+    [InlineData("let f = lambda x y: x\n", "1:18 TP0100: expected ':', found name 'y'")]
+    [InlineData("let f = lambda (x): x\n", "1:16 TP0100: expected ':', found '('")]
+    [InlineData("let f: Callable[int, str] = g\n", "1:17 TP0100: expected '[', found name 'int'")]
+    [InlineData("let f: Callable[[int] int] = g\n", "1:23 TP0100: expected ',', found name 'int'")]
+    [InlineData("let f: Callable[[int], none?] = g\n", "1:28 TP0100: expected ']', found '?'")]
+    public void FunctionSyntaxErrors(string text, string expected) =>
+        Assert.Equal([expected], Errors(text));
+
     // ---- expressions: precedence and associativity ----
 
     [Fact]

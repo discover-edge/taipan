@@ -94,8 +94,41 @@ public sealed class DiagnosticBag
     public void ReportMissingReturnValue(TextSpan span, string function, object returnType) =>
         Add("TP0200", span, $"missing return value; '{function}' returns {returnType}");
 
-    public void ReportFunctionAsValue(TextSpan span, string function) =>
-        Add("TP0200", span, $"'{function}' is a function; call it");
+    public void ReportGenericAsValue(TextSpan span, string function) =>
+        Add("TP0200", span, $"'{function}' is generic, so it cannot be used as a value", "wrap it in a lambda");
+
+    public void ReportBuiltinAsValue(TextSpan span, string function) =>
+        Add("TP0200", span, $"built-in '{function}' cannot be used as a value", "wrap it in a lambda");
+
+    public void ReportCannotCall(TextSpan span, object type) =>
+        Add("TP0200", span, $"cannot call {type}");
+
+    public void ReportCannotSort(TextSpan span, object type) =>
+        Add("TP0200", span, $"cannot sort {type}", "pass a key, e.g. 'key=lambda x: ...'");
+
+    public void ReportCannotSortBy(TextSpan span, object type) =>
+        Add("TP0200", span, $"cannot sort by {type}");
+
+    public void ReportCannotInferLambdaParameter(TextSpan span, string parameter) =>
+        Add("TP0206", span, $"cannot infer the type of lambda parameter '{parameter}'", "add a type annotation");
+
+    public void ReportFunctionArgumentCount(TextSpan span, string expected, int found) =>
+        Add("TP0209", span, $"function takes {expected}, found {found}");
+
+    public void ReportLambdaParameterCount(TextSpan span, int expected, int found) =>
+        Add("TP0209", span, $"expected a lambda with {expected} {(expected == 1 ? "parameter" : "parameters")}, found {found}");
+
+    public void ReportRepeatedArgument(TextSpan span, string name) =>
+        Add("TP0209", span, $"argument '{name}' is given more than once");
+
+    public void ReportBareCallable(TextSpan span) =>
+        Add("TP0209", span, "'Callable' takes a parameter list and a result type");
+
+    public void ReportNoKeywordArgument(TextSpan span, string function, string name) =>
+        Add("TP0218", span, $"'{function}' has no keyword argument '{name}'");
+
+    public void ReportNestedTypeParameters(TextSpan span) =>
+        Add("TP0223", span, "nested functions cannot have type parameters");
 
     public void ReportNotAFunction(TextSpan span, string text) =>
         Add("TP0200", span, $"'{text}' is not a function");

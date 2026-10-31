@@ -21,7 +21,7 @@ public sealed record BindResult(BoundProgram Program, ImmutableArray<Diagnostic>
 public sealed class Binder
 {
     private static readonly BigInteger MaxInt = long.MaxValue;
-    private static readonly HashSet<string> BuiltinTypeNames = ["int", "float", "bool", "str", "list", "dict", "py"];
+    private static readonly HashSet<string> BuiltinTypeNames = ["int", "float", "bool", "str", "list", "dict", "py", "Callable"];
 
     private DiagnosticBag _diagnostics = new();
     private readonly Scope _builtins = new(null);
@@ -70,6 +70,10 @@ public sealed class Binder
     private readonly HashSet<string> _scriptNames = [];
     private Scope _scope;
     private FunctionSymbol? _function;
+
+    // The top-level function or method whose body is being bound, outside any nested function.
+    // Its body can't see top-level variables (TP0211); a top-level statement's can.
+    private FunctionSymbol? _outerFunction;
     private int _loopDepth;
     private string? _unsupported;
 
@@ -337,6 +341,7 @@ public sealed class Binder
         DictOfType d => MentionsTypeParameter(d.Key) || MentionsTypeParameter(d.Value),
         StructType s => s.TypeArguments.Any(MentionsTypeParameter),
         EnumType e => e.TypeArguments.Any(MentionsTypeParameter),
+        FunctionType f => f.Parameters.Any(MentionsTypeParameter) || MentionsTypeParameter(f.Result),
         _ => false,
     };
 
@@ -577,6 +582,7 @@ public sealed class Binder
         var outerTypeParameters = EnterTypeParameters(
             symbol.Self?.Type is StructType { Symbol: var owner } ? owner.TypeParameters : symbol.TypeParameters);
         _function = symbol;
+        _outerFunction = symbol;
         _loopDepth = 0;
         _scope = new Scope(_global);
         if (symbol.Self is { } self)
@@ -590,6 +596,7 @@ public sealed class Binder
             _diagnostics.ReportNotAllPathsReturn(name.Span, symbol.Name);
 
         _function = null;
+        _outerFunction = null;
         _scope = _global;
         _typeParameters = outerTypeParameters;
         return new BoundFunction(symbol, boundBody, span) { Source = _source };
@@ -624,6 +631,9 @@ public sealed class Binder
             case ForStmt forStmt:
                 _scriptNames.Add(forStmt.Variable.Text);
                 CollectScriptNames(forStmt.Body);
+                break;
+            case FuncDefStmt funcDef:
+                _scriptNames.Add(funcDef.Function.Name.Text);
                 break;
             case MatchStmt match:
                 foreach (var arm in match.Arms)
@@ -675,8 +685,8 @@ public sealed class Binder
     {
         if (_scope.Lookup(name) is { } symbol)
             return symbol;
-        if (_function is not null && _scriptNames.Contains(name))
-            _diagnostics.ReportTopLevelVariableInFunction(span, _function.Name, name);
+        if (_outerFunction is not null && _scriptNames.Contains(name))
+            _diagnostics.ReportTopLevelVariableInFunction(span, _function!.Name, name);
         else
             _diagnostics.ReportUndefinedName(span, name);
         return null;
@@ -696,6 +706,12 @@ public sealed class Binder
                 return TaipanType.Str;
             case NamedType { Name.Text: "py" }:
                 return TaipanType.Py;
+            case NamedType { Name.Text: "Callable" } bare:
+                _diagnostics.ReportBareCallable(bare.Span);
+                return TaipanType.Error;
+            case CallableType callable:
+                return new FunctionType(
+                    [.. callable.Parameters.Select(BindType)], callable.Result is null ? TaipanType.Nothing : BindType(callable.Result));
             case NamedType named when _typeParameters.TryGetValue(named.Name.Text, out var typeParameter):
                 return typeParameter;
             case NamedType named when ResolveTypeName(named.Name.Text) is { } typeSymbol:
@@ -811,8 +827,45 @@ public sealed class Binder
         WhileStmt whileStmt => BindWhile(whileStmt),
         ForStmt forStmt => BindFor(forStmt),
         MatchStmt match => BindMatch(match),
+        FuncDefStmt funcDef => BindLocalFunction(funcDef),
         _ => throw new InvalidOperationException($"unexpected statement {stmt.GetType().Name}"),
     };
+
+    /// <summary>
+    /// A nested <c>def</c> (SPEC §3.7): a local function value, visible from here to the end of the
+    /// block and in its own body. Its body sees the enclosing bindings, and has its own returns and loops.
+    /// </summary>
+    private BoundLocalFunction BindLocalFunction(FuncDefStmt stmt)
+    {
+        var def = stmt.Function;
+        var outerTypeParameters = _typeParameters;
+        if (!def.TypeParams.IsEmpty)
+        {
+            // Bound as opaque types anyway, so the rest of the function doesn't report more errors.
+            _diagnostics.ReportNestedTypeParameters(def.TypeParams[0].Span);
+            _typeParameters = new Dictionary<string, TaipanType>(_typeParameters);
+            foreach (var parameter in NewTypeParameters(def.TypeParams))
+                _typeParameters.TryAdd(parameter.Name, parameter.Type);
+        }
+        var parameters = BindParams(def.Params);
+        var returnType = BindReturnType(def.ReturnType);
+        var function = new FunctionSymbol(def.Name.Text, parameters, returnType);
+        var symbol = new VariableSymbol(def.Name.Text, new FunctionType([.. parameters.Select(p => p.Type)], returnType), VariableKind.Function);
+        DeclareLocal(def.Name, symbol);
+
+        var (outerFunction, outerLoopDepth, outerScope) = (_function, _loopDepth, _scope);
+        _function = function;
+        _loopDepth = 0;
+        _scope = new Scope(outerScope);
+        for (var i = 0; i < parameters.Length; i++)
+            DeclareLocal(def.Params[i].Name, parameters[i]);
+        var body = BindBlock(def.Body);
+        if (returnType != TaipanType.Nothing && !TypeChecker.Terminates(body))
+            _diagnostics.ReportNotAllPathsReturn(def.Name.Span, def.Name.Text);
+        (_function, _loopDepth, _scope) = (outerFunction, outerLoopDepth, outerScope);
+        _typeParameters = outerTypeParameters;
+        return new BoundLocalFunction(symbol, function, parameters, body, stmt.Span);
+    }
 
     // ---- match (SPEC §5.1) ----
 
@@ -1048,6 +1101,7 @@ public sealed class Binder
                 VariableKind.Let => ("let binding", "declare it with 'var'"),
                 VariableKind.Parameter => ("parameter", null),
                 VariableKind.LoopVariable => ("loop variable", null),
+                VariableKind.Function => ("function", null),
                 _ => ("constant", (string?)null),
             };
             _diagnostics.ReportCannotAssign(target.Span, target.Name, what, help);
@@ -1371,6 +1425,108 @@ public sealed class Binder
         return new BoundCast(value, target, cast.Span);
     }
 
+    // ---- Lambdas (SPEC §3.7) ----
+
+    /// <summary>
+    /// A lambda takes its parameter types from a function type expected for it. Without an
+    /// expected type, only one without parameters can be typed, from its body.
+    /// </summary>
+    private BoundExpr BindLambda(LambdaExpr lambda, TaipanType? expected)
+    {
+        var target = expected is null ? null : TypeChecker.Unwrap(expected);
+        if (target is FunctionType function)
+            return BindLambdaAs(lambda, function.Parameters, function.Result);
+        // Its body may return nothing, which makes it a Callable[[], none].
+        if (target is null && lambda.Parameters.IsEmpty)
+            return BindLambdaAs(lambda, [], result: null, resultMayBeNothing: true);
+
+        if (target is null)
+            _diagnostics.ReportCannotInferLambdaParameter(lambda.Parameters[0].Span, lambda.Parameters[0].Text);
+        else if (!target.ContainsError)
+            _diagnostics.ReportTypeMismatch(lambda.Span, expected!, "lambda");
+        // The body is still checked, for its own errors.
+        BindLambdaAs(lambda, [.. lambda.Parameters.Select(_ => TaipanType.Error)], TaipanType.Error);
+        return new BoundErrorExpr(lambda.Span);
+    }
+
+    /// <summary>
+    /// A lambda with the given parameter types. The body is checked against
+    /// <paramref name="result"/>, discarded for <c>none</c>, or gives the result type when it's null.
+    /// An inferred result must be a value unless <paramref name="resultMayBeNothing"/>: a body that
+    /// returns nothing can't determine a type parameter (SPEC §3.7).
+    /// </summary>
+    private BoundExpr BindLambdaAs(LambdaExpr lambda, ImmutableArray<TaipanType> parameterTypes, TaipanType? result, bool resultMayBeNothing = false)
+    {
+        var valid = true;
+        if (parameterTypes.Length != lambda.Parameters.Length)
+        {
+            _diagnostics.ReportLambdaParameterCount(new TextSpan(lambda.Span.Start, "lambda".Length), parameterTypes.Length, lambda.Parameters.Length);
+            (parameterTypes, result, valid) = ([.. lambda.Parameters.Select(_ => TaipanType.Error)], TaipanType.Error, false);
+        }
+
+        var outer = _scope;
+        _scope = new Scope(outer);
+        var parameters = ImmutableArray.CreateBuilder<VariableSymbol>();
+        foreach (var (name, type) in lambda.Parameters.Zip(parameterTypes))
+        {
+            var symbol = new VariableSymbol(name.Text, type, VariableKind.Parameter);
+            if (name.Text != "_")
+                DeclareLocal(name, symbol);
+            parameters.Add(symbol);
+        }
+
+        BoundExpr body;
+        if (result is NothingType)
+        {
+            body = BindExpr(lambda.Body);
+        }
+        else if (result is not null)
+        {
+            body = BindExpected(lambda.Body, result);
+        }
+        else
+        {
+            body = resultMayBeNothing ? BindExpr(lambda.Body) : BindValue(lambda.Body);
+            result = body.Type;
+            if (result is NoneType)
+            {
+                _diagnostics.ReportCannotInferNone(lambda.Body.Span);
+                result = TaipanType.Error;
+            }
+        }
+        _scope = outer;
+        return valid
+            ? new BoundLambda(parameters.ToImmutable(), body, new FunctionType(parameterTypes, result), lambda.Span)
+            : new BoundErrorExpr(lambda.Span);
+    }
+
+    /// <summary>
+    /// A function argument of a built-in (SPEC §6), whose parameter types are known. A lambda's
+    /// result is checked against <paramref name="required"/> or <paramref name="hint"/>, or
+    /// inferred; another function's must equal <paramref name="required"/> if given. Returns the
+    /// argument and its result type. An inferred result is named <paramref name="resultName"/> in
+    /// messages, as in the built-in's signature.
+    /// </summary>
+    private (BoundExpr Argument, TaipanType Result) BindCallback(
+        Expr expr, ImmutableArray<TaipanType> parameters, TaipanType? required, TaipanType? hint, string resultName)
+    {
+        if (expr is LambdaExpr lambda)
+        {
+            var bound = BindLambdaAs(lambda, parameters, required ?? hint);
+            return (bound, bound is BoundLambda { FunctionType.Result: var lambdaResult } ? lambdaResult : TaipanType.Error);
+        }
+
+        var value = BindValue(expr);
+        if (value.Type.ContainsError)
+            return (value, TaipanType.Error);
+        if (value.Type is FunctionType function && function.Parameters.SequenceEqual(parameters)
+            && function.Result is not NothingType && (required is null || function.Result == required))
+            return (value, function.Result);
+        var expected = required is null ? $"Callable[[{string.Join(", ", parameters)}], {resultName}]" : new FunctionType(parameters, required).ToString();
+        _diagnostics.ReportTypeMismatch(expr.Span, expected, value.Type);
+        return (value, TaipanType.Error);
+    }
+
     /// <summary>Binds an expression whose value is used: a call without a return type is TP0200.</summary>
     private BoundExpr BindValue(Expr expr, TaipanType? expected = null)
     {
@@ -1408,6 +1564,7 @@ public sealed class Binder
         IndexExpr index => BindIndexOf(BindValue(index.Target), index),
         NoneLiteral => new BoundNone(expr.Span),
         CastExpr cast => BindCast(cast),
+        LambdaExpr lambda => BindLambda(lambda, expected),
         ErrorExpr => new BoundErrorExpr(expr.Span),
         _ => throw new InvalidOperationException($"unexpected expression {expr.GetType().Name}"),
     };
@@ -1448,10 +1605,16 @@ public sealed class Binder
         {
             case VariableSymbol variable:
                 return new BoundVariable(variable, span);
-            case FunctionSymbol or StructSymbol:
-                _diagnostics.ReportFunctionAsValue(span, name);
+            // Only a top-level function that isn't generic is a value (SPEC §3.7).
+            case FunctionSymbol { Builtin: not null }:
+                _diagnostics.ReportBuiltinAsValue(span, name);
                 return new BoundErrorExpr(span);
-            case EnumSymbol:
+            case FunctionSymbol { TypeParameters.IsEmpty: false }:
+                _diagnostics.ReportGenericAsValue(span, name);
+                return new BoundErrorExpr(span);
+            case FunctionSymbol function:
+                return new BoundFunctionValue(function, new FunctionType([.. function.Parameters.Select(p => p.Type)], function.ReturnType), span);
+            case StructSymbol or EnumSymbol:
                 _diagnostics.ReportTypeAsValue(span, name);
                 return new BoundErrorExpr(span);
             case ModuleSymbol:
@@ -1787,9 +1950,15 @@ public sealed class Binder
             var callee = BindValue(call.Callee);
             if (callee.Type == TaipanType.Py)
                 return BindPyCall(call, callee);
+            if (TypeChecker.Unwrap(callee.Type) is FunctionType)
+            {
+                if (!ReportMixedArguments(call))
+                    ReportKeywordArguments(call);
+                return BindInvoke(call, callee, name: null, call.Callee.Span);
+            }
             BindArguments(call);
             if (!callee.Type.ContainsError)
-                _diagnostics.ReportNotAFunction(call.Callee.Span, _source.ToString(call.Callee.Span));
+                _diagnostics.ReportCannotCall(call.Callee.Span, callee.Type);
             return new BoundErrorExpr(call.Span);
         }
 
@@ -1801,6 +1970,9 @@ public sealed class Binder
     {
         if (symbol is VariableSymbol { Type: PrimitiveType { Name: "py" } } python)
             return BindPyCall(call, new BoundVariable(python, nameSpan));
+        // sorted's keyword arguments may follow its positional one, as in Python (SPEC §2).
+        if (symbol is FunctionSymbol { Builtin: BuiltinFunction.Sorted })
+            return BindSort(call, name, nameSpan, target: null);
         if (ReportMixedArguments(call))
         {
             BindArguments(call);
@@ -1808,6 +1980,9 @@ public sealed class Binder
         }
         switch (symbol)
         {
+            case VariableSymbol variable when TypeChecker.Unwrap(variable.Type) is FunctionType:
+                ReportKeywordArguments(call);
+                return BindInvoke(call, new BoundVariable(variable, nameSpan), name, nameSpan);
             case StructSymbol structSymbol:
                 return BindConstruct(call, structSymbol, expected);
             case VariantSymbol variant:
@@ -1818,16 +1993,42 @@ public sealed class Binder
                 return new BoundErrorExpr(call.Span);
             case FunctionSymbol { Builtin: { } builtin } function:
                 ReportKeywordArguments(call);
-                return BindBuiltinCall(call, function, builtin);
+                return BindBuiltinCall(call, function, builtin, expected);
             case FunctionSymbol function:
                 ReportKeywordArguments(call);
                 return BindUserCall(call, function, expected);
             default:
                 BindArguments(call);
-                if (symbol is VariableSymbol or EnumSymbol or ModuleSymbol)
+                // A variable whose type already has an error was reported where it was declared.
+                if (symbol is VariableSymbol { Type.ContainsError: false } or EnumSymbol or ModuleSymbol)
                     _diagnostics.ReportNotAFunction(nameSpan, name);
                 return new BoundErrorExpr(call.Span);
         }
+    }
+
+    /// <summary>
+    /// A call to a function value (SPEC §3.7), with positional arguments only; the caller has
+    /// reported any keyword arguments. <paramref name="name"/> is null when the callee isn't a name.
+    /// </summary>
+    private BoundExpr BindInvoke(CallExpr call, BoundExpr callee, string? name, TextSpan calleeSpan)
+    {
+        if (ReportIfOptional(callee, calleeSpan))
+        {
+            BindArguments(call);
+            return new BoundErrorExpr(call.Span);
+        }
+        var function = (FunctionType)callee.Type;
+        if (call.Arguments.Length != function.Parameters.Length)
+        {
+            var expected = Arguments(function.Parameters.Length);
+            if (name is null)
+                _diagnostics.ReportFunctionArgumentCount(calleeSpan, expected, call.Arguments.Length);
+            else
+                _diagnostics.ReportWrongArgumentCount(calleeSpan, name, expected, call.Arguments.Length);
+            return new BoundInvoke(callee, BindArguments(call), function.Result, call.Span);
+        }
+        var arguments = call.Arguments.Select((a, i) => BindExpected(a.Value, function.Parameters[i])).ToImmutableArray();
+        return new BoundInvoke(callee, arguments, function.Result, call.Span);
     }
 
     private BoundExpr BindUserCall(CallExpr call, FunctionSymbol function, TaipanType? expected)
@@ -1850,8 +2051,9 @@ public sealed class Binder
 
     /// <summary>
     /// Binds arguments against parameter types, inferring any type parameters first (SPEC §3.6):
-    /// from the expected type of the result, then from each argument in order. Each argument gets
-    /// its parameter as its expected type once that type is fully known, then is checked against it.
+    /// from the expected type of the result, then from each argument in order, lambdas last (§3.7).
+    /// Each argument gets its parameter as its expected type once that type is fully known, then is
+    /// checked against it.
     /// </summary>
     private (ImmutableArray<BoundExpr> Arguments, Dictionary<TypeParameterSymbol, TaipanType> Map) InferAndBind(
         string name, TextSpan nameSpan, ImmutableArray<TypeParameterSymbol> typeParameters,
@@ -1865,13 +2067,15 @@ public sealed class Binder
         if (expected is not null)
             inference.Unify(resultType, expected, fromArgument: null);
 
-        var bound = ImmutableArray.CreateBuilder<BoundExpr>();
-        for (var i = 0; i < arguments.Count; i++)
+        var bound = new BoundExpr[arguments.Count];
+        foreach (var i in Enumerable.Range(0, arguments.Count).OrderBy(i => arguments[i] is LambdaExpr ? 1 : 0))
         {
             var parameter = parameterTypes[i];
-            var argument = BindValue(arguments[i], inference.IsKnown(parameter) ? TypeChecker.Substitute(parameter, map) : null);
+            var argument = arguments[i] is LambdaExpr lambda && TypeChecker.Unwrap(parameter) is FunctionType callable && !inference.IsKnown(callable)
+                ? BindLambdaArgument(lambda, callable, inference, map)
+                : BindValue(arguments[i], inference.IsKnown(parameter) ? TypeChecker.Substitute(parameter, map) : null);
             inference.Unify(parameter, argument.Type, fromArgument: arguments[i].Span);
-            bound.Add(argument);
+            bound[i] = argument;
         }
 
         foreach (var parameter in typeParameters.Where(p => !map.ContainsKey(p)))
@@ -1881,9 +2085,29 @@ public sealed class Binder
         }
         foreach (var parameter in typeParameters.Where(p => !p.Constraints.IsEmpty))
             map[parameter] = CheckConstraint(parameter, map[parameter], nameSpan);
-        for (var i = 0; i < bound.Count; i++)
+        for (var i = 0; i < bound.Length; i++)
             CheckAssignable(bound[i], TypeChecker.Substitute(parameterTypes[i], map), arguments[i].Span);
-        return (bound.ToImmutable(), map);
+        return ([.. bound], map);
+    }
+
+    /// <summary>
+    /// A lambda for a parameter of function type that still mentions uninferred type parameters
+    /// (SPEC §3.7). Its parameter types must be known by now (TP0206 otherwise, after which those
+    /// type parameters aren't reported again); its result is inferred from its body if it isn't.
+    /// </summary>
+    private BoundExpr BindLambdaArgument(LambdaExpr lambda, FunctionType callable, TypeInference inference, Dictionary<TypeParameterSymbol, TaipanType> map)
+    {
+        if (lambda.Parameters.Length == callable.Parameters.Length
+            && callable.Parameters.Select((p, i) => (p, i)).FirstOrDefault(pair => !inference.IsKnown(pair.p)) is { p: not null } unknown)
+        {
+            var parameter = lambda.Parameters[unknown.i];
+            _diagnostics.ReportCannotInferLambdaParameter(parameter.Span, parameter.Text);
+            inference.GiveUp(callable);
+            BindLambdaAs(lambda, [.. lambda.Parameters.Select(_ => TaipanType.Error)], TaipanType.Error);
+            return new BoundErrorExpr(lambda.Span);
+        }
+        var parameterTypes = callable.Parameters.Select(p => inference.IsKnown(p) ? TypeChecker.Substitute(p, map) : TaipanType.Error);
+        return BindLambdaAs(lambda, [.. parameterTypes], inference.IsKnown(callable.Result) ? TypeChecker.Substitute(callable.Result, map) : null);
     }
 
     /// <summary>
@@ -1915,8 +2139,40 @@ public sealed class Binder
             DictOfType d => IsKnown(d.Key) && IsKnown(d.Value),
             StructType s => s.TypeArguments.All(IsKnown),
             EnumType e => e.TypeArguments.All(IsKnown),
+            FunctionType f => f.Parameters.All(IsKnown) && IsKnown(f.Result),
             _ => true,
         };
+
+        /// <summary>Marks the uninferred type parameters in <paramref name="type"/> as errors, so they aren't reported.</summary>
+        public void GiveUp(TaipanType type)
+        {
+            switch (type)
+            {
+                case TypeParameterType p when parameters.Contains(p.Symbol):
+                    map.TryAdd(p.Symbol, TaipanType.Error);
+                    break;
+                case OptionalOf o:
+                    GiveUp(o.Inner);
+                    break;
+                case ListOfType l:
+                    GiveUp(l.Element);
+                    break;
+                case DictOfType d:
+                    GiveUp(d.Key);
+                    GiveUp(d.Value);
+                    break;
+                case StructType s:
+                    s.TypeArguments.ToList().ForEach(GiveUp);
+                    break;
+                case EnumType e:
+                    e.TypeArguments.ToList().ForEach(GiveUp);
+                    break;
+                case FunctionType f:
+                    f.Parameters.ToList().ForEach(GiveUp);
+                    GiveUp(f.Result);
+                    break;
+            }
+        }
 
         /// <summary>
         /// Matches <paramref name="pattern"/> (a parameter or result type) against an actual type.
@@ -1955,12 +2211,18 @@ public sealed class Binder
                     foreach (var (pa, aa) in p.TypeArguments.Zip(a.TypeArguments))
                         Unify(pa, aa, fromArgument);
                     break;
+                case (FunctionType p, FunctionType a) when p.Parameters.Length == a.Parameters.Length:
+                    foreach (var (pa, aa) in p.Parameters.Zip(a.Parameters))
+                        Unify(pa, aa, fromArgument);
+                    Unify(p.Result, a.Result, fromArgument);
+                    break;
             }
         }
 
         private void Bind(TypeParameterSymbol parameter, TaipanType actual, TextSpan? fromArgument)
         {
-            if (actual is NoneType)
+            // A function's missing result can't be a type argument (SPEC §3.7).
+            if (actual is NoneType or NothingType)
                 return;
             if (!map.TryGetValue(parameter, out var existing))
             {
@@ -1995,7 +2257,20 @@ public sealed class Binder
     private void ReportAmbiguous(AmbiguousVariantSymbol ambiguous, TextSpan span) =>
         _diagnostics.ReportAmbiguousVariant(span, ambiguous.Name, ambiguous.Variants.Select(v => v.Enum.Name));
 
+    /// <summary>
+    /// Binds the arguments of a call that has already been reported, for their own errors. A
+    /// lambda among them has nothing to infer its parameter types from, so they're the error type.
+    /// </summary>
     private ImmutableArray<BoundExpr> BindArguments(CallExpr call) =>
+        [.. call.Arguments.Select(a => BindIgnored(a.Value))];
+
+    private BoundExpr BindIgnored(Expr expr) =>
+        expr is LambdaExpr lambda
+            ? BindLambdaAs(lambda, [.. lambda.Parameters.Select(_ => TaipanType.Error)], TaipanType.Error)
+            : BindValue(expr);
+
+    /// <summary>Binds arguments that are used as they are, each without an expected type.</summary>
+    private ImmutableArray<BoundExpr> BindArgumentValues(CallExpr call) =>
         [.. call.Arguments.Select(a => BindValue(a.Value))];
 
     /// <summary>
@@ -2177,6 +2452,8 @@ public sealed class Binder
         var name = member.Member.Text;
         if (target.Type == TaipanType.Py)
             return BindPyCall(call, new BoundPyGetAttr(target, name, member.Span));
+        if (target.Type is ListOfType && name == "sort")
+            return BindSort(call, name, member.Member.Span, target);
         if (ReportMixedArguments(call))
         {
             BindArguments(call);
@@ -2191,6 +2468,9 @@ public sealed class Binder
 
         if (target.Type is StructType { Symbol: var structSymbol })
         {
+            // A field holding a function is called like a method (SPEC §3.7).
+            if (structSymbol.FindField(name) is { } field && TypeChecker.Unwrap(FieldType(target.Type, field)) is FunctionType)
+                return BindInvoke(call, new BoundFieldAccess(target, field, FieldType(target.Type, field), member.Span), name, member.Member.Span);
             if (structSymbol.Methods.TryGetValue(name, out var method))
             {
                 var map = TypeChecker.MapOf(target.Type);
@@ -2244,19 +2524,110 @@ public sealed class Binder
         };
     }
 
-    private BoundExpr BindBuiltinCall(CallExpr call, FunctionSymbol function, BuiltinFunction builtin)
+    /// <summary>
+    /// <c>sorted(xs, key=…, reverse=…)</c>, or <c>xs.sort(…)</c> when <paramref name="target"/> is
+    /// the list (SPEC §6). The elements, or the keys, must be int, float or str.
+    /// </summary>
+    private BoundExpr BindSort(CallExpr call, string name, TextSpan nameSpan, BoundExpr? target)
+    {
+        var positional = call.Arguments.Where(a => a.Name is null).ToList();
+        var positionalCount = target is null ? 1 : 0;
+        if (positional.Count != positionalCount)
+        {
+            _diagnostics.ReportWrongArgumentCount(nameSpan, name, Arguments(positionalCount), positional.Count);
+            BindArguments(call);
+            return new BoundErrorExpr(call.Span);
+        }
+
+        var list = target ?? BindValue(positional[0].Value);
+        var listSpan = target is null ? positional[0].Value.Span : ((MemberExpr)call.Callee).Target.Span;
+        var element = RequireList(list, listSpan);
+        var keywords = ImmutableArray.CreateBuilder<(string, BoundExpr)>();
+        var given = new HashSet<string>();
+        var hasKey = false;
+        foreach (var argument in call.Arguments.Where(a => a.Name is not null))
+        {
+            var keyword = argument.Name!;
+            if (keyword.Text is not ("key" or "reverse"))
+            {
+                _diagnostics.ReportNoKeywordArgument(keyword.Span, name, keyword.Text);
+                BindIgnored(argument.Value);
+            }
+            else if (!given.Add(keyword.Text))
+            {
+                _diagnostics.ReportRepeatedArgument(keyword.Span, keyword.Text);
+                BindIgnored(argument.Value);
+            }
+            else if (keyword.Text == "reverse")
+            {
+                keywords.Add(("reverse", BindExpected(argument.Value, TaipanType.Bool)));
+            }
+            else
+            {
+                var (key, keyType) = BindCallback(argument.Value, [element], required: null, hint: null, resultName: "K");
+                if (!keyType.ContainsError && !IsSortable(keyType))
+                    _diagnostics.ReportCannotSortBy(argument.Value.Span, keyType);
+                keywords.Add(("key", key));
+                hasKey = true;
+            }
+        }
+        if (!hasKey && !element.ContainsError && !IsSortable(element))
+            _diagnostics.ReportCannotSort(listSpan, list.Type);
+        var type = target is not null ? TaipanType.Nothing : list.Type is ListOfType ? list.Type : TaipanType.Error;
+        return new BoundSort(list, keywords.ToImmutable(), InPlace: target is not null, type, call.Span);
+    }
+
+    private static bool IsSortable(TaipanType type) => type == TaipanType.Int || type == TaipanType.Float || type == TaipanType.Str;
+
+    /// <summary>The element type of a list argument; TP0200 (or TP0203) and the error type for anything else.</summary>
+    private TaipanType RequireList(BoundExpr list, TextSpan span)
+    {
+        if (list.Type is ListOfType listType)
+            return listType.Element;
+        if (!list.Type.ContainsError && !ReportIfOptional(list, span))
+            _diagnostics.ReportTypeMismatch(span, "list", list.Type);
+        return TaipanType.Error;
+    }
+
+    /// <summary>
+    /// <c>map(f, xs)</c> and <c>filter(f, xs)</c> (SPEC §6). The list comes first, so a lambda's
+    /// parameter type is known; an expected <c>list[U]</c> gives a lambda's result for map.
+    /// </summary>
+    private BoundExpr BindMapFilter(CallExpr call, FunctionSymbol function, BuiltinFunction builtin, TaipanType? expected)
+    {
+        if (call.Arguments.Length != 2)
+        {
+            _diagnostics.ReportWrongArgumentCount(call.Callee.Span, function.Name, Arguments(2), call.Arguments.Length);
+            BindArguments(call);
+            return new BoundErrorExpr(call.Span);
+        }
+        var list = BindValue(call.Arguments[1].Value);
+        var element = RequireList(list, call.Arguments[1].Value.Span);
+        if (builtin == BuiltinFunction.Filter)
+        {
+            var (predicate, _) = BindCallback(call.Arguments[0].Value, [element], required: TaipanType.Bool, hint: null, resultName: "bool");
+            return new BoundCall(function, [predicate, list], element.ContainsError ? TaipanType.Error : list.Type, call.Span);
+        }
+        var hint = expected is null ? null : TypeChecker.Unwrap(expected) is ListOfType expectedList ? expectedList.Element : null;
+        var (mapper, result) = BindCallback(call.Arguments[0].Value, [element], required: null, hint, resultName: "U");
+        return new BoundCall(function, [mapper, list], new ListOfType(result), call.Span);
+    }
+
+    private BoundExpr BindBuiltinCall(CallExpr call, FunctionSymbol function, BuiltinFunction builtin, TaipanType? expected)
     {
         switch (builtin)
         {
+            case BuiltinFunction.Map or BuiltinFunction.Filter:
+                return BindMapFilter(call, function, builtin, expected);
             case BuiltinFunction.Print:
-                return new BoundCall(function, BindArguments(call), TaipanType.Nothing, call.Span);
+                return new BoundCall(function, BindArgumentValues(call), TaipanType.Nothing, call.Span);
             case BuiltinFunction.Range:
                 BindArguments(call);
                 _diagnostics.ReportRangeOutsideFor(call.Callee.Span);
                 return new BoundErrorExpr(call.Span);
         }
 
-        var arguments = BindArguments(call);
+        var arguments = BindArgumentValues(call);
         if (arguments.Length != 1)
         {
             _diagnostics.ReportWrongArgumentCount(call.Callee.Span, function.Name, Arguments(1), arguments.Length);

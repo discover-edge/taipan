@@ -1,0 +1,8 @@
+let f: Callable[[int], int] = lambda x: x
+f(1, 2)
+let g: Callable[[int], int] = lambda a, b: a
+let fs = [f]
+fs[0]()
+let c: Callable = f
+print(sorted([1], lambda x: x))
+print(sorted([1], key=lambda x: x, key=lambda x: -x))

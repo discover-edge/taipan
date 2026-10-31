@@ -1,0 +1,7 @@
+def bump(ys: list[int], y: int) -> int:
+    ys.append(y)
+    return y
+
+var xs = [3, 1, 2]
+print("before")
+print(sorted(xs, key=lambda x: bump(xs, x)))

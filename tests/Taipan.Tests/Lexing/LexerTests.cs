@@ -106,9 +106,9 @@ public class LexerTests
             "DefKeyword StructKeyword EnumKeyword LetKeyword VarKeyword ConstKeyword IfKeyword ElifKeyword " +
             "ElseKeyword WhileKeyword ForKeyword InKeyword MatchKeyword ReturnKeyword PassKeyword BreakKeyword " +
             "ContinueKeyword AndKeyword OrKeyword NotKeyword IsKeyword SomeKeyword NoneKeyword TrueKeyword " +
-            "FalseKeyword AsKeyword FromKeyword ImportKeyword Newline EndOfFile",
+            "FalseKeyword AsKeyword FromKeyword ImportKeyword LambdaKeyword Newline EndOfFile",
             Dump("def struct enum let var const if elif else while for in match return pass break " +
-                 "continue and or not is some none True False as from import"));
+                 "continue and or not is some none True False as from import lambda"));
 
     [Fact]
     public void NamesThatResembleKeywords() =>

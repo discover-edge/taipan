@@ -1,0 +1,6 @@
+def twice[T](f: Callable[[T], T]) -> Callable[[T], T]:
+    return lambda x: f(f(x))
+
+let id = lambda x: x
+let t = twice(lambda y: y)
+let nothing_fn = lambda: none

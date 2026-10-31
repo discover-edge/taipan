@@ -1,0 +1,37 @@
+# sorted, list.sort, map and filter (SPEC §6).
+
+struct Service:
+    name: str
+    replicas: int
+    healthy: int
+
+let services = [Service("api", 3, 3), Service("worker", 4, 1), Service("cron", 1, 1), Service("web", 2, 2)]
+
+# Stable: worker stays before cron, in either direction.
+for svc in sorted(services, key=lambda s: s.healthy):
+    print(svc.name, svc.healthy)
+print(map(lambda s: s.name, sorted(services, key=lambda s: s.healthy, reverse=True)))
+
+print(sorted([3, 1, 2]), sorted([3, 1, 2], reverse=True))
+print(sorted(["b", "B", "a", "_"]))
+print(sorted([2.0, float("nan") ?? 0.0, -1.0]))
+print(sorted(["apple", "fig", "banana"], key=lambda w: len(w)))
+print(sorted(["apple", "fig", "banana"], reverse=True, key=lambda w: len(w)))
+
+var xs = [5, 3, 8, 1]
+xs.sort()
+print(xs)
+xs.sort(key=lambda x: x % 4, reverse=True)
+print(xs)
+
+print(filter(lambda x: x % 2 == 0, [1, 2, 3, 4, 5, 6]))
+let names: list[str] = map(lambda s: s.name, services)
+print(names)
+let halves: list[float] = map(lambda x: x, [1, 2])
+print(halves)
+print(map(lambda x: str(x) + "!", filter(lambda x: x > 1, [1, 2, 3])))
+
+def by_name(s: Service) -> str:
+    return s.name
+
+print(map(by_name, sorted(services, key=by_name)))

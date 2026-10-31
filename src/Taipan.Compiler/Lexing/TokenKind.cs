@@ -42,6 +42,7 @@ public enum TokenKind
     AsKeyword,
     FromKeyword,
     ImportKeyword,
+    LambdaKeyword,
 
     // Operators and punctuation
     Plus,

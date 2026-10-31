@@ -1,0 +1,23 @@
+# The C# for function values, lambdas, nested functions and closures over loop variables (SPEC §8).
+
+def apply[T, U](f: Callable[[T], U], x: T) -> U:
+    return f(x)
+
+def double(x: int) -> int:
+    return x * 2
+
+def counter() -> Callable[[], int]:
+    var n = 0
+    def bump() -> int:
+        n += 1
+        return n
+    return bump
+
+let c = counter()
+c()
+print(apply(double, 4), apply(lambda s: s + "!", "hi"), c())
+var fs: list[Callable[[], none]] = []
+for i in range(2):
+    fs.append(lambda: print(i))
+for f in fs:
+    f()

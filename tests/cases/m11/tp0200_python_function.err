@@ -1,0 +1,1 @@
+tests/cases/m11/tp0200_python_function.tpn:6:12: error TP0200: cannot pass Callable[[int], int] to Python

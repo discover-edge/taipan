@@ -1,0 +1,33 @@
+# Generic functions with function parameters: lambda arguments are checked last (SPEC §3.7).
+
+def apply[T, U](f: Callable[[T], U], x: T) -> U:
+    return f(x)
+
+def compose[A, B, C](f: Callable[[A], B], g: Callable[[B], C]) -> Callable[[A], C]:
+    return lambda x: g(f(x))
+
+def fold[T, R](xs: list[T], start: R, step: Callable[[R, T], R]) -> R:
+    var acc = start
+    for x in xs:
+        acc = step(acc, x)
+    return acc
+
+struct Box[T]:
+    value: T
+
+print(apply(lambda x: x * 2, 21))
+print(apply(lambda s: len(s), "four"))
+
+# The expected type supplies A and C; the first lambda's body then gives B.
+let shout: Callable[[str], str] = compose(lambda s: s.upper(), lambda s: s + "!")
+print(shout("hey"))
+
+print(fold([1, 2, 3, 4], 0, lambda acc, x: acc + x))
+print(fold(["a", "b"], "", lambda acc, x: x + acc))
+print(fold([1, 2], 0.5, lambda acc, x: acc * x))
+
+let boxed = Box(lambda: "inside")
+print(boxed.value())
+
+let fns: list[Callable[[int], int]] = [lambda x: x + 1, lambda x: x * 10]
+print(map(lambda f: f(5), fns))

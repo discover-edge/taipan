@@ -443,7 +443,7 @@ public sealed class Parser
 
     // ---- Statements ----
 
-    // stmt = simple_stmt NEWLINE | compound_stmt
+    // stmt = simple_stmt NEWLINE | compound_stmt, where a func_def in a block is a nested function
     private Stmt ParseStmt()
     {
         switch (Current.Kind)
@@ -456,6 +456,9 @@ public sealed class Parser
                 return ParseForStmt();
             case TokenKind.MatchKeyword:
                 return ParseMatchStmt();
+            case TokenKind.DefKeyword:
+                var start = Current.Span.Start;
+                return new FuncDefStmt(ParseFuncDef(), SpanFrom(start));
             default:
                 var stmt = ParseSimpleStmt();
                 Expect(TokenKind.Newline);
@@ -754,6 +757,7 @@ public sealed class Parser
     }
 
     // base_type = "int" | "float" | "bool" | "str" | "py" | "list" "[" type "]" | "dict" "[" type "," type "]"
+    //           | "Callable" "[" "[" [ type { "," type } ] "]" "," ( type | "none" ) "]"
     //           | NAME [ "." NAME ] [ "[" type { "," type } "]" ]
     private TypeSyntax ParseBaseType()
     {
@@ -782,6 +786,22 @@ public sealed class Parser
                 var value = ParseType();
                 Expect(TokenKind.CloseBracket);
                 return new DictType(key, value, SpanFrom(start));
+            }
+            // A bare `Callable` is a NamedType, which the binder reports (TP0209).
+            case "Callable" when At(TokenKind.OpenBracket):
+            {
+                Next();
+                Expect(TokenKind.OpenBracket);
+                var parameters = ParseCommaList(TokenKind.CloseBracket, ParseType);
+                Expect(TokenKind.CloseBracket);
+                Expect(TokenKind.Comma);
+                TypeSyntax? result = null;
+                if (At(TokenKind.NoneKeyword))
+                    Next();
+                else
+                    result = ParseType();
+                Expect(TokenKind.CloseBracket);
+                return new CallableType(parameters, result, SpanFrom(start));
             }
             default:
                 if (At(TokenKind.Dot))
@@ -814,8 +834,25 @@ public sealed class Parser
 
     // ---- Expressions ----
 
-    // expr = coalesce
-    private Expr ParseExpr() => ParseCoalesce();
+    // expr = lambda_expr | coalesce
+    private Expr ParseExpr() => At(TokenKind.LambdaKeyword) ? ParseLambdaExpr() : ParseCoalesce();
+
+    // lambda_expr = "lambda" [ lambda_param { "," lambda_param } ] ":" expr ; lambda_param = NAME | "_"
+    private Expr ParseLambdaExpr()
+    {
+        var start = Next().Span.Start;
+        var parameters = ImmutableArray.CreateBuilder<Identifier>();
+        while (At(TokenKind.Name))
+        {
+            parameters.Add(ExpectIdentifier());
+            if (!At(TokenKind.Comma))
+                break;
+            Next();
+        }
+        Expect(TokenKind.Colon);
+        var body = ParseExpr();
+        return new LambdaExpr(parameters.ToImmutable(), body, SpanFrom(start));
+    }
 
     // coalesce = or_expr [ "??" coalesce ]
     private Expr ParseCoalesce()
@@ -1146,5 +1183,5 @@ public sealed class Parser
         TokenKind.Int or TokenKind.Float or TokenKind.String or TokenKind.FString
         or TokenKind.TrueKeyword or TokenKind.FalseKeyword or TokenKind.NoneKeyword
         or TokenKind.Name or TokenKind.OpenParen or TokenKind.OpenBracket or TokenKind.OpenBrace
-        or TokenKind.Minus or TokenKind.NotKeyword;
+        or TokenKind.Minus or TokenKind.NotKeyword or TokenKind.LambdaKeyword;
 }

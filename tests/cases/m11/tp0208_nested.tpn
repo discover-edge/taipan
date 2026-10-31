@@ -1,0 +1,5 @@
+def outer() -> int:
+    def inner(x: int) -> int:
+        if x > 0:
+            return 1
+    return inner(1)

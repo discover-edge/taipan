@@ -1,0 +1,3 @@
+tests/cases/m11/tp0100_lambda.tpn:1:18: error TP0100: expected ':', found name 'y'
+tests/cases/m11/tp0100_lambda.tpn:2:17: error TP0100: expected '[', found name 'int'
+tests/cases/m11/tp0100_lambda.tpn:3:16: error TP0100: expected ':', found '('

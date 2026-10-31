@@ -1,0 +1,10 @@
+let x = 1
+let f: Callable[[int], int] = lambda x: x
+let g: Callable[[int, int], int] = lambda a, a: a
+let h: Callable[[int, int], int] = lambda _, _: 0
+
+def outer(n: int):
+    def n() -> int:
+        return 1
+    def helper(n: int) -> int:
+        return n

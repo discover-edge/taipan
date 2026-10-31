@@ -1,0 +1,17 @@
+12
+1
+5 6
+ok clicked
+no handler
+handled
+log: started
+1
+True 42
+False
+True True
+<function double> <function <lambda>>
+[<function double>]
+Button(label="ok", on_click=<function <lambda>>)
+3.0
+2
+hello

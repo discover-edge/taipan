@@ -1,0 +1,1 @@
+tests/cases/m11/tp0223_nested.tpn:2:15: error TP0223: nested functions cannot have type parameters
