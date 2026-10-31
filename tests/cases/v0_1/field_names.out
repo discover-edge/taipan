@@ -1,0 +1,2 @@
+Node(Node=2, ToString="s", Equals=True) 2 s True
+5 d Wrap(Wrap=5, Deconstruct="d")

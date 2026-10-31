@@ -1,0 +1,9 @@
+# The left operand's type is the right one's expected type in == and != (SPEC §5.3).
+enum Maybe[T]:
+    Just(value: T)
+    Nothing
+
+let m: Maybe[int] = Just(1)
+let empty: list[str] = []
+let none_yet: Maybe[str] = Nothing
+print(m == Nothing, m != Nothing, none_yet == Nothing, empty == [], empty != [], {"a": 1} != {})

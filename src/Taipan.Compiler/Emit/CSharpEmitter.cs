@@ -253,6 +253,25 @@ public sealed class CSharpEmitter
         _ => type.ToString(),
     };
 
+    // Members C# generates or reserves on our classes and records, which a field can't reuse.
+    private static readonly HashSet<string> ReservedMembers =
+        ["ToString", "Equals", "GetHashCode", "GetType", "Deconstruct", "PrintMembers", "EqualityContract", "MemberwiseClone", "Finalize"];
+
+    /// <summary>
+    /// A field's C# name in a class named <paramref name="className"/>: its own name, unless C#
+    /// would reject it (the class's own name, or a reserved member), which gets a trailing <c>_</c>.
+    /// </summary>
+    private static string FieldName(string className, FieldSymbol field) =>
+        field.Name == className || ReservedMembers.Contains(field.Name) ? $"{field.Name}_" : field.Name;
+
+    /// <summary>The C# class holding a struct's fields, or a variant's record.</summary>
+    private string ClassName(TaipanType owner) => Concrete(owner) switch
+    {
+        StructType { TypeArguments.IsEmpty: true } s => _names[s.Symbol],
+        StructType s => InstanceName(s.Symbol, s.TypeArguments),
+        _ => throw new InvalidOperationException($"no class for {owner}"),
+    };
+
     private static string Mangle(TaipanType type) => type switch
     {
         PrimitiveType primitive => primitive.Name,
@@ -318,18 +337,18 @@ public sealed class CSharpEmitter
         Line("{");
         _indent++;
         foreach (var field in symbol.Fields)
-            Line($"public {TypeName(field.Type)} @{field.Name} {{ get; set; }}");
+            Line($"public {TypeName(field.Type)} @{FieldName(className, field)} {{ get; set; }}");
         Line();
 
-        var parameters = string.Join(", ", symbol.Fields.Select(f => $"{TypeName(f.Type)} @{f.Name}"));
+        var parameters = string.Join(", ", symbol.Fields.Select(f => $"{TypeName(f.Type)} @{FieldName(className, f)}"));
         Line($"public @{className}({parameters})");
         Line("{");
         foreach (var field in symbol.Fields)
-            Line($"    this.@{field.Name} = @{field.Name};");
+            Line($"    this.@{FieldName(className, field)} = @{FieldName(className, field)};");
         Line("}");
         Line();
 
-        var fields = string.Join(", ", symbol.Fields.Select(f => $"(\"{f.Name}\", (object?)this.@{f.Name})"));
+        var fields = string.Join(", ", symbol.Fields.Select(f => $"(\"{f.Name}\", (object?)this.@{FieldName(className, f)})"));
         Line($"string {Runtime}.IStruct.TypeName => \"{symbol.Name}\";");
         Line($"{Collections}.IReadOnlyList<(string Name, object? Value)> {Runtime}.IStruct.Fields => [{fields}];");
         Line($"public override string ToString() => {Runtime}.Display.Format(this);");
@@ -357,11 +376,11 @@ public sealed class CSharpEmitter
         foreach (var variant in symbol.Variants)
         {
             Line();
-            var parameters = string.Join(", ", variant.Fields.Select(f => $"{TypeName(f.Type)} @{f.Name}"));
+            var parameters = string.Join(", ", variant.Fields.Select(f => $"{TypeName(f.Type)} @{FieldName(variant.Name, f)}"));
             Line($"public sealed record @{variant.Name}({parameters}) : @{className}, {variantInterface}");
             Line("{");
             _indent++;
-            var fields = string.Join(", ", variant.Fields.Select(f => $"(\"{f.Name}\", (object?)this.@{f.Name})"));
+            var fields = string.Join(", ", variant.Fields.Select(f => $"(\"{f.Name}\", (object?)this.@{FieldName(variant.Name, f)})"));
             Line($"string {Runtime}.IStruct.TypeName => \"{variant.Name}\";");
             Line($"{Collections}.IReadOnlyList<(string Name, object? Value)> {Runtime}.IStruct.Fields => [{fields}];");
             _indent--;
@@ -408,7 +427,7 @@ public sealed class CSharpEmitter
             case BoundFieldAssign assign:
                 LineDirective(assign.Span);
                 EmitCompound(assign.IsCompound, [assign.Target],
-                    () => Line($"{Operand(assign.Target)}.@{assign.Field.Name} = {Expr(assign.Value)};"));
+                    () => Line($"{Operand(assign.Target)}.@{FieldName(ClassName(assign.Target.Type), assign.Field)} = {Expr(assign.Value)};"));
                 break;
             case BoundIndexAssign assign:
                 LineDirective(assign.Span);
@@ -627,7 +646,7 @@ public sealed class CSharpEmitter
             BoundDictLiteral dict => DictLiteral(dict),
             BoundConstruct construct => Construct(construct),
             BoundConstructVariant construct => ConstructVariant(construct),
-            BoundFieldAccess access => $"{Operand(access.Target)}.@{access.Field.Name}",
+            BoundFieldAccess access => $"{Operand(access.Target)}.@{FieldName(ClassName(access.Target.Type), access.Field)}",
             BoundIndex index => $"{Runtime}.Ops.Index({Expr(index.Target)}, {Expr(index.Index)})",
             BoundMethodCall call => $"{Operand(call.Target)}.@{call.Method.Name}({Arguments(call.Arguments)})",
             BoundBuiltinMethodCall call => BuiltinMethodCall(call),
@@ -868,15 +887,16 @@ public sealed class CSharpEmitter
     // Keyword construction uses C# named arguments, which C# evaluates in source order.
     private string Construct(BoundConstruct construct)
     {
+        var className = ClassName(construct.StructType);
         var arguments = construct.Arguments.Select(a =>
-            construct.IsKeyword ? $"@{a.Field.Name}: {Expr(a.Value)}" : Expr(a.Value));
+            construct.IsKeyword ? $"@{FieldName(className, a.Field)}: {Expr(a.Value)}" : Expr(a.Value));
         return $"new {TypeName(construct.StructType)}({string.Join(", ", arguments)})";
     }
 
     private string ConstructVariant(BoundConstructVariant construct)
     {
         var arguments = construct.Arguments.Select(a =>
-            construct.IsKeyword ? $"@{a.Field.Name}: {Expr(a.Value)}" : Expr(a.Value));
+            construct.IsKeyword ? $"@{FieldName(construct.Variant.Name, a.Field)}: {Expr(a.Value)}" : Expr(a.Value));
         return $"new {VariantTypeName(construct.Variant, construct.EnumType)}({string.Join(", ", arguments)})";
     }
 
