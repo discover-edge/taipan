@@ -199,6 +199,23 @@ There are no other implicit conversions. Explicit conversions use the built-ins 
   - `if x is none:` (no binding). Narrowing of `x` itself after an early return is a post-v0.1 feature.
   - `x ?? default` has type `T` when `default: T`.
 - `x == none` is allowed and returns `bool`, but it doesn't narrow.
+- **Using an optional:**
+  - A `T?` is `TP0203` wherever a `T` is expected. That includes operands of operators other than `==`/`!=`, the target of member access, indexing or a method call, and the iterable of a `for`.
+  - It's `TP0200` where some unrelated type is expected.
+  - `==` and `!=` may compare a `T?` with a `T`, a `T?` or `none`. The result is `True` only when both are `none`, or both hold equal values.
+- **`is some` / `is none`:**
+  - The tested expression is evaluated once and must be optional. Otherwise it's `TP0200`.
+  - The binding `v` is a `let` and follows the usual shadowing rules (`TP0207`).
+  - In `while x is some v:`, `x` is re-tested on each iteration and `v` is bound in the body.
+  - In an `elif` clause, the binding is visible only in that clause's branch.
+- **`??`:**
+  - The left operand must be optional (`TP0200` otherwise) and is evaluated first. The right operand is evaluated only when the left is `none`.
+  - With `x: T?`, the default is checked against `T` as its expected type, and the result is `T`. If the default is itself a `T?`, the result is `T?`, so `a ?? b ?? 0` works.
+- **`none` and inference:**
+  - `none` has its own type, written `none`, which is assignable to every optional.
+  - `let x = none` without an annotation is `TP0206`.
+  - In list and dict literals without an expected type, `none` and `T` mix to `T?`, and `T` and `T?` mix to `T?`. So `[1, none]` is `list[int?]`.
+- **Nesting (`TP0213`):** `T??` is reported at the type. `d.get(k)` on a dict whose values are already optional is also `TP0213`, since its result would nest.
 
 ### 3.5 Conditions
 `if`, `elif`, and `while` conditions and the operands of `and`, `or`, and `not` must be `bool`. There's no truthiness, so `if xs:` is `TP0205`.
@@ -340,8 +357,8 @@ Comparing values of unrelated types is `TP0200`.
 - `len(x) -> int` takes a list, dict, or str. For a `str` it counts Unicode code points, so `len("🐍")` is `1`.
 - `range(stop)` and `range(start, stop)` iterate only (they're not a list).
 - `str(x) -> str` gives the display form.
-- `int(x: float) -> int` truncates toward zero. An `int` argument is returned unchanged. `int(x: str) -> int?` parses, returning `none` on failure.
-- `float(x: int) -> float`. A `float` argument is returned unchanged. `float(x: str) -> float?`.
+- `int(x: float) -> int` truncates toward zero. An `int` argument is returned unchanged. `int(x: str) -> int?` parses, returning `none` on failure. It accepts an optional sign and decimal digits with `_` only between digits (as in §1.3), with surrounding whitespace allowed. A value outside the int range gives `none`.
+- `float(x: int) -> float`. A `float` argument is returned unchanged. `float(x: str) -> float?` accepts the same forms as `int(str)`, plus an optional fraction and exponent (`1.5`, `2e-3`, `.5`, `5.`), and `inf`, `infinity` and `nan` in any case. Otherwise it returns `none`.
 - `range` can only be used as the iterable of a `for` loop. Any other use is `TP0200`.
 
 **Methods**
@@ -401,7 +418,9 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 | `const` | a `static` field, assigned at the start of `TopLevel` in source order |
 | locals | a typed C# local. A Taipan local whose name C# scoping would reject (the same name declared in a nested block and again later in the outer block) is renamed with a numeric suffix. |
 | `for x in range(a, b)` | a C# `for` loop. `a` and `b` are evaluated once, before the loop. |
-| `x is some v` | `x is {} v` |
+| `x is some v` | `x is {} v`. C# scopes pattern variables more widely than Taipan, so a binding whose name is used anywhere else in the method gets a numeric suffix. |
+| `x is none` / `none` | `x is null` / `null` |
+| `x ?? d` | `x ?? d` |
 | `match` | `switch` statement with type and constant patterns; emitted `default:` throws `UnreachableException` (exhaustiveness is guaranteed by the Taipan checker) |
 | `/` `//` `%` | `Taipan.Runtime.Ops.Div / FloorDiv / Mod` |
 | f-string | C# interpolated string; every hole wrapped in `Taipan.Runtime.Display.Format(...)` |
@@ -475,16 +494,19 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0200 | `'<f>' is a function; call it` / `'<x>' is not a function` |
 | TP0200 | `integer literal is out of range` |
 | TP0200 | `'range' can only be used in a for loop` / `cannot iterate over <T>` |
+| TP0200 | `'is some' needs an optional, found <T>` / `'is none' needs an optional, found <T>` / `'??' needs an optional on the left, found <T>` |
 | TP0200 | `'<m>' is a method; call it` / `'<f>' is a field, not a method` / `cannot index <T>` / `dict keys must be int, str, or bool, found <T>` |
 | TP0201 | `undefined name '<x>'` / `undefined type '<T>'` |
 | TP0202 | `cannot assign to '<x>': it is a <let binding\|parameter\|loop variable\|constant\|function\|method>`, with help `declare it with 'var'` for a `let` binding / `cannot assign to an element of str` |
+| TP0203 | `expected <T>, found <T>?` / `<T>? must be narrowed before use`, with help `narrow it with 'is some', or give a default with '??'` |
 | TP0205 | `condition must be bool, found <T>` |
-| TP0206 | `cannot infer the type of an empty list` / `... empty dict`, with help `add a type annotation` |
+| TP0206 | `cannot infer the type of an empty list` / `... empty dict` / `cannot infer the type of none`, with help `add a type annotation` |
 | TP0207 | `'<x>' shadows an outer binding` |
 | TP0208 | `not all paths in '<f>' return a value` |
 | TP0209 | `'<f>' takes <n> arguments, found <m>` (`argument` when n is 1; `1 or 2 arguments` for `range`) / `missing field '<f>' in '<S>'` / `field '<f>' is given more than once` |
 | TP0210 | `<T> has no field '<x>'` / `<T> has no method '<x>'` |
 | TP0211 | `'<f>' cannot use top-level variable '<x>'`, with help `pass it as a parameter, or make it a const` |
+| TP0213 | `optional types cannot be nested` / `'get' on <dict type> would return a nested optional` |
 | TP0214 | `duplicate definition of '<x>'` |
 | TP0215 | `'break' outside a loop` / `'continue' outside a loop` / `'return' outside a function` |
 | TP0217 | `const initializer must be a constant expression` |
