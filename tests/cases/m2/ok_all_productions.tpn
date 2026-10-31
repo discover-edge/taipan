@@ -1,0 +1,46 @@
+const LIMIT: int = 1_000
+
+struct Service:
+    name: str
+    replicas: int
+    tags: list[str]
+
+enum Health:
+    Ok
+    Degraded(healthy: int, total: int,)
+    Down
+
+def classify(code: int, label: str?) -> str:
+    match code:
+        0: return "zero"
+        -1: return "minus one"
+        _:
+            pass
+    let name = label ?? "none"
+    var parts: dict[str, list[int?]] = {}
+    parts["a"] = [1, none, 3,]
+    parts["a"] += [4]
+    if name is none:
+        return "unreachable"
+    elif label is some l:
+        return f"{l}: {len(parts["a"])}"
+    else:
+        return name
+
+def main():
+    let svc = Service(name="api", replicas=3, tags=["web"])
+    svc.replicas -= 1
+    var i = 0
+    while i < LIMIT and not (i == 5 or i in [7, 8]):
+        i *= 2
+        if i // 3 % 2 != 0 and "x" not in svc.tags:
+            break
+        continue
+    for t in svc.tags:
+        print(t, -i, 2.5e-3 / 1, True, False)
+    match Health.Ok:
+        Ok: print("ok")
+        Health.Degraded(h, t): print(h, t)
+        Down: return
+
+main()

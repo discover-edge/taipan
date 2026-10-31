@@ -1,0 +1,12 @@
+struct Service:
+    name: str
+    replicas int
+
+def ratio(s: Service) -> float:
+    let r = s.replicas /
+    return r
+
+let services = [Service("api", 3)]
+for s in services
+    print(ratio(s))
+print("done")

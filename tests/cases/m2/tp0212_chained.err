@@ -1,0 +1,2 @@
+tests/cases/m2/tp0212_chained.tpn:2:18: error TP0212: chained comparison not supported
+  help: write 'a < b and b < c'

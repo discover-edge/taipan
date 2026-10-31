@@ -10,60 +10,46 @@ public sealed record LexResult(ImmutableArray<Token> Tokens, ImmutableArray<Diag
 /// <summary>Turns source text into tokens, including INDENT/DEDENT/NEWLINE (SPEC §1).</summary>
 public sealed class Lexer
 {
-    private static readonly Dictionary<string, TokenKind> Keywords = new()
-    {
-        ["def"] = TokenKind.DefKeyword,
-        ["struct"] = TokenKind.StructKeyword,
-        ["enum"] = TokenKind.EnumKeyword,
-        ["let"] = TokenKind.LetKeyword,
-        ["var"] = TokenKind.VarKeyword,
-        ["const"] = TokenKind.ConstKeyword,
-        ["if"] = TokenKind.IfKeyword,
-        ["elif"] = TokenKind.ElifKeyword,
-        ["else"] = TokenKind.ElseKeyword,
-        ["while"] = TokenKind.WhileKeyword,
-        ["for"] = TokenKind.ForKeyword,
-        ["in"] = TokenKind.InKeyword,
-        ["match"] = TokenKind.MatchKeyword,
-        ["return"] = TokenKind.ReturnKeyword,
-        ["pass"] = TokenKind.PassKeyword,
-        ["break"] = TokenKind.BreakKeyword,
-        ["continue"] = TokenKind.ContinueKeyword,
-        ["and"] = TokenKind.AndKeyword,
-        ["or"] = TokenKind.OrKeyword,
-        ["not"] = TokenKind.NotKeyword,
-        ["is"] = TokenKind.IsKeyword,
-        ["some"] = TokenKind.SomeKeyword,
-        ["none"] = TokenKind.NoneKeyword,
-        ["True"] = TokenKind.TrueKeyword,
-        ["False"] = TokenKind.FalseKeyword,
-        ["as"] = TokenKind.AsKeyword,
-        ["from"] = TokenKind.FromKeyword,
-        ["import"] = TokenKind.ImportKeyword,
-    };
-
     private readonly string _text;
+    private readonly int _end;
+    private readonly bool _isHole;
     private readonly DiagnosticBag _diagnostics = new();
     private readonly ImmutableArray<Token>.Builder _tokens = ImmutableArray.CreateBuilder<Token>();
     private readonly Stack<int> _indents = new([0]);
     private int _pos;
     private int _bracketDepth;
-    private bool _atLineStart = true;
+    private bool _atLineStart;
 
-    private Lexer(SourceText source) => _text = source.Text;
-
-    public static LexResult Lex(SourceText source)
+    private Lexer(SourceText source, TextSpan span, bool isHole)
     {
-        var lexer = new Lexer(source);
+        _text = source.Text;
+        _pos = span.Start;
+        _end = span.End;
+        _isHole = isHole;
+        _atLineStart = !isHole;
+    }
+
+    public static LexResult Lex(SourceText source) =>
+        Run(new Lexer(source, new TextSpan(0, source.Length), isHole: false));
+
+    /// <summary>
+    /// Re-lexes an f-string hole (SPEC §2). Spans stay relative to the whole file. The result has
+    /// no NEWLINE, INDENT or DEDENT tokens: just the expression's tokens and EOF at the hole's end.
+    /// </summary>
+    public static LexResult LexHole(SourceText source, TextSpan hole) =>
+        Run(new Lexer(source, hole, isHole: true));
+
+    private static LexResult Run(Lexer lexer)
+    {
         lexer.Run();
         return new LexResult(lexer._tokens.ToImmutable(), lexer._diagnostics.ToImmutable());
     }
 
-    private bool AtEnd => _pos >= _text.Length;
+    private bool AtEnd => _pos >= _end;
 
     private char Current => Peek(0);
 
-    private char Peek(int offset) => _pos + offset < _text.Length ? _text[_pos + offset] : '\0';
+    private char Peek(int offset) => _pos + offset < _end ? _text[_pos + offset] : '\0';
 
     private void Run()
     {
@@ -76,14 +62,14 @@ public sealed class Lexer
                 ScanToken();
         }
 
-        if (!_atLineStart)
-            Emit(TokenKind.Newline, _text.Length, 0);
+        if (!_atLineStart && !_isHole)
+            Emit(TokenKind.Newline, _end, 0);
         while (_indents.Count > 1)
         {
             _indents.Pop();
-            Emit(TokenKind.Dedent, _text.Length, 0);
+            Emit(TokenKind.Dedent, _end, 0);
         }
-        Emit(TokenKind.EndOfFile, _text.Length, 0);
+        Emit(TokenKind.EndOfFile, _end, 0);
     }
 
     /// <summary>
@@ -189,7 +175,7 @@ public sealed class Lexer
         while (IsIdentifierChar(Current) && !AtEnd)
             _pos++;
         var text = _text[start.._pos];
-        Emit(Keywords.GetValueOrDefault(text, TokenKind.Name), start, _pos - start);
+        Emit(TokenFacts.Keywords.GetValueOrDefault(text, TokenKind.Name), start, _pos - start);
     }
 
     private void ScanNumber()
@@ -403,7 +389,7 @@ public sealed class Lexer
                 _pos++;
                 return true;
             }
-            _pos += Current == '\\' && Peek(1) != '\n' && _pos + 1 < _text.Length ? 2 : 1;
+            _pos += Current == '\\' && Peek(1) != '\n' && _pos + 1 < _end ? 2 : 1;
         }
     }
 
@@ -413,7 +399,7 @@ public sealed class Lexer
     /// </summary>
     private void ReadEscape(StringBuilder value)
     {
-        if (_pos + 1 >= _text.Length || Peek(1) == '\n')
+        if (_pos + 1 >= _end || Peek(1) == '\n')
         {
             _pos++;
             return;
@@ -500,7 +486,7 @@ public sealed class Lexer
     /// <summary>The code point at <paramref name="index"/>; a lone surrogate is reported as itself.</summary>
     private Rune RuneAt(int index, out int length)
     {
-        if (Rune.DecodeFromUtf16(_text.AsSpan(index), out var rune, out length) == System.Buffers.OperationStatus.Done)
+        if (Rune.DecodeFromUtf16(_text.AsSpan(index, _end - index), out var rune, out length) == System.Buffers.OperationStatus.Done)
             return rune;
         length = 1;
         return Rune.ReplacementChar;

@@ -7,7 +7,7 @@ namespace Taipan.Tests;
 /// </summary>
 public class GoldenTests
 {
-    private static readonly string RepoRoot = FindRepoRoot();
+    private static readonly string RepoRoot = RepoPaths.Root;
     private static readonly string CasesDir = Path.Combine(RepoRoot, "tests", "cases");
 
     // Diagnostics print the path as given (SPEC §9), so cases run from the repo root
@@ -49,14 +49,4 @@ public class GoldenTests
     }
 
     private static string Normalize(string text) => text.Replace("\r\n", "\n");
-
-    private static string FindRepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
-        {
-            if (File.Exists(Path.Combine(dir.FullName, "Taipan.slnx")))
-                return dir.FullName;
-        }
-        throw new InvalidOperationException("Taipan.slnx not found above " + AppContext.BaseDirectory);
-    }
 }

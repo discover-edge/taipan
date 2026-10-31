@@ -1,0 +1,512 @@
+using Taipan.Compiler.Lexing;
+using Taipan.Compiler.Syntax;
+using Taipan.Compiler.Text;
+
+namespace Taipan.Tests.Syntax;
+
+public class ParserTests
+{
+    private static ParseResult ParseText(string text)
+    {
+        var source = SourceText.From(text);
+        var lexed = Lexer.Lex(source);
+        Assert.Empty(lexed.Diagnostics);
+        return Parser.Parse(source, lexed.Tokens);
+    }
+
+    // Snapshot of every top-level item, one per line.
+    private static string Snapshot(string text)
+    {
+        var result = ParseText(text);
+        Assert.Empty(result.Diagnostics);
+        return string.Join("\n", result.Unit.Items.Select(AstPrinter.Print));
+    }
+
+    // Snapshot of a single expression, parsed as an expression statement.
+    private static string Expr(string text)
+    {
+        var result = ParseText(text + "\n");
+        Assert.Empty(result.Diagnostics);
+        var stmt = Assert.IsType<ExprStmt>(Assert.Single(result.Unit.Items));
+        return AstPrinter.Print(stmt.Expr);
+    }
+
+    // Diagnostics as "line:col code: message".
+    private static string[] Errors(string text)
+    {
+        var source = SourceText.From(text);
+        var result = ParseText(text);
+        return [.. result.Diagnostics.Select(d =>
+        {
+            var p = source.GetLinePosition(d.Span.Start);
+            return $"{p.Line}:{p.Column} {d.Code}: {d.Message}";
+        })];
+    }
+
+    // ---- file / top_item ----
+
+    [Fact]
+    public void EmptyFile() =>
+        Assert.Empty(ParseText("").Unit.Items);
+
+    [Fact]
+    public void FileWithSeveralItems() =>
+        Assert.Equal(
+            "ConstDef(N, null, IntLiteral(3))\n" +
+            "FuncDef(f, [], null, Block([PassStmt]))\n" +
+            "ExprStmt(CallExpr(NameExpr(f), []))",
+            Snapshot("const N = 3\n\ndef f():\n    pass\n\nf()\n"));
+
+    // ---- const_def ----
+
+    [Fact]
+    public void ConstDef() =>
+        Assert.Equal(
+            "ConstDef(LIMIT, NamedType(int), BinaryExpr(IntLiteral(1000), Multiply, IntLiteral(2)))",
+            Snapshot("const LIMIT: int = 1_000 * 2\n"));
+
+    // ---- func_def / params / param ----
+
+    [Fact]
+    public void FuncDefWithParamsAndReturnType() =>
+        Assert.Equal(
+            "FuncDef(add, [Param(a, NamedType(int)), Param(b, NamedType(float))], NamedType(float), " +
+            "Block([ReturnStmt(BinaryExpr(NameExpr(a), Add, NameExpr(b)))]))",
+            Snapshot("def add(a: int, b: float) -> float:\n    return a + b\n"));
+
+    [Fact]
+    public void FuncDefParamsTrailingComma() =>
+        Assert.Equal(
+            "FuncDef(f, [Param(a, NamedType(int))], null, Block([PassStmt]))",
+            Snapshot("def f(\n    a: int,\n):\n    pass\n"));
+
+    // ---- struct_def / struct_member ----
+
+    [Fact]
+    public void StructDef() =>
+        Assert.Equal(
+            "StructDef(Service, [FieldDef(name, NamedType(str)), FieldDef(tags, ListType(NamedType(str)))])",
+            Snapshot("struct Service:\n    name: str\n    tags: list[str]\n"));
+
+    // ---- enum_def / variant / named_fields ----
+
+    [Fact]
+    public void EnumDef() =>
+        Assert.Equal(
+            "EnumDef(Health, [VariantDef(Ok, []), " +
+            "VariantDef(Degraded, [FieldDef(healthy, NamedType(int)), FieldDef(total, NamedType(int))]), " +
+            "VariantDef(Down, [])])",
+            Snapshot("enum Health:\n    Ok\n    Degraded(healthy: int, total: int)\n    Down\n"));
+
+    [Fact]
+    public void NamedFieldsTrailingComma() =>
+        Assert.Equal(
+            "EnumDef(E, [VariantDef(V, [FieldDef(a, NamedType(int))])])",
+            Snapshot("enum E:\n    V(a: int,)\n"));
+
+    // ---- block ----
+
+    [Fact]
+    public void NestedBlocks() =>
+        Assert.Equal(
+            "IfStmt([IfClause(ExprCondition(NameExpr(a)), Block([" +
+            "WhileStmt(ExprCondition(NameExpr(b)), Block([BreakStmt, ContinueStmt])), PassStmt]))], null)",
+            Snapshot("if a:\n    while b:\n        break\n        continue\n    pass\n"));
+
+    // ---- let_stmt / var_stmt ----
+
+    [Fact]
+    public void LetAndVar() =>
+        Assert.Equal(
+            "LetStmt(x, null, IntLiteral(1))\n" +
+            "VarStmt(y, OptionalType(NamedType(str)), NoneLiteral)",
+            Snapshot("let x = 1\nvar y: str? = none\n"));
+
+    // ---- assign_stmt / target ----
+
+    [Fact]
+    public void AssignOperators() =>
+        Assert.Equal(
+            "AssignStmt(NameExpr(a), Assign, IntLiteral(1))\n" +
+            "AssignStmt(NameExpr(a), Add, IntLiteral(2))\n" +
+            "AssignStmt(NameExpr(a), Subtract, IntLiteral(3))\n" +
+            "AssignStmt(NameExpr(a), Multiply, IntLiteral(4))\n" +
+            "AssignStmt(NameExpr(a), Divide, IntLiteral(5))",
+            Snapshot("a = 1\na += 2\na -= 3\na *= 4\na /= 5\n"));
+
+    [Fact]
+    public void AssignTargets() =>
+        Assert.Equal(
+            "AssignStmt(MemberExpr(NameExpr(s), healthy), Assign, IntLiteral(2))\n" +
+            "AssignStmt(IndexExpr(MemberExpr(CallExpr(NameExpr(f), []), xs), IntLiteral(0)), Add, IntLiteral(1))",
+            Snapshot("s.healthy = 2\nf().xs[0] += 1\n"));
+
+    // ---- return_stmt / pass / break / continue / expr ----
+
+    [Fact]
+    public void ReturnWithAndWithoutValue() =>
+        Assert.Equal(
+            "FuncDef(f, [], null, Block([ReturnStmt(null)]))\n" +
+            "FuncDef(g, [], NamedType(int), Block([ReturnStmt(IntLiteral(1))]))",
+            Snapshot("def f():\n    return\ndef g() -> int:\n    return 1\n"));
+
+    [Fact]
+    public void ExpressionStatement() =>
+        Assert.Equal(
+            "ExprStmt(CallExpr(NameExpr(print), [Argument(null, StringLiteral(\"hi\"))]))",
+            Snapshot("print(\"hi\")\n"));
+
+    // ---- if_stmt / condition ----
+
+    [Fact]
+    public void IfElifElse() =>
+        Assert.Equal(
+            "IfStmt([" +
+            "IfClause(ExprCondition(BinaryExpr(NameExpr(n), Less, IntLiteral(0))), Block([ExprStmt(NameExpr(a))])), " +
+            "IfClause(ExprCondition(BinaryExpr(NameExpr(n), Equal, IntLiteral(0))), Block([ExprStmt(NameExpr(b))])), " +
+            "IfClause(ExprCondition(BoolLiteral(True)), Block([ExprStmt(NameExpr(c))]))], " +
+            "Block([ExprStmt(NameExpr(d))]))",
+            Snapshot("if n < 0:\n    a\nelif n == 0:\n    b\nelif True:\n    c\nelse:\n    d\n"));
+
+    [Fact]
+    public void ConditionIsSomeAndIsNone() =>
+        Assert.Equal(
+            "IfStmt([IfClause(IsSomeCondition(CallExpr(NameExpr(find), []), s), Block([PassStmt])), " +
+            "IfClause(IsNoneCondition(NameExpr(x)), Block([PassStmt]))], null)",
+            Snapshot("if find() is some s:\n    pass\nelif x is none:\n    pass\n"));
+
+    // ---- while_stmt ----
+
+    [Fact]
+    public void WhileWithIsSome() =>
+        Assert.Equal(
+            "WhileStmt(IsSomeCondition(NameExpr(x), v), Block([PassStmt]))",
+            Snapshot("while x is some v:\n    pass\n"));
+
+    // ---- for_stmt ----
+
+    [Fact]
+    public void ForStmt() =>
+        Assert.Equal(
+            "ForStmt(i, CallExpr(NameExpr(range), [Argument(null, IntLiteral(1)), Argument(null, IntLiteral(16))]), " +
+            "Block([ExprStmt(CallExpr(NameExpr(print), [Argument(null, NameExpr(i))]))]))",
+            Snapshot("for i in range(1, 16):\n    print(i)\n"));
+
+    // ---- match_stmt / arm / pattern / qual_name ----
+
+    [Fact]
+    public void MatchWithInlineAndBlockArms() =>
+        Assert.Equal(
+            "MatchStmt(NameExpr(h), [" +
+            "MatchArm(VariantPattern(null, Ok, null), Block([ExprStmt(CallExpr(NameExpr(print), [Argument(null, StringLiteral(\"ok\"))]))])), " +
+            "MatchArm(VariantPattern(null, Degraded, [h, t]), Block([PassStmt, ReturnStmt(null)])), " +
+            "MatchArm(VariantPattern(Health, Down, []), Block([PassStmt]))])",
+            Snapshot("match h:\n    Ok: print(\"ok\")\n    Degraded(h, t):\n        pass\n        return\n    Health.Down(): pass\n"));
+
+    [Fact]
+    public void LiteralAndWildcardPatterns() =>
+        Assert.Equal(
+            "MatchStmt(NameExpr(x), [" +
+            "MatchArm(IntPattern(0), Block([PassStmt])), " +
+            "MatchArm(IntPattern(-1), Block([PassStmt])), " +
+            "MatchArm(StringPattern(\"a\"), Block([PassStmt])), " +
+            "MatchArm(BoolPattern(True), Block([PassStmt])), " +
+            "MatchArm(BoolPattern(False), Block([PassStmt])), " +
+            "MatchArm(WildcardPattern, Block([PassStmt]))])",
+            Snapshot("match x:\n    0: pass\n    -1: pass\n    \"a\": pass\n    True: pass\n    False: pass\n    _: pass\n"));
+
+    // ---- type / base_type ----
+
+    [Theory]
+    [InlineData("int", "NamedType(int)")]
+    [InlineData("py", "NamedType(py)")]
+    [InlineData("Service", "NamedType(Service)")]
+    [InlineData("list[int]", "ListType(NamedType(int))")]
+    [InlineData("dict[str, list[int]]", "DictType(NamedType(str), ListType(NamedType(int)))")]
+    [InlineData("int?", "OptionalType(NamedType(int))")]
+    [InlineData("list[int?]?", "OptionalType(ListType(OptionalType(NamedType(int))))")]
+    [InlineData("int??", "OptionalType(OptionalType(NamedType(int)))")]
+    [InlineData("int???", "OptionalType(OptionalType(OptionalType(NamedType(int))))")]
+    public void Types(string type, string expected) =>
+        Assert.Equal($"LetStmt(x, {expected}, NameExpr(y))", Snapshot($"let x: {type} = y\n"));
+
+    [Fact]
+    public void DoubleQuestionTypeSpans()
+    {
+        var let = Assert.IsType<LetStmt>(ParseText("let x: int?? = y\n").Unit.Items[0]);
+        var outer = Assert.IsType<OptionalType>(let.Type);
+        var inner = Assert.IsType<OptionalType>(outer.Inner);
+        Assert.Equal(new TextSpan(7, 5), outer.Span);
+        Assert.Equal(new TextSpan(7, 4), inner.Span);
+    }
+
+    // ---- expressions: precedence and associativity ----
+
+    [Fact]
+    public void CoalesceIsRightAssociativeAndLowest() =>
+        Assert.Equal(
+            "BinaryExpr(BinaryExpr(NameExpr(a), Or, NameExpr(b)), Coalesce, BinaryExpr(NameExpr(c), Coalesce, NameExpr(d)))",
+            Expr("a or b ?? c ?? d"));
+
+    [Fact]
+    public void OrAndNotPrecedence() =>
+        Assert.Equal(
+            "BinaryExpr(BinaryExpr(NameExpr(a), Or, BinaryExpr(UnaryExpr(Not, NameExpr(b)), And, NameExpr(c))), Or, NameExpr(d))",
+            Expr("a or not b and c or d"));
+
+    [Fact]
+    public void NotBindsLooserThanComparison() =>
+        Assert.Equal(
+            "UnaryExpr(Not, BinaryExpr(NameExpr(a), Equal, NameExpr(b)))",
+            Expr("not a == b"));
+
+    [Theory]
+    [InlineData("==", "Equal")]
+    [InlineData("!=", "NotEqual")]
+    [InlineData("<", "Less")]
+    [InlineData("<=", "LessEqual")]
+    [InlineData(">", "Greater")]
+    [InlineData(">=", "GreaterEqual")]
+    [InlineData("in", "In")]
+    [InlineData("not in", "NotIn")]
+    public void ComparisonOperators(string op, string expected) =>
+        Assert.Equal($"BinaryExpr(NameExpr(a), {expected}, NameExpr(b))", Expr($"a {op} b"));
+
+    [Fact]
+    public void ArithmeticPrecedenceAndLeftAssociativity() =>
+        Assert.Equal(
+            "BinaryExpr(BinaryExpr(NameExpr(a), Subtract, BinaryExpr(BinaryExpr(BinaryExpr(NameExpr(b), Multiply, NameExpr(c)), " +
+            "Divide, NameExpr(d)), FloorDivide, NameExpr(e))), Add, BinaryExpr(NameExpr(f), Modulo, NameExpr(g)))",
+            Expr("a - b * c / d // e + f % g"));
+
+    [Fact]
+    public void ComparisonBindsLooserThanArithmetic() =>
+        Assert.Equal(
+            "BinaryExpr(BinaryExpr(NameExpr(n), Modulo, IntLiteral(15)), Equal, IntLiteral(0))",
+            Expr("n % 15 == 0"));
+
+    [Fact]
+    public void UnaryMinus() =>
+        Assert.Equal(
+            "BinaryExpr(UnaryExpr(Negate, UnaryExpr(Negate, NameExpr(a))), Multiply, UnaryExpr(Negate, IntLiteral(9223372036854775808)))",
+            Expr("--a * -9223372036854775808"));
+
+    [Fact]
+    public void ParenthesesOverridePrecedence() =>
+        Assert.Equal(
+            "BinaryExpr(BinaryExpr(NameExpr(a), Add, NameExpr(b)), Multiply, NameExpr(c))",
+            Expr("(a + b) * c"));
+
+    [Fact]
+    public void ParenthesizedComparisonIsNotChained() =>
+        Assert.Equal(
+            "BinaryExpr(BinaryExpr(NameExpr(a), Less, NameExpr(b)), Less, NameExpr(c))",
+            Expr("(a < b) < c"));
+
+    // ---- postfix / call / arg ----
+
+    [Fact]
+    public void PostfixChain() =>
+        Assert.Equal(
+            "IndexExpr(CallExpr(MemberExpr(NameExpr(self), items), []), UnaryExpr(Negate, IntLiteral(1)))",
+            Expr("self.items()[-1]"));
+
+    [Fact]
+    public void KeywordArguments() =>
+        Assert.Equal(
+            "CallExpr(NameExpr(Service), [Argument(name, StringLiteral(\"api\")), Argument(replicas, IntLiteral(3))])",
+            Expr("Service(name=\"api\", replicas=3,)"));
+
+    [Fact]
+    public void CallAcrossLines() =>
+        Assert.Equal(
+            "CallExpr(NameExpr(f), [Argument(null, IntLiteral(1)), Argument(null, IntLiteral(2))])",
+            Expr("f(\n    1,\n    2,\n)"));
+
+    // ---- atom ----
+
+    [Theory]
+    [InlineData("42", "IntLiteral(42)")]
+    [InlineData("1_000", "IntLiteral(1000)")]
+    [InlineData("2.5e-3", "FloatLiteral(0.0025)")]
+    [InlineData("1e9", "FloatLiteral(1000000000)")]
+    [InlineData("\"a\\nb\"", "StringLiteral(\"a\\nb\")")]
+    [InlineData("True", "BoolLiteral(True)")]
+    [InlineData("False", "BoolLiteral(False)")]
+    [InlineData("none", "NoneLiteral")]
+    [InlineData("x", "NameExpr(x)")]
+    [InlineData("self", "NameExpr(self)")]
+    [InlineData("[]", "ListExpr([])")]
+    [InlineData("[1, 2,]", "ListExpr([IntLiteral(1), IntLiteral(2)])")]
+    [InlineData("{}", "DictExpr([])")]
+    [InlineData("{\"a\": 1, \"b\": 2}", "DictExpr([DictEntry(StringLiteral(\"a\"), IntLiteral(1)), DictEntry(StringLiteral(\"b\"), IntLiteral(2))])")]
+    public void Atoms(string text, string expected) =>
+        Assert.Equal(expected, Expr(text));
+
+    [Fact]
+    public void FStringHolesAreParsed() =>
+        Assert.Equal(
+            "FStringExpr([FStringTextSegment(\"degraded (\"), FStringHoleSegment(NameExpr(h)), FStringTextSegment(\"/\"), " +
+            "FStringHoleSegment(BinaryExpr(CallExpr(NameExpr(len), [Argument(null, NameExpr(xs))]), Add, IntLiteral(1))), " +
+            "FStringTextSegment(\")\")])",
+            Expr("f\"degraded ({h}/{len(xs) + 1})\""));
+
+    [Fact]
+    public void FStringHoleWithNestedString() =>
+        Assert.Equal(
+            "FStringExpr([FStringHoleSegment(IndexExpr(NameExpr(d), StringLiteral(\"k\")))])",
+            Expr("f\"{d[\"k\"]}\""));
+
+    [Fact]
+    public void FStringHoleSpansReferToTheFile()
+    {
+        var stmt = Assert.IsType<ExprStmt>(ParseText("f\"ab{x + y}\"\n").Unit.Items[0]);
+        var hole = Assert.IsType<FStringHoleSegment>(Assert.IsType<FStringExpr>(stmt.Expr).Segments[1]);
+        Assert.Equal(new TextSpan(5, 5), hole.Expr.Span);
+    }
+
+    // ---- examples ----
+
+    [Theory]
+    [InlineData("fizzbuzz.tpn")]
+    [InlineData("health.tpn")]
+    public void ExamplesParse(string name)
+    {
+        var path = Path.Combine(RepoPaths.Root, "examples", name);
+        var result = ParseText(File.ReadAllText(path));
+        Assert.Empty(result.Diagnostics);
+    }
+
+    // ---- TP0100 messages ----
+
+    [Theory]
+    [InlineData("let = 1\n", "1:5 TP0100: expected name, found '='")]
+    [InlineData("let x 1\n", "1:7 TP0100: expected '=', found integer")]
+    [InlineData("let x =\n", "1:8 TP0100: expected expression, found newline")]
+    [InlineData("let x: = 1\n", "1:8 TP0100: expected type, found '='")]
+    [InlineData("if x\n    pass\n", "1:5 TP0100: expected ':', found newline")]
+    [InlineData("if x: pass\n", "1:7 TP0100: expected newline, found 'pass'")]
+    [InlineData("if x:\npass\n", "2:1 TP0100: expected indented block, found 'pass'")]
+    [InlineData("x = 1 2\n", "1:7 TP0100: expected newline, found integer")]
+    [InlineData("f(1\n", "2:1 TP0100: expected ')', found newline")]  // the open bracket joins the line ending
+    [InlineData("else:\n    pass\n", "1:1 TP0100: expected statement, found 'else'")]
+    [InlineData("    x\n", "1:5 TP0100: expected statement, found indent")]
+    [InlineData("x = y z\n", "1:7 TP0100: expected newline, found name 'z'")]
+    [InlineData("if x is y:\n    pass\n", "1:9 TP0100: expected 'some', found name 'y'")]
+    [InlineData("match x:\n    +: pass\n", "2:5 TP0100: expected pattern, found '+'")]
+    [InlineData("def f(:\n    pass\n", "1:7 TP0100: expected name, found ':'")]
+    [InlineData("enum E:\n    V()\n", "2:7 TP0100: expected name, found ')'")]
+    [InlineData("f(", "1:3 TP0100: expected expression, found newline")]
+    [InlineData("f(1\nlet x = 2\n", "2:1 TP0100: expected ')', found 'let'")]
+    public void ExpectedMessages(string text, string expected) =>
+        Assert.Equal([expected], Errors(text));
+
+    [Fact]
+    public void ConstOnlyAtTopLevel() =>
+        Assert.Equal(["2:5 TP0100: expected statement, found 'const'"], Errors("def f():\n    const X = 1\n"));
+
+    [Theory]
+    [InlineData("f() = 1\n", "1:1")]
+    [InlineData("a + b += 1\n", "1:1")]
+    [InlineData("-a = 1\n", "1:1")]
+    public void InvalidAssignmentTarget(string text, string position) =>
+        Assert.Equal([$"{position} TP0100: cannot assign to this expression"], Errors(text));
+
+    [Theory]
+    [InlineData("S(1, b=2)\n", "1:6")]
+    [InlineData("S(a=1, 2)\n", "1:8")]
+    public void MixedArguments(string text, string position) =>
+        Assert.Equal([$"{position} TP0100: cannot mix positional and keyword arguments"], Errors(text));
+
+    // ---- TP0212 ----
+
+    [Fact]
+    public void ChainedComparison()
+    {
+        var result = ParseText("let ok = a < b < c\n");
+        var diagnostic = Assert.Single(result.Diagnostics);
+        Assert.Equal("TP0212", diagnostic.Code);
+        Assert.Equal("chained comparison not supported", diagnostic.Message);
+        Assert.Equal("write 'a < b and b < c'", diagnostic.Help);
+        Assert.Equal(new TextSpan(15, 1), diagnostic.Span);
+    }
+
+    [Fact]
+    public void ChainedComparisonReportedOncePerChainAndParsingContinues() =>
+        Assert.Equal(
+            ["1:7 TP0212: chained comparison not supported", "2:7 TP0100: expected '=', found integer"],
+            Errors("a < b == c not in d\nlet y 1\n"));
+
+    // ---- Recovery ----
+
+    [Fact]
+    public void ThreeIndependentErrorsAreAllReported() =>
+        Assert.Equal(
+            ["1:7 TP0100: expected '=', found integer",
+             "3:10 TP0100: expected expression, found ','",
+             "6:6 TP0100: expected ':', found 'if'"],
+            Errors("let x 1\nlet ok = 2\nprint(ok,, 1)\nif ok:\n    pass\nelse if:\n    pass\nprint(ok)\n"));
+
+    [Fact]
+    public void OneErrorPerStatement() =>
+        Assert.Equal(["1:7 TP0100: expected '=', found integer"], Errors("let x 1 ) ( ]\n"));
+
+    [Fact]
+    public void BadBlockHeaderSkipsItsBlock() =>
+        Assert.Equal(
+            ["1:9 TP0100: expected type, found ')'", "5:8 TP0100: expected expression, found newline"],
+            Errors("def f(a:):\n    let = = =\n    if (:\n        ]]]\nlet y =\n"));
+
+    [Fact]
+    public void ErrorInNestedBlockRecoversWithinThatBlock()
+    {
+        var result = ParseText("def f():\n    let = 1\n    let y = 2\nlet z = 3\n");
+        Assert.Single(result.Diagnostics);
+        Assert.Equal(
+            "FuncDef(f, [], null, Block([LetStmt(, null, ErrorExpr), LetStmt(y, null, IntLiteral(2))]))\n" +
+            "LetStmt(z, null, IntLiteral(3))",
+            string.Join("\n", result.Unit.Items.Select(AstPrinter.Print)));
+    }
+
+    [Fact]
+    public void ErrorOnLastStatementOfBlock() =>
+        Assert.Equal(
+            ["2:9 TP0100: expected expression, found newline", "4:8 TP0100: expected expression, found newline"],
+            Errors("if a:\n    x = \ny = 1\nlet z =\n"));
+
+    [Fact]
+    public void ErrorsInEachMatchArmAndStructField() =>
+        Assert.Equal(
+            ["2:5 TP0100: expected pattern, found '+'", "3:10 TP0100: expected newline, found name 'y'",
+             "6:8 TP0100: expected type, found integer"],
+            Errors("match x:\n    +: pass\n    _: x y\n    0: pass\nstruct S:\n    a: 1\n    b: int\n"));
+
+    // ---- f-string holes ----
+
+    [Theory]
+    [InlineData("f\"{a +}\"\n", "1:7 TP0100: expected expression, found '}'")]
+    [InlineData("f\"{a b}\"\n", "1:6 TP0100: expected '}', found name 'b'")]
+    [InlineData("x = f\"ok {1 2}\"\n", "1:13 TP0100: expected '}', found integer")]
+    public void FStringHoleSyntaxErrors(string text, string expected) =>
+        Assert.Equal([expected], Errors(text));
+
+    [Fact]
+    public void FStringHoleLexicalErrorsAreReported() =>
+        Assert.Equal(
+            ["1:4 TP0004: invalid character '$'", "1:11 TP0005: invalid escape sequence '\\q'"],
+            Errors("f\"{$} {d[\"\\q\"]}\"\n"));
+
+    [Fact]
+    public void FStringHoleErrorCountsAsTheStatementsError() =>
+        Assert.Equal(["1:12 TP0100: expected expression, found '+'"], Errors("let a = f\"{+}\" 1 2\n"));
+
+    // ---- Features from later milestones are syntax errors ----
+
+    [Theory]
+    [InlineData("def first[T](xs: list[T]) -> T?:\n    return none\n", "1:10 TP0100: expected '(', found '['")]
+    [InlineData("let b: Box[int] = x\n", "1:11 TP0100: expected '=', found '['")]
+    [InlineData("struct S:\n    def m(self):\n        pass\n", "2:5 TP0100: expected name, found 'def'")]
+    [InlineData("let n = x as int?\n", "1:11 TP0100: expected newline, found 'as'")]
+    public void LaterMilestoneSyntax(string text, string expected) =>
+        Assert.Equal([expected], Errors(text));
+}

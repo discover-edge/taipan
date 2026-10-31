@@ -1,4 +1,7 @@
+using System.Collections.Immutable;
+using Taipan.Compiler.Diagnostics;
 using Taipan.Compiler.Lexing;
+using Taipan.Compiler.Syntax;
 using Taipan.Compiler.Text;
 
 namespace Taipan.Cli;
@@ -68,8 +71,9 @@ public static class Cli
         return Compile("run", args[0], stderr);
     }
 
-    // The pipeline currently ends at the lexer: `check` reports lexical errors, and `run`
-    // can only execute a program with no tokens.
+    // The pipeline currently ends at the parser: `check` reports lexical and syntax errors, and
+    // `run` can only execute a program with no items. Each stage runs only if the previous one
+    // reported no errors (SPEC §9).
     private static int Compile(string command, string path, TextWriter stderr)
     {
         if (!File.Exists(path))
@@ -80,15 +84,24 @@ public static class Cli
 
         var source = SourceText.From(File.ReadAllText(path), path);
         var lexed = Lexer.Lex(source);
-        foreach (var diagnostic in lexed.Diagnostics)
-            stderr.WriteLine(diagnostic.Format(source));
-        if (lexed.Diagnostics.Length > 0)
+        if (Report(lexed.Diagnostics, source, stderr))
             return ExitCompileError;
 
-        if (command == "check" || lexed.Tokens is [{ Kind: TokenKind.EndOfFile }])
+        var parsed = Parser.Parse(source, lexed.Tokens);
+        if (Report(parsed.Diagnostics, source, stderr))
+            return ExitCompileError;
+
+        if (command == "check" || parsed.Unit.Items.IsEmpty)
             return ExitSuccess;
 
         return NotImplemented(command, stderr);
+    }
+
+    private static bool Report(ImmutableArray<Diagnostic> diagnostics, SourceText source, TextWriter stderr)
+    {
+        foreach (var diagnostic in diagnostics)
+            stderr.WriteLine(diagnostic.Format(source));
+        return diagnostics.Length > 0;
     }
 
     private static int NotImplemented(string command, TextWriter stderr)

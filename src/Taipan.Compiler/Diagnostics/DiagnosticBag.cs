@@ -42,8 +42,22 @@ public sealed class DiagnosticBag
     public void ReportInvalidNumber(TextSpan span) =>
         Add("TP0007", span, "invalid number literal");
 
-    private void Add(string code, TextSpan span, string message) =>
-        _items.Add(new Diagnostic(code, span, message));
+    public void ReportExpected(TextSpan span, string expected, string found) =>
+        Add("TP0100", span, $"expected {expected}, found {found}");
+
+    public void ReportInvalidAssignmentTarget(TextSpan span) =>
+        Add("TP0100", span, "cannot assign to this expression");
+
+    public void ReportMixedArguments(TextSpan span) =>
+        Add("TP0100", span, "cannot mix positional and keyword arguments");
+
+    public void ReportChainedComparison(TextSpan span) =>
+        Add("TP0212", span, "chained comparison not supported", "write 'a < b and b < c'");
+
+    public void AddRange(IEnumerable<Diagnostic> diagnostics) => _items.AddRange(diagnostics);
+
+    private void Add(string code, TextSpan span, string message, string? help = null) =>
+        _items.Add(new Diagnostic(code, span, message, help));
 
     private static string Describe(Rune character) =>
         Rune.IsControl(character) || Rune.IsWhiteSpace(character)

@@ -1,0 +1,5 @@
+tests/cases/m2/tp0100_messages.tpn:1:5: error TP0100: expected name, found '='
+tests/cases/m2/tp0100_messages.tpn:2:7: error TP0100: expected newline, found 'pass'
+tests/cases/m2/tp0100_messages.tpn:3:1: error TP0100: cannot assign to this expression
+tests/cases/m2/tp0100_messages.tpn:4:21: error TP0100: cannot mix positional and keyword arguments
+tests/cases/m2/tp0100_messages.tpn:5:13: error TP0100: expected expression, found '}'
