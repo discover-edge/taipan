@@ -1,0 +1,2 @@
+tests/cases/m1/recovery_multiple.tpn:3:1: error TP0001: tab in indentation
+tests/cases/m1/recovery_multiple.tpn:4:11: error TP0005: invalid escape sequence '\z'

@@ -1,0 +1,3 @@
+let name = "x"
+let a = f"hi {name}, {{literal}} {len(name) + 1}"
+let b = f'{d["k"]} {g({1: 2})}'

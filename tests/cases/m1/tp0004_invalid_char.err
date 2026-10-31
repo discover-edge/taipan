@@ -1,0 +1,2 @@
+tests/cases/m1/tp0004_invalid_char.tpn:1:11: error TP0004: invalid character '$'
+tests/cases/m1/tp0004_invalid_char.tpn:2:11: error TP0004: invalid character '!'

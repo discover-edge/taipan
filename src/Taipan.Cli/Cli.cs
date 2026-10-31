@@ -1,3 +1,6 @@
+using Taipan.Compiler.Lexing;
+using Taipan.Compiler.Text;
+
 namespace Taipan.Cli;
 
 /// <summary>
@@ -39,7 +42,7 @@ public static class Cli
     {
         if (args.Length != 1)
             return UsageError(stderr, "check takes exactly one file");
-        return CompileStub("check", args[0], stderr);
+        return Compile("check", args[0], stderr);
     }
 
     private static int Emit(string[] args, TextWriter stderr)
@@ -62,12 +65,12 @@ public static class Cli
             return UsageError(stderr, "run takes a file");
         if (args.Length > 1 && args[1] != "--")
             return UsageError(stderr, "program arguments must follow '--'");
-        return CompileStub("run", args[0], stderr);
+        return Compile("run", args[0], stderr);
     }
 
-    // M0: there is no compiler pipeline yet. An empty file is a valid program with
-    // nothing to do; anything else needs a later milestone.
-    private static int CompileStub(string command, string path, TextWriter stderr)
+    // The pipeline currently ends at the lexer: `check` reports lexical errors, and `run`
+    // can only execute a program with no tokens.
+    private static int Compile(string command, string path, TextWriter stderr)
     {
         if (!File.Exists(path))
         {
@@ -75,7 +78,14 @@ public static class Cli
             return ExitUsage;
         }
 
-        if (File.ReadAllText(path).Length == 0)
+        var source = SourceText.From(File.ReadAllText(path), path);
+        var lexed = Lexer.Lex(source);
+        foreach (var diagnostic in lexed.Diagnostics)
+            stderr.WriteLine(diagnostic.Format(source));
+        if (lexed.Diagnostics.Length > 0)
+            return ExitCompileError;
+
+        if (command == "check" || lexed.Tokens is [{ Kind: TokenKind.EndOfFile }])
             return ExitSuccess;
 
         return NotImplemented(command, stderr);

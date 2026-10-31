@@ -1,0 +1,4 @@
+tests/cases/m1/tp0007_bad_number.tpn:1:9: error TP0007: invalid number literal
+tests/cases/m1/tp0007_bad_number.tpn:2:9: error TP0007: invalid number literal
+tests/cases/m1/tp0007_bad_number.tpn:3:9: error TP0007: invalid number literal
+tests/cases/m1/tp0007_bad_number.tpn:4:9: error TP0007: invalid number literal

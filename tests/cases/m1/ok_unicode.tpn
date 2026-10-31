@@ -1,0 +1,1 @@
+let s = "héllo 🐍"  # non-ASCII is fine in strings and comments: é

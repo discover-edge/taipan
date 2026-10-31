@@ -1,0 +1,10 @@
+# comment
+
+let xs = [
+    1,
+        2,  # inside brackets
+  3,
+]
+
+let d = {"a": 1,
+"b": 2}

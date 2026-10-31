@@ -1,0 +1,2 @@
+let s = "abc
+let t = f"x{s}

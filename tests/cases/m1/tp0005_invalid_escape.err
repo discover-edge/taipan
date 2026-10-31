@@ -1,0 +1,1 @@
+tests/cases/m1/tp0005_invalid_escape.tpn:1:11: error TP0005: invalid escape sequence '\q'
