@@ -1,4 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <!-- The library compiled programs reference (SPEC §12.2). -->
+  <PropertyGroup>
+    <IsPackable>true</IsPackable>
+    <PackageId>TaipanLang.Runtime</PackageId>
+    <Description>The runtime library that programs compiled by Taipan reference.</Description>
+  </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="pythonnet" Version="3.0.5" />
   </ItemGroup>
