@@ -1,0 +1,26 @@
+# The C# shape of exceptions and try (SPEC §8).
+class Missing(KeyError):
+    name: str
+
+    def __init__(self, name: str):
+        self.name = name
+        super().__init__(name)
+
+def find(d: dict[str, int], name: str) -> int:
+    try:
+        return d[name]
+    except KeyError:
+        raise Missing(name)
+
+def run(d: dict[str, int]):
+    try:
+        print(find(d, "a"))
+    except (Missing, IndexError) as e:
+        print("missing", e)
+        raise
+    else:
+        print("found")
+    finally:
+        print("done")
+
+run({"a": 1})

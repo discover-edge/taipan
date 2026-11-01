@@ -1,0 +1,5 @@
+tests/cases/m16/tp0225_exceptions.tpn:3:16: error TP0225: a dataclass can only derive from a dataclass
+  help: exceptions are plain classes; give it an '__init__'
+tests/cases/m16/tp0225_exceptions.tpn:7:15: error TP0225: a dataclass can only derive from a dataclass
+  help: exceptions are plain classes; give it an '__init__'
+tests/cases/m16/tp0225_exceptions.tpn:10:15: error TP0225: 'PythonError' cannot be a base class

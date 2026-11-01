@@ -82,6 +82,12 @@ public sealed class Binder
     // The names narrowed where the code being bound runs (SPEC §3.9).
     private Narrowing _narrowing = Narrowing.None;
     private int _loopDepth;
+
+    // Exception handling in the function being bound (SPEC §3.10): how many except blocks enclose
+    // the code, for a bare `raise`, and the loop depth where the innermost finally block began, for
+    // the `return`, `break` and `continue` that would leave it.
+    private int _handlerDepth;
+    private int? _finallyLoopDepth;
     private string? _unsupported;
 
     private Binder()
@@ -117,6 +123,8 @@ public sealed class Binder
     {
         foreach (var builtin in FunctionSymbol.CreateBuiltins())
             _builtins.Declare(builtin);
+        foreach (var exception in BuiltinClasses.All)
+            _builtins.Declare(exception);
         _diagnostics.FileOrder = [.. files.Select(f => f.Source)];
 
         var modules = files.Select(f => new Module(f, new Scope(_builtins))).ToList();
@@ -208,7 +216,7 @@ public sealed class Binder
         Enter(main);
         _scope = new Scope(_global);
         var unit = main.File.Unit;
-        var topLevel = unit.Items.OfType<Stmt>().Select(BindStmt).ToImmutableArray();
+        var topLevel = BindStatements([.. unit.Items.OfType<Stmt>()]);
         var order = InitializationOrder(main, byName);
         return new BoundProgram(
             [.. order.SelectMany(m => m.PythonImports)],
@@ -449,8 +457,12 @@ public sealed class Binder
             case ClassType { Symbol.TypeParameters.IsEmpty: false }:
                 _diagnostics.ReportGenericBase(syntax.Span);
                 return;
+            // Only the runtime makes a PythonError (SPEC §3.10).
+            case ClassType { Symbol: var baseClass } when baseClass == BuiltinClasses.PythonError:
+                _diagnostics.ReportInvalidBase(syntax.Span, type);
+                return;
             case ClassType { Symbol: var baseClass } when baseClass.IsDataclass != symbol.IsDataclass:
-                _diagnostics.ReportMixedBase(syntax.Span, symbol.IsDataclass);
+                _diagnostics.ReportMixedBase(syntax.Span, symbol.IsDataclass, BuiltinClasses.IsException(baseClass));
                 return;
             case ClassType { Symbol: var baseClass }:
                 symbol.Base = baseClass;
@@ -482,7 +494,8 @@ public sealed class Binder
         }
         foreach (var symbol in modules.SelectMany(m => m.ClassDefs).Select(c => c.Symbol))
         {
-            if (symbol.Base is { } baseClass)
+            // Built-in classes are shared, and always open to subclasses.
+            if (symbol.Base is { RuntimeName: null } baseClass)
                 baseClass.HasSubclasses = true;
         }
     }
@@ -892,6 +905,7 @@ public sealed class Binder
         _function = symbol;
         _outerFunction = symbol;
         _loopDepth = 0;
+        (_handlerDepth, _finallyLoopDepth) = (0, null);
         _scope = new Scope(_global);
         if (symbol.Self is { } self)
             _scope.Declare(self);
@@ -1125,9 +1139,29 @@ public sealed class Binder
     {
         var outer = _scope;
         _scope = new Scope(outer);
-        var statements = block.Statements.Select(BindStmt).ToImmutableArray();
+        var statements = BindStatements(block.Statements);
         _scope = outer;
         return new BoundBlock(statements, block.Span);
+    }
+
+    /// <summary>
+    /// Binds a block's statements, warning at the first one that can never run: one after a
+    /// statement that terminates (§4.5), or after a <c>break</c> or <c>continue</c> (TP0300, M16).
+    /// </summary>
+    private ImmutableArray<BoundStmt> BindStatements(ImmutableArray<Stmt> syntax)
+    {
+        var statements = syntax.Select(BindStmt).ToImmutableArray();
+        for (var i = 0; i < statements.Length - 1; i++)
+        {
+            // A break or continue outside a loop, or a return outside a function, is already an error (TP0215).
+            var stmt = statements[i];
+            if ((stmt is BoundBreak or BoundContinue && _loopDepth > 0) || (TypeChecker.Terminates(stmt) && !(stmt is BoundReturn && _function is null)))
+            {
+                _diagnostics.ReportUnreachableCode(syntax[i + 1].Span);
+                break;
+            }
+        }
+        return statements;
     }
 
     private BoundStmt BindStmt(Stmt stmt) => stmt switch
@@ -1144,6 +1178,8 @@ public sealed class Binder
         WhileStmt whileStmt => BindWhile(whileStmt),
         ForStmt forStmt => BindFor(forStmt),
         MatchStmt match => BindMatch(match),
+        RaiseStmt raise => BindRaise(raise),
+        TryStmt tryStmt => BindTry(tryStmt),
         FuncDefStmt funcDef => BindLocalFunction(funcDef),
         UnpackStmt unpack => BindUnpack(unpack),
         TupleAssignStmt assign => BindTupleAssign(assign),
@@ -1249,8 +1285,10 @@ public sealed class Binder
         _localFunctions[symbol] = function;
 
         var (outerFunction, outerLoopDepth, outerScope) = (_function, _loopDepth, _scope);
+        var (outerHandlerDepth, outerFinallyLoopDepth) = (_handlerDepth, _finallyLoopDepth);
         _function = function;
         _loopDepth = 0;
+        (_handlerDepth, _finallyLoopDepth) = (0, null);
         _scope = new Scope(outerScope);
         for (var i = 0; i < parameters.Length; i++)
             DeclareLocal(def.Params[i].Name, parameters[i]);
@@ -1258,6 +1296,7 @@ public sealed class Binder
         if (returnType != TaipanType.Nothing && !TypeChecker.Terminates(body))
             _diagnostics.ReportNotAllPathsReturn(def.Name.Span, def.Name.Text);
         (_function, _loopDepth, _scope) = (outerFunction, outerLoopDepth, outerScope);
+        (_handlerDepth, _finallyLoopDepth) = (outerHandlerDepth, outerFinallyLoopDepth);
         _typeParameters = outerTypeParameters;
         return new BoundLocalFunction(symbol, function, parameters, body, stmt.Span);
     }
@@ -1720,6 +1759,8 @@ public sealed class Binder
             return new BoundReturn(orphan, ret.Span);
         }
 
+        if (_finallyLoopDepth is not null)
+            _diagnostics.ReportLeavesFinally(new TextSpan(ret.Span.Start, "return".Length), "return");
         var returnType = TypeChecker.Substitute(_function.ReturnType, _specialization);
         if (ret.Value is null)
         {
@@ -1741,6 +1782,8 @@ public sealed class Binder
     {
         if (_loopDepth == 0)
             _diagnostics.ReportBreakOutsideLoop(brk.Span);
+        else if (_finallyLoopDepth == _loopDepth)
+            _diagnostics.ReportLeavesFinally(brk.Span, "break");
         return new BoundBreak(brk.Span);
     }
 
@@ -1748,7 +1791,185 @@ public sealed class Binder
     {
         if (_loopDepth == 0)
             _diagnostics.ReportContinueOutsideLoop(cont.Span);
+        else if (_finallyLoopDepth == _loopDepth)
+            _diagnostics.ReportLeavesFinally(cont.Span, "continue");
         return new BoundContinue(cont.Span);
+    }
+
+    // ---- Exceptions (SPEC §3.10) ----
+
+    private BoundRaise BindRaise(RaiseStmt raise)
+    {
+        if (raise.Value is not { } syntax)
+        {
+            if (_handlerDepth == 0)
+                _diagnostics.ReportBareRaiseOutsideHandler(raise.Span);
+            return new BoundRaise(null, raise.Span);
+        }
+
+        // Python lets a class be raised; Taipan needs an instance.
+        if (NamedClass(syntax) is { } named)
+        {
+            _diagnostics.ReportCannotRaise(syntax.Span, named.Name, named.Name);
+            return new BoundRaise(new BoundErrorExpr(syntax.Span), raise.Span);
+        }
+        var value = BindValue(syntax);
+        if (value.Type.ContainsError)
+            return new BoundRaise(value, raise.Span);
+        if (TypeChecker.Unwrap(value.Type) is ClassType { Symbol: var symbol } && BuiltinClasses.IsException(symbol))
+            CheckAssignable(value, BuiltinClasses.Exception.Type, syntax.Span);
+        else
+            _diagnostics.ReportCannotRaise(syntax.Span, value.Type);
+        return new BoundRaise(value, raise.Span);
+    }
+
+    /// <summary>The class a name or <c>module.Name</c> refers to, if it's a class rather than a value.</summary>
+    private ClassSymbol? NamedClass(Expr expr) => expr switch
+    {
+        NameExpr name when !_typeParameters.ContainsKey(name.Name) => _scope.Lookup(name.Name) as ClassSymbol,
+        MemberExpr { Target: NameExpr module } member when _scope.Lookup(module.Name) is ModuleSymbol symbol
+            => symbol.Classes.GetValueOrDefault(member.Member.Text),
+        _ => null,
+    };
+
+    private BoundTry BindTry(TryStmt tryStmt)
+    {
+        var body = BindBlock(tryStmt.Body);
+
+        // The classes earlier clauses catch, for clauses that can never match (TP0300).
+        var caught = new List<ClassSymbol>();
+        var handlers = tryStmt.Handlers.Select(clause => BindHandler(clause, caught)).ToImmutableArray();
+        var elseBlock = tryStmt.Else is null ? null : BindBlock(tryStmt.Else);
+
+        BoundBlock? finallyBlock = null;
+        if (tryStmt.Finally is not null)
+        {
+            var outer = _finallyLoopDepth;
+            _finallyLoopDepth = _loopDepth;
+            finallyBlock = BindBlock(tryStmt.Finally);
+            _finallyLoopDepth = outer;
+        }
+        return new BoundTry(body, handlers, elseBlock, finallyBlock, tryStmt.Span);
+    }
+
+    private BoundHandler BindHandler(ExceptClause clause, List<ClassSymbol> caught)
+    {
+        var classes = new List<ClassSymbol>();
+        var pythonClasses = new List<BoundExpr>();
+        var valid = true;
+        foreach (var type in clause.Types)
+        {
+            switch (BindHandlerType(type))
+            {
+                case ClassSymbol symbol:
+                    classes.Add(symbol);
+                    break;
+                case BoundExpr pythonClass:
+                    pythonClasses.Add(pythonClass);
+                    break;
+                default:
+                    valid = false;
+                    break;
+            }
+        }
+        if (clause.Types.IsEmpty)
+            classes.Add(BuiltinClasses.Exception);
+
+        // A clause whose classes earlier clauses all catch can never match.
+        var reachable = true;
+        if (valid && pythonClasses.Count == 0 && classes.All(c => caught.Any(c.DerivesFrom)))
+        {
+            reachable = false;
+            _diagnostics.ReportUnreachableHandler(clause.TypesSpan, caught.First(classes[0].DerivesFrom).Name);
+        }
+        caught.AddRange(classes);
+
+        // A Python class matches a PythonError; several classes bind their nearest common base.
+        IEnumerable<ClassSymbol> bound = pythonClasses.Count > 0 ? [.. classes, BuiltinClasses.PythonError] : classes;
+        var bindingType = valid
+            ? bound.Aggregate((a, b) => a.CommonBase(b) ?? BuiltinClasses.Exception).Type
+            : TaipanType.Error;
+
+        var outer = _scope;
+        _scope = new Scope(outer);
+        VariableSymbol? binding = null;
+        if (clause.Binding is { } name)
+        {
+            binding = new VariableSymbol(name.Text, bindingType, VariableKind.Let);
+            DeclareLocal(name, binding);
+        }
+        _handlerDepth++;
+        var body = BindBlock(clause.Body);
+        _handlerDepth--;
+        _scope = outer;
+
+        // Catching everything is deliberate when the block re-raises or uses the exception (TP0301).
+        var broad = classes.Contains(BuiltinClasses.Exception);
+        if (broad && !Raises(body) && !(binding is not null && Uses(body, binding)))
+            _diagnostics.ReportBroadHandler(new TextSpan(clause.Span.Start, "except".Length));
+
+        return new BoundHandler([.. classes], [.. pythonClasses], binding, body, reachable);
+    }
+
+    /// <summary>
+    /// An <c>except</c> clause's type: an exception class, a <c>py</c> value for a Python class, or
+    /// null after reporting anything else.
+    /// </summary>
+    private object? BindHandlerType(Expr type)
+    {
+        var display = type switch
+        {
+            NameExpr name => name.Name,
+            MemberExpr member => member.Member.Text,
+            _ => "",
+        };
+        if (type is NameExpr { Name: var typeParameter } && _typeParameters.ContainsKey(typeParameter))
+        {
+            _diagnostics.ReportNotExceptionClass(type.Span, display);
+            return null;
+        }
+        if (NamedClass(type) is { } symbol)
+        {
+            if (BuiltinClasses.IsException(symbol))
+                return symbol;
+            _diagnostics.ReportNotExceptionClass(type.Span, display);
+            return null;
+        }
+        if (type is MemberExpr { Target: NameExpr module } qualified && _scope.Lookup(module.Name) is ModuleSymbol moduleSymbol)
+        {
+            if (moduleSymbol.Enums.ContainsKey(qualified.Member.Text))
+                _diagnostics.ReportNotExceptionClass(type.Span, display);
+            else
+                _diagnostics.ReportNoDefinition(qualified.Member.Span, moduleSymbol.Name, qualified.Member.Text);
+            return null;
+        }
+        // Only a variable can hold a Python class; a function, enum or other name can't.
+        if (type is NameExpr { Name: var other } && _scope.Lookup(other) is not (null or VariableSymbol))
+        {
+            _diagnostics.ReportNotExceptionClass(type.Span, display);
+            return null;
+        }
+
+        var value = BindValue(type);
+        if (value.Type.ContainsError)
+            return null;
+        if (value.Type == TaipanType.Py)
+            return value;
+        _diagnostics.ReportNotExceptionClass(type.Span, display);
+        return null;
+    }
+
+    /// <summary>Whether a block contains a <c>raise</c>, outside any nested function.</summary>
+    private static bool Raises(BoundStmt stmt) =>
+        stmt is BoundRaise || (stmt is not BoundLocalFunction && BoundTree.Statements(stmt).Any(Raises));
+
+    /// <summary>Whether a statement reads <paramref name="variable"/> anywhere, nested functions and lambdas included.</summary>
+    private static bool Uses(BoundStmt stmt, VariableSymbol variable)
+    {
+        bool InExpr(BoundExpr expr) =>
+            expr is BoundVariable { Symbol: var symbol } && symbol == variable
+            || BoundTree.Children(expr).Any(InExpr);
+        return BoundTree.Expressions(stmt).Any(InExpr) || BoundTree.Statements(stmt).Any(s => Uses(s, variable));
     }
 
     /// <summary>Each later clause sees what holds when the earlier conditions are false (SPEC §3.9).</summary>
@@ -1867,7 +2088,7 @@ public sealed class Binder
             unpacked = UnpackInto(variable, elements, forStmt.Variables, VariableKind.LoopVariable, forStmt.Span);
         }
         _loopDepth++;
-        var statements = forStmt.Body.Statements.Select(BindStmt).ToImmutableArray();
+        var statements = BindStatements(forStmt.Body.Statements);
         _loopDepth--;
         _scope = outer;
 
@@ -3110,6 +3331,12 @@ public sealed class Binder
                 : new BoundErrorExpr(call.Span);
         }
 
+        if (classSymbol == BuiltinClasses.PythonError)
+        {
+            _diagnostics.ReportCannotConstruct(nameSpan, classSymbol.Name);
+            BindArguments(call);
+            return new BoundErrorExpr(call.Span);
+        }
         var constructor = classSymbol.Constructor;
         if (MatchArguments(call, constructor, classSymbol.Name, nameSpan) is not { } shape)
         {

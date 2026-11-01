@@ -1,0 +1,5 @@
+tests/cases/m16/tp0215_raise.tpn:3:5: error TP0215: 'raise' without an exception outside an except block
+tests/cases/m16/tp0215_raise.tpn:10:13: error TP0215: 'raise' without an exception outside an except block
+tests/cases/m16/tp0215_raise.tpn:19:13: error TP0215: 'break' cannot be used in a finally block
+tests/cases/m16/tp0215_raise.tpn:21:13: error TP0215: 'continue' cannot be used in a finally block
+tests/cases/m16/tp0215_raise.tpn:27:9: error TP0215: 'return' cannot be used in a finally block

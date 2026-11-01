@@ -76,6 +76,20 @@ public sealed record BoundReturn(BoundExpr? Value, TextSpan Span) : BoundStmt(Sp
 
 public sealed record BoundBreak(TextSpan Span) : BoundStmt(Span);
 
+/// <summary><c>raise e</c>, or a bare <c>raise</c> of the exception being handled when <see cref="Value"/> is null (SPEC §3.10).</summary>
+public sealed record BoundRaise(BoundExpr? Value, TextSpan Span) : BoundStmt(Span);
+
+/// <summary>A <c>try</c> statement (SPEC §3.10). Handlers marked unreachable (TP0300) are checked but not emitted.</summary>
+public sealed record BoundTry(BoundBlock Body, ImmutableArray<BoundHandler> Handlers, BoundBlock? Else, BoundBlock? Finally, TextSpan Span)
+    : BoundStmt(Span);
+
+/// <summary>
+/// An <c>except</c> clause: the classes it matches (just <c>Exception</c> for a bare one), the
+/// Python classes it matches, and the <c>as</c> binding, if any.
+/// </summary>
+public sealed record BoundHandler(
+    ImmutableArray<ClassSymbol> Classes, ImmutableArray<BoundExpr> PythonClasses, VariableSymbol? Binding, BoundBlock Body, bool IsReachable);
+
 public sealed record BoundContinue(TextSpan Span) : BoundStmt(Span);
 
 public sealed record BoundExprStmt(BoundExpr Expr, TextSpan Span) : BoundStmt(Span);

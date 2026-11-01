@@ -1,0 +1,16 @@
+8080
+db | no service named db | no service named db
+timeout: too slow True
+30
+empty: []
+value: port must be a number
+check the config file
+caught no service named zero
+caught one
+[NotFound("no service named a"), Timeout("t"), KeyError("k")]
+True False
+raised from a list: t
+logging inner
+outer got inner
+bare except
+still anything

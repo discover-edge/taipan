@@ -81,7 +81,9 @@ Exit codes: `0` success, `1` compile error, `2` usage error, `101` runtime panic
 - **Default and keyword arguments:** `def connect(host: str, port: int = 8080)`, called as `connect("db", port=5432)`.
 - **Functions as values:** lambdas, nested `def`s and closures, typed as Python's `Callable[[int], str]`. `sorted(services, key=lambda s: s.healthy)`, `map` and `filter` work as in Python, except that `map` and `filter` return lists.
 - **Tuples and slicing:** `tuple[int, str]`, `return lo, hi`, `let lo, hi = bounds(xs)`, `for i, x in enumerate(xs)`, and `xs[1:3]`, `s[::-1]` with Python's semantics. Unpacking with the wrong count is a compile error.
-- **Checked arithmetic:** int overflow, division by zero, and out-of-range indexing are panics that report the `.tpn` line.
+- **Exceptions:** `try`/`except`/`else`/`finally` and `raise`, with Python's exception classes. A missing dict key is a `KeyError` and an overflow an `OverflowError`, and a Python exception can be caught by its class (`except json.JSONDecodeError`). User exceptions are classes deriving from `Exception`.
+- **Checked arithmetic:** int overflow, division by zero, and out-of-range indexing raise exceptions. Uncaught, they're panics that report the `.tpn` line.
+- **Compile-time warnings** for code that can never run, and for an `except` that silently swallows every exception.
 - **Modules:** `import geometry` or `from geometry import Point` loads `geometry.tpn` from the main file's directory.
 - **Python interop:** `from python import json` gives `py` values. These are dynamic objects that reach static types only through checked conversions (`x as int?`):
 

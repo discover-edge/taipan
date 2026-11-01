@@ -119,6 +119,9 @@ public sealed class ClassSymbol(string name, ImmutableArray<TypeParameterSymbol>
 
     public bool IsDataclass { get; } = isDataclass;
 
+    /// <summary>For a built-in class (SPEC §3.10), the C# class in <c>Taipan.Runtime</c> that implements it.</summary>
+    public string? RuntimeName { get; init; }
+
     /// <summary>The base class, if any; never part of a cycle once the declarations are checked.</summary>
     public ClassSymbol? Base { get; set; }
 
@@ -175,6 +178,72 @@ public sealed class ClassSymbol(string name, ImmutableArray<TypeParameterSymbol>
         }
         return null;
     }
+}
+
+/// <summary>
+/// The built-in exception classes (SPEC §3.10), in Python's hierarchy. They're shared by every
+/// compilation and never change once built: they're always open to subclasses, and only
+/// <c>Exception</c> declares fields and an <c>__init__</c>.
+/// </summary>
+public static class BuiltinClasses
+{
+    public static ClassSymbol Exception { get; } = CreateException();
+
+    public static ClassSymbol PythonError { get; } = CreatePythonError();
+
+    public static ImmutableArray<ClassSymbol> All { get; } = CreateAll();
+
+    private static ClassSymbol CreateException()
+    {
+        var exception = Builtin("Exception", "TaipanException", null);
+        var message = new FieldSymbol("message", TaipanType.Str) { Owner = exception };
+        exception.Fields = [message];
+        var self = new VariableSymbol("self", exception.Type, VariableKind.Parameter);
+        exception.Init = new FunctionSymbol("__init__", [new VariableSymbol("message", TaipanType.Str, VariableKind.Parameter)], TaipanType.Nothing, self: self)
+        {
+            Defaults = [new BoundLiteral("", TaipanType.Str, default)],
+        };
+        return exception;
+    }
+
+    private static ClassSymbol CreatePythonError()
+    {
+        var error = Builtin("PythonError", "PythonError", Exception);
+        error.Fields =
+        [
+            new FieldSymbol("type", TaipanType.Str) { Owner = error },
+            new FieldSymbol("value", TaipanType.Py) { Owner = error },
+        ];
+        return error;
+    }
+
+    private static ImmutableArray<ClassSymbol> CreateAll()
+    {
+        var arithmetic = Builtin("ArithmeticError", Exception);
+        var lookup = Builtin("LookupError", Exception);
+        return
+        [
+            Exception,
+            arithmetic,
+            Builtin("ZeroDivisionError", arithmetic),
+            Builtin("OverflowError", arithmetic),
+            lookup,
+            Builtin("IndexError", lookup),
+            Builtin("KeyError", lookup),
+            Builtin("ValueError", Exception),
+            Builtin("TypeError", Exception),
+            Builtin("RuntimeError", Exception),
+            PythonError,
+        ];
+    }
+
+    private static ClassSymbol Builtin(string name, ClassSymbol? baseClass) => Builtin(name, name, baseClass);
+
+    private static ClassSymbol Builtin(string name, string runtimeName, ClassSymbol? baseClass) =>
+        new(name, [], isDataclass: false) { RuntimeName = $"Taipan.Runtime.{runtimeName}", Base = baseClass, HasSubclasses = true };
+
+    /// <summary>Whether <paramref name="symbol"/> is <c>Exception</c> or derives from it.</summary>
+    public static bool IsException(ClassSymbol symbol) => symbol.DerivesFrom(Exception);
 }
 
 /// <summary>Built-in methods of list, dict and str (SPEC §6).</summary>

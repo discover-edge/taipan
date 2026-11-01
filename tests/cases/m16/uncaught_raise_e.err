@@ -1,0 +1,2 @@
+panic: ValueError
+  at tests/cases/m16/uncaught_raise_e.tpn:10

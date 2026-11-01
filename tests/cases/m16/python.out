@@ -1,0 +1,6 @@
+[1, 2]
+bad json: JSONDecodeError | Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+None
+python: KeyError 'missing' 'missing'
+("missing",)
+type: cannot convert Python str to int

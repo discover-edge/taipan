@@ -525,6 +525,8 @@ public sealed class Parser
                 return ParseForStmt();
             case TokenKind.MatchKeyword:
                 return ParseMatchStmt();
+            case TokenKind.TryKeyword:
+                return ParseTryStmt();
             case TokenKind.DefKeyword or TokenKind.At:
                 var start = Current.Span.Start;
                 var decorators = ParseDecorators();
@@ -536,7 +538,7 @@ public sealed class Parser
         }
     }
 
-    // simple_stmt = let_stmt | var_stmt | assign_stmt | return_stmt | "pass" | "break" | "continue" | expr
+    // simple_stmt = let_stmt | var_stmt | assign_stmt | return_stmt | raise_stmt | "pass" | "break" | "continue" | expr
     private Stmt ParseSimpleStmt()
     {
         switch (Current.Kind)
@@ -547,6 +549,8 @@ public sealed class Parser
                 return ParseVarStmt();
             case TokenKind.ReturnKeyword:
                 return ParseReturnStmt();
+            case TokenKind.RaiseKeyword:
+                return ParseRaiseStmt();
             case TokenKind.PassKeyword:
                 return new PassStmt(Next().Span);
             case TokenKind.BreakKeyword:
@@ -682,6 +686,109 @@ public sealed class Parser
         var start = Next().Span.Start;
         var value = !_recovering && CanStartExpression(Current.Kind) ? ParseExprList() : null;
         return new ReturnStmt(value, SpanFrom(start));
+    }
+
+    // raise_stmt = "raise" [ expr ]
+    private RaiseStmt ParseRaiseStmt()
+    {
+        var start = Next().Span.Start;
+        var value = !_recovering && CanStartExpression(Current.Kind) ? ParseExpr() : null;
+        return new RaiseStmt(value, SpanFrom(start));
+    }
+
+    // try_stmt = "try" ":" block { except_clause } [ "else" ":" block ] [ "finally" ":" block ]
+    private TryStmt ParseTryStmt()
+    {
+        var start = Next().Span.Start;
+        Expect(TokenKind.Colon);
+        var body = ParseBlock();
+
+        var handlers = ImmutableArray.CreateBuilder<ExceptClause>();
+        ExceptClause? bare = null;
+        while (At(TokenKind.ExceptKeyword))
+        {
+            var handler = ParseExceptClause();
+            // A bare `except:` must be last (SPEC §2.1); parsing carries on after reporting it.
+            if (bare is not null)
+            {
+                _diagnostics.ReportBareExceptNotLast(new TextSpan(bare.Span.Start, "except".Length));
+                bare = null;
+            }
+            if (handler.Types.IsEmpty)
+                bare = handler;
+            handlers.Add(handler);
+        }
+
+        Block? elseBlock = null;
+        if (handlers.Count > 0 && At(TokenKind.ElseKeyword))
+        {
+            Next();
+            Expect(TokenKind.Colon);
+            elseBlock = ParseBlock();
+        }
+
+        Block? finallyBlock = null;
+        if (At(TokenKind.FinallyKeyword))
+        {
+            Next();
+            Expect(TokenKind.Colon);
+            finallyBlock = ParseBlock();
+        }
+        else if (handlers.Count == 0)
+        {
+            ReportExpected("'except' or 'finally'");
+        }
+        return new TryStmt(body, handlers.ToImmutable(), elseBlock, finallyBlock, SpanFrom(start));
+    }
+
+    // except_clause = "except" [ except_types [ "as" NAME ] ] ":" block
+    // except_types  = qual_name | "(" qual_name { "," qual_name } [ "," ] ")"
+    private ExceptClause ParseExceptClause()
+    {
+        var start = Next().Span.Start;
+        var types = ImmutableArray<Expr>.Empty;
+        var typesStart = Current.Span.Start;
+        Identifier? binding = null;
+        if (!At(TokenKind.Colon))
+        {
+            if (At(TokenKind.OpenParen))
+            {
+                Next();
+                types = ParseCommaList(TokenKind.CloseParen, ParseExceptType);
+                Expect(TokenKind.CloseParen);
+            }
+            else
+            {
+                types = [ParseExceptType()];
+            }
+        }
+        var typesSpan = types.IsEmpty ? new TextSpan(typesStart, 0) : SpanFrom(typesStart);
+        if (!types.IsEmpty)
+        {
+            if (At(TokenKind.AsKeyword))
+            {
+                Next();
+                binding = ExpectIdentifier();
+            }
+        }
+        Expect(TokenKind.Colon);
+        var body = ParseBlock();
+        return new ExceptClause(types, typesSpan, binding, body, SpanFrom(start));
+    }
+
+    // qual_name = NAME [ "." NAME [ "." NAME ] ], as a name or member chain
+    private Expr ParseExceptType()
+    {
+        var start = Current.Span.Start;
+        var first = ExpectIdentifier();
+        Expr type = new NameExpr(first.Text, first.Span);
+        for (var i = 0; i < 2 && At(TokenKind.Dot); i++)
+        {
+            Next();
+            var member = ExpectIdentifier();
+            type = new MemberExpr(type, member, SpanFrom(start));
+        }
+        return type;
     }
 
     // if_stmt = "if" condition ":" block { "elif" condition ":" block } [ "else" ":" block ]

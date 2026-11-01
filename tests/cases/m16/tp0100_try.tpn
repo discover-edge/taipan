@@ -1,0 +1,33 @@
+# Malformed try statements (SPEC §2).
+try:
+    pass
+print("no clause")
+
+try:
+    pass
+else:
+    pass
+
+try:
+    pass
+except:
+    pass
+except KeyError:
+    pass
+
+try:
+    pass
+except KeyError as:
+    pass
+
+try:
+    pass
+except KeyError as e.f:
+    pass
+
+try:
+    pass
+except KeyError(1):
+    pass
+
+raise ValueError("a"), ValueError("b")

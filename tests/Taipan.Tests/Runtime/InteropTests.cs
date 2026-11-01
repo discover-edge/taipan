@@ -18,9 +18,10 @@ public class InteropTests
         Assert.Null(Interop.AsOptionalValue(Interop.GetItem(parsed, "ok"), Interop.ToInt));
         Assert.Equal([1L, null], Interop.As(Interop.GetItem(parsed, "xs"), v => Interop.ToList(v, e => Interop.NoneOrValue(e, Interop.ToInt)), "list[int?]"));
         Assert.Equal("cannot convert Python bool to int",
-            Assert.Throws<TaipanPanic>(() => Interop.As(Interop.GetItem(parsed, "ok"), Interop.ToInt, "int")).Message);
-        Assert.StartsWith("Python JSONDecodeError: ",
-            Assert.Throws<TaipanPanic>(() => Interop.Call(Interop.GetAttr(json, "loads"), ["{"], [])).Message);
+            Assert.Throws<TypeError>(() => Interop.As(Interop.GetItem(parsed, "ok"), Interop.ToInt, "int")).Message);
+        var error = Assert.Throws<PythonError>(() => Interop.Call(Interop.GetAttr(json, "loads"), ["{"], []));
+        Assert.Equal("JSONDecodeError", error.type);
+        Assert.StartsWith("Expecting property name", error.message);
         Assert.Equal("[1, 2]", Interop.Str(Interop.From(new List<long> { 1, 2 })));
         Assert.Equal("7", Interop.Str(Interop.Binary("+", 3L, Interop.From(4L))));
         Assert.Equal("True", Interop.Str(Interop.Binary("in", 2L, Interop.From(new List<long> { 1, 2 }))));

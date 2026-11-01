@@ -1,0 +1,7 @@
+# An uncaught Python exception keeps the M10 panic output (SPEC §10.5).
+from python import json
+
+try:
+    print(json.loads("{"))
+except KeyError:
+    print("not here")

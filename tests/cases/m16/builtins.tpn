@@ -1,0 +1,89 @@
+# ROADMAP M16: Taipan's runtime errors are catchable exceptions (SPEC §3.10, §7).
+class Animal:
+    pass
+
+class Dog(Animal):
+    pass
+
+def get(d: dict[str, int], k: str) -> int:
+    try:
+        return d[k]
+    except KeyError as e:
+        print("KeyError:", e.message)
+        return -1
+
+def big() -> int:
+    var n = 9223372036854775807
+    try:
+        n += 1
+    except OverflowError as e:
+        print("OverflowError:", e)
+    return n
+
+print(get({"a": 1}, "a"), get({"a": 1}, "b"))
+print(big())
+
+def attempt(label: str, f: Callable[[], None]):
+    try:
+        f()
+        print(label, "ok")
+    except ZeroDivisionError as e:
+        print(label, "ZeroDivisionError:", e)
+    except IndexError as e:
+        print(label, "IndexError:", e)
+    except ValueError as e:
+        print(label, "ValueError:", e)
+    except OverflowError as e:
+        print(label, "OverflowError:", e)
+    except RuntimeError as e:
+        print(label, "RuntimeError:", e)
+    except TypeError as e:
+        print(label, "TypeError:", e)
+
+let xs = [1, 2, 3]
+let zero = 0
+attempt("div", lambda: print(1 // zero))
+attempt("mod", lambda: print(1 % zero))
+attempt("float", lambda: print(1.0 / 0.0 * 0))
+attempt("index", lambda: print(xs[5]))
+attempt("pop", lambda: print([0][1:].pop()))
+attempt("nan", lambda: print(int(float("nan") ?? 0.0)))
+attempt("inf", lambda: print(int(float("inf") ?? 0.0)))
+attempt("split", lambda: print("a,b".split("")))
+attempt("replace", lambda: print("ab".replace("", "x")))
+attempt("slice", lambda: print(xs[::zero]))
+attempt("cast", lambda: print(Animal() as Dog))
+
+def mutate():
+    var ys = [1, 2]
+    for y in ys:
+        ys.append(y)
+
+attempt("mutate", mutate)
+attempt("fine", lambda: print(xs[0]))
+
+# Base classes catch their subclasses.
+try:
+    print({"k": 1}["missing"])
+except LookupError as e:
+    print("lookup:", e, isinstance(e, KeyError), isinstance(e, IndexError))
+
+try:
+    print(xs[-4])
+except (KeyError, IndexError) as e:
+    print("either:", e.message)
+
+try:
+    print(1 // zero)
+except ArithmeticError as e:
+    print("arithmetic:", e)
+
+try:
+    print(xs[9])
+except Exception as e:
+    print("exception:", e)
+
+# Display: the message at top level, class and message inside a container.
+let err = KeyError("missing key \"a\"")
+print(err, [err], str(ValueError("bad port")))
+print(f"{ValueError()}|{Exception("x")}")

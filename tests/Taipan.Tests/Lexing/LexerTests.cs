@@ -106,9 +106,10 @@ public class LexerTests
             "DefKeyword ClassKeyword EnumKeyword LetKeyword VarKeyword ConstKeyword IfKeyword ElifKeyword " +
             "ElseKeyword WhileKeyword ForKeyword InKeyword MatchKeyword ReturnKeyword PassKeyword BreakKeyword " +
             "ContinueKeyword AndKeyword OrKeyword NotKeyword IsKeyword SomeKeyword NoneKeyword TrueKeyword " +
-            "FalseKeyword AsKeyword FromKeyword ImportKeyword LambdaKeyword Newline EndOfFile",
+            "FalseKeyword AsKeyword FromKeyword ImportKeyword LambdaKeyword TryKeyword ExceptKeyword " +
+            "FinallyKeyword RaiseKeyword Newline EndOfFile",
             Dump("def class enum let var const if elif else while for in match return pass break " +
-                 "continue and or not is some None True False as from import lambda"));
+                 "continue and or not is some None True False as from import lambda try except finally raise"));
 
     [Fact]
     public void NamesThatResembleKeywords() =>

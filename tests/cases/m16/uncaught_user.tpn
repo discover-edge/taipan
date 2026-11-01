@@ -1,0 +1,12 @@
+# An uncaught user exception prints its class and message (SPEC §3.10).
+class NotFound(Exception):
+    pass
+
+def find(name: str):
+    try:
+        raise NotFound(f"no service named {name}")
+    except KeyError:
+        print("not here")
+
+print("before")
+find("db")

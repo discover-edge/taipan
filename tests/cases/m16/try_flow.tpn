@@ -1,0 +1,139 @@
+# try/except/else/finally control flow (SPEC §3.10).
+def trace(fail: bool) -> str:
+    var log = ""
+    try:
+        log += "try "
+        if fail:
+            raise ValueError("x")
+    except ValueError:
+        log += "except "
+    else:
+        log += "else "
+    finally:
+        log += "finally"
+    return log
+
+print(trace(False))
+print(trace(True))
+
+# finally runs on return, break and continue.
+def early() -> int:
+    try:
+        return 1
+    finally:
+        print("finally after return")
+
+print(early())
+
+for i in range(3):
+    try:
+        if i == 0:
+            continue
+        if i == 2:
+            break
+        print("body", i)
+    finally:
+        print("finally", i)
+
+# finally runs while an exception propagates, and else doesn't run after a return.
+def propagate():
+    try:
+        raise KeyError("k")
+    finally:
+        print("cleanup")
+
+try:
+    propagate()
+except KeyError as e:
+    print("caught", e)
+
+def no_else() -> int:
+    try:
+        return 2
+    except ValueError:
+        return 3
+    else:
+        print("never")
+        return 4
+
+print(no_else())
+
+# An exception raised in an except or else block isn't caught by the same try.
+try:
+    try:
+        raise ValueError("first")
+    except ValueError:
+        raise KeyError("second")
+    except KeyError:
+        print("not here")
+except KeyError as e:
+    print("outer", e)
+
+try:
+    try:
+        print("ok")
+    except KeyError:
+        print("not here")
+    else:
+        raise KeyError("from else")
+except KeyError as e:
+    print("outer", e)
+
+# A raise in finally replaces the exception in flight.
+try:
+    try:
+        raise ValueError("lost")
+    finally:
+        raise KeyError("replacement")
+except ValueError:
+    print("not here")
+except KeyError as e:
+    print("replaced by", e)
+
+# Clauses are tried in order; an unmatched exception propagates.
+def classify(n: int) -> str:
+    try:
+        try:
+            if n == 0:
+                raise KeyError("k")
+            if n == 1:
+                raise IndexError("i")
+            raise ValueError("v")
+        except KeyError:
+            return "key"
+        except LookupError:
+            return "lookup"
+    except ValueError as e:
+        return f"outer {e}"
+
+print(classify(0), classify(1), classify(2))
+
+# A function that ends in raise needs no return.
+def must(x: int?) -> int:
+    if x is some v:
+        return v
+    raise ValueError("missing")
+
+def first(xs: list[int]) -> int:
+    try:
+        return xs[0]
+    except IndexError:
+        return -1
+
+def checked(n: int) -> int:
+    try:
+        return n
+    finally:
+        print("checked", n)
+
+def refuse() -> int:
+    try:
+        print("refusing")
+    finally:
+        raise RuntimeError("no")
+
+print(must(5), first([]), first([7]), checked(3))
+try:
+    print(refuse())
+except RuntimeError as e:
+    print(e)

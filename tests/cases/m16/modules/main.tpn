@@ -1,0 +1,13 @@
+# Exception classes from another module (SPEC §3.10, §4.7).
+import zoo
+from zoo import Escaped
+
+try:
+    zoo.release("lion")
+except zoo.Escaped as e:
+    print("qualified:", e.animal)
+
+try:
+    zoo.release("tiger")
+except (Escaped, KeyError) as e:
+    print("imported:", e)

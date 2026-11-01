@@ -1,0 +1,3 @@
+tests/cases/m16/tp0214_exceptions.tpn:2:7: error TP0214: duplicate definition of 'ValueError'
+tests/cases/m16/tp0214_exceptions.tpn:5:5: error TP0214: duplicate definition of 'Exception'
+tests/cases/m16/tp0214_exceptions.tpn:8:7: error TP0214: duplicate definition of 'KeyError'

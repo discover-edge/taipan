@@ -1,0 +1,51 @@
+# A broad except clause that discards the exception is warning TP0301 (SPEC §3.10).
+def risky(n: int) -> int:
+    return [1, 2][n]
+
+try:
+    print(risky(5))
+except:
+    pass
+
+try:
+    print(risky(5))
+except Exception:
+    print("something failed")
+
+try:
+    print(risky(5))
+except (KeyError, Exception):
+    print("something failed")
+
+try:
+    print(risky(5))
+except Exception as e:
+    print("unused binding")
+
+# Deliberate handling: logging the exception, re-raising, or catching a specific class.
+try:
+    print(risky(5))
+except Exception as e:
+    print("failed:", e)
+
+try:
+    try:
+        print(risky(5))
+    except:
+        print("cleaning up")
+        raise
+except IndexError:
+    print("index")
+
+try:
+    print(risky(5))
+except IndexError:
+    pass
+
+def handler(f: Callable[[], None]):
+    try:
+        f()
+    except Exception:
+        def later():
+            raise KeyError("not a re-raise of this clause")
+        later()

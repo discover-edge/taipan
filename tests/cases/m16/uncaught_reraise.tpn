@@ -1,0 +1,9 @@
+# A bare raise keeps the line where the exception was first raised (SPEC §3.10).
+def load(d: dict[str, int]) -> int:
+    return d["port"]
+
+try:
+    print(load({}))
+except KeyError as e:
+    print("retrying")
+    raise

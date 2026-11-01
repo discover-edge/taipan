@@ -1,0 +1,9 @@
+class Escaped(Exception):
+    animal: str
+
+    def __init__(self, animal: str):
+        self.animal = animal
+        super().__init__(f"{animal} escaped")
+
+def release(animal: str):
+    raise Escaped(animal)

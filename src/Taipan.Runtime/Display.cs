@@ -24,6 +24,7 @@ public static class Display
         ITuple t => "(" + string.Join(", ", Enumerable.Range(0, t.Length).Select(i => Repr(t[i]))) + ")",
         IVariant { Fields.Count: 0 } v => v.TypeName,
         IStruct s => $"{s.TypeName}({string.Join(", ", s.Fields.Select(f => $"{f.Name}={Repr(f.Value)}"))})",
+        TaipanException e => e.message,
         IObject o => $"<{o.TypeName} object>",
         IDictionary d => "{" + string.Join(", ", d.Keys.Cast<object>().Select(k => $"{Repr(k)}: {Repr(d[k])}")) + "}",
         IList l => "[" + string.Join(", ", l.Cast<object?>().Select(Repr)) + "]",
@@ -45,6 +46,8 @@ public static class Display
     {
         string s => "\"" + s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\t", "\\t") + "\"",
         null => Format(value),
+        // Inside a container, an exception shows its class too, as Python's repr does (SPEC §6).
+        TaipanException e => $"{((IObject)e).TypeName}({Repr(e.message)})",
         _ => ExternalFormat?.Invoke(value, true) ?? Format(value),
     };
 

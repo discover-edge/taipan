@@ -1,0 +1,30 @@
+# ROADMAP M16: Python exceptions from py operations are catchable (SPEC §3.10, §10.5).
+from python import json
+
+def parse(text: str) -> py?:
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as e:
+        print("bad json:", e.type, "|", e.message)
+        return None
+
+print(parse("[1, 2]"))
+print(parse("{"))
+
+# A Python class that doesn't match lets later clauses run.
+try:
+    let d = json.loads("{}")
+    print(d["missing"])
+except json.JSONDecodeError:
+    print("not here")
+    raise
+except PythonError as e:
+    print("python:", e.type, e.message, e)
+    print(e.value.args)
+
+# A failed 'as' raises a TypeError.
+try:
+    let n = json.loads("\"three\"") as int
+    print(n)
+except TypeError as e:
+    print("type:", e)

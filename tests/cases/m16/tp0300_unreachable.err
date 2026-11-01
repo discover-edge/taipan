@@ -1,0 +1,9 @@
+tests/cases/m16/tp0300_unreachable.tpn:4:5: warning TP0300: unreachable code
+tests/cases/m16/tp0300_unreachable.tpn:10:9: warning TP0300: unreachable code
+tests/cases/m16/tp0300_unreachable.tpn:18:5: warning TP0300: unreachable code
+tests/cases/m16/tp0300_unreachable.tpn:24:13: warning TP0300: unreachable code
+tests/cases/m16/tp0300_unreachable.tpn:26:9: warning TP0300: unreachable code
+tests/cases/m16/tp0300_unreachable.tpn:36:12: warning TP0300: unreachable except clause
+  help: 'LookupError' is already caught above
+tests/cases/m16/tp0300_unreachable.tpn:42:12: warning TP0300: unreachable except clause
+  help: 'ValueError' is already caught above

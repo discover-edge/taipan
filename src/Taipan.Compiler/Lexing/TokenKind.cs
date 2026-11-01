@@ -43,6 +43,10 @@ public enum TokenKind
     FromKeyword,
     ImportKeyword,
     LambdaKeyword,
+    TryKeyword,
+    ExceptKeyword,
+    FinallyKeyword,
+    RaiseKeyword,
 
     // Operators and punctuation
     Plus,
