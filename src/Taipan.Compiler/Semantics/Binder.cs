@@ -74,6 +74,9 @@ public sealed class Binder
     // The top-level function or method whose body is being bound, outside any nested function.
     // Its body can't see top-level variables (TP0211); a top-level statement's can.
     private FunctionSymbol? _outerFunction;
+
+    // Each nested def's name, with its function, so calls by name can use keywords and defaults.
+    private readonly Dictionary<VariableSymbol, FunctionSymbol> _localFunctions = [];
     private int _loopDepth;
     private string? _unsupported;
 
@@ -156,6 +159,16 @@ public sealed class Binder
         Enter(main);
         foreach (var stmt in main.File.Unit.Items.OfType<Stmt>())
             CollectScriptNames(stmt);
+
+        // Defaults before any body, since a call anywhere may leave them out (SPEC §4.2).
+        foreach (var module in modules)
+        {
+            Enter(module);
+            foreach (var (syntax, symbol) in module.Functions)
+                BindDefaults(symbol, syntax.Params, symbol.TypeParameters);
+            foreach (var (syntax, symbol) in module.Methods)
+                BindDefaults(symbol, syntax.Params, ((StructType)symbol.Self!.Type).Symbol.TypeParameters);
+        }
 
         var functions = new List<BoundFunction>();
         var structs = new List<BoundStruct>();
@@ -485,7 +498,10 @@ public sealed class Binder
         var outer = EnterTypeParameters(typeParameters);
         BindConstraints(funcDef.TypeParams, typeParameters);
         var symbol = new FunctionSymbol(
-            funcDef.Name.Text, BindParams(funcDef.Params), BindReturnType(funcDef.ReturnType), typeParameters: typeParameters);
+            funcDef.Name.Text, BindParams(funcDef.Params), BindReturnType(funcDef.ReturnType), typeParameters: typeParameters)
+        {
+            Defaults = PendingDefaults(funcDef.Params),
+        };
         _typeParameters = outer;
         DeclareGlobal(funcDef.Name, symbol);
         return symbol;
@@ -493,6 +509,33 @@ public sealed class Binder
 
     private ImmutableArray<VariableSymbol> BindParams(ImmutableArray<Param> parameters) =>
         [.. parameters.Select(p => new VariableSymbol(p.Name.Text, BindType(p.Type), VariableKind.Parameter))];
+
+    /// <summary>
+    /// Placeholders for a top-level function's or method's defaults, so calls know which parameters
+    /// may be left out before the defaults themselves are bound.
+    /// </summary>
+    private static ImmutableArray<BoundExpr?> PendingDefaults(ImmutableArray<Param> parameters) =>
+        [.. parameters.Select(p => p.Default is null ? null : (BoundExpr)new BoundErrorExpr(p.Default.Span))];
+
+    /// <summary>
+    /// Binds a top-level function's or method's defaults where it's defined: in the file's global
+    /// scope, with its type parameters but not its parameters (SPEC §4.2). Like its body, a default
+    /// can't use top-level variables (TP0211).
+    /// </summary>
+    private void BindDefaults(FunctionSymbol symbol, ImmutableArray<Param> parameters, ImmutableArray<TypeParameterSymbol> typeParameters)
+    {
+        if (parameters.All(p => p.Default is null))
+            return;
+        var outerTypeParameters = EnterTypeParameters(typeParameters);
+        (_function, _outerFunction, _scope) = (symbol, symbol, new Scope(_global));
+        symbol.Defaults = BindDefaultValues(parameters, symbol.Parameters);
+        (_function, _outerFunction, _scope) = (null, null, _global);
+        _typeParameters = outerTypeParameters;
+    }
+
+    /// <summary>Each parameter's default, checked against its type, in the current scope.</summary>
+    private ImmutableArray<BoundExpr?> BindDefaultValues(ImmutableArray<Param> parameters, ImmutableArray<VariableSymbol> symbols) =>
+        [.. parameters.Zip(symbols, (p, s) => p.Default is null ? null : BindExpected(p.Default, s.Type))];
 
     private TaipanType BindReturnType(TypeSyntax? type) => type is null ? TaipanType.Nothing : BindType(type);
 
@@ -517,7 +560,10 @@ public sealed class Binder
         {
             var self = new VariableSymbol("self", symbol.Type, VariableKind.Parameter);
             var methodSymbol = new FunctionSymbol(
-                method.Name.Text, BindParams(method.Params), BindReturnType(method.ReturnType), self: self);
+                method.Name.Text, BindParams(method.Params), BindReturnType(method.ReturnType), self: self)
+            {
+                Defaults = PendingDefaults(method.Params),
+            };
             if (names.Add(method.Name.Text))
                 symbol.Methods[method.Name.Text] = methodSymbol;
             else
@@ -934,9 +980,11 @@ public sealed class Binder
         }
         var parameters = BindParams(def.Params);
         var returnType = BindReturnType(def.ReturnType);
-        var function = new FunctionSymbol(def.Name.Text, parameters, returnType);
+        // Its defaults see what's visible here, so they may use the bindings it captures (SPEC §4.2).
+        var function = new FunctionSymbol(def.Name.Text, parameters, returnType) { Defaults = BindDefaultValues(def.Params, parameters) };
         var symbol = new VariableSymbol(def.Name.Text, new FunctionType([.. parameters.Select(p => p.Type)], returnType), VariableKind.Function);
         DeclareLocal(def.Name, symbol);
+        _localFunctions[symbol] = function;
 
         var (outerFunction, outerLoopDepth, outerScope) = (_function, _loopDepth, _scope);
         _function = function;
@@ -1455,7 +1503,7 @@ public sealed class Binder
 
     private (BoundExpr? Start, BoundExpr Stop) BindRangeArguments(CallExpr call)
     {
-        ReportKeywordArguments(call);
+        ReportKeywordArguments(call, "range");
         var arguments = call.Arguments.Select(a => BindExpected(a.Value, TaipanType.Int)).ToImmutableArray();
         switch (arguments.Length)
         {
@@ -1510,18 +1558,6 @@ public sealed class Binder
         var positional = call.Arguments.Where(a => a.Name is null).Select(a => BindPyArgument(a.Value)).ToImmutableArray();
         var keywords = call.Arguments.Where(a => a.Name is not null).Select(a => (a.Name!.Text, BindPyArgument(a.Value))).ToImmutableArray();
         return new BoundPyCall(callee, positional, keywords, call.Span);
-    }
-
-    /// <summary>
-    /// Positional then keyword arguments are only valid in calls to py values (SPEC §2): TP0100
-    /// anywhere else. (The parser rejects a positional argument after a keyword.)
-    /// </summary>
-    private bool ReportMixedArguments(CallExpr call)
-    {
-        if (!call.Arguments.Any(a => a.Name is null) || call.Arguments.FirstOrDefault(a => a.Name is not null) is not { } keyword)
-            return false;
-        _diagnostics.ReportMixedArguments(keyword.Span);
-        return true;
     }
 
     // `x as T` (SPEC §10.4): x must be py, and T a type Python values can convert to.
@@ -2157,8 +2193,7 @@ public sealed class Binder
                 return BindPyCall(call, callee);
             if (TypeChecker.Unwrap(callee.Type) is FunctionType)
             {
-                if (!ReportMixedArguments(call))
-                    ReportKeywordArguments(call);
+                ReportKeywordArguments(call, function: null);
                 return BindInvoke(call, callee, name: null, call.Callee.Span);
             }
             BindArguments(call);
@@ -2180,15 +2215,12 @@ public sealed class Binder
             return BindSort(call, name, nameSpan, target: null);
         if (symbol is FunctionSymbol { Builtin: BuiltinFunction.Enumerate } enumerate)
             return BindEnumerate(call, enumerate, nameSpan);
-        if (ReportMixedArguments(call))
-        {
-            BindArguments(call);
-            return new BoundErrorExpr(call.Span);
-        }
         switch (symbol)
         {
+            case VariableSymbol variable when _localFunctions.TryGetValue(variable, out var local):
+                return BindLocalCall(call, new BoundVariable(variable, nameSpan), local, nameSpan);
             case VariableSymbol variable when TypeChecker.Unwrap(variable.Type) is FunctionType:
-                ReportKeywordArguments(call);
+                ReportKeywordArguments(call, function: null);
                 return BindInvoke(call, new BoundVariable(variable, nameSpan), name, nameSpan);
             case StructSymbol structSymbol:
                 return BindConstruct(call, structSymbol, expected);
@@ -2199,11 +2231,10 @@ public sealed class Binder
                 ReportAmbiguous(ambiguous, nameSpan);
                 return new BoundErrorExpr(call.Span);
             case FunctionSymbol { Builtin: { } builtin } function:
-                ReportKeywordArguments(call);
+                ReportKeywordArguments(call, function.Name);
                 return BindBuiltinCall(call, function, builtin, expected);
             case FunctionSymbol function:
-                ReportKeywordArguments(call);
-                return BindUserCall(call, function, expected);
+                return BindUserCall(call, function, expected, nameSpan);
             default:
                 BindArguments(call);
                 // A variable whose type already has an error was reported where it was declared.
@@ -2238,21 +2269,27 @@ public sealed class Binder
         return new BoundInvoke(callee, arguments, function.Result, call.Span);
     }
 
-    private BoundExpr BindUserCall(CallExpr call, FunctionSymbol function, TaipanType? expected)
+    /// <summary>A nested <c>def</c> called by name, which takes keywords and defaults like any function (SPEC §4.2).</summary>
+    private BoundExpr BindLocalCall(CallExpr call, BoundVariable callee, FunctionSymbol function, TextSpan nameSpan)
     {
-        var parameterTypes = function.Parameters.Select(p => p.Type).ToImmutableArray();
-        if (call.Arguments.Length != parameterTypes.Length)
-        {
-            var arguments = BindParameterArguments(call, function.Name, parameterTypes);
-            return new BoundCall(function, arguments, function.TypeParameters.IsEmpty ? function.ReturnType : TaipanType.Error, call.Span);
-        }
+        if (MatchArguments(call, function, function.Name, nameSpan) is not { } shape)
+            return new BoundInvoke(callee, BindArguments(call), function.ReturnType, call.Span);
+        var arguments = call.Arguments.Select((a, i) => BindExpected(a.Value, function.Parameters[shape.Parameters[i]].Type)).ToImmutableArray();
+        return new BoundInvoke(callee, arguments, function.ReturnType, call.Span) { Shape = Simplify(shape), Function = function };
+    }
+
+    private BoundExpr BindUserCall(CallExpr call, FunctionSymbol function, TaipanType? expected, TextSpan nameSpan)
+    {
+        if (MatchArguments(call, function, function.Name, nameSpan) is not { } shape)
+            return new BoundCall(function, BindArguments(call), function.TypeParameters.IsEmpty ? function.ReturnType : TaipanType.Error, call.Span);
 
         var (bound, map) = InferAndBind(
-            function.Name, call.Callee.Span, function.TypeParameters, parameterTypes, function.ReturnType,
-            [.. call.Arguments.Select(a => a.Value)], expected);
+            function.Name, call.Callee.Span, function.TypeParameters, [.. shape.Parameters.Select(i => function.Parameters[i].Type)],
+            function.ReturnType, [.. call.Arguments.Select(a => a.Value)], expected);
         return new BoundCall(function, bound, TypeChecker.Substitute(function.ReturnType, map), call.Span)
         {
             TypeArguments = [.. function.TypeParameters.Select(p => map[p])],
+            Shape = Simplify(shape),
         };
     }
 
@@ -2504,11 +2541,66 @@ public sealed class Binder
         return [.. call.Arguments.Select((a, i) => BindExpected(a.Value, parameters[i]))];
     }
 
-    private void ReportKeywordArguments(CallExpr call)
+    /// <summary>TP0218 for a keyword argument to a built-in, or to a function value when <paramref name="function"/> is null.</summary>
+    private void ReportKeywordArguments(CallExpr call, string? function)
     {
         if (call.Arguments.FirstOrDefault(a => a.Name is not null) is { } keyword)
-            _diagnostics.ReportKeywordArguments(keyword.Span);
+            _diagnostics.ReportKeywordArguments(keyword.Span, function);
     }
+
+    /// <summary>
+    /// Matches a call's arguments to a function's parameters as in Python (SPEC §4.2): positional
+    /// ones from the left, then keywords by name, and the rest take their defaults. Reports TP0209
+    /// and TP0218, and returns null if the arguments don't fit.
+    /// </summary>
+    private ArgumentShape? MatchArguments(CallExpr call, FunctionSymbol function, string name, TextSpan nameSpan)
+    {
+        var count = function.Parameters.Length;
+        var required = Enumerable.Range(0, count).Count(i => function.DefaultFor(i) is null);
+        var positional = call.Arguments.TakeWhile(a => a.Name is null).Count();
+        // Only positional arguments: a wrong count is reported as a count.
+        if (positional > count || (positional == call.Arguments.Length && positional < required))
+        {
+            var expected = required == count ? Arguments(count) : $"{required} to {count} arguments";
+            _diagnostics.ReportWrongArgumentCount(nameSpan, name, expected, positional);
+            return null;
+        }
+
+        var parameters = ImmutableArray.CreateBuilder<int>();
+        parameters.AddRange(Enumerable.Range(0, positional));
+        var valid = true;
+        var unknown = false;
+        foreach (var argument in call.Arguments.Skip(positional))
+        {
+            var keyword = argument.Name!;
+            var index = function.Parameters.Select(p => p.Name).ToList().IndexOf(keyword.Text);
+            if (index < 0)
+            {
+                _diagnostics.ReportNoKeywordArgument(keyword.Span, name, keyword.Text);
+                (valid, unknown) = (false, true);
+            }
+            else if (parameters.Contains(index))
+            {
+                _diagnostics.ReportRepeatedArgument(keyword.Span, keyword.Text);
+                valid = false;
+            }
+            parameters.Add(index);
+        }
+        // After an unknown keyword, a missing argument is probably the one it misspells.
+        if (!unknown)
+        {
+            foreach (var missing in Enumerable.Range(0, count).Where(i => function.DefaultFor(i) is null && !parameters.Contains(i)))
+            {
+                _diagnostics.ReportMissingArgument(nameSpan, function.Parameters[missing].Name);
+                valid = false;
+            }
+        }
+        return valid ? new ArgumentShape(parameters.ToImmutable(), count) : null;
+    }
+
+    /// <summary>Null for the common shape: every parameter given, positionally.</summary>
+    private static ArgumentShape? Simplify(ArgumentShape shape) =>
+        shape.InOrder && shape.Parameters.Length == shape.ParameterCount ? null : shape;
 
     private BoundExpr BindConstruct(CallExpr call, StructSymbol structSymbol, TaipanType? expected)
     {
@@ -2536,29 +2628,27 @@ public sealed class Binder
 
     /// <summary>
     /// Constructor arguments for a struct or variant (SPEC §4.6), inferring a generic owner's type
-    /// arguments (§3.6). Positional: one per field, in order. Keyword: every field exactly once.
-    /// The arguments are null if any of them is wrong.
+    /// arguments (§3.6). Positional ones set the fields in order, then keywords set the rest, so
+    /// every field is given exactly once. The arguments are null if any of them is wrong.
     /// </summary>
     private (ImmutableArray<(FieldSymbol, BoundExpr)>? Arguments, bool IsKeyword, Dictionary<TypeParameterSymbol, TaipanType> Map) BindFieldArguments(
         CallExpr call, string owner, ImmutableArray<FieldSymbol> fields, ImmutableArray<TypeParameterSymbol> typeParameters,
         TaipanType ownerType, TaipanType? expected)
     {
         var isKeyword = call.Arguments.Any(a => a.Name is not null);
+        var positional = call.Arguments.TakeWhile(a => a.Name is null).Count();
         var valid = true;
         var chosen = new List<(FieldSymbol Field, Expr Value)>();
-        if (!isKeyword)
+        if ((!isKeyword && call.Arguments.Length != fields.Length) || positional > fields.Length)
         {
-            if (call.Arguments.Length != fields.Length)
-            {
-                BindParameterArguments(call, owner, [.. fields.Select(f => f.Type)]);
-                return (null, false, []);
-            }
-            chosen.AddRange(fields.Zip(call.Arguments.Select(a => a.Value)));
+            BindParameterArguments(call, owner, [.. fields.Select(f => f.Type)]);
+            return (null, false, []);
         }
-        else
+        chosen.AddRange(fields.Zip(call.Arguments.Take(positional).Select(a => a.Value)));
+        if (isKeyword)
         {
-            var given = new HashSet<string>();
-            foreach (var argument in call.Arguments)
+            var given = fields.Take(positional).Select(f => f.Name).ToHashSet();
+            foreach (var argument in call.Arguments.Skip(positional))
             {
                 var name = argument.Name!;
                 var field = fields.FirstOrDefault(f => f.Name == name.Text);
@@ -2670,12 +2760,6 @@ public sealed class Binder
             return BindPyCall(call, new BoundPyGetAttr(target, name, member.Span));
         if (target.Type is ListOfType && name == "sort")
             return BindSort(call, name, member.Member.Span, target);
-        if (ReportMixedArguments(call))
-        {
-            BindArguments(call);
-            return new BoundErrorExpr(call.Span);
-        }
-        ReportKeywordArguments(call);
         if (target.Type.ContainsError || ReportIfOptional(target, member.Target.Span))
         {
             BindArguments(call);
@@ -2686,12 +2770,20 @@ public sealed class Binder
         {
             // A field holding a function is called like a method (SPEC §3.7).
             if (structSymbol.FindField(name) is { } field && TypeChecker.Unwrap(FieldType(target.Type, field)) is FunctionType)
+            {
+                ReportKeywordArguments(call, function: null);
                 return BindInvoke(call, new BoundFieldAccess(target, field, FieldType(target.Type, field), member.Span), name, member.Member.Span);
+            }
             if (structSymbol.Methods.TryGetValue(name, out var method))
             {
                 var map = TypeChecker.MapOf(target.Type);
-                var arguments = BindParameterArguments(call, name, [.. method.Parameters.Select(p => TypeChecker.Substitute(p.Type, map))]);
-                return new BoundMethodCall(target, method, arguments, TypeChecker.Substitute(method.ReturnType, map), call.Span);
+                var returnType = TypeChecker.Substitute(method.ReturnType, map);
+                if (MatchArguments(call, method, name, member.Member.Span) is not { } shape)
+                    return new BoundMethodCall(target, method, BindArguments(call), returnType, call.Span);
+                var arguments = call.Arguments
+                    .Select((a, i) => BindExpected(a.Value, TypeChecker.Substitute(method.Parameters[shape.Parameters[i]].Type, map)))
+                    .ToImmutableArray();
+                return new BoundMethodCall(target, method, arguments, returnType, call.Span) { Shape = Simplify(shape) };
             }
             BindArguments(call);
             if (structSymbol.FindField(name) is not null)
@@ -2708,6 +2800,7 @@ public sealed class Binder
             return new BoundErrorExpr(call.Span);
         }
 
+        ReportKeywordArguments(call, name);
         var builtinArguments = BindParameterArguments(call, name, builtin.Parameters);
         if (builtinArguments.Length != builtin.Parameters.Length)
             return new BoundErrorExpr(call.Span);

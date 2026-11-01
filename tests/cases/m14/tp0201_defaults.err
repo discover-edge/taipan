@@ -1,0 +1,2 @@
+tests/cases/m14/tp0201_defaults.tpn:1:24: error TP0201: undefined name 'a'
+tests/cases/m14/tp0201_defaults.tpn:7:28: error TP0201: undefined name 'self'

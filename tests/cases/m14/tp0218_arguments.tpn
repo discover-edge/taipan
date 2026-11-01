@@ -1,0 +1,11 @@
+def f(a: int) -> int:
+    return a
+
+f(b=1)
+f(1, prt=2)
+let g: Callable[[int], int] = f
+g(a=1)
+print(len(x=[1]))
+var xs = [1]
+xs.append(x=2)
+print(sorted(xs, cmp=1))

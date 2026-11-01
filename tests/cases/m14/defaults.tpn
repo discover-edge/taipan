@@ -1,0 +1,70 @@
+const PORT = 8080
+
+def connect(host: str, port: int = PORT, retries: int = 3) -> str:
+    return f"{host}:{port} x{retries}"
+
+print(connect("db"))
+print(connect("db", 5432))
+print(connect("db", retries=5))
+print(connect(host="db", port=1))
+print(connect(retries=0, host="cache"))
+
+# A default is evaluated on each call that leaves it out, so a list isn't shared between calls.
+def add(x: int, xs: list[int] = []) -> list[int]:
+    xs.append(x)
+    return xs
+
+print(add(1), add(2))
+let mine = [10]
+print(add(3, mine), mine)
+
+# Arguments are evaluated in source order, then the missing defaults in parameter order.
+def note(label: str, value: int) -> int:
+    print("eval", label)
+    return value
+
+def three(a: int, b: int = note("default b", 2), c: int = note("default c", 3)) -> int:
+    return a * 100 + b * 10 + c
+
+print(three(c=note("c", 9), a=note("a", 1)))
+
+# Methods take defaults and keywords, and constructors mix positional and keyword arguments.
+struct Service:
+    name: str
+    replicas: int
+    healthy: int
+
+    def scale(self, by: int = 1, dry_run: bool = False) -> int:
+        if not dry_run:
+            self.replicas += by
+        return self.replicas
+
+let s = Service("api", healthy=2, replicas=3)
+print(s.scale(), s.scale(dry_run=True, by=10), s.scale(by=2))
+print(s)
+
+# A nested def's default may use the bindings it can capture.
+def greeter(greeting: str) -> Callable[[str, str], str]:
+    def greet(name: str, sign: str = greeting.upper()) -> str:
+        return f"{greeting} {name} {sign}"
+    print(greet("ann"), greet(sign="?", name="bob"))
+    return greet
+
+# As a value, a function takes every parameter, positionally.
+let g = greeter("hi")
+print(g("cy", "."))
+let c: Callable[[str, int, int], str] = connect
+print(c("x", 1, 2))
+
+# In a generic function, the default is checked with T opaque, and is new on every call.
+def push[T](x: T, into: list[T] = []) -> list[T]:
+    into.append(x)
+    return into
+
+print(push(1), push("a"), push(2.5, [1.5]))
+
+# A default may be a lambda.
+def apply(x: int, f: Callable[[int], int] = lambda n: n * 2) -> int:
+    return f(x)
+
+print(apply(4), apply(4, lambda n: n + 1), apply(f=lambda n: -n, x=4))

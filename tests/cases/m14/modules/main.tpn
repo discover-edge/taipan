@@ -1,0 +1,6 @@
+# A default is bound where its function is defined, so it may use names main can't see.
+import net
+from net import fetch
+
+print(net.fetch("a"))
+print(fetch("b", retries=3, timeout=5))

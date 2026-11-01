@@ -138,11 +138,31 @@ public sealed record BoundUnary(UnaryOp Op, BoundExpr Operand, TaipanType Type, 
 public sealed record BoundBinary(BoundExpr Left, BinaryOp Op, BoundExpr Right, TaipanType Type, TextSpan Span)
     : BoundExpr(Type, Span);
 
+/// <summary>
+/// How a call's arguments meet the callee's <see cref="ParameterCount"/> parameters (SPEC §4.2,
+/// M14): <see cref="Parameters"/> holds each argument's parameter index, in source order. The
+/// parameters no argument names take their defaults, which are evaluated after the arguments.
+/// </summary>
+public sealed record ArgumentShape(ImmutableArray<int> Parameters, int ParameterCount)
+{
+    /// <summary>Whether each argument is the parameter at its own position, so all can be passed positionally.</summary>
+    public bool InOrder => Parameters.Select((p, i) => p == i).All(same => same);
+
+    /// <summary>The parameters left to their defaults, in parameter order.</summary>
+    public IEnumerable<int> Missing => Enumerable.Range(0, ParameterCount).Except(Parameters);
+}
+
+/// <summary>
+/// <see cref="Shape"/> is null when the arguments are positional and none is left out. Arguments
+/// are in source order; missing defaults are the callee's (<see cref="FunctionSymbol.Defaults"/>).
+/// </summary>
 public sealed record BoundCall(FunctionSymbol Function, ImmutableArray<BoundExpr> Arguments, TaipanType Type, TextSpan Span)
     : BoundExpr(Type, Span)
 {
     /// <summary>A generic function's inferred type arguments, in parameter order (SPEC §3.6).</summary>
     public ImmutableArray<TaipanType> TypeArguments { get; init; } = [];
+
+    public ArgumentShape? Shape { get; init; }
 }
 
 public sealed record BoundListLiteral(ImmutableArray<BoundExpr> Elements, ListOfType ListType, TextSpan Span)
@@ -166,7 +186,11 @@ public sealed record BoundFieldAccess(BoundExpr Target, FieldSymbol Field, Taipa
 public sealed record BoundIndex(BoundExpr Target, BoundExpr Index, TaipanType Type, TextSpan Span) : BoundExpr(Type, Span);
 
 public sealed record BoundMethodCall(BoundExpr Target, FunctionSymbol Method, ImmutableArray<BoundExpr> Arguments, TaipanType Type, TextSpan Span)
-    : BoundExpr(Type, Span);
+    : BoundExpr(Type, Span)
+{
+    /// <inheritdoc cref="BoundCall.Shape"/>
+    public ArgumentShape? Shape { get; init; }
+}
 
 public sealed record BoundBuiltinMethodCall(BoundExpr Target, BuiltinMethod Method, ImmutableArray<BoundExpr> Arguments, TaipanType Type, TextSpan Span)
     : BoundExpr(Type, Span);
@@ -196,8 +220,15 @@ public sealed record BoundLambda(ImmutableArray<VariableSymbol> Parameters, Boun
 /// <summary>A top-level function used as a value.</summary>
 public sealed record BoundFunctionValue(FunctionSymbol Function, FunctionType FunctionType, TextSpan Span) : BoundExpr(FunctionType, Span);
 
-/// <summary>A call to a function value.</summary>
-public sealed record BoundInvoke(BoundExpr Callee, ImmutableArray<BoundExpr> Arguments, TaipanType Type, TextSpan Span) : BoundExpr(Type, Span);
+/// <summary>A call to a function value, or by name to a nested <c>def</c>, which may take keywords and defaults.</summary>
+public sealed record BoundInvoke(BoundExpr Callee, ImmutableArray<BoundExpr> Arguments, TaipanType Type, TextSpan Span) : BoundExpr(Type, Span)
+{
+    /// <inheritdoc cref="BoundCall.Shape"/>
+    public ArgumentShape? Shape { get; init; }
+
+    /// <summary>The nested <c>def</c> called by name, whose defaults fill in missing arguments.</summary>
+    public FunctionSymbol? Function { get; init; }
+}
 
 /// <summary>
 /// <c>sorted(xs, …)</c>, or <c>xs.sort(…)</c> when <see cref="InPlace"/>. <see cref="Keywords"/>

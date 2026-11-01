@@ -1,0 +1,4 @@
+const TIMEOUT = 30
+
+def fetch(url: str, timeout: int = TIMEOUT * 2, retries: int = 1) -> str:
+    return f"{url} ({timeout}s, {retries} tries)"
