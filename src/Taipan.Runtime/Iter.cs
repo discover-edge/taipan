@@ -49,7 +49,7 @@ public static class Iter
             }
             catch (InvalidOperationException)
             {
-                throw Panic.Create($"{kind} mutated during iteration");
+                throw new RuntimeError($"{kind} mutated during iteration");
             }
             yield return enumerator.Current;
         }

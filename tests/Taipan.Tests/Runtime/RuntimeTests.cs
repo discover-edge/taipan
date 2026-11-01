@@ -57,9 +57,9 @@ public class RuntimeTests
     [Fact]
     public void DivisionByZeroPanics()
     {
-        Assert.Equal("division by zero", Assert.Throws<TaipanPanic>(() => Ops.FloorDiv(1, 0)).Message);
-        Assert.Equal("division by zero", Assert.Throws<TaipanPanic>(() => Ops.Mod(1, 0)).Message);
-        Assert.Equal("division by zero", Assert.Throws<TaipanPanic>(() => Ops.Div(1.0, -0.0)).Message);
+        Assert.Equal("division by zero", Assert.Throws<ZeroDivisionError>(() => Ops.FloorDiv(1, 0)).Message);
+        Assert.Equal("division by zero", Assert.Throws<ZeroDivisionError>(() => Ops.Mod(1, 0)).Message);
+        Assert.Equal("division by zero", Assert.Throws<ZeroDivisionError>(() => Ops.Div(1.0, -0.0)).Message);
     }
 
     [Theory]
@@ -72,10 +72,14 @@ public class RuntimeTests
 
     [Theory]
     [InlineData(9223372036854775808.0, "cannot convert 9.223372036854776e+18 to int")]
-    [InlineData(double.NaN, "cannot convert nan to int")]
     [InlineData(double.NegativeInfinity, "cannot convert -inf to int")]
     public void ToIntPanicsOutOfRange(double value, string message) =>
-        Assert.Equal(message, Assert.Throws<TaipanPanic>(() => Ops.ToInt(value)).Message);
+        Assert.Equal(message, Assert.Throws<OverflowError>(() => Ops.ToInt(value)).Message);
+
+    // NaN is a ValueError, as in Python (SPEC §7).
+    [Fact]
+    public void ToIntOfNaNIsValueError() =>
+        Assert.Equal("cannot convert nan to int", Assert.Throws<ValueError>(() => Ops.ToInt(double.NaN)).Message);
 
     [Theory]
     [InlineData("", 0)]

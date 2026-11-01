@@ -111,6 +111,13 @@ public sealed class InitChecker
                 if (!IsComplete(state))
                     _diagnostics.ReportEarlyReturn(ret.Span, FirstUnset(state)?.Name);
                 return state with { Terminated = true };
+            case BoundRaise raise:
+                // The object is never seen, so it needn't be complete (SPEC §3.10).
+                if (raise.Value is not null)
+                    Expression(raise.Value, state);
+                return state with { Terminated = true };
+            case BoundTry tryStmt:
+                return Try(tryStmt, state);
             case BoundLocalFunction function:
                 // Its body could run at any time, so it sees the object as it is now.
                 Expressions(BoundTree.Expressions(function), state);
@@ -120,6 +127,24 @@ public sealed class InitChecker
                 Expressions(BoundTree.Expressions(stmt), state);
                 return state;
         }
+    }
+
+    /// <summary>
+    /// SPEC §3.10: an except block may start after any part of the try block, so it starts from the
+    /// state before it; so does the finally block, which also runs after every other block. A field is
+    /// set after the try if the finally block sets it, or if every way through the other blocks does.
+    /// </summary>
+    private State Try(BoundTry tryStmt, State state)
+    {
+        var body = Block(tryStmt.Body.Statements, state.Copy(), topLevel: false);
+        var completed = tryStmt.Else is null ? body : Block(tryStmt.Else.Statements, body.Copy(), topLevel: false);
+        var after = Merge([completed, .. tryStmt.Handlers.Where(h => h.IsReachable).Select(h => Block(h.Body.Statements, state.Copy(), topLevel: false))]);
+        if (tryStmt.Finally is null)
+            return after;
+        var final = Block(tryStmt.Finally.Statements, state.Copy(), topLevel: false);
+        var assigned = new HashSet<FieldSymbol>(after.Assigned);
+        assigned.UnionWith(final.Assigned);
+        return new State(assigned, after.SuperCalled || final.SuperCalled, after.Terminated || final.Terminated);
     }
 
     /// <summary>The paths that continue past a branch: a field is set after it if every one of them sets it.</summary>

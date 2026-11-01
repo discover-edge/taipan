@@ -142,17 +142,20 @@ public static class TypeChecker
     };
 
     /// <summary>
-    /// Whether control can't fall off the end of <paramref name="stmt"/>: a <c>return</c>, an
+    /// Whether control can't fall off the end of <paramref name="stmt"/>: a <c>return</c> or <c>raise</c>, an
     /// <c>if</c> with <c>else</c> or a <c>match</c> whose branches all terminate, or a block containing one.
     /// Loops never count (SPEC §4.5).
     /// </summary>
     public static bool Terminates(BoundStmt stmt) => stmt switch
     {
-        BoundReturn => true,
+        BoundReturn or BoundRaise => true,
         BoundBlock block => block.Statements.Any(Terminates),
         BoundIf { Else: { } elseBlock } ifStmt => ifStmt.Clauses.All(c => Terminates(c.Body)) && Terminates(elseBlock),
         // Exhaustive once it type-checks (SPEC §5.1).
         BoundMatch match => match.Arms.Where(a => a.IsReachable).All(a => Terminates(a.Body)),
+        // SPEC §3.10: its finally block terminates, or every except block does and so does the try or else block.
+        BoundTry tryStmt => (tryStmt.Finally is { } finallyBlock && Terminates(finallyBlock))
+            || (tryStmt.Handlers.All(h => Terminates(h.Body)) && (Terminates(tryStmt.Body) || (tryStmt.Else is { } elseBlock && Terminates(elseBlock)))),
         _ => false,
     };
 }

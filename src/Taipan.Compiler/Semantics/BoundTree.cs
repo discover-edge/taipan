@@ -13,6 +13,8 @@ public static class BoundTree
         BoundPySetAttr assign => [assign.Target, assign.Value],
         BoundPySetItem assign => [assign.Target, assign.Index, assign.Value],
         BoundReturn { Value: { } value } => [value],
+        BoundRaise { Value: { } value } => [value],
+        BoundTry tryStmt => tryStmt.Handlers.SelectMany(h => h.PythonClasses),
         BoundExprStmt exprStmt => [exprStmt.Expr],
         BoundIf ifStmt => ifStmt.Clauses.Select(c => c.Condition),
         BoundWhile whileStmt => [whileStmt.Condition],
@@ -93,6 +95,13 @@ public static class BoundTree
         BoundForRange forStmt => forStmt.Body.Statements,
         BoundForEach forEach => forEach.Body.Statements,
         BoundMatch match => match.Arms.SelectMany(a => a.Body.Statements),
+        BoundTry tryStmt =>
+        [
+            .. tryStmt.Body.Statements,
+            .. tryStmt.Handlers.SelectMany(h => h.Body.Statements),
+            .. tryStmt.Else?.Statements ?? [],
+            .. tryStmt.Finally?.Statements ?? [],
+        ],
         BoundLocalFunction function => function.Body.Statements,
         _ => [],
     };

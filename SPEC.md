@@ -33,7 +33,7 @@ Taipan is a statically typed, compiled language with Python's surface syntax. Th
 - **Comments:** `#` to end of line.
 - **Identifiers:** `[A-Za-z_][A-Za-z0-9_]*`. A lone `_` is the wildcard pattern only.
 - **Keywords:**
-  `def class enum let var const if elif else while for in match return pass break continue and or not is some None True False as from import lambda`
+  `def class enum let var const if elif else while for in match return pass break continue and or not is some None True False as from import lambda try except finally raise`
   - `struct` was a keyword before M15. It's now an ordinary name, and records are declared with `@dataclass class` (§4.3).
   - `isinstance` and `super` are built-in functions (§6), not keywords.
 - **Integer literals:** decimal, with `_` separators allowed (`1_000`). They're 64-bit signed, and overflow at compile time is `TP0200`. The range check belongs to the type checker, not the lexer, so `-9223372036854775808` is valid.
@@ -106,7 +106,7 @@ named_fields  = NAME ":" type { "," NAME ":" type } [ "," ] ;
 block         = NEWLINE INDENT stmt { stmt } DEDENT ;
 
 stmt          = simple_stmt NEWLINE | compound_stmt ;
-simple_stmt   = let_stmt | var_stmt | assign_stmt | return_stmt
+simple_stmt   = let_stmt | var_stmt | assign_stmt | return_stmt | raise_stmt
               | "pass" | "break" | "continue" | expr ;
 let_stmt      = "let" ( NAME [ ":" type ] | names ) "=" expr_list ;
 var_stmt      = "var" ( NAME [ ":" type ] | names ) "=" expr_list ;
@@ -116,8 +116,12 @@ assign_stmt   = target ( "=" | "+=" | "-=" | "*=" | "/=" ) expr
 target        = NAME | postfix "." NAME | postfix "[" expr "]" ;
 return_stmt   = "return" [ expr_list ] ;
 expr_list     = expr { "," expr } ;                                  (* two or more make a tuple: M12 *)
+raise_stmt    = "raise" [ expr ] ;                                   (* M16, §3.10 *)
 
-compound_stmt = if_stmt | while_stmt | for_stmt | match_stmt | func_def ;     (* in a block: nested function, M11 *)
+compound_stmt = if_stmt | while_stmt | for_stmt | match_stmt | try_stmt | func_def ;   (* in a block: nested function, M11 *)
+try_stmt      = "try" ":" block { except_clause } [ "else" ":" block ] [ "finally" ":" block ] ;   (* M16, §3.10 *)
+except_clause = "except" [ except_types [ "as" NAME ] ] ":" block ;
+except_types  = qual_name | "(" qual_name { "," qual_name } [ "," ] ")" ;
 if_stmt       = "if" condition ":" block { "elif" condition ":" block } [ "else" ":" block ] ;
 condition     = expr "is" "some" NAME | expr ;
 while_stmt    = "while" condition ":" block ;
@@ -170,6 +174,7 @@ atom          = INT | FLOAT | STRING | FSTRING | "True" | "False" | "None"
 - In a parameter list, a parameter without a default after one with a default is `TP0100`, as in Python.
 - **Decorators (M15)** are only `@dataclass` on a `class` and `@override` on a method (§4.3). A decorator takes no arguments: `@dataclass(frozen=True)` is `TP0100`. Any other decorator name, a decorator in any other place, or a repeated one is `TP0224`.
 - **`is`:** `x is None` and `x is not None` are comparisons that give `bool`, usable in any expression (M15). `x is some v` binds a name, so it's only a whole `if`/`elif`/`while` condition. Any other right operand of `is`, including another expression (`x is y`), is `TP0100`, `expected 'some', 'not' or 'None'`.
+- **`try` (M16):** a `try` needs at least one `except` clause or a `finally`, and an `else` needs at least one `except`. A bare `except:` must be the last clause. Otherwise it's `TP0100`. An `except` clause names its types (`except KeyError`, `except zoo.NotFound`, `except json.JSONDecodeError`) rather than taking an expression, so in `except KeyError as e` the `as` names the binding rather than starting a cast.
 - A class body holds field declarations, methods and `pass`. Classes are top-level only, so a `class` inside a block is `TP0100`.
 - A `def` at the top level is a `top_item`, a hoisted global function. A `def` inside a block is a nested function (§3.7).
 - An `expr_list` of two or more expressions is a tuple, as if parenthesized (§3.8): `return lo, hi`, `let p = 1, 2`, `a, b = b, a`. An expression statement can't be a bare tuple: `a, b` alone is `TP0100`.
@@ -182,7 +187,7 @@ atom          = INT | FLOAT | STRING | FSTRING | "True" | "False" | "None"
   - **X** is a token, or one of the categories `expression`, `type`, `statement`, `pattern`, `indented block`.
   - **Y** describes the token found: a keyword or punctuation token in quotes (`':'`, `'else'`), `name 'x'`, `integer`, `float`, `string`, `f-string`, `newline`, `indent`, `dedent`, or `end of file`.
   - The error points at the start of the token found.
-  - Specific messages: `cannot assign to this expression` (an `assign_stmt` target that isn't a `target`), `positional argument follows keyword argument`, and `parameter without a default follows parameter with a default` (M14).
+  - Specific messages: `cannot assign to this expression` (an `assign_stmt` target that isn't a `target`), `positional argument follows keyword argument`, `parameter without a default follows parameter with a default` (M14), and `a bare 'except' must be the last except clause` (M16, at the bare `except`, after which parsing continues normally). A `try` with no `except` or `finally`, or an `else` with no `except`, is `expected 'except' or 'finally', found …`.
 - A chained comparison is reported by the parser as `TP0212`, with message `chained comparison not supported` and help `write 'a < b and b < c'`. Parsing continues normally.
 - **Recovery:** after a `TP0100`, the parser skips tokens up to and including the next `NEWLINE` at the current block depth. If the next line is indented further (an `INDENT` follows), that whole block is skipped as well. A `DEDENT` that closes the current block stops the skip without being consumed. Parsing then resumes at the next statement. So each statement reports at most one `TP0100`, and independent errors on separate statements are all reported.
 
@@ -204,6 +209,7 @@ atom          = INT | FLOAT | STRING | FSTRING | "True" | "False" | "None"
 | `T?` | optional `T` | `T?` (C# nullable) |
 | `py` | dynamic Python object (M10, §10) | `Python.Runtime.PyObject` |
 | `C` | instance of a class `C` (M15, §4.3) | a C# class (§8) |
+| `Exception`, `ValueError`, … | built-in exception classes (M16, §3.10) | classes in `Taipan.Runtime` (§8) |
 | `Callable[[A, B], R]` | function value (M11, §3.7) | `Taipan.Runtime.Function<D>` (§8) |
 
 - A function without `-> type` returns nothing (C# `void`). Using its result as a value is `TP0200`.
@@ -378,6 +384,85 @@ There are no other implicit conversions. Explicit conversions use the built-ins 
 - A narrowed name has the narrowed type for every use: member access, calls, arguments and assignments. It's still the same binding, so it follows the shadowing rules as before.
 - `isinstance(x, C)` where `C` is `x`'s own class or a base of it doesn't narrow `x` further, apart from ruling out `None`.
 
+### 3.10 Exceptions (M16)
+Exceptions are Python's: classes deriving from `Exception`, raised with `raise` and handled with `try`/`except`/`finally`. Every runtime error of §7 raises one, so it can be caught. A panic is an exception that nothing catches.
+
+```python
+class NotFound(Exception):
+    key: str
+
+    def __init__(self, key: str):
+        self.key = key
+        super().__init__(f"no service named {key}")
+
+def lookup(services: dict[str, int], name: str) -> int:
+    try:
+        return services[name]
+    except KeyError:
+        raise NotFound(name)
+
+try:
+    let doc = json.loads(text)
+except json.JSONDecodeError as e:
+    print("bad config:", e.message)
+finally:
+    print("done")
+```
+
+**Exception classes**
+- The built-in exception classes are plain classes (§4.3), in Python's hierarchy:
+
+  | Class | Base | Raised by Taipan for (§7) |
+  |---|---|---|
+  | `Exception` | | |
+  | `ArithmeticError` | `Exception` | |
+  | `ZeroDivisionError` | `ArithmeticError` | division by zero |
+  | `OverflowError` | `ArithmeticError` | int overflow, and `int(x)` of an infinite or out-of-range float |
+  | `LookupError` | `Exception` | |
+  | `IndexError` | `LookupError` | an index out of range, and `pop()` on an empty list |
+  | `KeyError` | `LookupError` | a missing dict key |
+  | `ValueError` | `Exception` | `int(x)` of a NaN, `split("")` and `replace("", …)`, and a slice step of 0 |
+  | `TypeError` | `Exception` | a failed `as` (§4.3, §10.4) |
+  | `RuntimeError` | `Exception` | changing a list or dict while iterating over it |
+  | `PythonError` | `Exception` | a Python exception from a `py` operation (§10.5) |
+
+- `Exception` has one field, `message: str`, and an `__init__(self, message: str = "")`. Every built-in class except `PythonError` takes the same arguments: `raise ValueError("bad port")`. Python has no `message` field; it keeps the arguments in `args`, and `str(e)` gives the message. In Taipan, `str(e)` gives the message too (§6).
+- `PythonError` has two more fields: `type: str`, the Python exception's class name, and `value: py`, the Python exception object. Its `message` is Python's `str(e)`. Only the runtime creates one: constructing it is `TP0200`, and deriving from it is `TP0225`.
+- The built-in exception classes' names are global, like other classes', so a definition with one of their names is `TP0214`.
+- **User exceptions** are plain classes deriving, directly or not, from `Exception`. They follow every rule of §4.3: a subclass with its own fields sets them and then calls `super().__init__(message)`, and one without `__init__` takes `Exception`'s `message` argument. Since a dataclass can only derive from a dataclass (§4.3), `@dataclass class NotFound(Exception)` is `TP0225`.
+- Exceptions compare by identity, like other plain classes, and may be stored, passed and returned like any value.
+
+**`raise`**
+- `raise e` raises `e`, which must be an `Exception` (a class deriving from it). Anything else is `TP0200`. Raising the class itself, as in `raise ValueError`, which Python allows, is `TP0200` with help `write 'ValueError(…)'`.
+- A bare `raise` re-raises the exception being handled. It's valid only inside an `except` block, and not in a function nested in one (`TP0215`).
+- A `raise` terminates (§4.5).
+
+**`try`**
+- The `try` block runs first. If it raises, the first `except` clause that matches handles the exception. If none matches, the exception propagates.
+- The `else` block runs only if the `try` block finishes without raising, returning, breaking or continuing. An exception raised in an `except` or `else` block isn't caught by the same `try`'s clauses.
+- The `finally` block runs last, on every path out of the `try`: normally, through `return`, `break` or `continue`, and while an exception propagates. If the `finally` block raises, its exception replaces the one in flight, as in Python.
+- `return`, `break` and `continue` aren't allowed in a `finally` block (`TP0215`). In Python they silently discard a propagating exception, and Python 3.14 warns about them (PEP 765).
+
+**`except` clauses**
+- `except C` matches an exception of class `C` or a class deriving from it. `C` must be `Exception` or derive from it, and may be qualified with a module: `except zoo.NotFound`. A bare `except:` is `except Exception:`. `except (A, B)` matches either.
+- `except m.E` where `m` is a Python module (`py`, §10) takes a Python exception class: `except json.JSONDecodeError`. It matches a `PythonError` whose `value` is an instance of that class, as tested by Python's `isinstance`. The class is looked up when an exception reaches the clause.
+- Anything else, such as a class not deriving from `Exception`, an enum or a type parameter, is `TP0200`.
+- `except … as e` binds `e`, a `let` visible only in that clause's block. Its type is the clause's class, `PythonError` for a Python class, or the nearest class all of the listed classes derive from (§3.3), so `except (KeyError, IndexError) as e` gives a `LookupError`.
+- A clause whose classes all derive from those of an earlier clause can never match, and is warning `TP0300`. Python classes aren't checked.
+- **Broad clauses (`TP0301`).** A bare `except:`, or a clause listing `Exception`, also catches mistakes such as an `IndexError`. Such a clause is warning `TP0301`, at `except`, unless its block contains a `raise` (outside any nested function), or the clause binds the exception with `as e` and the block uses `e`. So logging the exception, or re-raising it, is deliberate handling. A clause that silently discards everything is warned about, as Python linters do (flake8's E722, pylint's `broad-exception-caught`).
+
+**Return paths and initialization**
+- A `try` terminates (§4.5) if its `finally` block terminates, or if every `except` block terminates and the `try` block or the `else` block terminates.
+- In `__init__` (§4.3), a `raise` before the object is complete is valid, since the object is never seen. Fields assigned in a `try` block count as assigned only after the whole `try`, and only if the `else` block or the `try` block assigns them, every `except` block assigns them too, or the `finally` block assigns them. `super().__init__(…)` inside a `try` isn't directly in the body (`TP0226`).
+
+**Uncaught exceptions** are panics (§7). They print the line where the exception was raised and exit with 101.
+- A Taipan built-in exception prints its message alone, as before M16: `panic: missing key "a"`. A `PythonError` prints `Python <type>: <message>`, as in §10.5. A user exception prints its class name and message, as Python does: `panic: NotFound: no service named db`. An empty message prints the class name alone.
+- `raise e` reports its own line, even when `e` was caught elsewhere. A bare `raise` keeps the line where the exception was first raised.
+
+**What isn't catchable**
+- Importing Python modules happens at startup (§10.1), before any `try` runs, so a failure to load Python or to import a module is always a panic.
+- Running out of stack ends the process, as in .NET; it isn't an exception. Internal compiler errors aren't exceptions either.
+
 ---
 
 ## 4. Declarations
@@ -478,7 +563,7 @@ class Point:
   - **The subclass sets its own fields first**, then calls `super().__init__(…)`, as in Swift. Calling it before an own field is set is `TP0226`, `'super().__init__' is called before 'breed' is set`. The base's `__init__` may call methods once its own fields are set. Since methods dispatch on the runtime class, `speak` would then run `Dog.speak`, which can read `breed` only because the subclass set it first. Python allows either order, and the other order fails, or reads stale values, only at run time.
   - Its arguments can't use `self` (`TP0226`).
   - Outside `__init__`, `super().__init__` is `TP0226`.
-- Assignments analysed are the plain `self.f = e` and `self.f op= e` statements. The analysis follows `if`/`elif`/`else`, `match` arms and loops. A field assigned only inside a loop body, or in only some branches, isn't assigned after it. A `return` in `__init__` before the object is complete is `TP0226`.
+- Assignments analysed are the plain `self.f = e` and `self.f op= e` statements. The analysis follows `if`/`elif`/`else`, `match` arms and loops. A field assigned only inside a loop body, or in only some branches, isn't assigned after it. A `return` in `__init__` before the object is complete is `TP0226`. `try` and `raise` follow §3.10 (M16).
 
 **Inheritance**
 - `class Dog(Animal):` derives `Dog` from `Animal`. A class has at most one base, which must be a class: `class Dog(Animal, Pet)` is `TP0225`, as is a base that's an enum, a built-in type or a type parameter. The base may come from another module: `class Dog(zoo.Animal):`.
@@ -543,7 +628,8 @@ class Point:
 - **Return values:**
   - `return` with a value in a function without a return type, or `return` without one in a function with a return type, is `TP0200`.
   - Using a call to a function without a return type as a value is `TP0200`.
-- **Return-path analysis (`TP0208`).** A statement *terminates* if it is a `return`, or an `if` with an `else` whose every branch ends in a terminating statement. (In M7, a `match` whose arms all terminate also counts.) A block terminates if any statement in it does. A function with a return type whose body doesn't terminate is `TP0208`. Loops never terminate for this purpose, including `while True:`.
+- **Return-path analysis (`TP0208`).** A statement *terminates* if it is a `return` or a `raise` (M16), or an `if` with an `else` whose every branch ends in a terminating statement. (In M7, a `match` whose arms all terminate also counts, and in M16 a `try`, as §3.10 says.) A block terminates if any statement in it does. A function with a return type whose body doesn't terminate is `TP0208`. Loops never terminate for this purpose, including `while True:`.
+- **Unreachable statements (`TP0300`, M16).** A statement that follows, in the same block, a statement that terminates, or a `break` or `continue`, can never run. The first such statement in each block is warning `TP0300`, `unreachable code`. It's still checked. Since loops never terminate, code after `while True:` isn't reported.
 - **Constants:** a `const` initializer may contain only literals, unary `-`, and the operators `+ - * / // %`. Anything else, including a reference to another constant, is `TP0217`. Evaluation happens at run time, so `const X = 1 // 0` panics at startup.
 - **Integer literals:** a literal outside the 64-bit signed range is `TP0200`. The exception is `-9223372036854775808`, where `-` is applied directly to the literal.
 - **Expression statements:** any expression may be used as a statement, and its value is discarded.
@@ -727,24 +813,27 @@ In `a == b` and `a != b`, `a`'s type is `b`'s expected type (§4.6), so `m == No
 | plain class | `<Dog object>`, by runtime class (M15) |
 | enum | `Ok`, `Degraded(healthy=1, total=4)` |
 | function | `<function name>`, `<function <lambda>>` (M11) |
+| exception | its message, as Python's `str(e)` (M16). Inside a container, its class and message: `[KeyError("missing key \"a\"")]` |
 
 ---
 
 ## 7. Runtime errors (panics)
 - A panic prints `panic: <message>\n  at <file>.tpn:<line>` to stderr and exits with code **101**. Output the program printed before the panic still appears. `<file>` is the source path as given on the command line (§9). `<line>` is the line of the statement that panicked, in the innermost Taipan function.
 - The emitted C# carries `#line` directives so .NET stack traces map back to `.tpn` lines.
+- From M16, every runtime error raises an exception (§3.10), which a `try` can catch. A panic is an exception that nothing catches. The class each one raises follows its message below.
 - **Panic sources and messages:**
-  - int overflow: `integer overflow`. This includes `-x` and `x // -1` for the most negative int.
-  - division by zero (`/`, `//`, `%`): `division by zero`
-  - `int(x)` of a float that is NaN, infinite, or outside the int range: `cannot convert <x> to int`, with `<x>` in display form
-  - index out of range: `index <i> out of range for length <n>`
-  - missing dict key: `missing key <k>`, with `<k>` as written inside a container (strings quoted)
-  - `pop()` on an empty list: `pop from empty list`
-  - mutation during iteration: `list mutated during iteration` / `dict mutated during iteration`. Any change to the list or dict being iterated counts, including assigning to an existing element.
-  - `split("")` / `replace("", …)`: `empty separator`
-  - a slice step of 0: `slice step cannot be zero` (M12)
-  - Python interop (§10.5): `cannot convert Python <type> to <T>`, `Python <ExceptionType>: <message>`, `cannot load Python: <reason>`
-  - failed non-optional `as` (M10), and `as` to a class the value isn't an instance of: `cannot convert <runtime class> to <C>` (M15)
+  - int overflow: `integer overflow`. This includes `-x` and `x // -1` for the most negative int. (`OverflowError`)
+  - division by zero (`/`, `//`, `%`): `division by zero` (`ZeroDivisionError`)
+  - `int(x)` of a float that is NaN, infinite, or outside the int range: `cannot convert <x> to int`, with `<x>` in display form (`ValueError` for NaN, `OverflowError` otherwise, as in Python)
+  - index out of range: `index <i> out of range for length <n>` (`IndexError`)
+  - missing dict key: `missing key <k>`, with `<k>` as written inside a container (strings quoted) (`KeyError`)
+  - `pop()` on an empty list: `pop from empty list` (`IndexError`)
+  - mutation during iteration: `list mutated during iteration` / `dict mutated during iteration`. Any change to the list or dict being iterated counts, including assigning to an existing element. (`RuntimeError`)
+  - `split("")` / `replace("", …)`: `empty separator` (`ValueError`)
+  - a slice step of 0: `slice step cannot be zero` (M12) (`ValueError`)
+  - Python interop (§10.5): `cannot convert Python <type> to <T>` (`TypeError`), `Python <ExceptionType>: <message>` (`PythonError`), `cannot load Python: <reason>` (at startup, so never caught)
+  - failed non-optional `as` (M10), and `as` to a class the value isn't an instance of: `cannot convert <runtime class> to <C>` (M15) (`TypeError`)
+  - an uncaught `raise` (M16): as §3.10 says
 
 ---
 
@@ -766,6 +855,8 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 | methods (M15) | `public virtual` where a method is introduced and `public override` for `@override`, with C#'s covariant return types for a narrower class result. `super().m(…)` is `base.@m(…)`. |
 | `isinstance(x, C)` / narrowed `x` | `x is C`. A narrowed read is `((C)x)`, or `x!` / `x.Value` for `x is not None` on a reference / value type. |
 | `x as C` / `x as C?` | `Taipan.Runtime.Ops.Cast<C>(x)`, which panics as §7 says / `x as C` |
+| exceptions (M16) | `Exception` is `Taipan.Runtime.Exception`, which derives from `System.Exception` and is emitted against like a plain class's base (`__new__`, `@__init__`, a `message` property); the other built-in exception classes derive from it. A user exception class is a plain class deriving from one of them. Runtime errors throw the matching class, and a Python exception becomes a `PythonError` where the `py` operation calls Python. Checked arithmetic keeps throwing C#'s `OverflowException`, which a `catch` turns into an `OverflowError`. `raise e` is `throw e`. A bare `raise` is `throw Taipan.Runtime.Exceptions.Rethrow(caught)`, which rethrows with `ExceptionDispatchInfo` and so keeps the original stack trace and line. |
+| `try` (M16) | A C# `try` with one `catch (System.Exception)` that converts the exception to its Taipan value (or rethrows one that isn't catchable), then tests the `except` clauses in order with `is` (or Python's `isinstance` for a Python class). If none matches, `throw;` rethrows the original. `else` runs after the `try`/`catch`, behind a flag set at the end of the `try` block. `finally` is C#'s `finally`. `Panic.Run` prints an uncaught exception as §3.10 says. |
 | class patterns | C# type patterns with property sub-patterns: `case Dog { @name: var n }`. The scrutinee is narrowed as above. |
 | function conversion | Converting a function value to a different function type (§3.3) wraps the delegate in an adapter. The new `Function<D>` keeps the original's identity, which its `==` compares, and its display name. |
 | `enum E` | `public abstract record E` with a private constructor; each variant is `public sealed record V(...) : E` nested inside |
@@ -804,7 +895,7 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 - Each compiler stage runs only if the stages before it reported no errors: lexing (§1), then parsing (§2), then type checking. This keeps one mistake from cascading into spurious errors in later stages.
 - `<file>` is the source path exactly as given on the command line.
 
-- **Warnings** (currently only `TP0300`) print as `<file>:<line>:<col>: warning TP<code>: <message>`. They don't stop compilation or change the exit code. They're printed with the type checker's errors, before the program runs.
+- **Warnings** (`TP0300` and `TP0301`) print as `<file>:<line>:<col>: warning TP<code>: <message>`. They don't stop compilation or change the exit code. They're printed with the type checker's errors, before the program runs.
 
 **Exit codes:**
 - `0` success
@@ -837,7 +928,7 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 | TP0212 | chained comparison not supported |
 | TP0213 | nested optional |
 | TP0214 | duplicate definition |
-| TP0215 | `break`/`continue` outside loop, or `return` outside function |
+| TP0215 | `break`/`continue` outside loop, `return` outside function, a bare `raise` outside `except`, or `return`/`break`/`continue` in `finally` |
 | TP0216 | ambiguous enum variant; qualify it |
 | TP0217 | `const` initializer is not a constant expression |
 | TP0218 | keyword argument not accepted |
@@ -851,7 +942,8 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 | TP0226 | object used before it is fully initialized |
 | TP0227 | missing or unneeded `@override` |
 | TP0228 | incompatible override |
-| TP0300 | warning: unreachable match arm |
+| TP0300 | warning: unreachable code (a statement, `match` arm or `except` clause) |
+| TP0301 | warning: broad `except` clause discards the exception |
 
 New codes go into this table before they're implemented.
 
@@ -878,6 +970,7 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0200 | `'is some' needs an optional, found <T>` / `'is None' needs an optional, found <T>` / `'is not None' needs an optional, found <T>` / `'??' needs an optional on the left, found <T>` |
 | TP0200 | `'<m>' is a method; call it` / `'<f>' is a field, not a method` / `cannot index <T>` / `dict keys must be int, str, bool, tuples of those, or plain class instances, found <T>` (for a dataclass, with help `a dataclass compares by value, so it cannot be a key`) |
 | TP0200 | `isinstance needs a class, found <T>` / `'<C>' is not a class` / `'<C>' is generic` / `<T> can never be a <C>` (`isinstance`, `as` and class patterns on unrelated classes) / `'<C>' is a class; write '<C>()'` (a class pattern without parentheses) (M15) |
+| TP0200 | `cannot raise <T>` (with help `write '<C>(…)'` for a class name) / `'<C>' is not an exception class` / `'PythonError' cannot be constructed` (M16) |
 | TP0200 | `'super()' can only be used as 'super().<method>(…)'` / `'super()' can only be used in a method` / `'<C>' has no base class` / `'__init__' cannot be called directly` / `'__init__' cannot have a return type` (M15) |
 | TP0201 | `undefined name '<x>'` (with help `use 'None'` for `none`) / `undefined type '<T>'` / `module '<m>' has no definition '<x>'` |
 | TP0202 | `cannot assign to '<x>': it is a <let binding\|parameter\|loop variable\|constant\|function\|method>`, with help `declare it with 'var'` for a `let` binding / `cannot assign to an element of str` / `cannot assign to an element of a tuple` |
@@ -896,7 +989,7 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0211 | `'<f>' cannot use top-level variable '<x>'`, with help `pass it as a parameter, or make it a const` |
 | TP0213 | `optional types cannot be nested` |
 | TP0214 | `duplicate definition of '<x>'` |
-| TP0215 | `'break' outside a loop` / `'continue' outside a loop` / `'return' outside a function` |
+| TP0215 | `'break' outside a loop` / `'continue' outside a loop` / `'return' outside a function` / `'raise' without an exception outside an except block` / `'return' cannot be used in a finally block` (and `'break'`, `'continue'`) (M16) |
 | TP0216 | `'<v>' is ambiguous: it is a variant of <E1> and <E2>`, with help `qualify it, e.g. '<E1>.<v>'` |
 | TP0217 | `const initializer must be a constant expression` |
 | TP0218 | `'<f>' takes no keyword arguments` (a built-in) / `a function value takes no keyword arguments` / `'<f>' has no parameter '<k>'` (M14; also for `sorted`, `sort` and `enumerate`) |
@@ -905,12 +998,13 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0222 | `only the main file can have top-level statements` |
 | TP0223 | `nested functions cannot have type parameters` |
 | TP0224 | `unknown decorator '@<d>'` / `'@<d>' cannot be used here` (with help `'@dataclass' goes on a class, '@override' on a method`) / `duplicate decorator '@<d>'` |
-| TP0225 | `a class can have only one base class` / `'<T>' cannot be a base class` / `a dataclass can only derive from a dataclass` / `a plain class can only derive from a plain class` / `generic classes cannot be derived from` / `generic classes cannot have a base class` / `'<C>' derives from itself` / `special method '<m>' is not supported` / `a dataclass cannot define '__init__'` / `field without a default follows field with a default` |
+| TP0225 | `a class can have only one base class` / `'<T>' cannot be a base class` / `a dataclass can only derive from a dataclass` (with help `exceptions are plain classes; give it an '__init__'` for an exception base, M16) / `a plain class can only derive from a plain class` / `generic classes cannot be derived from` / `generic classes cannot have a base class` / `'<C>' derives from itself` / `special method '<m>' is not supported` / `a dataclass cannot define '__init__'` / `field without a default follows field with a default` |
 | TP0226 | `'__init__' does not set '<f>'` / `'<f>' has no default, and '<C>' has no '__init__'` / `'<f>' is read before it is set` / `'self' is used before '<f>' is set` (or `before 'super().__init__' is called`) / `'<f>' is inherited, so it is set by 'super().__init__'` / `'super().__init__' is called before '<f>' is set` / `'<C>.__init__' must call 'super().__init__(…)'` / `'super().__init__' must be called once, directly in '__init__'` / `'super().__init__' can only be called in '__init__'` / `'__init__' returns before '<f>' is set` (or `before 'super().__init__' is called`) (when several fields are unset, the first in declaration order is named) |
 | TP0227 | `'<m>' overrides '<B>.<m>'; mark it '@override'` / `'<m>' does not override a method of <a base class\|'<B>'>` / `'__init__' cannot be marked '@override'` |
 | TP0228 | `'<m>' must take the same parameters as '<B>.<m>'` / `parameter '<p>' of '<m>' must have type <T>, as in '<B>.<m>'` / `parameter '<p>' of '<m>' needs a default, as in '<B>.<m>'` / `'<m>' must return <T>, as '<B>.<m>' does` (or `return nothing`) |
 | TP0220 | `a constraint needs at least two types` / `'<T>' is listed twice in the constraint` / `a constraint cannot be optional or generic` / `constraints are only supported on functions` |
-| TP0300 | `unreachable match arm` |
+| TP0300 | `unreachable match arm` / `unreachable except clause`, with help `'<B>' is already caught above` / `unreachable code` (M16) |
+| TP0301 | `this clause catches every exception and discards it`, with help `catch a specific class, re-raise with 'raise', or bind it with 'as e' and use it` (M16) |
 
 Types are written as in source: `int`, `str?`, `list[int]`. The type of `None` is written `None`, and a missing value is written `nothing`.
 
@@ -960,8 +1054,8 @@ Types are written as in source: `int`, `str?`, `list[int]`. The type of `None` i
 - Conversion is all-or-nothing: one failing element fails the whole conversion.
 
 ### 10.5 Errors at run time
-- A failed `as T` panics with `cannot convert Python <type> to <T>`, where `<type>` is the Python type's name (`str`, `NoneType`).
-- A Python exception during any `py` operation panics with `Python <ExceptionType>: <message>`. Exception handling is post-v0.1.
+- A failed `as T` raises a `TypeError` (M16) with the message `cannot convert Python <type> to <T>`, where `<type>` is the Python type's name (`str`, `NoneType`).
+- A Python exception during any `py` operation raises a `PythonError` (M16, §3.10), with the Python class's name, the message (Python's `str(e)`) and the exception object. `except json.JSONDecodeError` catches one by its Python class. Uncaught, it panics with `Python <ExceptionType>: <message>`.
 - If Python can't be loaded, the first Python import panics with `cannot load Python: <reason>`.
 - All of these exit with 101 and report the Taipan line, as other panics do (§7).
 
@@ -990,7 +1084,8 @@ Types are written as in source: `int`, `str?`, `list[int]`. The type of `None` i
 - `match` as an expression
 - keyword-only (`*`) and positional-only (`/`) parameters, `*args` and `**kwargs`, and defaults on lambda parameters
 - flow-sensitive narrowing after early return, and narrowing `var`s and fields
-- exceptions and `try`
+- `raise … from …`, exception chaining, `BaseException`, exception groups (`except*`), and printing tracebacks
+- dataclass exceptions (mixing dataclasses and plain classes), and `args` on exceptions
 - format specs in f-strings
 - an LSP server
 - NativeAOT publish

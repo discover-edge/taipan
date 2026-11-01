@@ -2,7 +2,7 @@ using System.Diagnostics;
 
 namespace Taipan.Runtime;
 
-/// <summary>A Taipan runtime error (SPEC §7).</summary>
+/// <summary>A failure at startup, before any <c>try</c> runs, so never caught: loading Python (SPEC §3.10, §10.5).</summary>
 public sealed class TaipanPanic(string message) : Exception(message);
 
 public static class Panic
@@ -15,9 +15,9 @@ public static class Panic
     public static TaipanPanic Create(string message) => new(message);
 
     /// <summary>
-    /// Runs a program's top level. A panic prints <c>panic: message</c> and the <c>.tpn</c>
-    /// location of the innermost Taipan frame to <see cref="Io.Error"/>, and returns 101.
-    /// Any other exception is a compiler bug and propagates.
+    /// Runs a program's top level. A panic, an exception nothing caught, prints <c>panic: message</c>
+    /// and the <c>.tpn</c> location of the innermost Taipan frame where it was raised to
+    /// <see cref="Io.Error"/>, and returns 101. Any other exception is a compiler bug and propagates.
     /// </summary>
     public static int Run(Action topLevel)
     {
@@ -41,8 +41,22 @@ public static class Panic
     {
         TaipanPanic panic => panic.Message,
         OverflowException => "integer overflow",
+        PythonError python => $"Python {python.type}: {python.message}",
+        TaipanException exception => MessageFor(exception),
         _ => null,
     };
+
+    /// <summary>
+    /// SPEC §3.10: the runtime's own exceptions are written to stand alone, so they print just the
+    /// message; a compiled class prints its name too, as Python does.
+    /// </summary>
+    private static string MessageFor(TaipanException exception)
+    {
+        var name = ((IObject)exception).TypeName;
+        if (exception.message.Length == 0)
+            return name;
+        return exception.GetType().Assembly == typeof(Panic).Assembly ? exception.message : $"{name}: {exception.message}";
+    }
 
     // The first frame with source info that isn't in this runtime is generated code, whose
     // #line directives point at the .tpn source.

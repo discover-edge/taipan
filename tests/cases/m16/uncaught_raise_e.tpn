@@ -1,0 +1,10 @@
+# 'raise e' reports its own line, and an empty message prints the class name (SPEC §3.10).
+var saved: Exception? = None
+try:
+    raise ValueError()
+except ValueError as e:
+    saved = e
+
+print("saved")
+if saved is some e:
+    raise e

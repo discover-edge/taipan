@@ -1,0 +1,33 @@
+# Bare raise outside except, and leaving a finally block (SPEC §3.10).
+def outside():
+    raise
+
+def nested():
+    try:
+        pass
+    except KeyError:
+        def inner():
+            raise
+        inner()
+        raise
+
+for i in range(3):
+    try:
+        pass
+    finally:
+        if i == 0:
+            break
+        elif i == 1:
+            continue
+
+def leave() -> int:
+    try:
+        return 1
+    finally:
+        return 2
+
+try:
+    pass
+finally:
+    for j in range(2):
+        break

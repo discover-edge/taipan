@@ -1,0 +1,7 @@
+tests/cases/m16/tp0100_try.tpn:4:1: error TP0100: expected 'except' or 'finally', found name 'print'
+tests/cases/m16/tp0100_try.tpn:8:1: error TP0100: expected 'except' or 'finally', found 'else'
+tests/cases/m16/tp0100_try.tpn:13:1: error TP0100: a bare 'except' must be the last except clause
+tests/cases/m16/tp0100_try.tpn:20:19: error TP0100: expected name, found ':'
+tests/cases/m16/tp0100_try.tpn:25:21: error TP0100: expected ':', found '.'
+tests/cases/m16/tp0100_try.tpn:30:16: error TP0100: expected ':', found '('
+tests/cases/m16/tp0100_try.tpn:33:22: error TP0100: expected newline, found ','

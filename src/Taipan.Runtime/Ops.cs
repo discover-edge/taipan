@@ -13,7 +13,7 @@ public static class Ops
     /// <typeparamref name="T"/>, else a panic naming its runtime class.
     /// </summary>
     public static T Cast<T>(object? value, string target) where T : class =>
-        value as T ?? throw Panic.Create($"cannot convert {RuntimeClass(value)} to {target}");
+        value as T ?? throw new TypeError($"cannot convert {RuntimeClass(value)} to {target}");
 
     private static string RuntimeClass(object? value) => value switch
     {
@@ -32,7 +32,7 @@ public static class Ops
     public static double Div(double left, double right)
     {
         if (right == 0.0)
-            throw Panic.Create("division by zero");
+            throw new ZeroDivisionError("division by zero");
         return left / right;
     }
 
@@ -40,7 +40,7 @@ public static class Ops
     public static long FloorDiv(long left, long right)
     {
         if (right == 0)
-            throw Panic.Create("division by zero");
+            throw new ZeroDivisionError("division by zero");
         if (left == long.MinValue && right == -1)
             throw new OverflowException();
         var quotient = left / right;
@@ -53,7 +53,7 @@ public static class Ops
     public static long Mod(long left, long right)
     {
         if (right == 0)
-            throw Panic.Create("division by zero");
+            throw new ZeroDivisionError("division by zero");
         if (right == -1)
             return 0;
         var remainder = left % right;
@@ -99,7 +99,7 @@ public static class Ops
     public static T Index<T>(List<T> list, long index) => list[(int)Normalize(index, list.Count)];
 
     public static TValue Index<TKey, TValue>(OrderedDictionary<TKey, TValue> dict, TKey key) where TKey : notnull =>
-        dict.TryGetValue(key, out var value) ? value : throw Panic.Create($"missing key {Display.Repr(key)}");
+        dict.TryGetValue(key, out var value) ? value : throw new KeyError($"missing key {Display.Repr(key)}");
 
     /// <summary><c>s[i]</c>: the code point at <paramref name="index"/>, as a str.</summary>
     public static string Index(string value, long index)
@@ -114,7 +114,7 @@ public static class Ops
     public static void SetIndex<TKey, TValue>(OrderedDictionary<TKey, TValue> dict, TKey key, TValue value) where TKey : notnull
     {
         if (Iter.IsIterating(dict))
-            throw Panic.Create("dict mutated during iteration");
+            throw new RuntimeError("dict mutated during iteration");
         dict[key] = value;
     }
 
@@ -123,7 +123,7 @@ public static class Ops
     {
         var normalized = index < 0 ? index + count : index;
         if (normalized < 0 || normalized >= count)
-            throw Panic.Create($"index {index} out of range for length {count}");
+            throw new IndexError($"index {index} out of range for length {count}");
         return normalized;
     }
 
@@ -195,7 +195,7 @@ public static class Ops
     {
         var by = step ?? 1;
         if (by == 0)
-            throw Panic.Create("slice step cannot be zero");
+            throw new ValueError("slice step cannot be zero");
         long Adjust(long? bound, long whenOmitted)
         {
             if (bound is not { } b)
@@ -312,7 +312,7 @@ public static class Ops
     public static T Pop<T>(List<T> list)
     {
         if (list.Count == 0)
-            throw Panic.Create("pop from empty list");
+            throw new IndexError("pop from empty list");
         var last = list[^1];
         list.RemoveAt(list.Count - 1);
         return last;
@@ -381,14 +381,14 @@ public static class Ops
     public static List<string> Split(string value, string separator)
     {
         if (separator.Length == 0)
-            throw Panic.Create("empty separator");
+            throw new ValueError("empty separator");
         return [.. value.Split(separator)];
     }
 
     public static string Replace(string value, string oldValue, string newValue)
     {
         if (oldValue.Length == 0)
-            throw Panic.Create("empty separator");
+            throw new ValueError("empty separator");
         return value.Replace(oldValue, newValue, StringComparison.Ordinal);
     }
 
@@ -396,8 +396,11 @@ public static class Ops
     public static long ToInt(double value)
     {
         // 2^63 is exactly representable; every double below it and at or above -2^63 fits.
-        if (double.IsNaN(value) || value >= 9223372036854775808.0 || value < -9223372036854775808.0)
-            throw Panic.Create($"cannot convert {Display.Format(value)} to int");
+        // NaN is a ValueError and anything too large an OverflowError, as in Python (SPEC §7).
+        if (double.IsNaN(value))
+            throw new ValueError($"cannot convert {Display.Format(value)} to int");
+        if (value >= 9223372036854775808.0 || value < -9223372036854775808.0)
+            throw new OverflowError($"cannot convert {Display.Format(value)} to int");
         return (long)value;
     }
 }

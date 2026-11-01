@@ -749,5 +749,45 @@ public class ParserTests
     public void ImportSyntaxErrors(string text, string expected) =>
         Assert.Equal([expected], Errors(text));
 
+    // ---- try and raise (M16) ----
+
+    [Fact]
+    public void TryWithEveryClause() =>
+        Assert.Equal(
+            "TryStmt(Block([PassStmt]), [ExceptClause([NameExpr(KeyError)], null, Block([PassStmt])), " +
+            "ExceptClause([NameExpr(KeyError), MemberExpr(NameExpr(m), E)], e, Block([RaiseStmt(null)])), " +
+            "ExceptClause([], null, Block([PassStmt]))], Block([PassStmt]), Block([PassStmt]))",
+            Snapshot("try:\n    pass\nexcept KeyError:\n    pass\nexcept (KeyError, m.E,) as e:\n    raise\n" +
+                "except:\n    pass\nelse:\n    pass\nfinally:\n    pass\n"));
+
+    [Fact]
+    public void TryFinally() =>
+        Assert.Equal(
+            "TryStmt(Block([PassStmt]), [], null, Block([PassStmt]))",
+            Snapshot("try:\n    pass\nfinally:\n    pass\n"));
+
+    [Fact]
+    public void QualifiedPythonClass() =>
+        Assert.Equal(
+            "TryStmt(Block([PassStmt]), [ExceptClause([MemberExpr(MemberExpr(NameExpr(json), decoder), JSONDecodeError)], e, Block([PassStmt]))], null, null)",
+            Snapshot("try:\n    pass\nexcept json.decoder.JSONDecodeError as e:\n    pass\n"));
+
+    [Theory]
+    [InlineData("raise\n", "RaiseStmt(null)")]
+    [InlineData("raise ValueError(\"x\")\n", "RaiseStmt(CallExpr(NameExpr(ValueError), [Argument(null, StringLiteral(\"x\"))]))")]
+    public void Raise(string text, string expected) =>
+        Assert.Equal(expected, Snapshot(text));
+
+    [Theory]
+    [InlineData("try:\n    pass\nx = 1\n", "3:1 TP0100: expected 'except' or 'finally', found name 'x'")]
+    [InlineData("try:\n    pass\nelse:\n    pass\n", "3:1 TP0100: expected 'except' or 'finally', found 'else'")]
+    [InlineData("try:\n    pass\nexcept:\n    pass\nexcept E:\n    pass\n", "3:1 TP0100: a bare 'except' must be the last except clause")]
+    [InlineData("try:\n    pass\nexcept E as:\n    pass\n", "3:12 TP0100: expected name, found ':'")]
+    [InlineData("try:\n    pass\nexcept a.b.c.d:\n    pass\n", "3:13 TP0100: expected ':', found '.'")]
+    [InlineData("try:\n    pass\nexcept E(1):\n    pass\n", "3:9 TP0100: expected ':', found '('")]
+    [InlineData("raise a, b\n", "1:8 TP0100: expected newline, found ','")]
+    public void TrySyntaxErrors(string text, string expected) =>
+        Assert.Equal([expected], Errors(text));
+
 
 }

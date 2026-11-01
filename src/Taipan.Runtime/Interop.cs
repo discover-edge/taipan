@@ -86,6 +86,9 @@ public static class Interop
 
     public static PyObject GetAttr(PyObject target, string name) => Run(() => target.GetAttr(name));
 
+    /// <summary><c>except m.E</c> (SPEC §3.10): whether a Python exception is an instance of the class <paramref name="type"/>.</summary>
+    public static bool IsInstance(PyObject value, PyObject type) => Run(() => value.IsInstance(type));
+
     public static void SetAttr(PyObject target, string name, object? value) => Run(() => target.SetAttr(name, From(value)));
 
     public static PyObject GetItem(PyObject target, object? key) => Run(() => target.GetItem(From(key)));
@@ -240,7 +243,7 @@ public static class Interop
         }
         catch (ConversionFailed failed)
         {
-            throw Panic.Create($"cannot convert Python {failed.PythonType} to {target}");
+            throw new TypeError($"cannot convert Python {failed.PythonType} to {target}");
         }
     }
 
@@ -370,7 +373,7 @@ public static class Interop
             }
             catch (PythonException e)
             {
-                throw Panic.Create($"Python {e.Type.Name}: {e.Message}");
+                throw new PythonError(e.Type.Name, e.Message, e.Value ?? PyObject.None);
             }
         }
     }

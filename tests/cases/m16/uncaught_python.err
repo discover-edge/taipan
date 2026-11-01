@@ -1,0 +1,2 @@
+panic: Python JSONDecodeError: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+  at tests/cases/m16/uncaught_python.tpn:5

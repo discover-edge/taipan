@@ -1,0 +1,29 @@
+# Strict initialization through try (SPEC §3.10, §4.3).
+class Partial:
+    n: int
+
+    def __init__(self):
+        try:
+            self.n = 1
+        except KeyError:
+            print("not set")
+
+class ReadInExcept:
+    n: int
+
+    def __init__(self):
+        try:
+            self.n = 1
+        except KeyError:
+            print(self.n)
+            raise
+
+class Base:
+    pass
+
+class Guarded(Base):
+    def __init__(self):
+        try:
+            super().__init__()
+        finally:
+            print("done")

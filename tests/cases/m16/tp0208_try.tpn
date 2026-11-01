@@ -1,0 +1,37 @@
+# Return paths through try (SPEC §3.10, §4.5).
+def risky():
+    pass
+
+def caught() -> int:
+    try:
+        return 1
+    except KeyError:
+        print("no return")
+
+def body_only() -> int:
+    try:
+        risky()
+    except KeyError:
+        return 2
+
+def with_else() -> int:
+    try:
+        risky()
+    except KeyError:
+        return 3
+    else:
+        print("no return")
+
+def ok_else() -> int:
+    try:
+        risky()
+    except KeyError:
+        return 3
+    else:
+        return 4
+
+def ok_raise() -> int:
+    try:
+        return 5
+    except KeyError:
+        raise ValueError("v")

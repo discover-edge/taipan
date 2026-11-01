@@ -69,5 +69,17 @@ def main():
             Derived(count=c): print(c)
             _: pass
     print((b as Derived?) is None)
+    try:
+        raise ValueError("v")
+    except (ValueError, KeyError) as e:
+        print(e)
+    except json.JSONDecodeError:
+        raise
+    except:
+        pass
+    else:
+        pass
+    finally:
+        pass
 
 main()

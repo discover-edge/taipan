@@ -1,0 +1,2 @@
+panic: NotFound: no service named db
+  at tests/cases/m16/uncaught_user.tpn:7

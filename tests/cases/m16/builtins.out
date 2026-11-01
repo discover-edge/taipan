@@ -1,0 +1,24 @@
+KeyError: missing key "b"
+1 -1
+OverflowError: integer overflow
+9223372036854775807
+div ZeroDivisionError: division by zero
+mod ZeroDivisionError: division by zero
+float ZeroDivisionError: division by zero
+index IndexError: index 5 out of range for length 3
+pop IndexError: pop from empty list
+nan ValueError: cannot convert nan to int
+inf OverflowError: cannot convert inf to int
+split ValueError: empty separator
+replace ValueError: empty separator
+slice ValueError: slice step cannot be zero
+cast TypeError: cannot convert Animal to Dog
+mutate RuntimeError: list mutated during iteration
+1
+fine ok
+lookup: missing key "missing" True False
+either: index -4 out of range for length 3
+arithmetic: division by zero
+exception: index 9 out of range for length 3
+missing key "a" [KeyError("missing key \"a\"")] bad port
+|x

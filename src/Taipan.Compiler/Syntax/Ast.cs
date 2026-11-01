@@ -84,6 +84,9 @@ public sealed record AssignStmt(Expr Target, AssignOp Op, Expr Value, TextSpan S
 
 public sealed record ReturnStmt(Expr? Value, TextSpan Span) : Stmt(Span);
 
+/// <summary><c>raise e</c>, or a bare <c>raise</c> when <see cref="Value"/> is null (SPEC §3.10).</summary>
+public sealed record RaiseStmt(Expr? Value, TextSpan Span) : Stmt(Span);
+
 public sealed record PassStmt(TextSpan Span) : Stmt(Span);
 
 public sealed record BreakStmt(TextSpan Span) : Stmt(Span);
@@ -106,6 +109,16 @@ public sealed record WhileStmt(Condition Condition, Block Body, TextSpan Span) :
 public sealed record ForStmt(ImmutableArray<Identifier> Variables, Expr Iterable, Block Body, TextSpan Span) : Stmt(Span);
 
 public sealed record MatchStmt(Expr Scrutinee, ImmutableArray<MatchArm> Arms, TextSpan Span) : Stmt(Span);
+
+/// <summary><c>try</c> with its clauses; a <c>try</c> has at least one <c>except</c> or a <c>finally</c> (SPEC §3.10).</summary>
+public sealed record TryStmt(Block Body, ImmutableArray<ExceptClause> Handlers, Block? Else, Block? Finally, TextSpan Span) : Stmt(Span);
+
+/// <summary>
+/// An <c>except</c> clause. <see cref="Types"/> is empty for a bare <c>except:</c>; each type is a
+/// <see cref="NameExpr"/> or <see cref="MemberExpr"/> chain naming a class or a Python class.
+/// <see cref="TypesSpan"/> covers the types, with their parentheses if they have them.
+/// </summary>
+public sealed record ExceptClause(ImmutableArray<Expr> Types, TextSpan TypesSpan, Identifier? Binding, Block Body, TextSpan Span) : Node(Span);
 
 /// <summary>An arm written inline (<c>Ok: print("ok")</c>) has a one-statement body.</summary>
 public sealed record MatchArm(Pattern Pattern, Block Body, TextSpan Span) : Node(Span);

@@ -50,6 +50,9 @@ public sealed class CSharpEmitter
     private Stack<LoopContext> _loops = new();
     private int _indent;
 
+    // The caught C# exception of each enclosing except block, innermost on top, for a bare raise.
+    private readonly Stack<string> _caught = new();
+
     // Monomorphization (SPEC §8): the substitution for the instance being emitted, and the
     // instances still to emit. Each one is emitted once, under a name derived from its type arguments.
     private Dictionary<TypeParameterSymbol, TaipanType> _map = [];
@@ -104,6 +107,9 @@ public sealed class CSharpEmitter
             _globalNames.Add(name);
             _names[definition] = name;
         }
+        // The built-in exception classes are runtime classes (SPEC §8).
+        foreach (var builtin in BuiltinClasses.All)
+            _names[builtin] = builtin.RuntimeName!;
         _out = _functionsOut;
         foreach (var function in program.Functions.Where(f => !f.Symbol.TypeParameters.IsEmpty))
         {
@@ -677,6 +683,13 @@ public sealed class CSharpEmitter
             case BoundMatch match:
                 EmitMatch(match);
                 break;
+            case BoundRaise raise:
+                LineDirective(raise.Span);
+                Line(raise.Value is null ? $"throw {Runtime}.Exceptions.Rethrow({_caught.Peek()});" : $"throw {Expr(raise.Value)};");
+                break;
+            case BoundTry tryStmt:
+                EmitTry(tryStmt);
+                break;
             case BoundLocalFunction function:
                 EmitLocalFunction(function);
                 break;
@@ -748,6 +761,95 @@ public sealed class CSharpEmitter
 
     // range(a, b) evaluates a, then b, once (SPEC §8). When the body makes closures, each iteration
     // copies the counter into its own variable, which C# captures per iteration (SPEC §3.7).
+    /// <summary>
+    /// SPEC §8: a C# try whose one catch turns the exception into its Taipan value and tests the
+    /// except clauses in order, rethrowing it unchanged if none matches. The else block follows
+    /// the try/catch, so its exceptions aren't caught there; it needs a flag only when an except
+    /// block can finish normally. A finally block wraps the lot.
+    /// </summary>
+    private void EmitTry(BoundTry tryStmt)
+    {
+        var handlers = tryStmt.Handlers.Where(h => h.IsReachable).ToList();
+        string? completed = null;
+        if (tryStmt.Else is not null && handlers.Any(h => !TypeChecker.Terminates(h.Body)))
+        {
+            completed = $"@{_locals.Fresh("completed")}";
+            Line($"var {completed} = false;");
+        }
+        if (tryStmt.Finally is not null)
+        {
+            Line("try");
+            Line("{");
+            _indent++;
+        }
+
+        if (handlers.Count == 0)
+        {
+            EmitStatements(tryStmt.Body.Statements);
+        }
+        else
+        {
+            Line("try");
+            Line("{");
+            _indent++;
+            EmitStatements(tryStmt.Body.Statements);
+            if (completed is not null)
+                Line($"{completed} = true;");
+            _indent--;
+            Line("}");
+
+            var caught = $"@{_locals.Fresh("caught")}";
+            var exception = $"@{_locals.Fresh("exception")}";
+            LineDirective(tryStmt.Span);
+            Line($"catch (global::System.Exception {caught}) when ({Runtime}.Exceptions.IsCatchable({caught}))");
+            Line("{");
+            _indent++;
+            Line($"var {exception} = {Runtime}.Exceptions.From({caught});");
+            _caught.Push(caught);
+            for (var i = 0; i < handlers.Count; i++)
+            {
+                var handler = handlers[i];
+                Line($"{(i == 0 ? "" : "else ")}if ({HandlerTest(handler, exception)})");
+                var binding = handler.Binding is { } symbol
+                    ? $"{TypeName(symbol.Type)} @{_locals[symbol]} = ({TypeName(symbol.Type)}){exception};"
+                    : null;
+                EmitBody(handler.Body, binding);
+            }
+            _caught.Pop();
+            Line("else");
+            Line("    throw;");
+            HiddenDirective();
+            _indent--;
+            Line("}");
+        }
+
+        if (tryStmt.Else is { } elseBlock)
+        {
+            if (completed is not null)
+                Line($"if ({completed})");
+            EmitBody(elseBlock);
+        }
+        if (tryStmt.Finally is { } finallyBlock)
+        {
+            _indent--;
+            Line("}");
+            Line("finally");
+            EmitBody(finallyBlock);
+        }
+    }
+
+    // An except clause's test: its classes, then its Python classes, tested with Python's isinstance.
+    private string HandlerTest(BoundHandler handler, string exception)
+    {
+        var tests = new List<string>();
+        if (!handler.Classes.IsEmpty)
+            tests.Add($"{exception} is {string.Join(" or ", handler.Classes.Select(c => TypeName(c.Type)))}");
+        var python = $"{Runtime}.PythonError";
+        foreach (var pythonClass in handler.PythonClasses)
+            tests.Add($"({exception} is {python} && {Interop}.IsInstance((({python}){exception}).@value, {Expr(pythonClass)}))");
+        return string.Join(" || ", tests);
+    }
+
     private void EmitForRange(BoundForRange forStmt)
     {
         var variable = $"@{_locals[forStmt.Variable]}";

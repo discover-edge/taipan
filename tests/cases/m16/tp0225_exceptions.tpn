@@ -1,0 +1,11 @@
+# Exception classes are plain classes, and PythonError comes only from Python (SPEC §3.10).
+@dataclass
+class NotFound(Exception):
+    key: str
+
+@dataclass
+class Missing(KeyError):
+    pass
+
+class Wrapped(PythonError):
+    pass

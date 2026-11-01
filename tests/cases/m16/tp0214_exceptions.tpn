@@ -1,0 +1,8 @@
+# The built-in exception classes' names are global (SPEC §3.10).
+class ValueError(Exception):
+    pass
+
+def Exception() -> int:
+    return 1
+
+const KeyError = 3

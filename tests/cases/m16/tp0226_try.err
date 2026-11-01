@@ -1,0 +1,3 @@
+tests/cases/m16/tp0226_try.tpn:5:9: error TP0226: '__init__' does not set 'n'
+tests/cases/m16/tp0226_try.tpn:18:19: error TP0226: 'n' is read before it is set
+tests/cases/m16/tp0226_try.tpn:27:13: error TP0226: 'super().__init__' must be called once, directly in '__init__'

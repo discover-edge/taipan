@@ -144,6 +144,15 @@ public sealed class LocalNames
                 foreach (var arm in match.Arms)
                     yield return (arm.Body.Statements, []);
                 break;
+            case BoundTry tryStmt:
+                yield return (tryStmt.Body.Statements, []);
+                foreach (var handler in tryStmt.Handlers)
+                    yield return (handler.Body.Statements, handler.Binding is { } binding ? [binding] : []);
+                if (tryStmt.Else is not null)
+                    yield return (tryStmt.Else.Statements, []);
+                if (tryStmt.Finally is not null)
+                    yield return (tryStmt.Finally.Statements, []);
+                break;
             case BoundLocalFunction function:
                 yield return (function.Body.Statements, function.Parameters);
                 break;

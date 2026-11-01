@@ -1,0 +1,10 @@
+tests/cases/m16/tp0301_broad.tpn:7:1: warning TP0301: this clause catches every exception and discards it
+  help: catch a specific class, re-raise with 'raise', or bind it with 'as e' and use it
+tests/cases/m16/tp0301_broad.tpn:12:1: warning TP0301: this clause catches every exception and discards it
+  help: catch a specific class, re-raise with 'raise', or bind it with 'as e' and use it
+tests/cases/m16/tp0301_broad.tpn:17:1: warning TP0301: this clause catches every exception and discards it
+  help: catch a specific class, re-raise with 'raise', or bind it with 'as e' and use it
+tests/cases/m16/tp0301_broad.tpn:22:1: warning TP0301: this clause catches every exception and discards it
+  help: catch a specific class, re-raise with 'raise', or bind it with 'as e' and use it
+tests/cases/m16/tp0301_broad.tpn:48:5: warning TP0301: this clause catches every exception and discards it
+  help: catch a specific class, re-raise with 'raise', or bind it with 'as e' and use it

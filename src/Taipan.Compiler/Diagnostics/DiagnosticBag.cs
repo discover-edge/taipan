@@ -72,6 +72,9 @@ public sealed class DiagnosticBag
     public void ReportRequiredAfterDefault(TextSpan span) =>
         Add("TP0100", span, "parameter without a default follows parameter with a default");
 
+    public void ReportBareExceptNotLast(TextSpan span) =>
+        Add("TP0100", span, "a bare 'except' must be the last except clause");
+
     public void ReportChainedComparison(TextSpan span) =>
         Add("TP0212", span, "chained comparison not supported", "write 'a < b and b < c'");
 
@@ -259,7 +262,17 @@ public sealed class DiagnosticBag
     }
 
     public void ReportUnreachableArm(TextSpan span) =>
-        _items.Add(new Diagnostic("TP0300", span, "unreachable match arm", IsWarning: true) { Source = Source });
+        Warn("TP0300", span, "unreachable match arm");
+
+    public void ReportUnreachableHandler(TextSpan span, string caughtBy) =>
+        Warn("TP0300", span, "unreachable except clause", $"'{caughtBy}' is already caught above");
+
+    public void ReportUnreachableCode(TextSpan span) =>
+        Warn("TP0300", span, "unreachable code");
+
+    public void ReportBroadHandler(TextSpan span) =>
+        Warn("TP0301", span, "this clause catches every exception and discards it",
+            "catch a specific class, re-raise with 'raise', or bind it with 'as e' and use it");
 
     public void ReportMethodAsValue(TextSpan span, string method) =>
         Add("TP0200", span, $"'{method}' is a method; call it");
@@ -344,6 +357,13 @@ public sealed class DiagnosticBag
     public void ReportReturnOutsideFunction(TextSpan span) =>
         Add("TP0215", span, "'return' outside a function");
 
+    public void ReportBareRaiseOutsideHandler(TextSpan span) =>
+        Add("TP0215", span, "'raise' without an exception outside an except block");
+
+    /// <summary><paramref name="keyword"/> is <c>return</c>, <c>break</c> or <c>continue</c> (SPEC §3.10).</summary>
+    public void ReportLeavesFinally(TextSpan span, string keyword) =>
+        Add("TP0215", span, $"'{keyword}' cannot be used in a finally block");
+
     public void ReportNotConstant(TextSpan span) =>
         Add("TP0217", span, "const initializer must be a constant expression");
 
@@ -368,8 +388,9 @@ public sealed class DiagnosticBag
     public void ReportInvalidBase(TextSpan span, object type) =>
         Add("TP0225", span, $"'{type}' cannot be a base class");
 
-    public void ReportMixedBase(TextSpan span, bool isDataclass) =>
-        Add("TP0225", span, isDataclass ? "a dataclass can only derive from a dataclass" : "a plain class can only derive from a plain class");
+    public void ReportMixedBase(TextSpan span, bool isDataclass, bool isException = false) =>
+        Add("TP0225", span, isDataclass ? "a dataclass can only derive from a dataclass" : "a plain class can only derive from a plain class",
+            isException ? "exceptions are plain classes; give it an '__init__'" : null);
 
     public void ReportGenericBase(TextSpan span) =>
         Add("TP0225", span, "generic classes cannot be derived from");
@@ -477,10 +498,25 @@ public sealed class DiagnosticBag
     public void ReportPositionalOnPlainClass(TextSpan span, string className) =>
         Add("TP0209", span, $"'{className}' is not a dataclass, so its fields can only be bound by name");
 
+    // ---- Exceptions (SPEC §3.10, M16) ----
+
+    /// <summary>A class name, which Python would let you raise, gets help to construct it.</summary>
+    public void ReportCannotRaise(TextSpan span, object type, string? className = null) =>
+        Add("TP0200", span, $"cannot raise {type}", className is null ? null : $"write '{className}(…)'");
+
+    public void ReportNotExceptionClass(TextSpan span, string name) =>
+        Add("TP0200", span, $"'{name}' is not an exception class");
+
+    public void ReportCannotConstruct(TextSpan span, string name) =>
+        Add("TP0200", span, $"'{name}' cannot be constructed");
+
     public void AddRange(IEnumerable<Diagnostic> diagnostics) => _items.AddRange(diagnostics);
 
     private void Add(string code, TextSpan span, string message, string? help = null) =>
         _items.Add(new Diagnostic(code, span, message, help) { Source = Source });
+
+    private void Warn(string code, TextSpan span, string message, string? help = null) =>
+        _items.Add(new Diagnostic(code, span, message, help, IsWarning: true) { Source = Source });
 
     private static string Describe(Rune character) =>
         Rune.IsControl(character) || Rune.IsWhiteSpace(character)

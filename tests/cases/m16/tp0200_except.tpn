@@ -1,0 +1,45 @@
+# What can be raised and caught (SPEC §3.10).
+enum Health:
+    Ok
+    Down
+
+class Point:
+    pass
+
+def risky():
+    pass
+
+def generic[T](x: T):
+    try:
+        risky()
+    except T:
+        pass
+
+def raises(n: int, maybe: Exception?):
+    if n == 0:
+        raise 5
+    elif n == 1:
+        raise ValueError
+    elif n == 2:
+        raise Health.Ok
+    elif n == 3:
+        raise Point()
+    else:
+        raise maybe
+
+let e = PythonError("x")
+
+try:
+    risky()
+except int:
+    pass
+except Point:
+    pass
+except Health:
+    pass
+except (KeyError, Point) as p:
+    pass
+except Undefined:
+    pass
+except risky:
+    pass

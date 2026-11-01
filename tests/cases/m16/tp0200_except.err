@@ -1,0 +1,15 @@
+tests/cases/m16/tp0200_except.tpn:15:12: error TP0200: 'T' is not an exception class
+tests/cases/m16/tp0200_except.tpn:20:15: error TP0200: cannot raise int
+tests/cases/m16/tp0200_except.tpn:22:15: error TP0200: cannot raise ValueError
+  help: write 'ValueError(…)'
+tests/cases/m16/tp0200_except.tpn:24:15: error TP0200: cannot raise Health
+tests/cases/m16/tp0200_except.tpn:26:15: error TP0200: cannot raise Point
+tests/cases/m16/tp0200_except.tpn:28:15: error TP0203: expected Exception, found Exception?
+  help: narrow it with 'is some', or give a default with '??'
+tests/cases/m16/tp0200_except.tpn:30:9: error TP0200: 'PythonError' cannot be constructed
+tests/cases/m16/tp0200_except.tpn:34:8: error TP0200: 'int' is not an exception class
+tests/cases/m16/tp0200_except.tpn:36:8: error TP0200: 'Point' is not an exception class
+tests/cases/m16/tp0200_except.tpn:38:8: error TP0200: 'Health' is not an exception class
+tests/cases/m16/tp0200_except.tpn:40:19: error TP0200: 'Point' is not an exception class
+tests/cases/m16/tp0200_except.tpn:42:8: error TP0201: undefined name 'Undefined'
+tests/cases/m16/tp0200_except.tpn:44:8: error TP0200: 'risky' is not an exception class

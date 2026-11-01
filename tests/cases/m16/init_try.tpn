@@ -1,0 +1,48 @@
+# try and raise in __init__ under strict initialization (SPEC §3.10, §4.3).
+class Port:
+    number: int
+
+    def __init__(self, text: str):
+        let n = int(text)
+        if n is None:
+            raise ValueError(f"not a port: {text}")
+        self.number = n ?? 0
+
+class Conf:
+    port: int
+    source: str
+
+    def __init__(self, text: str):
+        try:
+            self.port = Port(text).number
+            self.source = "text"
+        except ValueError:
+            self.port = 80
+            self.source = "default"
+
+class Retry:
+    tries: int
+
+    def __init__(self, n: int):
+        try:
+            print("validating", n)
+        finally:
+            self.tries = n
+
+class Named(Port):
+    name: str
+
+    def __init__(self, name: str, text: str):
+        try:
+            self.name = name.upper()
+        except Exception as e:
+            raise ValueError(f"bad name: {e}")
+        super().__init__(text)
+
+print(Conf("8080").port, Conf("x").port, Conf("x").source)
+print(Retry(3).tries)
+print(Named("api", "443").name, Named("api", "443").number)
+try:
+    print(Port("http").number)
+except ValueError as e:
+    print(e)

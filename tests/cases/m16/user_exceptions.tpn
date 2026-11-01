@@ -1,0 +1,97 @@
+# User exceptions are plain classes deriving from Exception (SPEC §3.10).
+class NotFound(Exception):
+    key: str
+
+    def __init__(self, key: str):
+        self.key = key
+        super().__init__(f"no service named {key}")
+
+class Timeout(Exception):
+    pass
+
+class SlowTimeout(Timeout):
+    seconds: int = 30
+
+class ConfigError(ValueError):
+    def hint(self) -> str:
+        return "check the config file"
+
+def lookup(services: dict[str, int], name: str) -> int:
+    try:
+        return services[name]
+    except KeyError:
+        raise NotFound(name)
+
+let services = {"api": 8080}
+print(lookup(services, "api"))
+try:
+    print(lookup(services, "db"))
+except NotFound as e:
+    print(e.key, "|", e.message, "|", e)
+
+# A subclass without __init__ takes Exception's message argument.
+try:
+    raise SlowTimeout("too slow")
+except Timeout as e:
+    print("timeout:", e, isinstance(e, SlowTimeout))
+    if isinstance(e, SlowTimeout):
+        print(e.seconds)
+
+try:
+    raise Timeout()
+except Timeout as e:
+    print(f"empty: [{e}]")
+
+# A user subclass of a built-in is caught by the built-in's clause.
+try:
+    raise ConfigError("port must be a number")
+except ValueError as e:
+    print("value:", e)
+    match e:
+        ConfigError(): print(e.hint())
+        _: print("plain")
+
+# The tuple binding has the nearest common base.
+def fail(n: int):
+    if n == 0:
+        raise NotFound("zero")
+    raise Timeout("one")
+
+for i in range(2):
+    try:
+        fail(i)
+    except (NotFound, Timeout) as e:
+        print("caught", e.message)
+
+# Exceptions are values: stored, passed, compared by identity.
+let first = NotFound("a")
+let errors: list[Exception] = [first, Timeout("t"), KeyError("k")]
+print(errors)
+print(errors[0] == first, NotFound("a") == first)
+try:
+    raise errors[1]
+except Exception as e:
+    print("raised from a list:", e)
+
+# A bare raise re-raises the exception being handled.
+def reraise():
+    try:
+        raise NotFound("inner")
+    except NotFound as e:
+        print("logging", e.key)
+        raise
+
+try:
+    reraise()
+except NotFound as e:
+    print("outer got", e.key)
+
+# A bare except catches everything.
+try:
+    try:
+        raise Timeout("anything")
+    except:
+        print("bare except")
+        raise
+except Timeout as e:
+    print("still", e)
