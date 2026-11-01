@@ -1,0 +1,4 @@
+# Optionals flatten through an alias; only a literal 'T??' is nested (SPEC §3.12).
+type MaybeInt = int?
+let fine: MaybeInt? = None
+type Bad = int??

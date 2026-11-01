@@ -51,6 +51,8 @@ public sealed class Binder
 
         public List<(EnumDef Syntax, EnumSymbol Symbol)> EnumDefs { get; } = [];
 
+        public List<TypeAliasSymbol> Aliases { get; } = [];
+
         /// <summary>Each protocol a class declares in its base list, where it's written (SPEC §3.11).</summary>
         public List<(ClassSymbol Class, ClassSymbol Protocol, TextSpan Span)> DeclaredProtocols { get; } = [];
 
@@ -71,6 +73,12 @@ public sealed class Binder
     // stands for while a constrained body is checked for one combination (SPEC §3.6).
     private Dictionary<string, TaipanType> _typeParameters = [];
     private Dictionary<TypeParameterSymbol, TaipanType> _specialization = [];
+
+    // Each type alias's module and definition, in source order, and the aliases being bound, for
+    // cycles (SPEC §3.12).
+    private readonly Dictionary<TypeAliasSymbol, (Module Module, TypeAliasDef Syntax, int Order)> _aliases = [];
+    private readonly List<TypeAliasSymbol> _resolving = [];
+    private Module? _module;
     private readonly HashSet<string> _scriptNames = [];
     private Scope _scope;
     private FunctionSymbol? _function;
@@ -113,6 +121,7 @@ public sealed class Binder
 
     private void Enter(Module module)
     {
+        _module = module;
         _source = module.File.Source;
         _diagnostics.Source = _source;
         _global = module.Global;
@@ -145,6 +154,8 @@ public sealed class Binder
                     module.ClassDefs.Add((classDef, DeclareClass(classDef)));
                 else if (item is EnumDef enumDef)
                     module.EnumDefs.Add(DeclareEnum(enumDef));
+                else if (item is TypeAliasDef aliasDef)
+                    module.Aliases.Add(DeclareAlias(module, aliasDef));
             }
         }
 
@@ -152,6 +163,14 @@ public sealed class Binder
         {
             Enter(module);
             BindImports(module, byName);
+        }
+
+        // Aliases' right-hand sides, once every type name and import is known (SPEC §3.12).
+        foreach (var module in modules)
+        {
+            Enter(module);
+            foreach (var alias in module.Aliases)
+                AliasTarget(alias);
         }
 
         // Base classes, once every class name and import is known (SPEC §4.3).
@@ -297,6 +316,8 @@ public sealed class Binder
                             DeclareGlobal(name.Alias ?? name.Name, classSymbol, isDefinition: false);
                         else if (source.Enums.TryGetValue(name.Name.Text, out var enumSymbol))
                             ImportEnum(name, enumSymbol);
+                        else if (source.Definitions.GetValueOrDefault(name.Name.Text) is TypeAliasSymbol imported)
+                            DeclareGlobal(name.Alias ?? name.Name, imported, isDefinition: false);
                         else
                             module.PendingImports.Add((source, name));
                     }
@@ -357,7 +378,7 @@ public sealed class Binder
             var name = parameter.Name;
             if (!seen.Add(name.Text))
                 _diagnostics.ReportDuplicateDefinition(name.Span, name.Text);
-            else if (BuiltinTypeNames.Contains(name.Text) || ResolveTypeName(name.Text) is not null)
+            else if (BuiltinTypeNames.Contains(name.Text) || ResolveTypeName(name.Text) is not null || _global.Lookup(name.Text) is TypeAliasSymbol)
                 _diagnostics.ReportShadowing(name.Span, name.Text);
             if (!allowConstraints && !parameter.Constraints.IsEmpty)
                 _diagnostics.ReportConstraintNotOnFunction(parameter.Constraints[0].Span);
@@ -439,6 +460,101 @@ public sealed class Binder
             _typeParameters.TryAdd(parameter.Name, _specialization.GetValueOrDefault(parameter, parameter.Type));
         return previous;
     }
+
+    /// <summary>Declares an alias's name; its right-hand side is bound once imports are known (SPEC §3.12).</summary>
+    private TypeAliasSymbol DeclareAlias(Module module, TypeAliasDef aliasDef)
+    {
+        var symbol = new TypeAliasSymbol(aliasDef.Name.Text, NewTypeParameters(aliasDef.TypeParams));
+        _aliases[symbol] = (module, aliasDef, _aliases.Count);
+        if (BuiltinTypeNames.Contains(symbol.Name))
+            _diagnostics.ReportDuplicateDefinition(aliasDef.Name.Span, symbol.Name);
+        else
+            DeclareGlobal(aliasDef.Name, symbol);
+        return symbol;
+    }
+
+    /// <summary>
+    /// An alias's right-hand side, bound in its own module the first time it's needed. A cycle is
+    /// TP0230, and leaves every alias in it an error (SPEC §3.12).
+    /// </summary>
+    private TaipanType AliasTarget(TypeAliasSymbol alias)
+    {
+        if (alias.Target is { } target)
+            return target;
+        var index = _resolving.IndexOf(alias);
+        if (index >= 0)
+        {
+            ReportAliasCycle(_resolving[index..]);
+            return TaipanType.Error;
+        }
+
+        var (module, syntax, _) = _aliases[alias];
+        var (previous, scope) = (_module!, _scope);
+        Enter(module);
+        _resolving.Add(alias);
+        CheckTypeParameters(syntax.TypeParams, allowConstraints: false);
+        var outer = EnterTypeParameters(alias.TypeParameters);
+        var bound = BindType(syntax.Type);
+        _typeParameters = outer;
+        _resolving.RemoveAt(_resolving.Count - 1);
+        Enter(previous);
+        _scope = scope;
+        return alias.Target ??= bound;
+    }
+
+    /// <summary>A cycle of aliases, reported once at the alias in it that comes first in source order.</summary>
+    private void ReportAliasCycle(List<TypeAliasSymbol> cycle)
+    {
+        var first = cycle.IndexOf(cycle.MinBy(a => _aliases[a].Order)!);
+        var rotated = cycle[first..].Concat(cycle[..first]).ToList();
+        var (module, syntax, _) = _aliases[rotated[0]];
+        _diagnostics.Source = module.File.Source;
+        _diagnostics.ReportRecursiveAlias(syntax.Name.Span, rotated[0].Name, [.. rotated.Skip(1).Select(a => a.Name)]);
+        _diagnostics.Source = _source;
+        foreach (var alias in cycle)
+            alias.Target = TaipanType.Error;
+    }
+
+    /// <summary><c>A</c> or <c>A[…]</c>: the alias's type, with its type arguments in place of its parameters (SPEC §3.12).</summary>
+    private TaipanType ExpandAlias(TypeAliasSymbol alias, Identifier name, ImmutableArray<TypeSyntax> argumentSyntax, TextSpan span)
+    {
+        var arguments = argumentSyntax.Select(BindType).ToImmutableArray();
+        var target = AliasTarget(alias);
+        if (arguments.Length != alias.TypeParameters.Length)
+        {
+            _diagnostics.ReportWrongTypeArgumentCount(span, name.Text, alias.TypeParameters.Length, arguments.Length);
+            return TaipanType.Error;
+        }
+        return TypeChecker.Substitute(target, alias.TypeParameters.Zip(arguments).ToDictionary(p => p.First, p => p.Second));
+    }
+
+    /// <summary>The alias a plain, generic or qualified type name refers to, without reporting anything.</summary>
+    private TypeAliasSymbol? PeekAlias(TypeSyntax type) => type switch
+    {
+        NamedType named when !_typeParameters.ContainsKey(named.Name.Text) => _global.Lookup(named.Name.Text) as TypeAliasSymbol,
+        GenericType generic => _global.Lookup(generic.Name.Text) as TypeAliasSymbol,
+        QualifiedType qualified when _scope.Lookup(qualified.Module.Text) is ModuleSymbol module
+            => module.Definitions.GetValueOrDefault(TypeName(qualified.Type)) as TypeAliasSymbol,
+        _ => null,
+    };
+
+    /// <summary>The name a plain, generic or qualified type is written with.</summary>
+    private static string TypeName(TypeSyntax type) => type switch
+    {
+        NamedType named => named.Name.Text,
+        GenericType generic => generic.Name.Text,
+        QualifiedType qualified => TypeName(qualified.Type),
+        _ => "",
+    };
+
+    /// <summary>The alias a name or <c>module.Name</c> expression refers to, if it's an alias rather than a value.</summary>
+    private TypeAliasSymbol? NamedAlias(Expr expr) => expr switch
+    {
+        NameExpr name when !_typeParameters.ContainsKey(name.Name) => _scope.Lookup(name.Name) as TypeAliasSymbol,
+        MemberExpr { Target: NameExpr module } member when _scope.Lookup(module.Name) is ModuleSymbol symbol
+            => symbol.Definitions.GetValueOrDefault(member.Member.Text) as TypeAliasSymbol,
+        _ => null,
+    };
 
     private ClassSymbol DeclareClass(ClassDef classDef)
     {
@@ -532,6 +648,11 @@ public sealed class Binder
         if (!symbol.TypeParameters.IsEmpty)
         {
             _diagnostics.ReportGenericWithBase(syntax.Span);
+            return;
+        }
+        if (PeekAlias(syntax) is { } alias)
+        {
+            _diagnostics.ReportInvalidBase(syntax.Span, TypeName(syntax), aliasOf: alias.TargetName);
             return;
         }
         var type = BindType(syntax);
@@ -1292,6 +1413,10 @@ public sealed class Binder
                     [.. callable.Parameters.Select(BindType)], callable.Result is null ? TaipanType.Nothing : BindType(callable.Result));
             case NamedType named when _typeParameters.TryGetValue(named.Name.Text, out var typeParameter):
                 return typeParameter;
+            case NamedType named when _global.Lookup(named.Name.Text) is TypeAliasSymbol alias:
+                return ExpandAlias(alias, named.Name, [], named.Span);
+            case GenericType generic when _global.Lookup(generic.Name.Text) is TypeAliasSymbol alias:
+                return ExpandAlias(alias, generic.Name, generic.Arguments, generic.Span);
             case NamedType named when ResolveTypeName(named.Name.Text) is { } typeSymbol:
                 return BindGenericType(named.Name, [], named.Span, typeSymbol);
             case GenericType generic:
@@ -1310,6 +1435,9 @@ public sealed class Binder
                 return new DictOfType(key, BindType(dict.Value));
             case OptionalType optional:
                 var inner = BindType(optional.Inner);
+                // An optional flattens through an alias; only a literal T?? is nested (SPEC §3.12).
+                if (inner is OptionalOf && optional.Inner is not OptionalType)
+                    return inner;
                 if (inner is OptionalOf)
                 {
                     _diagnostics.ReportNestedOptional(optional.Span);
@@ -1338,6 +1466,8 @@ public sealed class Binder
             _diagnostics.ReportUndefinedName(qualified.Module.Span, qualified.Module.Text);
             return TaipanType.Error;
         }
+        if (module.Definitions.GetValueOrDefault(name.Text) is TypeAliasSymbol alias)
+            return ExpandAlias(alias, name, arguments, qualified.Span);
         Symbol? symbol = module.Classes.TryGetValue(name.Text, out var classSymbol) ? classSymbol
             : module.Enums.TryGetValue(name.Text, out var enumSymbol) ? enumSymbol : null;
         if (symbol is null)
@@ -1671,7 +1801,7 @@ public sealed class Binder
             _diagnostics.ReportNotAClass(pattern.Span, _source.ToString(pattern.Span));
             return invalid;
         }
-        ClassSymbol? classSymbol;
+        Symbol? found;
         if (pattern.Enum is { } moduleName)
         {
             if (_scope.Lookup(moduleName.Text) is not ModuleSymbol module)
@@ -1679,19 +1809,22 @@ public sealed class Binder
                 _diagnostics.ReportUndefinedName(moduleName.Span, moduleName.Text);
                 return invalid;
             }
-            if (!module.Definitions.TryGetValue(pattern.Variant.Text, out var definition))
+            if (!module.Definitions.TryGetValue(pattern.Variant.Text, out found))
             {
                 _diagnostics.ReportNoDefinition(pattern.Variant.Span, module.Name, pattern.Variant.Text);
                 return invalid;
             }
-            classSymbol = definition as ClassSymbol;
         }
-        else
+        else if ((found = LookupName(pattern.Variant.Text, pattern.Variant.Span)) is null)
         {
-            if (LookupName(pattern.Variant.Text, pattern.Variant.Span) is not { } found)
-                return invalid;
-            classSymbol = found as ClassSymbol;
+            return invalid;
         }
+        if (found is TypeAliasSymbol alias)
+        {
+            _diagnostics.ReportAliasAsValue(pattern.Variant.Span, pattern.Variant.Text, alias.TargetName);
+            return invalid;
+        }
+        var classSymbol = found as ClassSymbol;
         var name = _source.ToString(new TextSpan(pattern.Span.Start, pattern.Variant.Span.End - pattern.Span.Start));
         if (classSymbol is null)
         {
@@ -1810,6 +1943,11 @@ public sealed class Binder
                     return null;
                 }
                 named = module.Enums.GetValueOrDefault(qualifier.Text);
+                if (module.Definitions.GetValueOrDefault(qualifier.Text) is TypeAliasSymbol alias)
+                {
+                    _diagnostics.ReportAliasAsValue(qualifier.Span, qualifier.Text, alias.TargetName);
+                    return null;
+                }
                 if (named is null)
                 {
                     _diagnostics.ReportNoDefinition(qualifier.Span, module.Name, qualifier.Text);
@@ -1819,6 +1957,11 @@ public sealed class Binder
             else
             {
                 named = ResolveTypeName(qualifier.Text) as EnumSymbol;
+                if (_global.Lookup(qualifier.Text) is TypeAliasSymbol alias)
+                {
+                    _diagnostics.ReportAliasAsValue(qualifier.Span, qualifier.Text, alias.TargetName);
+                    return null;
+                }
                 if (named is null)
                 {
                     _diagnostics.ReportUndefinedName(qualifier.Span, qualifier.Text);
@@ -2184,6 +2327,11 @@ public sealed class Binder
         if (type is NameExpr { Name: var typeParameter } && _typeParameters.ContainsKey(typeParameter))
         {
             _diagnostics.ReportNotExceptionClass(type.Span, display);
+            return null;
+        }
+        if (NamedAlias(type) is { } alias)
+        {
+            _diagnostics.ReportAliasAsValue(type.Span, display, alias.TargetName);
             return null;
         }
         if (NamedClass(type) is { } symbol)
@@ -2746,6 +2894,9 @@ public sealed class Binder
             case ClassSymbol or EnumSymbol:
                 _diagnostics.ReportTypeAsValue(span, name);
                 return new BoundErrorExpr(span);
+            case TypeAliasSymbol alias:
+                _diagnostics.ReportAliasAsValue(span, name, alias.TargetName);
+                return new BoundErrorExpr(span);
             case ModuleSymbol:
                 _diagnostics.ReportModuleAsValue(span, name);
                 return new BoundErrorExpr(span);
@@ -3001,7 +3152,9 @@ public sealed class Binder
         }
         if (list.Elements.IsEmpty)
         {
-            _diagnostics.ReportCannotInferEmpty(list.Span, "list");
+            // An annotation that failed to bind was already reported.
+            if (expected is not { IsError: true })
+                _diagnostics.ReportCannotInferEmpty(list.Span, "list");
             return new BoundErrorExpr(list.Span);
         }
 
@@ -3031,7 +3184,9 @@ public sealed class Binder
         }
         if (dict.Entries.IsEmpty)
         {
-            _diagnostics.ReportCannotInferEmpty(dict.Span, "dict");
+            // An annotation that failed to bind was already reported.
+            if (expected is not { IsError: true })
+                _diagnostics.ReportCannotInferEmpty(dict.Span, "dict");
             return new BoundErrorExpr(dict.Span);
         }
 
@@ -3211,6 +3366,10 @@ public sealed class Binder
             case AmbiguousVariantSymbol ambiguous:
                 BindArguments(call);
                 ReportAmbiguous(ambiguous, nameSpan);
+                return new BoundErrorExpr(call.Span);
+            case TypeAliasSymbol alias:
+                BindArguments(call);
+                _diagnostics.ReportAliasAsValue(nameSpan, name, alias.TargetName);
                 return new BoundErrorExpr(call.Span);
             case FunctionSymbol { Builtin: { } builtin } function:
                 ReportKeywordArguments(call, function.Name);
@@ -3698,6 +3857,9 @@ public sealed class Binder
                 return null;
             case ClassSymbol classSymbol:
                 return CheckRelated(new ClassType(classSymbol), tested, expr.Span);
+            case TypeAliasSymbol alias:
+                _diagnostics.ReportAliasAsValue(expr.Span, alias.Name, alias.TargetName);
+                return null;
             default:
                 _diagnostics.ReportNotAClass(expr.Span, _source.ToString(expr.Span));
                 return null;

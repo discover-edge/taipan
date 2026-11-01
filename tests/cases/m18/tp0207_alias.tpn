@@ -1,0 +1,7 @@
+# An alias's type parameter can't hide a type name, and a local can't take an alias's name (SPEC §3.12).
+type Name = str
+type Wrapped[Name] = list[Name]
+
+def f():
+    let Name = 1
+    print(Name)

@@ -1,0 +1,6 @@
+tests/cases/m18/tp0230_recursive.tpn:2:6: error TP0230: type alias 'Tree' refers to itself
+  help: use a class for a recursive type
+tests/cases/m18/tp0230_recursive.tpn:3:6: error TP0230: type alias 'A' refers to itself through 'B'
+  help: use a class for a recursive type
+tests/cases/m18/tp0230_recursive.tpn:6:6: error TP0230: type alias 'X' refers to itself through 'Y' and 'Z'
+  help: use a class for a recursive type

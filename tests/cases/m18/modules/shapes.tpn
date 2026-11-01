@@ -1,0 +1,8 @@
+type Pair[T] = tuple[T, T]
+type Point = Pair[float]
+type Segment = tuple[Point, Point]
+
+def squared_length(s: Segment) -> float:
+    let dx = s[1][0] - s[0][0]
+    let dy = s[1][1] - s[0][1]
+    return dx * dx + dy * dy

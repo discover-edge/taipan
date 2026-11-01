@@ -35,6 +35,7 @@ Taipan is a statically typed, compiled language with Python's surface syntax. Th
 - **Keywords:**
   `def class enum let var const if elif else while for in match return pass break continue and or not is some None True False as from import lambda try except finally raise`
   - `struct` was a keyword before M15. It's now an ordinary name, and records are declared with `@dataclass class` (§4.3).
+  - `type` is a *soft keyword* (M18), as in Python 3.12: it starts a type alias (§3.12) only at the start of a line, followed by a name and then `=` or `[`. Anywhere else it's an ordinary name, so `type = "json"` and `e.type` still work.
   - `isinstance` and `super` are built-in functions (§6), not keywords. `Protocol`, `Self` and `Comparable` are built-in names (M17, §3.11), not keywords.
 - **Integer literals:** decimal, with `_` separators allowed (`1_000`). They're 64-bit signed, and overflow at compile time is `TP0200`. The range check belongs to the type checker, not the lexer, so `-9223372036854775808` is valid.
 - **Float literals:** `1.5`, `1e9`, `2.5e-3`. A leading digit is required, so `.5` is invalid. Formally: `digits "." digits [exp] | digits exp`, where `exp = ("e" | "E") ["+" | "-"] digits`. `1.` lexes as the int `1` followed by `.`.
@@ -79,7 +80,9 @@ Terminal names in CAPS come from the lexer.
 
 ```ebnf
 file          = { NEWLINE | top_item } EOF ;
-top_item      = import_stmt | func_def | class_def | enum_def | const_def | stmt ;
+top_item      = import_stmt | func_def | class_def | enum_def | const_def | type_alias | stmt ;
+
+type_alias    = "type" NAME [ type_params ] "=" type NEWLINE ;           (* M18, §3.12; "type" is a soft keyword *)
 
 import_stmt   = "import" NAME [ "as" NAME ] NEWLINE                                  (* M9, §4.7 *)
               | "from" NAME "import" import_name { "," import_name } NEWLINE ;
@@ -178,6 +181,7 @@ atom          = INT | FLOAT | STRING | FSTRING | "True" | "False" | "None"
 - **`is`:** `x is None` and `x is not None` are comparisons that give `bool`, usable in any expression (M15). `x is some v` binds a name, so it's only a whole `if`/`elif`/`while` condition. Any other right operand of `is`, including another expression (`x is y`), is `TP0100`, `expected 'some', 'not' or 'None'`.
 - **`try` (M16):** a `try` needs at least one `except` clause or a `finally`, and an `else` needs at least one `except`. A bare `except:` must be the last clause. Otherwise it's `TP0100`. An `except` clause names its types (`except KeyError`, `except zoo.NotFound`, `except json.JSONDecodeError`) rather than taking an expression, so in `except KeyError as e` the `as` names the binding rather than starting a cast.
 - A class body holds field declarations, methods and `pass`. Classes are top-level only, so a `class` inside a block is `TP0100`.
+- **Type aliases (M18)** are top-level only too. A line that starts with `type`, a name and `=` or `[` inside a block or class body is `TP0100`, `a type alias must be at the top level`. Python allows them in functions and classes; that's deferred.
 - **Protocols (M17)** are written as classes with the base `Protocol`, and their methods' bodies as `...` (§3.11). The parser treats them as any other class, and `...` as any other atom. The type checker applies the protocol rules.
 - **Type parameter bounds (M17):** in `[T: Comparable]` the bound is a type, and in `[N: (int, float)]` a parenthesized constraint tuple. `[T: (Comparable)]` is a one-type constraint (`TP0220`), not a bound.
 - **`...` (M17)** is an atom, so it parses wherever an expression may appear, and a method's body may be `...` on the same line as its colon: `def area(self) -> float: ...`. Only a protocol method's body may be `...` (§3.11).
@@ -192,7 +196,7 @@ atom          = INT | FLOAT | STRING | FSTRING | "True" | "False" | "None"
   - **X** is a token, or one of the categories `expression`, `type`, `statement`, `pattern`, `indented block`.
   - **Y** describes the token found: a keyword or punctuation token in quotes (`':'`, `'else'`), `name 'x'`, `integer`, `float`, `string`, `f-string`, `newline`, `indent`, `dedent`, or `end of file`.
   - The error points at the start of the token found.
-  - Specific messages: `cannot assign to this expression` (an `assign_stmt` target that isn't a `target`), `positional argument follows keyword argument`, `parameter without a default follows parameter with a default` (M14), and `a bare 'except' must be the last except clause` (M16, at the bare `except`, after which parsing continues normally). A `try` with no `except` or `finally`, or an `else` with no `except`, is `expected 'except' or 'finally', found …`.
+  - Specific messages: `cannot assign to this expression` (an `assign_stmt` target that isn't a `target`), `positional argument follows keyword argument`, `parameter without a default follows parameter with a default` (M14), `a bare 'except' must be the last except clause` (M16, at the bare `except`, after which parsing continues normally), and `a type alias must be at the top level` (M18, at `type`). A `try` with no `except` or `finally`, or an `else` with no `except`, is `expected 'except' or 'finally', found …`.
 - A chained comparison is reported by the parser as `TP0212`, with message `chained comparison not supported` and help `write 'a < b and b < c'`. Parsing continues normally.
 - **Recovery:** after a `TP0100`, the parser skips tokens up to and including the next `NEWLINE` at the current block depth. If the next line is indented further (an `INDENT` follows), that whole block is skipped as well. A `DEDENT` that closes the current block stops the skip without being consumed. Parsing then resumes at the next statement. So each statement reports at most one `TP0100`, and independent errors on separate statements are all reported.
 
@@ -568,6 +572,38 @@ Built-in types have no methods for this purpose except `__lt__`, so `str` doesn'
 
 There are no run-time checks: satisfaction and bounds are entirely static, and a bounded function is monomorphized like any generic (§8).
 
+### 3.12 Type aliases (M18)
+A type alias gives a type a name, as Python 3.12's `type` statement does (PEP 695):
+
+```python
+type Handler = Callable[[Request], Response]
+type Pair[T] = tuple[T, T]
+type Table = dict[str, list[Pair[int]]]
+
+def serve(handler: Handler, request: Request) -> Response:
+    return handler(request)
+
+def swap[T](p: Pair[T]) -> Pair[T]:
+    return p[1], p[0]
+```
+
+**Declaring an alias**
+- `type Name = T` and `type Name[A, B] = T` are top-level definitions (§2). Like classes, they're hoisted, so an alias may be used before its definition, and may refer to aliases defined after it.
+- The alias's name lives in the type namespace and is global (§4.6). A clash with a class, enum, protocol, function, constant or another alias, or a name such as `int` or `Self`, is `TP0214`.
+- A generic alias's type parameters follow §3.6: a repeated one is `TP0214`, and one that shadows a type name is `TP0207`. Constraints and bounds on an alias's type parameters are `TP0220`, as on classes. A type parameter the right-hand side doesn't use is allowed, as in Python.
+- The right-hand side is any type, checked where the alias is defined, so `type Bad = list[Nope]` is `TP0201` there.
+
+**Using an alias**
+- An alias stands for its type wherever a type is written: annotations, type arguments, `as` casts, constraint tuples and bounds (§3.11). It is that type, not a new one. A `Handler` is assignable to and from `Callable[[Request], Response]`, and an alias of a class narrows, matches and converts as the class does.
+- A generic alias takes exactly as many type arguments as it has parameters, which replace its parameters in the right-hand side: `Pair[int]` is `tuple[int, int]`. A count mismatch, including a bare `Pair`, is `TP0209`, `'Pair' takes 1 type argument, found 0`.
+- Optionals flatten through an alias, as through type arguments (§3.6): with `type MaybeInt = int?`, `MaybeInt?` is `int?`. Only a literal `T??` in source is `TP0213`.
+- **Only in types.** An alias isn't a value, so it can't be called, constructed, given to `isinstance`, named in an `except` clause or a pattern, used for an enum's variants (`Status.Ok`), or used as a base class. Each is `TP0200`, `'Handler' is a type alias, not a value` (or `TP0225`, `'Animal' cannot be a base class`, for a base), with help `use '<N>'` when the alias names a class or enum `N`, generic ones included (`type IntBox = Box[int]` suggests `use 'Box'`). Python's aliases (`TypeAliasType`) aren't classes either, so each of these fails in Python at run time.
+- **Recursion (`TP0230`).** An alias's expansion can't contain itself, directly (`type Tree = list[Tree]`) or through other aliases (`type A = list[B]`, `type B = A?`). Python allows recursive aliases, which a type checker expands lazily; Taipan expands aliases eagerly, so they'd never end. A recursive structure is written with a class instead (`class Tree: children: list[Tree]`), since class names refer to the class rather than expanding. The cycle is reported once, at the name of its first alias in source order: `type alias 'A' refers to itself through 'B'`.
+- **Modules:** a module exports its aliases (§4.7): `from shapes import Pair`, `shapes.Pair[int]`.
+- **Display:** diagnostics show the expanded type, not the alias's name: `expected Callable[[Request], Response], found int`.
+
+There's no run-time form: aliases are expanded during type checking, and nothing is emitted for them (§8).
+
 ---
 
 ## 4. Declarations
@@ -742,6 +778,7 @@ class Point:
 
 ### 4.6 Classes, lists and dicts: checking rules
 - **Class names** live in the type namespace and also in the global value scope, as the class's constructor. So a class can't share a name with a function, constant or built-in (`TP0214`), and a local can't take its name (`TP0207`). A class named `int`, `float`, `bool`, `str`, `list`, `dict`, `py`, `Callable` or `tuple` is also `TP0214`, as is one named `Protocol`, `Self` or `Comparable` (M17).
+- **Type alias names (M18)** live in the type namespace only, but share the global scope's names: an alias can't share a name with any other global (`TP0214`), and a local can't take its name (`TP0207`).
 - **Members:** field and method names within one class, inherited ones included, must be distinct (`TP0214`). Field types may name any class, including the class itself, for example through `list[Node]` or `Node?`.
 - **Dataclass construction:**
   - Arguments are matched to fields as to parameters (§4.2): positional ones in field order, then keyword ones by name. A field with a default may be left out.
@@ -768,7 +805,7 @@ class Point:
   - A missing file is `TP0221`, reported at the import.
   - The module name `python` is reserved for Python interop (§10).
 - **Module files contain declarations only:** `import`, `def`, `class`, `enum` and `const`. A top-level statement (including `let` and `var`) in a module other than the main file is `TP0222`. Only the main file has a top level that runs.
-- **Exports:** a module exports every name it defines, meaning its functions, classes, enums, their variants, and constants. There's no privacy, no re-export (a name a module itself imported can't be imported from it), and no `from m import *` (`TP0100`).
+- **Exports:** a module exports every name it defines, meaning its functions, classes, enums, their variants, constants, protocols (M17) and type aliases (M18). There's no privacy, no re-export (a name a module itself imported can't be imported from it), and no `from m import *` (`TP0100`).
 - **Imports:**
   - `import m` binds `m` in the importing file. Its names are then reached as `m.f(…)`, `m.LIMIT`, `m.Point(…)`, `m.Health.Ok` and `m.Ok` in expressions, `m.Point` and `m.Box[int]` in types, and `m.Health.Ok` in patterns.
   - `from m import f, Point` binds those names directly. Importing an enum also binds its variants unqualified, under the usual ambiguity rule (`TP0216`).
@@ -972,6 +1009,7 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 | `list[T]` / `dict[K, V]` | `List<T>` / `OrderedDictionary<K, V>`. `for` over them goes through a runtime iterator that turns concurrent modification into the §7 panic. |
 | `tuple[A, B]` | a C# value tuple `(A, B)` (M12), with elements read as `Item1`, `Item2`, …. Unpacking stores the value in a temporary first. `==` uses `Taipan.Runtime.Equality.Equal`, and ordering uses a runtime comparison that orders strings by ordinal. In generic instance names, a tuple type is written `tuple_` followed by its element types: `first_tuple_int_str`. |
 | slices | `Taipan.Runtime.Ops.Slice(target, start, stop, step)`, with `null` for an omitted part (M12) |
+| type aliases (M18) | Nothing: each use is its expanded type. |
 | generics | Monomorphized. Each distinct instantiation the program uses becomes its own C# method or type, named after its type arguments: `first_int`, `Box_str`, `Box_list_int`, `Maybe_int_opt` (for `Maybe[int?]`). A clash with another name gets a numeric suffix. Generic definitions that are never instantiated are type-checked but not emitted. |
 | function types | `Taipan.Runtime.Function<D>` (M11), with `D` a `Func<…>` or `Action<…>`. It wraps the delegate and the display name, and calls go through the delegate. A top-level function used as a value is one cached object per function, and each evaluation of a lambda or nested `def` creates a new object, so `==` is reference equality. In generic instance names, a function type is written `fn_` followed by its parameter and result types: `apply_fn_int_str`, `Box_fn_none`. |
 | lambdas, nested `def` | C# lambdas, which capture locals by reference. A `for x in range(…)` loop copies its variable into a fresh local each iteration, so captures see that iteration's value. |
@@ -1051,6 +1089,7 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 | TP0227 | missing or unneeded `@override` |
 | TP0228 | incompatible override |
 | TP0229 | protocol used as a type |
+| TP0230 | recursive type alias |
 | TP0300 | warning: unreachable code (a statement, `match` arm or `except` clause) |
 | TP0301 | warning: broad `except` clause discards the exception |
 
@@ -1079,6 +1118,7 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0200 | `'is some' needs an optional, found <T>` / `'is None' needs an optional, found <T>` / `'is not None' needs an optional, found <T>` / `'??' needs an optional on the left, found <T>` |
 | TP0200 | `'<m>' is a method; call it` / `'<f>' is a field, not a method` / `cannot index <T>` / `dict keys must be int, str, bool, tuples of those, or plain class instances, found <T>` (for a dataclass, with help `a dataclass compares by value, so it cannot be a key`) |
 | TP0200 | `isinstance needs a class, found <T>` / `'<C>' is not a class` / `'<C>' is generic` / `<T> can never be a <C>` (`isinstance`, `as` and class patterns on unrelated classes) / `'<C>' is a class; write '<C>()'` (a class pattern without parentheses) (M15) |
+| TP0200 | `'<A>' is a type alias, not a value`, with help `use '<N>'` when it names a class or enum (M18) |
 | TP0200 | `cannot raise <T>` (with help `write '<C>(…)'` for a class name) / `'<C>' is not an exception class` / `'PythonError' cannot be constructed` (M16) |
 | TP0200 | `'<T>' does not satisfy '<P>': it has no method '<m>'` / `'<T>' does not satisfy '<P>': '<m>' must be 'def <m>(self, …) -> <R>'` (the protocol's signature with `Self` replaced; `-> <R>` left out when it returns nothing), at a call's callee or a declared protocol, with ` (declared by '<B>')` after `'<P>'` for an inherited declaration / `'...' can only be the body of a protocol method` / `'<m>' cannot be called directly`, with help `use '<'` (M17) |
 | TP0200 | `'super()' can only be used as 'super().<method>(…)'` / `'super()' can only be used in a method` / `'<C>' has no base class` / `'__init__' cannot be called directly` / `'__init__' cannot have a return type` (M15) |
@@ -1114,6 +1154,7 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0228 | `'<m>' must take the same parameters as '<B>.<m>'` / `parameter '<p>' of '<m>' must have type <T>, as in '<B>.<m>'` / `parameter '<p>' of '<m>' needs a default, as in '<B>.<m>'` / `'<m>' must return <T>, as '<B>.<m>' does` (or `return nothing`) |
 | TP0220 | `a constraint needs at least two types` / `'<T>' is listed twice in the constraint` / `a constraint cannot be optional or generic` / `constraints are only supported on functions` / `'<T>' is not a protocol` (with help `class bounds are not supported`, for a class) / `bounds are only supported on functions` (M17) |
 | TP0229 | `'<P>' is a protocol, so it can only be a type parameter bound`, with help `use a bounded type parameter, e.g. 'def f[T: <P>](x: T)'` (M17) |
+| TP0230 | `type alias '<A>' refers to itself` / `type alias '<A>' refers to itself through '<B>'` (`'<B>' and '<C>'` for longer cycles), with help `use a class for a recursive type` (M18) |
 | TP0300 | `unreachable match arm` / `unreachable except clause`, with help `'<B>' is already caught above` / `unreachable code` (M16) |
 | TP0301 | `this clause catches every exception and discards it`, with help `catch a specific class, re-raise with 'raise', or bind it with 'as e' and use it` (M16) |
 
@@ -1195,6 +1236,7 @@ Types are written as in source: `int`, `str?`, `list[int]`. The type of `None` i
 - slice assignment and `del`
 - `zip` of more than two lists
 - `match` as an expression
+- type aliases inside functions and classes, recursive aliases, and showing an alias's name in diagnostics
 - keyword-only (`*`) and positional-only (`/`) parameters, `*args` and `**kwargs`, and defaults on lambda parameters
 - flow-sensitive narrowing after early return, and narrowing `var`s and fields
 - `raise … from …`, exception chaining, `BaseException`, exception groups (`except*`), and printing tracebacks

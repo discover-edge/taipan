@@ -1,0 +1,34 @@
+# An alias of a class narrows, matches and converts as the class does (SPEC §3.12).
+class Animal:
+    name: str
+
+    def __init__(self, name: str):
+        self.name = name
+
+class Dog(Animal):
+    def __init__(self, name: str):
+        super().__init__(name)
+
+type Pet = Animal
+type Pets = list[Pet]
+
+def names(pets: Pets) -> list[str]:
+    return map(lambda p: p.name, pets)
+
+def kind(p: Pet) -> str:
+    match p:
+        Dog():
+            return "dog"
+        _:
+            return "animal"
+
+let pets: Pets = [Dog("rex"), Animal("generic")]
+print(names(pets))
+print(map(kind, pets))
+let maybe: Pet? = pets[0]
+if maybe is some pet:
+    print(isinstance(pet, Dog), pet.name)
+
+type Puppy = Dog
+let back = pets[0] as Puppy
+print(back.name)

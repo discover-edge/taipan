@@ -1,0 +1,6 @@
+# A module's alias is a type there too, not a value (SPEC §3.12, §4.7).
+import shapes
+
+let c = shapes.Round(1.0)
+let p = shapes.Pair
+let q: shapes.Pair = (1, 2)

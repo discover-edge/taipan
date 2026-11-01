@@ -1,0 +1,11 @@
+# Aliases are exported, and reached qualified or imported (SPEC §3.12, §4.7).
+import shapes
+from shapes import Point, Pair as Two
+
+let a: Point = (0.0, 0.0)
+let b: shapes.Point = (3.0, 4.0)
+let s: shapes.Segment = (a, b)
+print(shapes.squared_length(s))
+let ints: Two[int] = (1, 2)
+let strs: shapes.Pair[str] = ("x", "y")
+print(ints, strs)

@@ -1,0 +1,4 @@
+tests/cases/m18/modules_values/main.tpn:4:16: error TP0200: 'Round' is a type alias, not a value
+  help: use 'Circle'
+tests/cases/m18/modules_values/main.tpn:5:9: error TP0200: 'Pair' is a type alias, not a value
+tests/cases/m18/modules_values/main.tpn:6:8: error TP0209: 'Pair' takes 1 type argument, found 0

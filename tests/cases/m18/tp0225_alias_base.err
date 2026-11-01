@@ -1,0 +1,3 @@
+tests/cases/m18/tp0225_alias_base.tpn:9:11: error TP0225: 'Pet' cannot be a base class
+  help: use 'Animal'
+tests/cases/m18/tp0225_alias_base.tpn:13:11: error TP0225: 'Things' cannot be a base class

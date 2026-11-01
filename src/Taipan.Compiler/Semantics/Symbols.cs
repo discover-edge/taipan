@@ -320,6 +320,25 @@ public sealed class TypeParameterSymbol(string name) : Symbol(name)
 }
 
 /// <summary>
+/// A type alias (SPEC §3.12, M18). <see cref="Target"/> is its right-hand side in terms of its own
+/// type parameters, set once it's bound; it's an error type for an alias in a cycle.
+/// </summary>
+public sealed class TypeAliasSymbol(string name, ImmutableArray<TypeParameterSymbol> typeParameters) : Symbol(name)
+{
+    public ImmutableArray<TypeParameterSymbol> TypeParameters { get; } = typeParameters;
+
+    public TaipanType? Target { get; set; }
+
+    /// <summary>The class or enum the alias names, for help pointing at it, or null if it names another type.</summary>
+    public string? TargetName => Target switch
+    {
+        ClassType classType => classType.Symbol.Name,
+        EnumType enumType => enumType.Symbol.Name,
+        _ => null,
+    };
+}
+
+/// <summary>
 /// A module bound by <c>import m</c> (SPEC §4.7). Its dictionaries hold only the names the module
 /// itself defines, which are the names it exports.
 /// </summary>

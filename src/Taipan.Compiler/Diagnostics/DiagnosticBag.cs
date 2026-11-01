@@ -72,6 +72,9 @@ public sealed class DiagnosticBag
     public void ReportRequiredAfterDefault(TextSpan span) =>
         Add("TP0100", span, "parameter without a default follows parameter with a default");
 
+    public void ReportAliasNotTopLevel(TextSpan span) =>
+        Add("TP0100", span, "a type alias must be at the top level");
+
     public void ReportBareExceptNotLast(TextSpan span) =>
         Add("TP0100", span, "a bare 'except' must be the last except clause");
 
@@ -285,6 +288,23 @@ public sealed class DiagnosticBag
     public void ReportCannotMatch(TextSpan span, object type) =>
         Add("TP0200", span, $"cannot match on {type}");
 
+    /// <summary><paramref name="target"/> is the class or enum the alias names, if it names one (SPEC §3.12).</summary>
+    public void ReportAliasAsValue(TextSpan span, string name, string? target) =>
+        Add("TP0200", span, $"'{name}' is a type alias, not a value", target is null ? null : $"use '{target}'");
+
+    /// <summary><paramref name="through"/> is the cycle's other aliases, in the order it reaches them.</summary>
+    public void ReportRecursiveAlias(TextSpan span, string name, IReadOnlyList<string> through)
+    {
+        var names = through.Select(n => $"'{n}'").ToList();
+        var path = names.Count switch
+        {
+            0 => "",
+            1 => $" through {names[0]}",
+            _ => $" through {string.Join(", ", names[..^1])} and {names[^1]}",
+        };
+        Add("TP0230", span, $"type alias '{name}' refers to itself{path}", "use a class for a recursive type");
+    }
+
     public void ReportTypeAsValue(TextSpan span, string name) =>
         Add("TP0200", span, $"'{name}' is a type, not a value");
 
@@ -428,8 +448,9 @@ public sealed class DiagnosticBag
     public void ReportMultipleBases(TextSpan span) =>
         Add("TP0225", span, "a class can have only one base class");
 
-    public void ReportInvalidBase(TextSpan span, object type) =>
-        Add("TP0225", span, $"'{type}' cannot be a base class");
+    /// <summary><paramref name="aliasOf"/> is the class or enum a type alias names, for help pointing at it (M18).</summary>
+    public void ReportInvalidBase(TextSpan span, object type, string? aliasOf = null) =>
+        Add("TP0225", span, $"'{type}' cannot be a base class", aliasOf is null ? null : $"use '{aliasOf}'");
 
     public void ReportMixedBase(TextSpan span, bool isDataclass, bool isException = false) =>
         Add("TP0225", span, isDataclass ? "a dataclass can only derive from a dataclass" : "a plain class can only derive from a plain class",

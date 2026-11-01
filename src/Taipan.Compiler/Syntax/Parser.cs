@@ -164,9 +164,10 @@ public sealed class Parser
         return new CompilationUnit(items.ToImmutable(), new TextSpan(0, _source.Length));
     }
 
-    // top_item = import_stmt | func_def | class_def | enum_def | const_def | stmt
+    // top_item = import_stmt | func_def | class_def | enum_def | const_def | type_alias | stmt
     private TopItem ParseTopItem() => Current.Kind switch
     {
+        TokenKind.Name when AtTypeAlias() => ParseTypeAlias(),
         TokenKind.ImportKeyword => ParseImportStmt(),
         TokenKind.FromKeyword => ParseFromImportStmt(),
         TokenKind.DefKeyword or TokenKind.ClassKeyword or TokenKind.At => ParseDecoratedDef(),
@@ -231,6 +232,31 @@ public sealed class Parser
         var span = SpanFrom(start);
         Expect(TokenKind.Newline);
         return new ConstDef(name, type, value, span);
+    }
+
+    /// <summary>The soft keyword <c>type</c> starts an alias before a name and <c>=</c> or <c>[</c> (SPEC §1.3).</summary>
+    private bool AtTypeAlias() =>
+        At(TokenKind.Name) && Current.Text == "type" && Peek(1).Kind == TokenKind.Name && Peek(2).Kind is TokenKind.Equals or TokenKind.OpenBracket;
+
+    // type_alias = "type" NAME [ type_params ] "=" type NEWLINE
+    private TypeAliasDef ParseTypeAlias()
+    {
+        var start = Next().Span.Start;
+        var name = ExpectIdentifier();
+        var typeParams = ParseTypeParams();
+        Expect(TokenKind.Equals);
+        var type = ParseType();
+        var span = SpanFrom(start);
+        Expect(TokenKind.Newline);
+        return new TypeAliasDef(name, typeParams, type, span);
+    }
+
+    /// <summary>An alias in a block or class body is TP0100, and its line is skipped (SPEC §2).</summary>
+    private ExprStmt ParseMisplacedTypeAlias()
+    {
+        var span = Current.Span;
+        ReportSyntaxError(bag => bag.ReportAliasNotTopLevel(span));
+        return new ExprStmt(new ErrorExpr(span), span);
     }
 
     // { decorator } ( func_def | class_def ) at the top level
@@ -372,6 +398,8 @@ public sealed class Parser
     // class_member = NAME ":" type [ "=" expr ] NEWLINE | method_def | "pass" NEWLINE
     private Node ParseClassMember()
     {
+        if (AtTypeAlias())
+            return ParseMisplacedTypeAlias();
         if (At(TokenKind.DefKeyword) || At(TokenKind.At))
         {
             var start = Current.Span.Start;
@@ -531,6 +559,8 @@ public sealed class Parser
     // stmt = simple_stmt NEWLINE | compound_stmt, where a func_def in a block is a nested function
     private Stmt ParseStmt()
     {
+        if (AtTypeAlias())
+            return ParseMisplacedTypeAlias();
         switch (Current.Kind)
         {
             case TokenKind.IfKeyword:

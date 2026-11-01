@@ -1,0 +1,4 @@
+tests/cases/m18/tp0209_alias_args.tpn:5:8: error TP0209: 'Pair' takes 1 type argument, found 0
+tests/cases/m18/tp0209_alias_args.tpn:6:8: error TP0209: 'Pair' takes 1 type argument, found 2
+tests/cases/m18/tp0209_alias_args.tpn:7:8: error TP0209: 'Name' takes 0 type arguments, found 1
+tests/cases/m18/tp0209_alias_args.tpn:8:13: error TP0209: 'Pair' takes 1 type argument, found 0

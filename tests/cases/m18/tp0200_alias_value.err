@@ -1,0 +1,15 @@
+tests/cases/m18/tp0200_alias_value.tpn:16:9: error TP0200: 'Pet' is a type alias, not a value
+  help: use 'Animal'
+tests/cases/m18/tp0200_alias_value.tpn:17:9: error TP0200: 'Number' is a type alias, not a value
+tests/cases/m18/tp0200_alias_value.tpn:18:34: error TP0200: 'Pet' is a type alias, not a value
+  help: use 'Animal'
+tests/cases/m18/tp0200_alias_value.tpn:21:8: error TP0200: 'Failure' is a type alias, not a value
+  help: use 'Oops'
+tests/cases/m18/tp0200_alias_value.tpn:24:5: error TP0200: 'Pet' is a type alias, not a value
+  help: use 'Animal'
+tests/cases/m18/tp0200_alias_value.tpn:36:5: error TP0200: 'Status' is a type alias, not a value
+  help: use 'Health'
+tests/cases/m18/tp0200_alias_value.tpn:40:7: error TP0200: 'Status' is a type alias, not a value
+  help: use 'Health'
+tests/cases/m18/tp0200_alias_value.tpn:47:9: error TP0200: 'IntBox' is a type alias, not a value
+  help: use 'Box'

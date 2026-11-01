@@ -1,0 +1,2 @@
+tests/cases/m18/tp0220_alias.tpn:2:18: error TP0220: constraints are only supported on functions
+tests/cases/m18/tp0220_alias.tpn:3:16: error TP0220: bounds are only supported on functions

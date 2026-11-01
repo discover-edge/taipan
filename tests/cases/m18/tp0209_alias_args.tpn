@@ -1,0 +1,8 @@
+# A generic alias takes exactly as many type arguments as it has parameters (SPEC §3.12).
+type Pair[T] = tuple[T, T]
+type Name = str
+
+let a: Pair = (1, 2)
+let b: Pair[int, str] = (1, "x")
+let c: Name[int] = "x"
+let d: list[Pair] = []

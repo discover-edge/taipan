@@ -1,0 +1,7 @@
+tests/cases/m18/tp0214_alias.tpn:4:6: error TP0214: duplicate definition of 'Pair'
+tests/cases/m18/tp0214_alias.tpn:5:6: error TP0214: duplicate definition of 'int'
+tests/cases/m18/tp0214_alias.tpn:6:6: error TP0214: duplicate definition of 'Self'
+tests/cases/m18/tp0214_alias.tpn:7:6: error TP0214: duplicate definition of 'Comparable'
+tests/cases/m18/tp0214_alias.tpn:8:13: error TP0214: duplicate definition of 'T'
+tests/cases/m18/tp0214_alias.tpn:10:7: error TP0214: duplicate definition of 'Pair'
+tests/cases/m18/tp0214_alias.tpn:13:5: error TP0214: duplicate definition of 'f'
