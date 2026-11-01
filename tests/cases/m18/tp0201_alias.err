@@ -1,0 +1,2 @@
+tests/cases/m18/tp0201_alias.tpn:2:17: error TP0201: undefined type 'Nope'
+tests/cases/m18/tp0201_alias.tpn:3:25: error TP0201: undefined type 'U'

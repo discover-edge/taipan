@@ -1,0 +1,17 @@
+# Recursive aliases (SPEC §3.12): each cycle is reported once, at its first alias.
+type Tree = list[Tree]
+type A = list[B]
+type B = A?
+type UsesCycle = list[A]
+type X = dict[str, Y]
+type Y = tuple[Z, int]
+type Z = X
+
+# A class refers to itself without expanding.
+@dataclass
+class Node:
+    children: list[Node]
+
+let t: Tree = []
+let u: UsesCycle = []
+print(Node([]))

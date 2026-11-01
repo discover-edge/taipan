@@ -65,6 +65,34 @@ public class ParserTests
             "ConstDef(LIMIT, NamedType(int), BinaryExpr(IntLiteral(1000), Multiply, IntLiteral(2)))",
             Snapshot("const LIMIT: int = 1_000 * 2\n"));
 
+    // ---- type_alias (M18) ----
+
+    [Fact]
+    public void TypeAlias() =>
+        Assert.Equal(
+            "TypeAliasDef(Handler, [], CallableType([NamedType(Request)], NamedType(Response)))",
+            Snapshot("type Handler = Callable[[Request], Response]\n"));
+
+    [Fact]
+    public void GenericTypeAlias() =>
+        Assert.Equal(
+            "TypeAliasDef(Pair, [T], TupleType([NamedType(T), NamedType(T)]))",
+            Snapshot("type Pair[T] = tuple[T, T]\n"));
+
+    [Fact]
+    public void TypeIsANameElsewhere() =>
+        Assert.Equal(
+            "VarStmt(type, null, StringLiteral(\"json\"))\n" +
+            "AssignStmt(NameExpr(type), Assign, StringLiteral(\"xml\"))\n" +
+            "ExprStmt(CallExpr(NameExpr(print), [Argument(null, MemberExpr(NameExpr(e), type))]))",
+            Snapshot("var type = \"json\"\ntype = \"xml\"\nprint(e.type)\n"));
+
+    [Fact]
+    public void TypeAliasInBlock() =>
+        Assert.Equal(
+            ["2:5 TP0100: a type alias must be at the top level", "6:5 TP0100: a type alias must be at the top level"],
+            Errors("def f():\n    type T = int\n    pass\n\nclass C:\n    type U[A] = list[A]\n    x: int\n"));
+
     // ---- func_def / params / param ----
 
     [Fact]

@@ -1,0 +1,22 @@
+# 'type' starts an alias only before a name and '=' or '['; elsewhere it's a name (SPEC §1.3).
+@dataclass
+class Message:
+    type: str
+    body: str
+
+var type = "json"
+print(type)
+type = "xml"
+let types = [type, "csv"]
+print(types[0], len(types))
+
+let m = Message(type="text", body="hi")
+print(m.type)
+
+def kind(type: str) -> str:
+    return type.upper()
+
+print(kind(type))
+type Kind = str
+let k: Kind = kind(m.type)
+print(k)

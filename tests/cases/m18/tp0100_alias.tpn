@@ -1,0 +1,16 @@
+# Type aliases are top-level only (SPEC §2).
+def f():
+    type Local = int
+    print("f")
+
+@dataclass
+class C:
+    type Inner = str
+    x: int
+
+if True:
+    type T[A] = list[A]
+    print("block")
+
+f()
+print(C(1))

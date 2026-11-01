@@ -1,0 +1,47 @@
+# An alias names a type, not a value (SPEC §3.12).
+class Animal:
+    name: str
+
+    def __init__(self, name: str):
+        self.name = name
+
+class Oops(Exception):
+    def __init__(self):
+        super().__init__("oops")
+
+type Pet = Animal
+type Failure = Oops
+type Number = int
+
+let a = Pet("rex")
+let n = Number
+let ok = isinstance(Animal("x"), Pet)
+try:
+    raise Oops()
+except Failure:
+    pass
+match Animal("y"):
+    Pet():
+        pass
+    _:
+        pass
+
+enum Health:
+    Ok
+    Bad
+
+type Status = Health
+let s: Status = Health.Ok
+match s:
+    Status.Ok:
+        pass
+    _:
+        pass
+print(Status.Bad)
+
+@dataclass
+class Box[T]:
+    item: T
+
+type IntBox = Box[int]
+let b = IntBox(1)

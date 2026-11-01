@@ -1,0 +1,8 @@
+# Aliases emit nothing; each use is its expanded type (SPEC §8).
+type Pair[T] = tuple[T, T]
+type Op = Callable[[int], int]
+
+def apply(f: Op, p: Pair[int]) -> Pair[int]:
+    return f(p[0]), f(p[1])
+
+print(apply(lambda x: x * 10, (1, 2)))

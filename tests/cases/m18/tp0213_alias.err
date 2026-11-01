@@ -1,0 +1,1 @@
+tests/cases/m18/tp0213_alias.tpn:4:12: error TP0213: optional types cannot be nested

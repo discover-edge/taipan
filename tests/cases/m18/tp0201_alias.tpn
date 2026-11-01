@@ -1,0 +1,6 @@
+# An alias's right-hand side is checked where it's defined (SPEC §3.12).
+type Bad = list[Nope]
+type Pair[T] = tuple[T, U]
+
+let xs: Bad = []
+let p: Pair[int] = (1, 2)

@@ -1,0 +1,2 @@
+tests/cases/m18/tp0207_alias.tpn:3:14: error TP0207: 'Name' shadows an outer binding
+tests/cases/m18/tp0207_alias.tpn:6:9: error TP0207: 'Name' shadows an outer binding

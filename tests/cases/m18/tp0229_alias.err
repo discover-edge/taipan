@@ -1,0 +1,4 @@
+tests/cases/m18/tp0229_alias.tpn:2:16: error TP0229: 'Comparable' is a protocol, so it can only be a type parameter bound
+  help: use a bounded type parameter, e.g. 'def f[T: Comparable](x: T)'
+tests/cases/m18/tp0229_alias.tpn:3:19: error TP0229: 'Comparable' is a protocol, so it can only be a type parameter bound
+  help: use a bounded type parameter, e.g. 'def f[T: Comparable](x: T)'

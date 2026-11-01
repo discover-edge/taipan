@@ -1,0 +1,3 @@
+# An alias names a type, and a protocol isn't one (SPEC §3.11, §3.12).
+type Ordered = Comparable
+type Items = list[Comparable]

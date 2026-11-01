@@ -1,0 +1,14 @@
+# An alias's name is a global, and can't clash with another (SPEC §3.12, §4.6).
+type f = int
+type Pair = tuple[int, int]
+type Pair = tuple[str, str]
+type int = str
+type Self = str
+type Comparable = str
+type Box[T, T] = list[T]
+
+class Pair:
+    pass
+
+def f():
+    pass

@@ -1,0 +1,8 @@
+class Circle:
+    radius: float
+
+    def __init__(self, radius: float):
+        self.radius = radius
+
+type Round = Circle
+type Pair[T] = tuple[T, T]

@@ -1,0 +1,40 @@
+# M18 acceptance: an alias of a function type accepts a matching lambda (SPEC §3.12).
+@dataclass
+class Request:
+    path: str
+
+@dataclass
+class Response:
+    status: int
+    body: str
+
+# Used before their definitions: aliases are hoisted.
+class Router:
+    routes: Routes
+
+    def __init__(self):
+        self.routes = {}
+
+    def route(self, path: str, handler: Handler):
+        self.routes[path] = handler
+
+    def serve(self, path: str) -> Response:
+        if self.routes.get(path) is some handler:
+            return handler(Request(path))
+        return Response(404, "not found")
+
+type Handler = Callable[[Request], Response]
+type Routes = dict[str, Handler]
+
+let router = Router()
+router.route("/", lambda r: Response(200, f"home at {r.path}"))
+router.route("/echo", lambda r: Response(200, r.path.upper()))
+
+print(router.serve("/"))
+print(router.serve("/echo"))
+print(router.serve("/missing"))
+
+# An alias is its type: assignable both ways.
+let plain: Callable[[Request], Response] = router.routes["/"]
+let aliased: Handler = plain
+print(aliased(Request("/x")).body)

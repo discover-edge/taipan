@@ -1,0 +1,3 @@
+# An alias's type parameters take no constraints or bounds (SPEC §3.12).
+type Numbers[N: (int, float)] = list[N]
+type Sorted[T: Comparable] = list[T]

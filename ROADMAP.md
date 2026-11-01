@@ -2,7 +2,7 @@
 
 Each milestone is done when **all** of its acceptance criteria pass as golden tests (see CLAUDE.md). Milestones are sequential. Don't start the next one early.
 
-M0–M10 (with M8.1) make up v0.1 and are complete. M11 through M17 are complete; later work is planned.
+M0–M10 (with M8.1) make up v0.1 and are complete. M11 through M18 are complete; M19 onward are planned.
 
 ## M0 — Scaffold
 - Create the solution layout from CLAUDE.md, the `taipan` CLI with `check | emit | build | run` stubs, and the golden-test harness.
@@ -135,5 +135,65 @@ M0–M10 (with M8.1) make up v0.1 and are complete. M11 through M17 are complete
   - `largest` works for a user class and for `int`/`str` through their built-in protocols.
   - A class missing a method reports which one at the call site.
 
-## Later
-- `match` as an expression, type aliases (`type Handler = Callable[[Request], Response]`, as in Python 3.12), an LSP server, NativeAOT publishing, packaging `taipan` as a `dotnet tool` (with the NuGet IDs settled), and CPython extension output.
+## M18 — Type aliases
+- `type Handler = Callable[[Request], Response]`, as in Python 3.12 (PEP 695), including generic aliases (`type Pair[T] = tuple[T, T]`) and aliases from other modules.
+- An alias is the type it names: interchangeable with it everywhere, with no new runtime type.
+- Update SPEC first: where aliases may be declared and used, cycles (`type A = list[A]`), shadowing and name clashes, and how diagnostics display an aliased type.
+- **Accept:**
+  - A function taking a `Handler` accepts a matching lambda, and a generic alias instantiates correctly.
+  - A recursive alias and a wrong number of alias type arguments each report the right code at the right column.
+
+## M19 — `match` as an expression
+- `match` producing a value, so `let label = match status: …` works, with each arm an expression.
+- Exhaustiveness as for the `match` statement, and the result type is the arms' common type, as for list literals.
+- Update SPEC first: the syntax (keeping Python's `match` statement unchanged), where a `match` expression may appear, and how arms' types join.
+- **Accept:**
+  - A `match` expression over an enum and over a class hierarchy each give the right value.
+  - A non-exhaustive `match` expression and arms of incompatible types each report the right code.
+
+## M20 — `dotnet tool` packaging
+- Package the `taipan` CLI as a .NET tool, so `dotnet tool install -g <id>` puts `taipan` on the path. The runtime library travels with it.
+- Settle the NuGet package IDs (for the tool and for `Taipan.Runtime`) before starting.
+- **Accept:**
+  - Installing the tool from a locally built `.nupkg` in a clean directory lets `taipan run examples/health.tpn` work, Python examples included.
+  - `taipan --version` prints the package version.
+
+## M21 — .NET libraries from Taipan
+- Reference .NET assemblies and NuGet packages, and use their APIs with static types read from metadata through Roslyn: `from dotnet import System.Text.Json`. Unlike `py`, calls are checked at compile time.
+- Static methods, constructors, instance methods and properties whose types map to Taipan's (`long`, `double`, `string`, `bool`; other integer and float widths through checked conversions), and .NET classes as opaque types. Nullable annotations give `T?`.
+- .NET exceptions are catchable in `except`.
+- Update SPEC first: how assemblies and packages are referenced, the type mapping and conversions, how members are named and looked up, treatment of assemblies without nullable annotations, and what is deferred (overloads beyond a defined resolution rule, generic methods, delegates, `async`, events, `ref`/`out`).
+- **Accept:**
+  - A program builds a string with `System.Text.StringBuilder` and reads a file's lines through `System.IO.File`, each with the right output.
+  - Calling a .NET method with a wrong argument type, and a member that doesn't exist, each report the right code at the right column.
+
+## M22 — Taipan as a .NET library
+- `taipan build <file> --library -o <dir>` produces a .NET assembly that C# and F# can reference: each module a public static class of its functions and constants, classes with public constructors, and enums as records.
+- No panic handler in a library: Taipan exceptions propagate to the caller as .NET exceptions. Generic functions are exported only where they can be real .NET generics.
+- Builds on M20: `Taipan.Runtime` is published as a package that libraries depend on.
+- Update SPEC first: the public names and shapes of exported definitions, what isn't exported, and how Python interop is initialized in a library.
+- **Accept:**
+  - A C# test project references a built Taipan library, calls a function, constructs a class and catches a Taipan exception.
+  - Exported names are stable: renaming a local or adding a private helper doesn't change the public API.
+
+## M23 — NativeAOT publishing
+- `taipan build <file> -o <dir> --native` produces a self-contained native executable through NativeAOT, needing no .NET runtime to run.
+- Update SPEC first: which programs can be published natively (Python interop may not be, since pythonnet relies on runtime reflection), and the error for one that can't.
+- **Accept:**
+  - A native build of a non-Python example runs and prints the same output and exit codes as `taipan run`, panics included.
+  - A program that can't be published natively is rejected with a clear diagnostic, not a failed publish.
+
+## M24 — Language server
+- `taipan lsp`: a Language Server Protocol server over stdio, reusing the compiler's diagnostics. No new dependencies without approval.
+- Diagnostics as you type, hover showing a name's type, and go to definition, including across modules.
+- **Accept:**
+  - A scripted LSP session gets the same diagnostics `taipan check` reports, with matching ranges.
+  - Hover on a local inferred from an expression shows its type, and go to definition on an imported name reaches the other module.
+
+## M25 — CPython extension modules
+- Interop level 3: `taipan build <module> --python-extension` produces a native module that CPython imports. Taipan functions taking and returning convertible types (§10.3) become callable from Python.
+- Builds on M23's NativeAOT output, exporting `PyInit_<module>` through the CPython C API.
+- Update SPEC first: which definitions are exported, how arguments and results convert, and how a Taipan exception reaches Python.
+- **Accept:**
+  - `python -c "import geometry; print(geometry.area(2.0))"` works against a built module.
+  - A Taipan exception raised in an exported function arrives in Python as an exception with the same message.

@@ -1,0 +1,15 @@
+# An alias can't be a base class (SPEC §3.12).
+class Animal:
+    def __init__(self):
+        pass
+
+type Pet = Animal
+type Things = list[int]
+
+class Dog(Pet):
+    def __init__(self):
+        pass
+
+class Bag(Things):
+    def __init__(self):
+        pass

@@ -58,6 +58,9 @@ public sealed record VariantDef(Identifier Name, ImmutableArray<FieldDef> Fields
 
 public sealed record ConstDef(Identifier Name, TypeSyntax? Type, Expr Value, TextSpan Span) : TopItem(Span);
 
+/// <summary><c>type Name[T] = type</c>; <see cref="TypeParams"/> is empty for a non-generic alias (SPEC §3.12, M18).</summary>
+public sealed record TypeAliasDef(Identifier Name, ImmutableArray<TypeParam> TypeParams, TypeSyntax Type, TextSpan Span) : TopItem(Span);
+
 /// <summary>
 /// A type parameter; <see cref="Constraints"/> is empty unless it has a constraint tuple (SPEC §3.6),
 /// and <see cref="Bound"/> is set when it has a protocol bound (§3.11, M17).
