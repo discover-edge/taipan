@@ -1,0 +1,5 @@
+class Node:
+    next: Self? = None
+
+def same(x: Self) -> bool:
+    return True

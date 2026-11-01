@@ -1,0 +1,24 @@
+class Shape(Protocol):
+    def area(self) -> float: ...
+
+class Square:
+    def area(self) -> float:
+        return 1.0
+
+def area_of(s: Shape) -> float:
+    return 0.0
+
+def make() -> Comparable:
+    return 1
+
+let shapes: list[Shape] = []
+let s = Shape()
+let sq = Square()
+print(isinstance(sq, Shape))
+try:
+    print(1)
+except Shape:
+    pass
+match sq:
+    Shape(): print(1)
+    _: pass

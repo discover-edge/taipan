@@ -1,0 +1,7 @@
+tests/cases/m17/tp0220_bounds.tpn:4:10: error TP0220: 'Animal' is not a protocol
+  help: class bounds are not supported
+tests/cases/m17/tp0220_bounds.tpn:7:10: error TP0220: 'int' is not a protocol
+tests/cases/m17/tp0220_bounds.tpn:10:15: error TP0229: 'Comparable' is a protocol, so it can only be a type parameter bound
+  help: use a bounded type parameter, e.g. 'def f[T: Comparable](x: T)'
+tests/cases/m17/tp0220_bounds.tpn:14:14: error TP0220: bounds are only supported on functions
+tests/cases/m17/tp0220_bounds.tpn:17:15: error TP0220: bounds are only supported on functions

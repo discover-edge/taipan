@@ -1,0 +1,4 @@
+tests/cases/m17/tp0224_protocols.tpn:1:1: error TP0224: '@dataclass' cannot be used here
+  help: '@dataclass' goes on a class, '@override' on a method
+tests/cases/m17/tp0224_protocols.tpn:6:5: error TP0224: '@override' cannot be used here
+  help: '@dataclass' goes on a class, '@override' on a method

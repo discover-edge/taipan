@@ -300,19 +300,27 @@ public sealed class Parser
         return parameters.ToImmutable();
     }
 
-    // type_param = NAME [ ":" "(" type { "," type } [ "," ] ")" ]
+    // type_param = NAME [ ":" ( "(" type { "," type } [ "," ] ")" | type ) ]
     private TypeParam ParseTypeParam()
     {
         var name = ExpectIdentifier();
         var constraints = ImmutableArray<TypeSyntax>.Empty;
+        TypeSyntax? bound = null;
         if (At(TokenKind.Colon))
         {
             Next();
-            Expect(TokenKind.OpenParen);
-            constraints = ParseCommaList(TokenKind.CloseParen, ParseType);
-            Expect(TokenKind.CloseParen);
+            if (At(TokenKind.OpenParen))
+            {
+                Next();
+                constraints = ParseCommaList(TokenKind.CloseParen, ParseType);
+                Expect(TokenKind.CloseParen);
+            }
+            else
+            {
+                bound = ParseType();
+            }
         }
-        return new TypeParam(name, constraints, SpanFrom(name.Span.Start));
+        return new TypeParam(name, constraints, bound, SpanFrom(name.Span.Start));
     }
 
     // params = param { "," param } [ "," ]
@@ -390,7 +398,7 @@ public sealed class Parser
         return field;
     }
 
-    // method_def = { decorator } "def" NAME "(" "self" [ "," params ] ")" [ "->" type ] ":" block
+    // method_def = { decorator } "def" NAME "(" "self" [ "," params ] ")" [ "->" type ] ":" ( block | "..." NEWLINE )
     private MethodDef ParseMethodDef(int start, ImmutableArray<Decorator> decorators)
     {
         Expect(TokenKind.DefKeyword);
@@ -419,7 +427,7 @@ public sealed class Parser
         }
 
         Expect(TokenKind.Colon);
-        var body = ParseBlock();
+        var body = At(TokenKind.Ellipsis) ? ParseEllipsisBody() : ParseBlock();
         return new MethodDef(decorators, name, self, parameters, returnType, body, SpanFrom(start));
     }
 
@@ -465,6 +473,14 @@ public sealed class Parser
         Expect(TokenKind.Colon);
         var type = ParseType();
         return new FieldDef(name, type, null, SpanFrom(name.Span.Start));
+    }
+
+    // A protocol method's "..." after the colon, as a block holding it (SPEC §3.11).
+    private Block ParseEllipsisBody()
+    {
+        var ellipsis = Next().Span;
+        Expect(TokenKind.Newline);
+        return new Block([new ExprStmt(new EllipsisExpr(ellipsis), ellipsis)], ellipsis);
     }
 
     // block = NEWLINE INDENT stmt { stmt } DEDENT
@@ -1374,6 +1390,9 @@ public sealed class Parser
             case TokenKind.NoneKeyword:
                 Next();
                 return new NoneLiteral(token.Span);
+            case TokenKind.Ellipsis:
+                Next();
+                return new EllipsisExpr(token.Span);
             case TokenKind.Name:
                 Next();
                 return new NameExpr(token.Text, token.Span);
@@ -1472,5 +1491,5 @@ public sealed class Parser
         TokenKind.Int or TokenKind.Float or TokenKind.String or TokenKind.FString
         or TokenKind.TrueKeyword or TokenKind.FalseKeyword or TokenKind.NoneKeyword
         or TokenKind.Name or TokenKind.OpenParen or TokenKind.OpenBracket or TokenKind.OpenBrace
-        or TokenKind.Minus or TokenKind.NotKeyword or TokenKind.LambdaKeyword;
+        or TokenKind.Minus or TokenKind.NotKeyword or TokenKind.LambdaKeyword or TokenKind.Ellipsis;
 }

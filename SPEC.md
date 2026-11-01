@@ -35,7 +35,7 @@ Taipan is a statically typed, compiled language with Python's surface syntax. Th
 - **Keywords:**
   `def class enum let var const if elif else while for in match return pass break continue and or not is some None True False as from import lambda try except finally raise`
   - `struct` was a keyword before M15. It's now an ordinary name, and records are declared with `@dataclass class` (§4.3).
-  - `isinstance` and `super` are built-in functions (§6), not keywords.
+  - `isinstance` and `super` are built-in functions (§6), not keywords. `Protocol`, `Self` and `Comparable` are built-in names (M17, §3.11), not keywords.
 - **Integer literals:** decimal, with `_` separators allowed (`1_000`). They're 64-bit signed, and overflow at compile time is `TP0200`. The range check belongs to the type checker, not the lexer, so `-9223372036854775808` is valid.
 - **Float literals:** `1.5`, `1e9`, `2.5e-3`. A leading digit is required, so `.5` is invalid. Formally: `digits "." digits [exp] | digits exp`, where `exp = ("e" | "E") ["+" | "-"] digits`. `1.` lexes as the int `1` followed by `.`.
 - **Number literal rules:** `_` may appear only between two digits. A multi-digit integer part can't start with `0`. A number immediately followed by a letter, digit-less exponent, or `_` (`12abc`, `1e`, `1_`, `007`) is `TP0007`.
@@ -45,8 +45,9 @@ Taipan is a statically typed, compiled language with Python's surface syntax. Th
   - `TP0006`: a lone `}` in literal text, an empty or whitespace-only hole, or an f-string inside a hole.
   - An f-string, or a hole, still open at end of line is `TP0003`.
 - **Operators and punctuation:**
-  `+ - * / // % == != < <= > >= = += -= *= /= -> ?? ? . , : ( ) [ ] { } @`
+  `+ - * / // % == != < <= > >= = += -= *= /= -> ?? ? . ... , : ( ) [ ] { } @`
   - `@` begins a decorator (M15, §4.3). It isn't an operator.
+  - `...` is one token (M17), the body of a protocol method (§3.11). Three dots always lex as `...`, so `1...` is the int `1` followed by `...`.
 - Any other character outside a string or comment, including a non-ASCII letter or a lone `\r`, is `TP0004`.
 
 ### 1.4 Lexical errors
@@ -91,13 +92,14 @@ decorator     = "@" NAME NEWLINE ;                                   (* M15: @da
 params        = param { "," param } [ "," ] ;
 param         = NAME ":" type [ "=" expr ] ;                         (* default: M14, §4.2 *)
 type_params   = "[" type_param { "," type_param } "]" ;             (* M8, §3.6 *)
-type_param    = NAME [ ":" "(" type { "," type } [ "," ] ")" ] ;   (* constraints: M8.1; fewer than two types is TP0220 *)
+type_param    = NAME [ ":" ( "(" type { "," type } [ "," ] ")"     (* constraints: M8.1; fewer than two types is TP0220 *)
+                           | type ) ] ;                            (* a bound: M17, §3.11; anything but a protocol is TP0220 *)
 
 class_def     = { decorator } "class" NAME [ type_params ] [ "(" base { "," base } ")" ] ":"   (* M15, §4.3 *)
                 NEWLINE INDENT class_member { class_member } DEDENT ;
-base          = NAME [ "." NAME ] [ "[" type { "," type } "]" ] ;   (* more than one base is TP0225 *)
+base          = NAME [ "." NAME ] [ "[" type { "," type } "]" ] ;   (* more than one class base is TP0225; protocols may be added: M17 *)
 class_member  = NAME ":" type [ "=" expr ] NEWLINE | method_def | "pass" NEWLINE ;
-method_def    = { decorator } "def" NAME "(" "self" [ "," params ] ")" [ "->" type ] ":" block ;   (* M5 *)
+method_def    = { decorator } "def" NAME "(" "self" [ "," params ] ")" [ "->" type ] ":" ( block | "..." NEWLINE ) ;   (* M5; "...": M17 *)
 
 enum_def      = "enum" NAME [ type_params ] ":" NEWLINE INDENT variant { variant } DEDENT ;
 variant       = NAME [ "(" named_fields ")" ] NEWLINE ;
@@ -161,7 +163,7 @@ subscript     = expr | [ expr ] ":" [ expr ] [ ":" [ expr ] ] ;      (* a slice:
 call          = "(" [ arg { "," arg } [ "," ] ] ")" ;
 arg           = expr | NAME "=" expr ;
 atom          = INT | FLOAT | STRING | FSTRING | "True" | "False" | "None"
-              | NAME | "self" | "(" expr ")"
+              | NAME | "self" | "(" expr ")" | "..."                 (* "...": M17, a protocol method's body *)
               | "(" expr "," [ expr { "," expr } [ "," ] ] ")"         (* a tuple: M12; one element is TP0209 *)
               | "[" [ expr { "," expr } [ "," ] ] "]"
               | "{" [ expr ":" expr { "," expr ":" expr } [ "," ] ] "}" ;
@@ -176,6 +178,9 @@ atom          = INT | FLOAT | STRING | FSTRING | "True" | "False" | "None"
 - **`is`:** `x is None` and `x is not None` are comparisons that give `bool`, usable in any expression (M15). `x is some v` binds a name, so it's only a whole `if`/`elif`/`while` condition. Any other right operand of `is`, including another expression (`x is y`), is `TP0100`, `expected 'some', 'not' or 'None'`.
 - **`try` (M16):** a `try` needs at least one `except` clause or a `finally`, and an `else` needs at least one `except`. A bare `except:` must be the last clause. Otherwise it's `TP0100`. An `except` clause names its types (`except KeyError`, `except zoo.NotFound`, `except json.JSONDecodeError`) rather than taking an expression, so in `except KeyError as e` the `as` names the binding rather than starting a cast.
 - A class body holds field declarations, methods and `pass`. Classes are top-level only, so a `class` inside a block is `TP0100`.
+- **Protocols (M17)** are written as classes with the base `Protocol`, and their methods' bodies as `...` (§3.11). The parser treats them as any other class, and `...` as any other atom. The type checker applies the protocol rules.
+- **Type parameter bounds (M17):** in `[T: Comparable]` the bound is a type, and in `[N: (int, float)]` a parenthesized constraint tuple. `[T: (Comparable)]` is a one-type constraint (`TP0220`), not a bound.
+- **`...` (M17)** is an atom, so it parses wherever an expression may appear, and a method's body may be `...` on the same line as its colon: `def area(self) -> float: ...`. Only a protocol method's body may be `...` (§3.11).
 - A `def` at the top level is a `top_item`, a hoisted global function. A `def` inside a block is a nested function (§3.7).
 - An `expr_list` of two or more expressions is a tuple, as if parenthesized (§3.8): `return lo, hi`, `let p = 1, 2`, `a, b = b, a`. An expression statement can't be a bare tuple: `a, b` alone is `TP0100`.
 - In a cast (`x as T`), a `??` after the type is the coalescing operator, so `x as int? ?? 0` is `(x as int?) ?? 0`.
@@ -211,6 +216,7 @@ atom          = INT | FLOAT | STRING | FSTRING | "True" | "False" | "None"
 | `C` | instance of a class `C` (M15, §4.3) | a C# class (§8) |
 | `Exception`, `ValueError`, … | built-in exception classes (M16, §3.10) | classes in `Taipan.Runtime` (§8) |
 | `Callable[[A, B], R]` | function value (M11, §3.7) | `Taipan.Runtime.Function<D>` (§8) |
+| `Comparable`, user protocols | structural interface, only as a type parameter bound (M17, §3.11) | none: bounded generics are monomorphized |
 
 - A function without `-> type` returns nothing (C# `void`). Using its result as a value is `TP0200`.
 - `T??` is `TP0213`. Optionals don't nest.
@@ -270,7 +276,7 @@ There are no other implicit conversions. Explicit conversions use the built-ins 
   - Type parameter names live in the type namespace of their definition, including a generic class's methods. Methods take no type parameters of their own.
   - A repeated type parameter is `TP0214`. One that shadows an existing type name is `TP0207`.
 - **Instantiation in types:** a generic class or enum must be given exactly as many type arguments as it has parameters (`Box[int]`, `Maybe[list[str]]`). A count mismatch, including a bare `Box` or arguments on a non-generic type, is `TP0209`.
-- **Type parameters are unconstrained.** Bodies are checked once, with each type parameter treated as an opaque type `T`:
+- **Type parameters are opaque** unless they have a bound (M17, §3.11) or a constraint (M8.1, below). Bodies are checked once, with each type parameter treated as an opaque type `T`:
   - A `T` may be assigned, passed, returned, stored in lists and fields, compared with `==`/`!=` against another `T`, tested with `in` on a `list[T]`, and displayed (`print`, `str`, f-strings).
   - Anything else on a `T` is `TP0200` or `TP0210`, as for any type lacking the operation: arithmetic, ordering, member access, method calls, indexing, iteration, `match`, or use as a dict key.
   - So a body that checks is valid for every type argument. Instantiation never reports new errors (apart from `TP0219`).
@@ -463,6 +469,105 @@ finally:
 - Importing Python modules happens at startup (§10.1), before any `try` runs, so a failure to load Python or to import a module is always a panic.
 - Running out of stack ends the process, as in .NET; it isn't an exception. Internal compiler errors aren't exceptions either.
 
+### 3.11 Protocols (M17)
+A protocol is a structural interface, as in Python's `typing.Protocol` (PEP 544): a set of method signatures that a type satisfies by having them, without declaring it. In v0.1 a protocol is used only as the bound of a function's type parameter.
+
+```python
+class Shape(Protocol):
+    def area(self) -> float: ...
+    def scaled(self, k: float) -> Self: ...
+
+class Square:
+    side: float
+
+    def __init__(self, side: float):
+        self.side = side
+
+    def area(self) -> float:
+        return self.side * self.side
+
+    def scaled(self, k: float) -> Square:
+        return Square(self.side * k)
+
+def total_area[S: Shape](shapes: list[S]) -> float:
+    var sum = 0.0
+    for s in shapes:
+        sum += s.area()
+    return sum
+
+def largest[T: Comparable](xs: list[T]) -> T?:
+    var best: T? = None
+    for x in xs:
+        if best is some b:
+            if x > b:
+                best = x
+        else:
+            best = x
+    return best
+
+print(total_area([Square(1.0), Square(2.0)]))   # 5.0
+print(largest([3, 9, 4]), largest(["b", "a"]))  # 9 b
+```
+
+**Declaring a protocol**
+- A protocol is a top-level class whose only base is `Protocol`: `class Shape(Protocol):`. Python imports `Protocol` from `typing`; in Taipan it's a built-in name, like `Exception`.
+- Its body holds methods and `pass`. Each method takes `self` first, annotates its other parameters, and has `...` as its body, written after the colon (`def area(self) -> float: ...`) or alone in an indented block. A method's parameters have no defaults.
+- In a protocol method's signature, `Self` stands for the type that satisfies the protocol: `other: Self`, `-> Self`, `list[Self]`, `Self?`.
+- Each `TP0225`:
+  - a field, a method body other than `...`, or a parameter default
+  - type parameters on a protocol (generic protocols are deferred)
+  - another base besides `Protocol`
+  - any special method other than `__lt__` (below), including `__init__`. A protocol's `__lt__` must be `def __lt__(self, other: Self) -> bool`.
+- A decorator on a protocol (`@dataclass`) or on one of its methods (`@override`) is `TP0224`.
+- A method name repeated in a protocol is `TP0214`.
+- `...` anywhere but a protocol method's body is `TP0200`. A function or method whose body is just `...` reports only that, and not also `TP0208`. `Self` outside a protocol method's signature is `TP0201`, `undefined type 'Self'`, with help `'Self' can only be used in a protocol`.
+- Protocol names are global, as class names are (§4.6), and modules export them (§4.7). A definition with the name `Protocol`, `Self` or `Comparable` is `TP0214`.
+
+**Satisfying a protocol.** A type `X` satisfies a protocol `P` when, for each method `m` of `P`, with `Self` replaced by `X`:
+- `X` has a method `m`, its own or inherited.
+- It takes the same parameters, with the same names, in the same order. Each parameter's type is the protocol's, or, when the protocol's is a class, a base of it, since a method that accepts any `Animal` can be called with a `Dog`.
+- It returns what the protocol's method returns, or, when both are classes or optional classes, something assignable to it (§3.3). If the protocol's method returns nothing, `m` must too.
+- `m` may have defaults, which a call through the bound never uses, since it passes every argument.
+
+This is checked at compile time, wherever a type argument meets a bound (below), and wherever a class declares the protocol.
+
+**Declaring a protocol on a class (optional)**
+- A class may list protocols among its bases, as PEP 544 allows: `class Version(Comparable):`, `class Square(Shape, Comparable):`, or with a base class, `class Dog(Animal, Comparable):`, in any order. The one-base rule of §4.3 counts only classes.
+- A declaration is a check and documentation. It doesn't change what the class satisfies: a class that satisfies a protocol may be used with it whether or not it declares it.
+- The class is checked against each protocol it declares at its definition, so a missing or mismatched method is reported there, rather than at the first call that needs it. It's `TP0200` at the protocol's name in the base list, with the messages used for calls: `'Version' does not satisfy 'Comparable': it has no method '__lt__'`.
+- **Subclasses** inherit their base's declarations and are checked against them too, since an inherited method may not fit once `Self` is the subclass (a `-> Self` method returning the base class). The message names where the declaration came from: `'Cube' does not satisfy 'Shape' (declared by 'Square'): 'scaled' must be 'def scaled(self, k: float) -> Cube'`.
+- Listing a protocol twice, including one a base class already declares, is `TP0225`. Dataclasses, exception classes and generic classes may declare protocols. In a generic class, `Self` is the class with its own type parameters: `Box[T]`.
+
+Built-in types have no methods for this purpose except `__lt__`, so `str` doesn't satisfy a protocol with `def upper(self) -> str` in v0.1.
+
+**`Comparable` and `__lt__`**
+- `Comparable` is a built-in protocol, as if declared:
+  ```python
+  class Comparable(Protocol):
+      def __lt__(self, other: Self) -> bool: ...
+  ```
+- `int`, `float` and `str`, and tuples of them (§3.8), satisfy it, as does a class with a suitable `__lt__`. `bool` and `None` don't, since Taipan doesn't order them (§5.3).
+- **`__lt__` on a class** is the one special method besides `__init__` that a class may define (§4.3). It takes exactly one parameter, whose type is the class or one of its bases, and returns `bool` (`TP0225` otherwise). It overrides like any method (§4.3).
+- `a < b` on a class value `a` calls `a.__lt__(b)`, and `b` must fit its parameter. `a > b` evaluates `a` and then `b`, and calls `b.__lt__(a)`, as Python does when `a` has no `__gt__`.
+- `<=` and `>=` aren't defined by `__lt__`: on a class or a bounded type parameter they're `TP0200`, with help `'__lt__' defines only '<' and '>'`. Python raises `TypeError` for them at run time; `__le__`, `__ge__` and `functools.total_ordering` are deferred.
+- `sorted` and `list.sort` accept a list, or a key, of any `Comparable` type (§6), and call only `__lt__`, as Python's sort does.
+- Calling `__lt__` directly (`a.__lt__(b)`) is `TP0200`, with help `use '<'`, except as `super().__lt__(…)` in an override.
+
+**Bounds**
+- A function's type parameter may be bounded by a protocol, as in PEP 695: `def largest[T: Comparable](xs: list[T]) -> T?:`. The bound may be qualified with a module: `[S: shapes.Shape]`.
+- In the body, a value of type `T` supports what an opaque `T` does (§3.6), plus the protocol's methods, called with `Self` read as `T`: `s.area()`, `s.scaled(2.0)` (a `T`). If the protocol has `__lt__`, `T` also supports `<` and `>`, and lists of `T` may be sorted.
+- **Calls:** after type-argument inference (§3.6), each bounded parameter's type argument must satisfy its bound. Otherwise it's `TP0200` at the callee, naming the first method that's missing or doesn't fit: `'Point' does not satisfy 'Comparable': it has no method '__lt__'`.
+  - A type parameter of an enclosing generic function satisfies a protocol when its own bound declares compatible methods. An unbounded one satisfies none.
+  - A constrained parameter (`[N: (int, float)]`) is replaced by each of its types in turn (§3.6), and each must satisfy the bound.
+- **Each `TP0220`:**
+  - a bound that isn't a protocol, such as a class (class bounds are deferred) or a built-in type
+  - a bound on a class's or enum's type parameter, as for constraints
+- So that every bounded body is valid for every type argument that satisfies its bound, instantiation still never reports new errors (§3.6).
+
+**Protocols aren't types of values.** A protocol can't be the type of a binding, parameter, field, return value or element, or be constructed, given to `isinstance`, matched in a `class` pattern or caught in an `except`. Each is `TP0229`, with help `use a bounded type parameter, e.g. 'def f[T: Shape](x: T)'`. Python allows protocols as types; in Taipan it would need a runtime representation for values of many types, and is deferred.
+
+There are no run-time checks: satisfaction and bounds are entirely static, and a bounded function is monomorphized like any generic (§8).
+
 ---
 
 ## 4. Declarations
@@ -536,7 +641,7 @@ class Point:
   - Defaults follow the rules for parameter defaults (§4.2): checked against the field's type, and unable to use `self` or the `__init__` parameters (`TP0201`).
   - Fields are mutable through any binding: `s.healthy = 2` is valid even when `s` is a `let`. `let` fixes the binding, not the object.
 - **Methods** take an explicit `self` as the first parameter, typed implicitly as the enclosing class. They're called as `s.method(args)`, with arguments matched as for functions (§4.2), and are dispatched on the object's runtime class, so a `Dog` in a `list[Animal]` runs `Dog.speak`. Inside a method, other methods are reached as `self.m()`, and a bare `m()` refers to a global function.
-- **Special methods:** a plain class may define `__init__`. Any other method named `__x__` (`__str__`, `__eq__`, `__hash__`, …) is `TP0225`. They're deferred to protocols (M17), and Taipan reports them rather than silently ignore them.
+- **Special methods:** a plain class may define `__init__`, and any class may define `__lt__` (M17, §3.11). Any other method named `__x__` (`__str__`, `__eq__`, `__hash__`, …) is `TP0225`. They're deferred, and Taipan reports them rather than silently ignore them.
 - **Members** are looked up on the static type. An unknown field or method is `TP0210`. A `Dog`-only method on an `Animal` needs narrowing first (§3.9).
 
 **Construction**
@@ -566,7 +671,7 @@ class Point:
 - Assignments analysed are the plain `self.f = e` and `self.f op= e` statements. The analysis follows `if`/`elif`/`else`, `match` arms and loops. A field assigned only inside a loop body, or in only some branches, isn't assigned after it. A `return` in `__init__` before the object is complete is `TP0226`. `try` and `raise` follow §3.10 (M16).
 
 **Inheritance**
-- `class Dog(Animal):` derives `Dog` from `Animal`. A class has at most one base, which must be a class: `class Dog(Animal, Pet)` is `TP0225`, as is a base that's an enum, a built-in type or a type parameter. The base may come from another module: `class Dog(zoo.Animal):`.
+- `class Dog(Animal):` derives `Dog` from `Animal`. A class has at most one base class: `class Dog(Animal, Pet)` is `TP0225`, as is a base that's an enum, a built-in type or a type parameter. Protocols it declares (M17, §3.11) may be listed alongside, and don't count as bases. The base may come from another module: `class Dog(zoo.Animal):`.
 - A subclass inherits every field and method of its base. A `Dog` is assignable to `Animal` (§3.3), and to every class above it.
 - **Restrictions in M15**, each `TP0225`:
   - A dataclass's base must be a dataclass, and a plain class's base a plain class.
@@ -636,7 +741,7 @@ class Point:
 - **Error types:** once an expression has an error, its type is treated as compatible with everything. This means one mistake is reported once, not again at every use.
 
 ### 4.6 Classes, lists and dicts: checking rules
-- **Class names** live in the type namespace and also in the global value scope, as the class's constructor. So a class can't share a name with a function, constant or built-in (`TP0214`), and a local can't take its name (`TP0207`). A class named `int`, `float`, `bool`, `str`, `list`, `dict`, `py`, `Callable` or `tuple` is also `TP0214`.
+- **Class names** live in the type namespace and also in the global value scope, as the class's constructor. So a class can't share a name with a function, constant or built-in (`TP0214`), and a local can't take its name (`TP0207`). A class named `int`, `float`, `bool`, `str`, `list`, `dict`, `py`, `Callable` or `tuple` is also `TP0214`, as is one named `Protocol`, `Self` or `Comparable` (M17).
 - **Members:** field and method names within one class, inherited ones included, must be distinct (`TP0214`). Field types may name any class, including the class itself, for example through `list[Node]` or `Node?`.
 - **Dataclass construction:**
   - Arguments are matched to fields as to parameters (§4.2): positional ones in field order, then keyword ones by name. A field with a default may be left out.
@@ -739,6 +844,7 @@ class Point:
 | `== !=` | same type, int/float, or related classes | bool | structural for dataclasses, enums, lists, dicts, tuples; identity for plain classes (§4.3) and functions (§3.7) |
 | `is None`, `is not None` | T? | bool | M15; narrows (§3.9) |
 | `< <= > >=` | numeric, or str (ordinal), or tuples of those (M12) | bool | tuples compare lexicographically |
+| `< >` | a class with `__lt__`, or a type parameter bounded by a protocol with `__lt__` (M17) | bool | `a < b` is `a.__lt__(b)`, `a > b` is `b.__lt__(a)` (§3.11) |
 | `in`, `not in` | T in list[T]; K in dict[K,V]; str in str | bool | |
 | `??` | T?, T | T | |
 | `and or not` | bool | bool | short-circuit |
@@ -777,7 +883,7 @@ In `a == b` and `a != b`, `a`'s type is `b`'s expected type (§4.6), so `m == No
 - `range` can only be used as the iterable of a `for` loop. Any other use is `TP0200`.
 - `sorted(xs: list[T], key=…, reverse=False) -> list[T]` (M11) returns a new list in ascending order.
   - `key: Callable[[T], K]` gives each element's sort key. It's called once per element, in list order, before any reordering.
-  - The elements, or the keys when `key` is given, must be `int`, `float` or `str`, or tuples of those (M12), and are ordered as by `<`. Otherwise it's `TP0200`. A NaN sorts before every other float.
+  - The elements, or the keys when `key` is given, must be `int`, `float` or `str`, tuples of those (M12), or another `Comparable` type: a class with `__lt__`, or a type parameter bounded by a protocol with `__lt__` (M17, §3.11). They're ordered as by `<`. Otherwise it's `TP0200`. A NaN sorts before every other float.
   - `reverse: bool` sorts in descending order.
   - The sort is stable: equal elements keep their original order, with `reverse=True` too, as in Python.
   - `key` and `reverse` are optional and keyword-only.
@@ -853,6 +959,8 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 | `@dataclass class S` | `public class S : Taipan.Runtime.IStruct` (or `: Base`), `sealed` when no class derives from it, with a mutable `{ get; set; }` property per own field, a positional constructor over every field that passes the inherited ones to `: base(…)`, methods as instance methods (`self` is `this`), and `ToString` overridden to the display form. Not a C# record: Taipan equality is deep (lists inside dataclasses compare by contents), so `==` on dataclasses, lists and dicts calls `Taipan.Runtime.Equality.Equal` rather than C# `Equals`, and it compares runtime classes first. |
 | `class C` (plain, M15) | `public class C : Taipan.Runtime.IObject` (or `: Base`), `sealed` when no class derives from it, with a `{ get; set; }` property per own field and `ToString` giving `<C object>`. C# `Equals` and `GetHashCode` aren't overridden, so `==` and dict keys use reference identity. Construction is `C.@__new__(args)`, a static method that creates the object with a protected parameterless constructor, then calls `__init__`. Each class's `__init__` is an instance method `@__init__` that first evaluates its own fields' defaults (`new` when it hides a base's), so `super().__init__(…)` is `base.@__init__(…)` and can follow the subclass's own field assignments, which a C# constructor's `: base(…)` couldn't. A class without `__init__` gets one that sets its defaults and passes its parameters on to the base's. |
 | methods (M15) | `public virtual` where a method is introduced and `public override` for `@override`, with C#'s covariant return types for a narrower class result. `super().m(…)` is `base.@m(…)`. |
+| protocols (M17) | Nothing: a protocol has no C# form, and a protocol a class declares is left out of its base list. A bounded generic function is monomorphized (below), so in `largest_Version`, `x > b` is `b.@__lt__(x)`, and in `largest_int` it's `x > b`. |
+| `__lt__` (M17) | an ordinary method, `@__lt__`. `a < b` on classes is `a.@__lt__(b)`. `a > b` evaluates `a` and `b` into temporaries, then calls `b.@__lt__(a)`. Sorting a list of classes passes the runtime sort a comparison that calls `__lt__`. |
 | `isinstance(x, C)` / narrowed `x` | `x is C`. A narrowed read is `((C)x)`, or `x!` / `x.Value` for `x is not None` on a reference / value type. |
 | `x as C` / `x as C?` | `Taipan.Runtime.Ops.Cast<C>(x)`, which panics as §7 says / `x as C` |
 | exceptions (M16) | `Exception` is `Taipan.Runtime.Exception`, which derives from `System.Exception` and is emitted against like a plain class's base (`__new__`, `@__init__`, a `message` property); the other built-in exception classes derive from it. A user exception class is a plain class deriving from one of them. Runtime errors throw the matching class, and a Python exception becomes a `PythonError` where the `py` operation calls Python. Checked arithmetic keeps throwing C#'s `OverflowException`, which a `catch` turns into an `OverflowError`. `raise e` is `throw e`. A bare `raise` is `throw Taipan.Runtime.Exceptions.Rethrow(caught)`, which rethrows with `ExceptionDispatchInfo` and so keeps the original stack trace and line. |
@@ -933,7 +1041,7 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 | TP0217 | `const` initializer is not a constant expression |
 | TP0218 | keyword argument not accepted |
 | TP0219 | generic instantiation too deep (polymorphic recursion) |
-| TP0220 | invalid type parameter constraint |
+| TP0220 | invalid type parameter constraint or bound |
 | TP0221 | module not found |
 | TP0222 | top-level statement in an imported module |
 | TP0223 | nested function with type parameters |
@@ -942,6 +1050,7 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 | TP0226 | object used before it is fully initialized |
 | TP0227 | missing or unneeded `@override` |
 | TP0228 | incompatible override |
+| TP0229 | protocol used as a type |
 | TP0300 | warning: unreachable code (a statement, `match` arm or `except` clause) |
 | TP0301 | warning: broad `except` clause discards the exception |
 
@@ -971,6 +1080,7 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0200 | `'<m>' is a method; call it` / `'<f>' is a field, not a method` / `cannot index <T>` / `dict keys must be int, str, bool, tuples of those, or plain class instances, found <T>` (for a dataclass, with help `a dataclass compares by value, so it cannot be a key`) |
 | TP0200 | `isinstance needs a class, found <T>` / `'<C>' is not a class` / `'<C>' is generic` / `<T> can never be a <C>` (`isinstance`, `as` and class patterns on unrelated classes) / `'<C>' is a class; write '<C>()'` (a class pattern without parentheses) (M15) |
 | TP0200 | `cannot raise <T>` (with help `write '<C>(…)'` for a class name) / `'<C>' is not an exception class` / `'PythonError' cannot be constructed` (M16) |
+| TP0200 | `'<T>' does not satisfy '<P>': it has no method '<m>'` / `'<T>' does not satisfy '<P>': '<m>' must be 'def <m>(self, …) -> <R>'` (the protocol's signature with `Self` replaced; `-> <R>` left out when it returns nothing), at a call's callee or a declared protocol, with ` (declared by '<B>')` after `'<P>'` for an inherited declaration / `'...' can only be the body of a protocol method` / `'<m>' cannot be called directly`, with help `use '<'` (M17) |
 | TP0200 | `'super()' can only be used as 'super().<method>(…)'` / `'super()' can only be used in a method` / `'<C>' has no base class` / `'__init__' cannot be called directly` / `'__init__' cannot have a return type` (M15) |
 | TP0201 | `undefined name '<x>'` (with help `use 'None'` for `none`) / `undefined type '<T>'` / `module '<m>' has no definition '<x>'` |
 | TP0202 | `cannot assign to '<x>': it is a <let binding\|parameter\|loop variable\|constant\|function\|method>`, with help `declare it with 'var'` for a `let` binding / `cannot assign to an element of str` / `cannot assign to an element of a tuple` |
@@ -998,11 +1108,12 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0222 | `only the main file can have top-level statements` |
 | TP0223 | `nested functions cannot have type parameters` |
 | TP0224 | `unknown decorator '@<d>'` / `'@<d>' cannot be used here` (with help `'@dataclass' goes on a class, '@override' on a method`) / `duplicate decorator '@<d>'` |
-| TP0225 | `a class can have only one base class` / `'<T>' cannot be a base class` / `a dataclass can only derive from a dataclass` (with help `exceptions are plain classes; give it an '__init__'` for an exception base, M16) / `a plain class can only derive from a plain class` / `generic classes cannot be derived from` / `generic classes cannot have a base class` / `'<C>' derives from itself` / `special method '<m>' is not supported` / `a dataclass cannot define '__init__'` / `field without a default follows field with a default` |
+| TP0225 | `a class can have only one base class` (protocols aside, M17) / `'<T>' cannot be a base class` / `a dataclass can only derive from a dataclass` (with help `exceptions are plain classes; give it an '__init__'` for an exception base, M16) / `a plain class can only derive from a plain class` / `generic classes cannot be derived from` / `generic classes cannot have a base class` / `'<C>' derives from itself` / `special method '<m>' is not supported` / `a dataclass cannot define '__init__'` / `field without a default follows field with a default` / `'__lt__' must take one parameter of type '<C>' (or a base class) and return bool` / `'<P>' is already declared` (or `already declared by '<B>'`) / `a protocol can only declare methods` / `a protocol method's body must be '...'` / `protocol method parameters cannot have defaults` / `protocols cannot be generic` / `a protocol can only derive from 'Protocol'` (M17) |
 | TP0226 | `'__init__' does not set '<f>'` / `'<f>' has no default, and '<C>' has no '__init__'` / `'<f>' is read before it is set` / `'self' is used before '<f>' is set` (or `before 'super().__init__' is called`) / `'<f>' is inherited, so it is set by 'super().__init__'` / `'super().__init__' is called before '<f>' is set` / `'<C>.__init__' must call 'super().__init__(…)'` / `'super().__init__' must be called once, directly in '__init__'` / `'super().__init__' can only be called in '__init__'` / `'__init__' returns before '<f>' is set` (or `before 'super().__init__' is called`) (when several fields are unset, the first in declaration order is named) |
 | TP0227 | `'<m>' overrides '<B>.<m>'; mark it '@override'` / `'<m>' does not override a method of <a base class\|'<B>'>` / `'__init__' cannot be marked '@override'` |
 | TP0228 | `'<m>' must take the same parameters as '<B>.<m>'` / `parameter '<p>' of '<m>' must have type <T>, as in '<B>.<m>'` / `parameter '<p>' of '<m>' needs a default, as in '<B>.<m>'` / `'<m>' must return <T>, as '<B>.<m>' does` (or `return nothing`) |
-| TP0220 | `a constraint needs at least two types` / `'<T>' is listed twice in the constraint` / `a constraint cannot be optional or generic` / `constraints are only supported on functions` |
+| TP0220 | `a constraint needs at least two types` / `'<T>' is listed twice in the constraint` / `a constraint cannot be optional or generic` / `constraints are only supported on functions` / `'<T>' is not a protocol` (with help `class bounds are not supported`, for a class) / `bounds are only supported on functions` (M17) |
+| TP0229 | `'<P>' is a protocol, so it can only be a type parameter bound`, with help `use a bounded type parameter, e.g. 'def f[T: <P>](x: T)'` (M17) |
 | TP0300 | `unreachable match arm` / `unreachable except clause`, with help `'<B>' is already caught above` / `unreachable code` (M16) |
 | TP0301 | `this clause catches every exception and discards it`, with help `catch a specific class, re-raise with 'raise', or bind it with 'as e' and use it` (M16) |
 
@@ -1068,10 +1179,12 @@ Types are written as in source: `int`, `str?`, `list[int]`. The type of `None` i
 ---
 
 ## 11. Deferred (post-v0.1)
-- protocols (structural interfaces), and special methods such as `__str__`, `__eq__` and `__lt__` (M17)
+- protocols as types of values, protocol fields, generic protocols, protocols extending other protocols, and a check that a class used with a protocol declares it
+- class bounds (`[T: Animal]`), bounds on classes' and enums' type parameters, and built-in types' ordinary methods satisfying protocols
+- special methods other than `__init__` and `__lt__`, such as `__str__`, `__eq__`, `__hash__`, `__le__` and `__add__`, and `functools.total_ordering`
 - multiple inheritance, mixing dataclasses and plain classes in one hierarchy, and inheritance involving generic classes
 - `@dataclass` options (`frozen`, `order`), `__post_init__`, and an `__init__` written in a dataclass
-- class attributes, `@staticmethod`, `@classmethod`, `@property`, abstract classes, `@final`, and `Self`
+- class attributes, `@staticmethod`, `@classmethod`, `@property`, abstract classes, `@final`, and `Self` outside protocols
 - `isinstance` with a tuple of classes or on `py` values, and `is` between two expressions (identity)
 - sub-patterns inside class patterns
 - `-> None` as an explicit "returns nothing" annotation

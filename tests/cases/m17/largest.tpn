@@ -1,0 +1,48 @@
+# M17 acceptance: one bounded function for a user class and for int and str.
+class Version(Comparable):
+    major: int
+    minor: int
+
+    def __init__(self, major: int, minor: int):
+        self.major = major
+        self.minor = minor
+
+    def __lt__(self, other: Version) -> bool:
+        return (self.major, self.minor) < (other.major, other.minor)
+
+    def label(self) -> str:
+        return f"{self.major}.{self.minor}"
+
+def largest[T: Comparable](xs: list[T]) -> T?:
+    var best: T? = None
+    for x in xs:
+        if best is some b:
+            if x > b:
+                best = x
+        else:
+            best = x
+    return best
+
+def labels(vs: list[Version]) -> list[str]:
+    return map(lambda v: v.label(), vs)
+
+print(largest([3, 9, 4]))
+print(largest(["pear", "apple", "zucchini"]))
+print(largest([2.5, -1.0]))
+print(largest([(1, "b"), (1, "c"), (0, "z")]))
+let empty: list[int] = []
+print(largest(empty))
+
+let versions = [Version(1, 4), Version(2, 0), Version(1, 10)]
+if largest(versions) is some v:
+    print(v.label())
+
+# A class with __lt__ supports < and > directly, and sorting.
+let a = Version(1, 2)
+let b = Version(1, 3)
+print(a < b, a > b, b > a, b < a)
+print(labels(sorted(versions)))
+print(labels(sorted(versions, reverse=True)))
+versions.sort()
+print(labels(versions))
+print(sorted(["b", "a"], key=lambda s: Version(len(s), 0)) == ["b", "a"])

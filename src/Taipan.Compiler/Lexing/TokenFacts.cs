@@ -65,6 +65,7 @@ public static class TokenFacts
         [TokenKind.QuestionQuestion] = "??",
         [TokenKind.Question] = "?",
         [TokenKind.Dot] = ".",
+        [TokenKind.Ellipsis] = "...",
         [TokenKind.Comma] = ",",
         [TokenKind.Colon] = ":",
         [TokenKind.OpenParen] = "(",

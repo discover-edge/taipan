@@ -934,10 +934,18 @@ public sealed class CSharpEmitter
     }
 
     // sorted(xs, …) and xs.sort(…): key and reverse are C# named arguments, kept in source order.
+    // Classes sort by their __lt__, passed as `less` (SPEC §3.11).
     private string Sort(BoundSort sort)
     {
-        var method = (sort.InPlace ? "Sort" : "Sorted") + (sort.Keywords.Any(k => k.Name == "key") ? "By" : "");
+        var key = sort.Keywords.FirstOrDefault(k => k.Name == "key").Value;
+        var method = (sort.InPlace ? "Sort" : "Sorted") + (key is not null ? "By" : "");
         var arguments = sort.Keywords.Select(k => $"{k.Name}: {Expr(k.Value)}").Prepend(Expr(sort.List));
+        var sorted = key is not null ? ((FunctionType)TypeChecker.Unwrap(Concrete(key.Type))).Result : ((ListOfType)Concrete(sort.List.Type)).Element;
+        if (sorted is ClassType)
+        {
+            var (a, b) = (_locals.Fresh("a"), _locals.Fresh("b"));
+            arguments = arguments.Append($"less: static (@{a}, @{b}) => @{a}.@__lt__(@{b})");
+        }
         return $"{Runtime}.Ops.{method}({string.Join(", ", arguments)})";
     }
 
@@ -1216,6 +1224,14 @@ public sealed class CSharpEmitter
         var compared = TypeChecker.Unwrap(leftType) is NoneType ? TypeChecker.Unwrap(Concrete(binary.Right.Type)) : TypeChecker.Unwrap(leftType);
         var structural = compared is ListOfType or DictOfType or ClassType or EnumType or TupleOfType or FunctionType;
         var tuple = leftType is TupleOfType;
+        // A class's __lt__ (SPEC §3.11): 'a > b' evaluates a, then b, and calls b.__lt__(a).
+        if (binary.Op is BinaryOp.Less && leftType is ClassType)
+            return $"{left}.@__lt__({r})";
+        if (binary.Op is BinaryOp.Greater && leftType is ClassType)
+        {
+            var (first, second) = (_locals.Fresh("left"), _locals.Fresh("right"));
+            return $"{Runtime}.Ops.Reversed({l}, {r}, static (@{second}, @{first}) => @{second}.@__lt__(@{first}))";
+        }
         return binary.Op switch
         {
             BinaryOp.Add when leftType is ListOfType => $"{Runtime}.Ops.Concat({l}, {r})",

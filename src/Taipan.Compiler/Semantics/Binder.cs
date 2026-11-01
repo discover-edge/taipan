@@ -22,7 +22,7 @@ public sealed record BindResult(BoundProgram Program, ImmutableArray<Diagnostic>
 public sealed class Binder
 {
     private static readonly BigInteger MaxInt = long.MaxValue;
-    private static readonly HashSet<string> BuiltinTypeNames = ["int", "float", "bool", "str", "list", "dict", "py", "Callable", "tuple"];
+    private static readonly HashSet<string> BuiltinTypeNames = ["int", "float", "bool", "str", "list", "dict", "py", "Callable", "tuple", "Protocol", "Self"];
 
     private DiagnosticBag _diagnostics = new();
     private readonly Scope _builtins = new(null);
@@ -50,6 +50,9 @@ public sealed class Binder
         public List<(ClassDef Syntax, ClassSymbol Symbol)> ClassDefs { get; } = [];
 
         public List<(EnumDef Syntax, EnumSymbol Symbol)> EnumDefs { get; } = [];
+
+        /// <summary>Each protocol a class declares in its base list, where it's written (SPEC §3.11).</summary>
+        public List<(ClassSymbol Class, ClassSymbol Protocol, TextSpan Span)> DeclaredProtocols { get; } = [];
 
         public List<BoundConstant> Constants { get; } = [];
 
@@ -125,6 +128,7 @@ public sealed class Binder
             _builtins.Declare(builtin);
         foreach (var exception in BuiltinClasses.All)
             _builtins.Declare(exception);
+        _builtins.Declare(BuiltinClasses.Comparable);
         _diagnostics.FileOrder = [.. files.Select(f => f.Source)];
 
         var modules = files.Select(f => new Module(f, new Scope(_builtins))).ToList();
@@ -155,7 +159,7 @@ public sealed class Binder
         {
             Enter(module);
             foreach (var (syntax, symbol) in module.ClassDefs)
-                BindBase(syntax, symbol);
+                BindBase(module, syntax, symbol);
         }
         BreakInheritanceCycles(modules);
 
@@ -169,8 +173,15 @@ public sealed class Binder
         foreach (var module in modules)
         {
             Enter(module);
-            foreach (var (syntax, symbol) in module.ClassDefs)
+            foreach (var (syntax, symbol) in module.ClassDefs.Where(c => !c.Symbol.IsProtocol))
                 CheckInheritance(syntax, symbol, module.Methods.Where(m => m.Symbol.Owner == symbol));
+        }
+
+        // Classes against the protocols they declare, and inherit declarations of (SPEC §3.11).
+        foreach (var module in modules)
+        {
+            Enter(module);
+            CheckDeclaredProtocols(module);
         }
 
         foreach (var module in modules)
@@ -197,7 +208,7 @@ public sealed class Binder
                 BindDefaults(symbol, syntax.Params, symbol.TypeParameters);
             foreach (var (syntax, symbol) in module.Methods)
                 BindDefaults(symbol, syntax.Params, symbol.Owner!.TypeParameters);
-            foreach (var (syntax, symbol) in module.ClassDefs)
+            foreach (var (syntax, symbol) in module.ClassDefs.Where(c => !c.Symbol.IsProtocol))
                 BindFieldDefaults(syntax, symbol);
         }
 
@@ -207,7 +218,8 @@ public sealed class Binder
         {
             Enter(module);
             functions.AddRange(module.Functions.SelectMany(f => BindFunctionBodies(f.Symbol, f.Syntax)));
-            classes.AddRange(module.ClassDefs.Select(c => new BoundClass(
+            // A protocol has no bodies and no C# form (SPEC §8).
+            classes.AddRange(module.ClassDefs.Where(c => !c.Symbol.IsProtocol).Select(c => new BoundClass(
                 c.Symbol,
                 [.. module.Methods.Where(m => m.Symbol.Owner == c.Symbol).Select(m => BindMethodBody(c.Symbol, m.Syntax, m.Symbol))],
                 c.Syntax.Span)));
@@ -349,8 +361,37 @@ public sealed class Binder
                 _diagnostics.ReportShadowing(name.Span, name.Text);
             if (!allowConstraints && !parameter.Constraints.IsEmpty)
                 _diagnostics.ReportConstraintNotOnFunction(parameter.Constraints[0].Span);
+            if (!allowConstraints && parameter.Bound is { } bound)
+                _diagnostics.ReportBoundNotOnFunction(bound.Span);
         }
     }
+
+    /// <summary>A function's protocol bounds (SPEC §3.11): anything but a protocol is TP0220.</summary>
+    private void BindBounds(ImmutableArray<TypeParam> syntax, ImmutableArray<TypeParameterSymbol> symbols)
+    {
+        foreach (var (parameter, symbol) in syntax.Zip(symbols))
+        {
+            if (parameter.Bound is not { } bound)
+                continue;
+            if (PeekClass(bound) is { IsProtocol: true } protocol)
+            {
+                symbol.Bound = protocol;
+                continue;
+            }
+            var type = BindType(bound);
+            if (!type.ContainsError)
+                _diagnostics.ReportNotProtocol(bound.Span, type, type is ClassType);
+        }
+    }
+
+    /// <summary>The class or protocol a plain or qualified type name refers to, without reporting anything.</summary>
+    private ClassSymbol? PeekClass(TypeSyntax type) => type switch
+    {
+        NamedType named when !_typeParameters.ContainsKey(named.Name.Text) => ResolveTypeName(named.Name.Text) as ClassSymbol,
+        QualifiedType { Type: NamedType named } qualified when _scope.Lookup(qualified.Module.Text) is ModuleSymbol module
+            => module.Classes.GetValueOrDefault(named.Name.Text),
+        _ => null,
+    };
 
     /// <summary>Binds and validates a function's constraint tuples (TP0220), with its type parameters in scope.</summary>
     private void BindConstraints(ImmutableArray<TypeParam> syntax, ImmutableArray<TypeParameterSymbol> symbols)
@@ -401,6 +442,19 @@ public sealed class Binder
 
     private ClassSymbol DeclareClass(ClassDef classDef)
     {
+        // A class whose base list names Protocol is a protocol (SPEC §3.11), which takes no decorators.
+        if (classDef.Bases.Any(IsProtocolMarker))
+        {
+            CheckDecorators(classDef.Decorators, allowed: null);
+            if (!classDef.TypeParams.IsEmpty)
+                _diagnostics.ReportGenericProtocol(classDef.TypeParams[0].Span);
+            var protocol = BuiltinClasses.Protocol(classDef.Name.Text);
+            if (BuiltinTypeNames.Contains(protocol.Name))
+                _diagnostics.ReportDuplicateDefinition(classDef.Name.Span, protocol.Name);
+            else if (DeclareGlobal(classDef.Name, protocol))
+                _classes[protocol.Name] = protocol;
+            return protocol;
+        }
         var isDataclass = CheckDecorators(classDef.Decorators, "dataclass");
         var symbol = new ClassSymbol(classDef.Name.Text, NewTypeParameters(classDef.TypeParams), isDataclass);
         if (BuiltinTypeNames.Contains(symbol.Name))
@@ -433,17 +487,48 @@ public sealed class Binder
         return found;
     }
 
+    private static bool IsProtocolMarker(TypeSyntax type) => type is NamedType { Name.Text: "Protocol" };
+
     /// <summary>
-    /// A class's base (SPEC §4.3): one non-generic class of the same kind, for a class that isn't
-    /// itself generic. Anything else is TP0225, and the class is bound without a base.
+    /// A class's base list (SPEC §4.3, §3.11): the protocols it declares, and at most one base: a
+    /// non-generic class of the same kind, for a class that isn't itself generic. Anything else is
+    /// TP0225, and the class is bound without a base. A protocol's only base is <c>Protocol</c>.
     /// </summary>
-    private void BindBase(ClassDef classDef, ClassSymbol symbol)
+    private void BindBase(Module module, ClassDef classDef, ClassSymbol symbol)
     {
-        if (classDef.Bases.IsEmpty)
+        if (symbol.IsProtocol)
+        {
+            foreach (var other in classDef.Bases.Where(b => !IsProtocolMarker(b)))
+                _diagnostics.ReportProtocolBase(other.Span);
             return;
-        if (classDef.Bases.Length > 1)
-            _diagnostics.ReportMultipleBases(classDef.Bases[1].Span);
-        var syntax = classDef.Bases[0];
+        }
+        var protocols = ImmutableArray.CreateBuilder<ClassSymbol>();
+        var bases = new List<TypeSyntax>();
+        foreach (var syntax in classDef.Bases)
+        {
+            if (PeekClass(syntax) is not { IsProtocol: true } protocol)
+            {
+                bases.Add(syntax);
+                continue;
+            }
+            if (protocols.Contains(protocol))
+            {
+                _diagnostics.ReportProtocolRepeated(syntax.Span, protocol.Name, declaredBy: null);
+                continue;
+            }
+            protocols.Add(protocol);
+            module.DeclaredProtocols.Add((symbol, protocol, syntax.Span));
+        }
+        symbol.Protocols = protocols.ToImmutable();
+        if (bases.Count == 0)
+            return;
+        if (bases.Count > 1)
+            _diagnostics.ReportMultipleBases(bases[1].Span);
+        BindBaseClass(bases[0], symbol);
+    }
+
+    private void BindBaseClass(TypeSyntax syntax, ClassSymbol symbol)
+    {
         if (!symbol.TypeParameters.IsEmpty)
         {
             _diagnostics.ReportGenericWithBase(syntax.Span);
@@ -486,7 +571,7 @@ public sealed class Binder
                 {
                     if (ancestor != symbol)
                         continue;
-                    _diagnostics.ReportInheritanceCycle(syntax.Bases[0].Span, symbol.Name);
+                    _diagnostics.ReportInheritanceCycle(syntax.Bases.First(b => PeekClass(b) is not { IsProtocol: true }).Span, symbol.Name);
                     symbol.Base = null;
                     break;
                 }
@@ -619,6 +704,7 @@ public sealed class Binder
         var typeParameters = NewTypeParameters(funcDef.TypeParams);
         var outer = EnterTypeParameters(typeParameters);
         BindConstraints(funcDef.TypeParams, typeParameters);
+        BindBounds(funcDef.TypeParams, typeParameters);
         var symbol = new FunctionSymbol(
             funcDef.Name.Text, BindParams(funcDef.Params), BindReturnType(funcDef.ReturnType), typeParameters: typeParameters)
         {
@@ -663,6 +749,8 @@ public sealed class Binder
 
     private List<(MethodDef, FunctionSymbol)> BindClassMembers(ClassDef classDef, ClassSymbol symbol)
     {
+        if (symbol.IsProtocol)
+            return BindProtocolMembers(classDef, symbol);
         CheckTypeParameters(classDef.TypeParams, allowConstraints: false);
         var outer = EnterTypeParameters(symbol.TypeParameters);
         var names = new HashSet<string>();
@@ -708,8 +796,16 @@ public sealed class Binder
                 if (isOverride)
                     _diagnostics.ReportInitOverride(method.Name.Span);
             }
-            // Other special methods are deferred to protocols (SPEC §4.3, M17).
-            else if (name.Length > 4 && name.StartsWith("__", StringComparison.Ordinal) && name.EndsWith("__", StringComparison.Ordinal))
+            // __lt__ takes the class or a base, for '<', '>' and sorting (SPEC §3.11).
+            else if (name == "__lt__")
+            {
+                if (IsLessThan(methodSymbol, other => other == symbol.Type || other is ClassType { Symbol: var c } && c != symbol && symbol.DerivesFrom(c)))
+                    symbol.Methods[name] = methodSymbol;
+                else
+                    _diagnostics.ReportLessThanSignature(method.Name.Span, symbol.Name);
+            }
+            // Other special methods are deferred (SPEC §4.3).
+            else if (IsSpecialName(name))
             {
                 _diagnostics.ReportSpecialMethod(method.Name.Span, name);
             }
@@ -720,6 +816,156 @@ public sealed class Binder
         }
         _typeParameters = outer;
         return methods;
+    }
+
+    private static bool IsSpecialName(string name) =>
+        name.Length > 4 && name.StartsWith("__", StringComparison.Ordinal) && name.EndsWith("__", StringComparison.Ordinal);
+
+    /// <summary>Whether a <c>__lt__</c> takes one parameter of an accepted type and returns bool.</summary>
+    private static bool IsLessThan(FunctionSymbol method, Func<TaipanType, bool> accepts) =>
+        method.Parameters is [var other] && (other.Type.ContainsError || accepts(other.Type))
+        && (method.ReturnType == TaipanType.Bool || method.ReturnType.ContainsError);
+
+    /// <summary>
+    /// A protocol's methods (SPEC §3.11): signatures in which <c>Self</c> is the satisfying type,
+    /// each with <c>...</c> as its body and no defaults. Its fields are TP0225.
+    /// </summary>
+    private List<(MethodDef, FunctionSymbol)> BindProtocolMembers(ClassDef classDef, ClassSymbol symbol)
+    {
+        foreach (var field in classDef.Fields)
+            _diagnostics.ReportProtocolMember(field.Span);
+        var outer = EnterTypeParameters([symbol.SelfParameter!]);
+        // A generic protocol was already reported; its type parameters aren't reported again.
+        foreach (var parameter in classDef.TypeParams)
+            _typeParameters.TryAdd(parameter.Name.Text, TaipanType.Error);
+        var methods = new List<(MethodDef, FunctionSymbol)>();
+        foreach (var method in classDef.Methods)
+        {
+            var name = method.Name.Text;
+            CheckDecorators(method.Decorators, allowed: null);
+            foreach (var parameter in method.Params.Where(p => p.Default is not null))
+                _diagnostics.ReportProtocolDefault(parameter.Default!.Span);
+            if (method.Body.Statements is not [ExprStmt { Expr: EllipsisExpr }])
+                _diagnostics.ReportProtocolBody(method.Body.Statements.FirstOrDefault()?.Span ?? method.Name.Span);
+            var self = new VariableSymbol("self", symbol.Type, VariableKind.Parameter);
+            var methodSymbol = new FunctionSymbol(name, BindParams(method.Params), BindReturnType(method.ReturnType), self: self);
+            if (symbol.Methods.ContainsKey(name))
+                _diagnostics.ReportDuplicateDefinition(method.Name.Span, name);
+            else if (name == "__lt__" && !IsLessThan(methodSymbol, other => other == symbol.SelfParameter!.Type))
+                _diagnostics.ReportLessThanSignature(method.Name.Span, "Self");
+            else if (name != "__lt__" && IsSpecialName(name))
+                _diagnostics.ReportSpecialMethod(method.Name.Span, name);
+            else
+                symbol.Methods[name] = methodSymbol;
+        }
+        _typeParameters = outer;
+        return methods;
+    }
+
+    /// <summary>
+    /// Each class against the protocols it declares, at the declaration, and against those its base
+    /// classes declare, at its name (SPEC §3.11). A class whose base already fails isn't reported again.
+    /// </summary>
+    private void CheckDeclaredProtocols(Module module)
+    {
+        foreach (var (symbol, protocol, span) in module.DeclaredProtocols)
+        {
+            if (Ancestors(symbol).FirstOrDefault(a => a.Protocols.Contains(protocol)) is { } declarer)
+                _diagnostics.ReportProtocolRepeated(span, protocol.Name, declarer.Name);
+            else if (Unsatisfied(symbol.Type, protocol) is { } why)
+                _diagnostics.ReportUnsatisfied(span, symbol.Type, protocol.Name, declaredBy: null, why);
+        }
+        foreach (var (syntax, symbol) in module.ClassDefs.Where(c => !c.Symbol.IsProtocol))
+        {
+            var checkedProtocols = new HashSet<ClassSymbol>(symbol.Protocols);
+            foreach (var ancestor in Ancestors(symbol))
+            {
+                foreach (var protocol in ancestor.Protocols.Where(checkedProtocols.Add))
+                {
+                    if (Unsatisfied(ancestor.Type, protocol) is null && Unsatisfied(symbol.Type, protocol) is { } why)
+                        _diagnostics.ReportUnsatisfied(syntax.Name.Span, symbol.Type, protocol.Name, ancestor.Name, why);
+                }
+            }
+        }
+    }
+
+    private static IEnumerable<ClassSymbol> Ancestors(ClassSymbol symbol)
+    {
+        for (var ancestor = symbol.Base; ancestor is not null; ancestor = ancestor.Base)
+            yield return ancestor;
+    }
+
+    /// <summary>
+    /// Why <paramref name="type"/> doesn't satisfy <paramref name="protocol"/> (SPEC §3.11), naming
+    /// the first of its methods that's missing or doesn't fit; null if it does.
+    /// </summary>
+    private static string? Unsatisfied(TaipanType type, ClassSymbol protocol)
+    {
+        if (type.ContainsError)
+            return null;
+        var self = new Dictionary<TypeParameterSymbol, TaipanType> { [protocol.SelfParameter!] = type };
+        foreach (var required in protocol.Methods.Values)
+        {
+            if (MethodOf(type, required.Name) is not var (method, map))
+                return $"it has no method '{required.Name}'";
+            if (!Fits(required, self, method, map))
+                return $"'{required.Name}' must be '{Signature(required, self)}'";
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// A method of a type, with the substitution its signature needs, for protocols: a class's own
+    /// or inherited method, a bounded type parameter's protocol method, or the built-in <c>__lt__</c>
+    /// of an ordered type (SPEC §3.11).
+    /// </summary>
+    private static (FunctionSymbol Method, Dictionary<TypeParameterSymbol, TaipanType> Map)? MethodOf(TaipanType type, string name)
+    {
+        switch (type)
+        {
+            case ClassType { Symbol: { IsProtocol: false } symbol } classType when symbol.FindMethod(name) is { } method:
+                return (method, TypeChecker.MapOf(classType));
+            case TypeParameterType { Symbol.Bound: { } bound } parameter when bound.Methods.GetValueOrDefault(name) is { } method:
+                return (method, new() { [bound.SelfParameter!] = parameter });
+            case var ordered when ordered.IsOrdered && name == "__lt__":
+                var comparable = BuiltinClasses.Comparable;
+                return (comparable.Methods[name], new() { [comparable.SelfParameter!] = ordered });
+            default:
+                return null;
+        }
+    }
+
+    /// <summary>
+    /// Whether a method can stand in for a protocol's: the same parameter names, each taking the
+    /// protocol's type or a base class of it, and a result that's the same or a derived class.
+    /// </summary>
+    private static bool Fits(FunctionSymbol required, Dictionary<TypeParameterSymbol, TaipanType> self,
+        FunctionSymbol method, Dictionary<TypeParameterSymbol, TaipanType> map)
+    {
+        static bool IsClass(TaipanType type) => TypeChecker.Unwrap(type) is ClassType;
+        if (method.Parameters.Length != required.Parameters.Length)
+            return false;
+        for (var i = 0; i < method.Parameters.Length; i++)
+        {
+            var (expected, actual) = (TypeChecker.Substitute(required.Parameters[i].Type, self), TypeChecker.Substitute(method.Parameters[i].Type, map));
+            if (method.Parameters[i].Name != required.Parameters[i].Name)
+                return false;
+            if (expected != actual && !actual.ContainsError && !(IsClass(expected) && IsClass(actual) && TypeChecker.IsAssignable(expected, actual)))
+                return false;
+        }
+        var (result, actualResult) = (TypeChecker.Substitute(required.ReturnType, self), TypeChecker.Substitute(method.ReturnType, map));
+        if (result is NothingType)
+            return actualResult is NothingType;
+        return result == actualResult || actualResult.ContainsError
+            || IsClass(result) && IsClass(actualResult) && TypeChecker.IsAssignable(actualResult, result);
+    }
+
+    /// <summary>A protocol method's signature with <c>Self</c> replaced: <c>def scaled(self, k: float) -> Cube</c>.</summary>
+    private static string Signature(FunctionSymbol method, Dictionary<TypeParameterSymbol, TaipanType> self)
+    {
+        var parameters = string.Concat(method.Parameters.Select(p => $", {p.Name}: {TypeChecker.Substitute(p.Type, self)}"));
+        var result = method.ReturnType is NothingType ? "" : $" -> {TypeChecker.Substitute(method.ReturnType, self)}";
+        return $"def {method.Name}(self{parameters}){result}";
     }
 
     /// <summary>
@@ -914,7 +1160,8 @@ public sealed class Binder
             DeclareLocal(parameters[i].Name, parameterSymbols[i]);
 
         var boundBody = BindBlock(body);
-        if (symbol.ReturnType != TaipanType.Nothing && !TypeChecker.Terminates(boundBody))
+        var stub = body.Statements is [ExprStmt { Expr: EllipsisExpr }];
+        if (symbol.ReturnType != TaipanType.Nothing && !stub && !TypeChecker.Terminates(boundBody))
             _diagnostics.ReportNotAllPathsReturn(name.Span, symbol.Name);
 
         _function = null;
@@ -1117,6 +1364,12 @@ public sealed class Binder
             return TaipanType.Error;
         }
 
+        // A protocol only bounds type parameters (SPEC §3.11).
+        if (symbol is ClassSymbol { IsProtocol: true })
+        {
+            _diagnostics.ReportProtocolAsType(span, name.Text);
+            return TaipanType.Error;
+        }
         if (arguments.Length != parameters.Length)
         {
             _diagnostics.ReportWrongTypeArgumentCount(span, name.Text, parameters.Length, arguments.Length);
@@ -1443,6 +1696,11 @@ public sealed class Binder
         if (classSymbol is null)
         {
             _diagnostics.ReportNotAClass(pattern.Span, name);
+            return invalid;
+        }
+        if (classSymbol.IsProtocol)
+        {
+            _diagnostics.ReportProtocolAsType(pattern.Variant.Span, classSymbol.Name);
             return invalid;
         }
         if (pattern.Bindings is not { } names)
@@ -1930,6 +2188,11 @@ public sealed class Binder
         }
         if (NamedClass(type) is { } symbol)
         {
+            if (symbol.IsProtocol)
+            {
+                _diagnostics.ReportProtocolAsType(type.Span, symbol.Name);
+                return null;
+            }
             if (BuiltinClasses.IsException(symbol))
                 return symbol;
             _diagnostics.ReportNotExceptionClass(type.Span, display);
@@ -2423,8 +2686,15 @@ public sealed class Binder
         TupleExpr tuple => BindTuple(tuple, expected),
         SliceExpr slice => BindSlice(slice),
         ErrorExpr => new BoundErrorExpr(expr.Span),
+        EllipsisExpr => MisplacedEllipsis(expr.Span),
         _ => throw new InvalidOperationException($"unexpected expression {expr.GetType().Name}"),
     };
+
+    private BoundErrorExpr MisplacedEllipsis(TextSpan span)
+    {
+        _diagnostics.ReportMisplacedEllipsis(span);
+        return new BoundErrorExpr(span);
+    }
 
     private BoundErrorExpr UnsupportedExpr(string feature, TextSpan span)
     {
@@ -2689,6 +2959,17 @@ public sealed class Binder
 
     private TaipanType CheckOrdered(BoundExpr left, BinaryOp op, BoundExpr right, TextSpan span)
     {
+        // A class with __lt__, or a type parameter bounded by a protocol with it (SPEC §3.11):
+        // 'a < b' is a.__lt__(b), and 'a > b' is b.__lt__(a).
+        var (receiver, argument) = op == BinaryOp.Greater ? (right.Type, left.Type) : (left.Type, right.Type);
+        if (op is BinaryOp.Less or BinaryOp.Greater && LessThanParameter(receiver) is { } parameter
+            && (TypeChecker.IsAssignable(argument, parameter) || argument.ContainsError))
+            return TaipanType.Bool;
+        if (op is BinaryOp.LessEqual or BinaryOp.GreaterEqual && (LessThanParameter(left.Type) ?? LessThanParameter(right.Type)) is not null)
+        {
+            _diagnostics.ReportBinaryOperatorTypes(span, TypeChecker.Display(op), left.Type, right.Type, "'__lt__' defines only '<' and '>'");
+            return TaipanType.Error;
+        }
         if (!TypeChecker.AreComparable(left.Type, right.Type))
         {
             _diagnostics.ReportCannotCompare(span, left.Type, right.Type);
@@ -3030,6 +3311,13 @@ public sealed class Binder
         }
         foreach (var parameter in typeParameters.Where(p => !p.Constraints.IsEmpty))
             map[parameter] = CheckConstraint(parameter, map[parameter], nameSpan);
+        foreach (var parameter in typeParameters.Where(p => p.Bound is not null))
+        {
+            if (Unsatisfied(map[parameter], parameter.Bound!) is not { } why)
+                continue;
+            _diagnostics.ReportUnsatisfied(nameSpan, map[parameter], parameter.Bound!.Name, declaredBy: null, why);
+            map[parameter] = TaipanType.Error;
+        }
         for (var i = 0; i < bound.Length; i++)
         {
             var parameter = TypeChecker.Substitute(parameterTypes[i], map);
@@ -3322,6 +3610,12 @@ public sealed class Binder
     /// </summary>
     private BoundExpr BindConstruct(CallExpr call, ClassSymbol classSymbol, TaipanType? expected, TextSpan nameSpan)
     {
+        if (classSymbol.IsProtocol)
+        {
+            BindArguments(call);
+            _diagnostics.ReportProtocolAsType(nameSpan, classSymbol.Name);
+            return new BoundErrorExpr(call.Span);
+        }
         if (classSymbol.IsDataclass)
         {
             var (arguments, isKeyword, map) = BindFieldArguments(
@@ -3398,6 +3692,9 @@ public sealed class Binder
                 return null;
             case ClassSymbol { TypeParameters.IsEmpty: false } generic:
                 _diagnostics.ReportGenericClassTest(expr.Span, generic.Name);
+                return null;
+            case ClassSymbol { IsProtocol: true } protocol:
+                _diagnostics.ReportProtocolAsType(expr.Span, protocol.Name);
                 return null;
             case ClassSymbol classSymbol:
                 return CheckRelated(new ClassType(classSymbol), tested, expr.Span);
@@ -3617,6 +3914,27 @@ public sealed class Binder
             return new BoundErrorExpr(call.Span);
         }
 
+        // __lt__ is reached through '<' and '>' (SPEC §3.11).
+        if (name == "__lt__" && target.Type is ClassType or TypeParameterType)
+        {
+            BindArguments(call);
+            _diagnostics.ReportSpecialMethodCalled(member.Member.Span, name);
+            return new BoundErrorExpr(call.Span);
+        }
+
+        // A bounded type parameter has its protocol's methods, with Self as the parameter (SPEC §3.11).
+        if (target.Type is TypeParameterType { Symbol.Bound: { } bound } && bound.Methods.GetValueOrDefault(name) is { } required)
+        {
+            var self = new Dictionary<TypeParameterSymbol, TaipanType> { [bound.SelfParameter!] = target.Type };
+            var resultType = TypeChecker.Substitute(required.ReturnType, self);
+            if (MatchArguments(call, required, name, member.Member.Span) is not { } requiredShape)
+                return new BoundMethodCall(target, required, BindArguments(call), resultType, call.Span);
+            var requiredArguments = call.Arguments
+                .Select((a, i) => BindExpected(a.Value, TypeChecker.Substitute(required.Parameters[requiredShape.Parameters[i]].Type, self)))
+                .ToImmutableArray();
+            return new BoundMethodCall(target, required, requiredArguments, resultType, call.Span) { Shape = Simplify(requiredShape) };
+        }
+
         if (target.Type is ClassType { Symbol: var classSymbol })
         {
             // A field holding a function is called like a method (SPEC §3.7).
@@ -3744,7 +4062,14 @@ public sealed class Binder
         return new BoundSort(list, keywords.ToImmutable(), InPlace: target is not null, type, call.Span);
     }
 
-    private static bool IsSortable(TaipanType type) => type.IsOrdered;
+    private static bool IsSortable(TaipanType type) =>
+        type.IsOrdered || LessThanParameter(type) is { } parameter && TypeChecker.IsAssignable(type, parameter);
+
+    /// <summary>The parameter type of a class's or bounded type parameter's <c>__lt__</c>, if it has one (SPEC §3.11).</summary>
+    private static TaipanType? LessThanParameter(TaipanType type) =>
+        type is ClassType or TypeParameterType && MethodOf(type, "__lt__") is var (method, map)
+            ? TypeChecker.Substitute(method.Parameters[0].Type, map)
+            : null;
 
     /// <summary>The element type of a list argument; TP0200 (or TP0203) and the error type for anything else.</summary>
     private TaipanType RequireList(BoundExpr list, TextSpan span)

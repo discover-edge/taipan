@@ -1,0 +1,19 @@
+class Animal:
+    pass
+
+def a[T: Animal](x: T) -> T:
+    return x
+
+def b[T: int](x: T) -> T:
+    return x
+
+def c[T: list[Comparable]](x: T) -> T:
+    return x
+
+@dataclass
+class Box[T: Comparable]:
+    item: T
+
+enum Maybe[T: Comparable]:
+    Just(value: T)
+    Nothing

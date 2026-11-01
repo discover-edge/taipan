@@ -122,6 +122,17 @@ public sealed class ClassSymbol(string name, ImmutableArray<TypeParameterSymbol>
     /// <summary>For a built-in class (SPEC §3.10), the C# class in <c>Taipan.Runtime</c> that implements it.</summary>
     public string? RuntimeName { get; init; }
 
+    /// <summary>
+    /// For a protocol (SPEC §3.11), the type <c>Self</c> stands for in its methods' signatures;
+    /// null for a class. A protocol has methods and nothing else.
+    /// </summary>
+    public TypeParameterSymbol? SelfParameter { get; init; }
+
+    public bool IsProtocol => SelfParameter is not null;
+
+    /// <summary>The protocols the class declares in its base list (SPEC §3.11), checked at its definition.</summary>
+    public ImmutableArray<ClassSymbol> Protocols { get; set; } = [];
+
     /// <summary>The base class, if any; never part of a cycle once the declarations are checked.</summary>
     public ClassSymbol? Base { get; set; }
 
@@ -244,6 +255,21 @@ public static class BuiltinClasses
 
     /// <summary>Whether <paramref name="symbol"/> is <c>Exception</c> or derives from it.</summary>
     public static bool IsException(ClassSymbol symbol) => symbol.DerivesFrom(Exception);
+
+    /// <summary>The built-in protocol <c>Comparable</c>: <c>def __lt__(self, other: Self) -> bool</c> (SPEC §3.11).</summary>
+    public static ClassSymbol Comparable { get; } = CreateComparable();
+
+    private static ClassSymbol CreateComparable()
+    {
+        var comparable = Protocol("Comparable");
+        var self = new VariableSymbol("self", comparable.Type, VariableKind.Parameter);
+        var other = new VariableSymbol("other", comparable.SelfParameter!.Type, VariableKind.Parameter);
+        comparable.Methods["__lt__"] = new FunctionSymbol("__lt__", [other], TaipanType.Bool, self: self);
+        return comparable;
+    }
+
+    /// <summary>A protocol with no methods yet, and its own <c>Self</c>.</summary>
+    public static ClassSymbol Protocol(string name) => new(name, [], isDataclass: false) { SelfParameter = new TypeParameterSymbol("Self") };
 }
 
 /// <summary>Built-in methods of list, dict and str (SPEC §6).</summary>
@@ -288,6 +314,9 @@ public sealed class TypeParameterSymbol(string name) : Symbol(name)
 
     /// <summary>The types a constrained parameter can stand for (SPEC §3.6); empty if unconstrained.</summary>
     public ImmutableArray<TaipanType> Constraints { get; set; } = [];
+
+    /// <summary>The protocol a bounded parameter's type arguments must satisfy (SPEC §3.11); null if unbounded.</summary>
+    public ClassSymbol? Bound { get; set; }
 }
 
 /// <summary>

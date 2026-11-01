@@ -1,0 +1,13 @@
+tests/cases/m17/tp0225_protocols.tpn:5:5: error TP0225: a protocol can only declare methods
+tests/cases/m17/tp0225_protocols.tpn:7:9: error TP0225: a protocol method's body must be '...'
+tests/cases/m17/tp0225_protocols.tpn:8:33: error TP0225: protocol method parameters cannot have defaults
+tests/cases/m17/tp0225_protocols.tpn:9:9: error TP0225: special method '__init__' is not supported
+tests/cases/m17/tp0225_protocols.tpn:10:9: error TP0225: special method '__eq__' is not supported
+tests/cases/m17/tp0225_protocols.tpn:11:9: error TP0225: '__lt__' must take one parameter of type 'Self' (or a base class) and return bool
+tests/cases/m17/tp0225_protocols.tpn:13:12: error TP0225: protocols cannot be generic
+tests/cases/m17/tp0225_protocols.tpn:16:11: error TP0225: a protocol can only derive from 'Protocol'
+tests/cases/m17/tp0225_protocols.tpn:20:9: error TP0225: '__lt__' must take one parameter of type 'Bad' (or a base class) and return bool
+tests/cases/m17/tp0225_protocols.tpn:24:9: error TP0225: '__lt__' must take one parameter of type 'Worse' (or a base class) and return bool
+tests/cases/m17/tp0225_protocols.tpn:28:9: error TP0225: '__lt__' must take one parameter of type 'Worst' (or a base class) and return bool
+tests/cases/m17/tp0225_protocols.tpn:31:25: error TP0225: 'Comparable' is already declared
+tests/cases/m17/tp0225_protocols.tpn:39:22: error TP0225: 'Comparable' is already declared by 'Ordered'
