@@ -1,5 +1,6 @@
 # Compound assignment evaluates the target's sub-expressions once (SPEC §4.6).
-struct Counter:
+@dataclass
+class Counter:
     n: int
 
 var calls = 0

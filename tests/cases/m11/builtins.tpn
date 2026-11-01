@@ -1,6 +1,7 @@
 # sorted, list.sort, map and filter (SPEC §6).
 
-struct Service:
+@dataclass
+class Service:
     name: str
     replicas: int
     healthy: int

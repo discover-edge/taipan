@@ -1,4 +1,5 @@
-struct Item:
+@dataclass
+class Item:
     x: int
 
 def f[Item](x: Item) -> Item:
@@ -7,5 +8,6 @@ def f[Item](x: Item) -> Item:
 def g[T, T](x: T):
     pass
 
-struct Bad[int]:
+@dataclass
+class Bad[int]:
     v: int

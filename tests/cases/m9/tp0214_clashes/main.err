@@ -1,4 +1,4 @@
 tests/cases/m9/tp0214_clashes/main.tpn:2:17: error TP0214: duplicate definition of 'f'
 tests/cases/m9/tp0214_clashes/main.tpn:2:20: error TP0214: duplicate definition of 'Thing'
-tests/cases/m9/tp0214_clashes/main.tpn:10:5: error TP0214: duplicate definition of 'lib'
-tests/cases/m9/tp0214_clashes/main.tpn:13:17: error TP0214: duplicate definition of 'f'
+tests/cases/m9/tp0214_clashes/main.tpn:11:5: error TP0214: duplicate definition of 'lib'
+tests/cases/m9/tp0214_clashes/main.tpn:14:17: error TP0214: duplicate definition of 'f'

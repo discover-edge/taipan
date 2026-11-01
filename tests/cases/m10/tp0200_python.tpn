@@ -1,6 +1,7 @@
 from python import json
 
-struct Service:
+@dataclass
+class Service:
     name: str
 
 let svc = Service("api")

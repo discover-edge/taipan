@@ -1,0 +1,30 @@
+# Class pattern bindings (SPEC §5.1).
+class Plain:
+    a: int = 0
+
+@dataclass
+class Pair:
+    left: int
+    right: int
+
+def f(p: Plain, q: Pair):
+    match p:
+        Plain(x):
+            pass
+        _:
+            pass
+    match q:
+        Pair(a, b, c):
+            pass
+        _:
+            pass
+    match q:
+        Pair(a, left=b):
+            pass
+        _:
+            pass
+    match q:
+        Pair(middle=m):
+            pass
+        _:
+            pass

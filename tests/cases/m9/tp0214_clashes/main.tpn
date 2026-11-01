@@ -4,7 +4,8 @@ from lib import f, Thing
 def f():
     pass
 
-struct Thing:
+@dataclass
+class Thing:
     v: int
 
 def lib():

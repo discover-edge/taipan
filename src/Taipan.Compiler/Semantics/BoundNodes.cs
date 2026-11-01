@@ -10,12 +10,13 @@ namespace Taipan.Compiler.Semantics;
 public sealed record BoundProgram(
     ImmutableArray<BoundPythonImport> PythonImports,
     ImmutableArray<EnumSymbol> Enums,
-    ImmutableArray<BoundStruct> Structs,
+    ImmutableArray<BoundClass> Classes,
     ImmutableArray<BoundConstant> Constants,
     ImmutableArray<BoundFunction> Functions,
     BoundBlock TopLevel);
 
-public sealed record BoundStruct(StructSymbol Symbol, ImmutableArray<BoundFunction> Methods, TextSpan Span);
+/// <summary>A class; <see cref="Methods"/> includes its own <c>__init__</c>, if it writes one (SPEC §4.3).</summary>
+public sealed record BoundClass(ClassSymbol Symbol, ImmutableArray<BoundFunction> Methods, TextSpan Span);
 
 /// <summary><c>from python import m</c>: <see cref="Symbol"/> holds the module, imported at startup (SPEC §10.1).</summary>
 public sealed record BoundPythonImport(VariableSymbol Symbol, string Module, TextSpan Span, SourceText Source);
@@ -124,6 +125,9 @@ public sealed record BoundLiteralPattern(object Value) : BoundPattern;
 /// </summary>
 public sealed record BoundVariantPattern(VariantSymbol Variant, ImmutableArray<VariableSymbol?> Bindings) : BoundPattern;
 
+/// <summary>A class pattern (SPEC §5.1): the class, and each field it binds, in source order.</summary>
+public sealed record BoundClassPattern(ClassType Class, ImmutableArray<(FieldSymbol Field, VariableSymbol Binding)> Bindings) : BoundPattern;
+
 // ---- Expressions ----
 
 public abstract record BoundExpr(TaipanType Type, TextSpan Span);
@@ -171,9 +175,12 @@ public sealed record BoundListLiteral(ImmutableArray<BoundExpr> Elements, ListOf
 public sealed record BoundDictLiteral(ImmutableArray<(BoundExpr Key, BoundExpr Value)> Entries, DictOfType DictType, TextSpan Span)
     : BoundExpr(DictType, Span);
 
-/// <summary>A struct constructor call. Arguments are in source order, each with the field it sets.</summary>
-public sealed record BoundConstruct(StructType StructType, ImmutableArray<(FieldSymbol Field, BoundExpr Value)> Arguments, bool IsKeyword, TextSpan Span)
-    : BoundExpr(StructType, Span);
+/// <summary>
+/// A dataclass constructor call. Arguments are in source order, each with the field it sets; the
+/// fields left out take their defaults, after the arguments, in field order (SPEC §4.6).
+/// </summary>
+public sealed record BoundConstruct(ClassType ClassType, ImmutableArray<(FieldSymbol Field, BoundExpr Value)> Arguments, bool IsKeyword, TextSpan Span)
+    : BoundExpr(ClassType, Span);
 
 /// <summary>An enum value; arguments are in source order as for <see cref="BoundConstruct"/>.</summary>
 public sealed record BoundConstructVariant(VariantSymbol Variant, EnumType EnumType, ImmutableArray<(FieldSymbol Field, BoundExpr Value)> Arguments, bool IsKeyword, TextSpan Span)
@@ -239,6 +246,41 @@ public sealed record BoundSort(BoundExpr List, ImmutableArray<(string Name, Boun
 
 public sealed record BoundNone(TextSpan Span) : BoundExpr(TaipanType.None, Span);
 
+// ---- Classes (SPEC §4.3, M15) ----
+
+/// <summary>Constructing a plain class: its <see cref="Constructor"/> runs on the new object.</summary>
+public sealed record BoundNew(ClassType ClassType, FunctionSymbol Constructor, ImmutableArray<BoundExpr> Arguments, TextSpan Span)
+    : BoundExpr(ClassType, Span)
+{
+    /// <inheritdoc cref="BoundCall.Shape"/>
+    public ArgumentShape? Shape { get; init; }
+}
+
+/// <summary>
+/// <c>super().m(…)</c>: <see cref="Method"/> runs on <see cref="Self"/> without dispatching on its
+/// runtime class. For <c>super().__init__(…)</c> it's the base's constructor.
+/// </summary>
+public sealed record BoundSuperCall(FunctionSymbol Method, VariableSymbol Self, ImmutableArray<BoundExpr> Arguments, TaipanType Type, TextSpan Span)
+    : BoundExpr(Type, Span)
+{
+    /// <inheritdoc cref="BoundCall.Shape"/>
+    public ArgumentShape? Shape { get; init; }
+
+    public bool IsInit => Method.Name == "__init__";
+}
+
+/// <summary><c>isinstance(x, C)</c>.</summary>
+public sealed record BoundIsInstance(BoundExpr Operand, ClassType Class, TextSpan Span) : BoundExpr(TaipanType.Bool, Span);
+
+/// <summary>A name read where a condition has narrowed it (SPEC §3.9): <see cref="Value"/> is the variable.</summary>
+public sealed record BoundNarrowed(BoundVariable Value, TaipanType Type, TextSpan Span) : BoundExpr(Type, Span);
+
+/// <summary><c>x as C</c> or <c>x as C?</c> between classes; <see cref="BoundExpr.Type"/> is the target.</summary>
+public sealed record BoundClassCast(BoundExpr Value, TaipanType Type, TextSpan Span) : BoundExpr(Type, Span);
+
+/// <summary>A function value converted to another function type it's assignable to (SPEC §3.3).</summary>
+public sealed record BoundConvertFunction(BoundExpr Value, FunctionType FunctionType, TextSpan Span) : BoundExpr(FunctionType, Span);
+
 // ---- Python (SPEC §10) ----
 
 public sealed record BoundPyGetAttr(BoundExpr Target, string Name, TextSpan Span) : BoundExpr(TaipanType.Py, Span);
@@ -251,7 +293,7 @@ public sealed record BoundPyCall(BoundExpr Callee, ImmutableArray<BoundExpr> Arg
 /// <summary>A Taipan value converted to Python where a py is expected (SPEC §10.3).</summary>
 public sealed record BoundToPy(BoundExpr Value, TextSpan Span) : BoundExpr(TaipanType.Py, Span);
 
-/// <summary><c>x as T</c> (SPEC §10.4); <see cref="BoundExpr.Type"/> is the target.</summary>
+/// <summary><c>x as T</c> on a py value (SPEC §10.4); <see cref="BoundExpr.Type"/> is the target.</summary>
 public sealed record BoundCast(BoundExpr Value, TaipanType Type, TextSpan Span) : BoundExpr(Type, Span);
 
 /// <summary>
@@ -260,4 +302,5 @@ public sealed record BoundCast(BoundExpr Value, TaipanType Type, TextSpan Span) 
 /// </summary>
 public sealed record BoundIsSome(BoundExpr Operand, VariableSymbol Binding, TextSpan Span) : BoundExpr(TaipanType.Bool, Span);
 
-public sealed record BoundIsNone(BoundExpr Operand, TextSpan Span) : BoundExpr(TaipanType.Bool, Span);
+/// <summary><c>x is None</c>, or <c>x is not None</c> when <see cref="Negated"/> (SPEC §3.4).</summary>
+public sealed record BoundIsNone(BoundExpr Operand, bool Negated, TextSpan Span) : BoundExpr(TaipanType.Bool, Span);

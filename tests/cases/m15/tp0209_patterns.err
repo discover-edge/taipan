@@ -1,0 +1,4 @@
+tests/cases/m15/tp0209_patterns.tpn:12:9: error TP0209: 'Plain' is not a dataclass, so its fields can only be bound by name
+tests/cases/m15/tp0209_patterns.tpn:17:9: error TP0209: 'Pair' has 2 fields, found 3 bindings
+tests/cases/m15/tp0209_patterns.tpn:22:17: error TP0209: field 'left' is given more than once
+tests/cases/m15/tp0209_patterns.tpn:27:14: error TP0210: Pair has no field 'middle'

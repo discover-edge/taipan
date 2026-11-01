@@ -31,7 +31,7 @@ public sealed class CSharpEmitter
     // The file of the code being emitted, for #line directives (SPEC §4.7).
     private SourceText _lineSource;
 
-    // C# names for functions, constants, structs and enums. Definitions with the same name in
+    // C# names for functions, constants, classes and enums. Definitions with the same name in
     // different modules get numeric suffixes (SPEC §8).
     private readonly Dictionary<Symbol, string> _names = [];
     private readonly BoundProgram _program;
@@ -56,7 +56,7 @@ public sealed class CSharpEmitter
     private readonly Dictionary<string, string> _instanceNames = [];
     private readonly Queue<Instance> _pending = new();
     private readonly Dictionary<FunctionSymbol, List<BoundFunction>> _genericFunctions = [];
-    private readonly Dictionary<StructSymbol, BoundStruct> _structs = [];
+    private readonly Dictionary<ClassSymbol, BoundClass> _classes = [];
     private readonly DiagnosticBag _diagnostics = new();
     private int _depth;
     private TextSpan _rootSpan;
@@ -95,7 +95,7 @@ public sealed class CSharpEmitter
             .. program.PythonImports.Select(p => p.Symbol),
             .. program.Constants.Select(c => c.Symbol),
             .. program.Functions.Select(f => f.Symbol).Distinct(),
-            .. program.Structs.Select(s => s.Symbol),
+            .. program.Classes.Select(s => s.Symbol),
             .. program.Enums,
         ];
         foreach (var definition in definitions)
@@ -111,8 +111,8 @@ public sealed class CSharpEmitter
                 _genericFunctions[function.Symbol] = bodies = [];
             bodies.Add(function);
         }
-        foreach (var structDef in program.Structs)
-            _structs[structDef.Symbol] = structDef;
+        foreach (var classDef in program.Classes)
+            _classes[classDef.Symbol] = classDef;
         _programClass = UniqueGlobal("TaipanProgram");
         _topLevelMethod = UniqueGlobal("TopLevel");
         _entryClass = UniqueGlobal("TaipanEntry");
@@ -154,10 +154,10 @@ public sealed class CSharpEmitter
 
         _out = _typesOut;
         _indent = 0;
-        foreach (var structDef in _program.Structs.Where(s => s.Symbol.TypeParameters.IsEmpty))
+        foreach (var classDef in _program.Classes.Where(s => s.Symbol.TypeParameters.IsEmpty))
         {
             Line();
-            EmitStruct(structDef, _names[structDef.Symbol]);
+            EmitClass(classDef, _names[classDef.Symbol]);
         }
         foreach (var enumSymbol in _program.Enums.Where(e => e.TypeParameters.IsEmpty))
         {
@@ -200,12 +200,12 @@ public sealed class CSharpEmitter
                 Line();
                 EmitFunction(BodyFor(function, instance.TypeArguments), isMethod: false, instance.Name);
                 break;
-            case StructSymbol structSymbol:
-                _map = TypeChecker.Zip(structSymbol.TypeParameters, instance.TypeArguments);
+            case ClassSymbol classSymbol:
+                _map = TypeChecker.Zip(classSymbol.TypeParameters, instance.TypeArguments);
                 _out = _typesOut;
                 _indent = 0;
                 Line();
-                EmitStruct(_structs[structSymbol], instance.Name);
+                EmitClass(_classes[classSymbol], instance.Name);
                 break;
             case EnumSymbol enumSymbol:
                 _map = TypeChecker.Zip(enumSymbol.TypeParameters, instance.TypeArguments);
@@ -261,7 +261,7 @@ public sealed class CSharpEmitter
         ListOfType list => $"list[{Abbreviate(list.Element, depth - 1)}]",
         DictOfType dict => $"dict[{Abbreviate(dict.Key, depth - 1)}, {Abbreviate(dict.Value, depth - 1)}]",
         OptionalOf optional => $"{Abbreviate(optional.Inner, depth)}?",
-        StructType { TypeArguments.IsEmpty: false } s => $"{s.Symbol.Name}[{string.Join(", ", s.TypeArguments.Select(a => Abbreviate(a, depth - 1)))}]",
+        ClassType { TypeArguments.IsEmpty: false } s => $"{s.Symbol.Name}[{string.Join(", ", s.TypeArguments.Select(a => Abbreviate(a, depth - 1)))}]",
         EnumType { TypeArguments.IsEmpty: false } e => $"{e.Symbol.Name}[{string.Join(", ", e.TypeArguments.Select(a => Abbreviate(a, depth - 1)))}]",
         _ => type.ToString(),
     };
@@ -277,11 +277,11 @@ public sealed class CSharpEmitter
     private static string FieldName(string className, FieldSymbol field) =>
         field.Name == className || ReservedMembers.Contains(field.Name) ? $"{field.Name}_" : field.Name;
 
-    /// <summary>The C# class holding a struct's fields, or a variant's record.</summary>
+    /// <summary>The C# class holding a class's fields.</summary>
     private string ClassName(TaipanType owner) => Concrete(owner) switch
     {
-        StructType { TypeArguments.IsEmpty: true } s => _names[s.Symbol],
-        StructType s => InstanceName(s.Symbol, s.TypeArguments),
+        ClassType { TypeArguments.IsEmpty: true } s => _names[s.Symbol],
+        ClassType s => InstanceName(s.Symbol, s.TypeArguments),
         _ => throw new InvalidOperationException($"no class for {owner}"),
     };
 
@@ -291,7 +291,7 @@ public sealed class CSharpEmitter
         ListOfType list => $"list_{Mangle(list.Element)}",
         DictOfType dict => $"dict_{Mangle(dict.Key)}_{Mangle(dict.Value)}",
         OptionalOf optional => $"{Mangle(optional.Inner)}_opt",
-        StructType structType => string.Join("_", [structType.Symbol.Name, .. structType.TypeArguments.Select(Mangle)]),
+        ClassType classType => string.Join("_", [classType.Symbol.Name, .. classType.TypeArguments.Select(Mangle)]),
         EnumType enumType => string.Join("_", [enumType.Symbol.Name, .. enumType.TypeArguments.Select(Mangle)]),
         FunctionType function => string.Join("_", ["fn", .. function.Parameters.Select(Mangle), function.Result is NothingType ? "none" : Mangle(function.Result)]),
         TupleOfType tuple => string.Join("_", ["tuple", .. tuple.Elements.Select(Mangle)]),
@@ -334,9 +334,18 @@ public sealed class CSharpEmitter
         _locals = LocalNames.For(function.Parameters, function.Body, _globalNames);
         _self = symbol.Self;
         var parameters = string.Join(", ", function.Parameters.Select(p => $"{TypeName(p.Type)} @{_locals[p]}"));
-        Line($"public {(isMethod ? "" : "static ")}{TypeName(symbol.ReturnType)} @{name ?? symbol.Name}({parameters})");
+        var owner = symbol.Owner;
+        var isInit = owner is not null && symbol == owner.Init;
+        // Methods dispatch on the runtime class (SPEC §4.3); each class's __init__ is its own.
+        var modifier = owner is null ? "static "
+            : isInit ? (owner.Base is null ? "" : "new ")
+            : symbol.Overrides is not null ? "override "
+            : owner.HasSubclasses ? "virtual " : "";
+        Line($"public {modifier}{TypeName(symbol.ReturnType)} @{name ?? symbol.Name}({parameters})");
         Line("{");
         _indent++;
+        if (isInit)
+            EmitFieldDefaults(owner!);
         EmitStatements(function.Body.Statements);
         HiddenDirective();
         _indent--;
@@ -344,20 +353,45 @@ public sealed class CSharpEmitter
 
         for (var i = 0; i < symbol.Parameters.Length; i++)
         {
-            if (symbol.DefaultFor(i) is { } value)
-                EmitDefault(value, symbol.Parameters[i].Type, isMethod ? MethodDefaultName(symbol, i) : DefaultName(name ?? symbol.Name, symbol, i));
+            if (symbol.DefaultFor(i) is not { } value)
+                continue;
+            if (!isMethod)
+                EmitDefault(value, symbol.Parameters[i].Type, DefaultName(name ?? symbol.Name, symbol, i), "static ");
+            else
+                EmitDefault(value, symbol.Parameters[i].Type, MethodDefaultName(symbol, i), DefaultModifier(symbol, i));
         }
         _self = null;
     }
 
-    // A default is a static helper next to its function, called by each call that leaves it out,
-    // so it's evaluated every time, in the scope where it was defined (SPEC §4.2, §8). In a
-    // method's class, _self stays set so that globals are qualified; a default can't use self.
-    private void EmitDefault(BoundExpr value, TaipanType type, string name)
+    /// <summary>
+    /// A method's default helpers are overridden with it, so a call evaluates the defaults of the
+    /// method that runs (SPEC §4.3); <c>__init__</c>'s are static, since construction has no object yet.
+    /// </summary>
+    private static string DefaultModifier(FunctionSymbol method, int parameter)
+    {
+        var owner = method.Owner!;
+        if (method == owner.Init)
+            return "static ";
+        if (method.Overrides?.DefaultFor(parameter) is not null)
+            return "override ";
+        return owner.HasSubclasses ? "virtual " : "";
+    }
+
+    // A plain class's __init__ first evaluates its own fields' defaults (SPEC §4.3).
+    private void EmitFieldDefaults(ClassSymbol owner)
+    {
+        foreach (var field in owner.Fields.Where(f => f.Default is not null))
+            Line($"this.@{FieldName(ClassName(owner.Type), field)} = @{FieldDefaultName(ClassName(owner.Type), field)}();");
+    }
+
+    // A default is a helper next to its function, called by each call that leaves it out, so it's
+    // evaluated every time, in the scope where it was defined (SPEC §4.2, §8). In a class, _self
+    // stays set so that globals are qualified; a default can't use self.
+    private void EmitDefault(BoundExpr value, TaipanType type, string name, string modifier)
     {
         _locals = LocalNames.For([], new BoundBlock([new BoundExprStmt(value, value.Span)], value.Span), _globalNames);
         Line();
-        Line($"public static {TypeName(type)} @{name}()");
+        Line($"public {modifier}{TypeName(type)} @{name}()");
         Line("{");
         _indent++;
         LineDirective(value.Span);
@@ -379,41 +413,136 @@ public sealed class CSharpEmitter
         return name;
     }
 
-    // Inside the struct's class, beside its methods and fields.
+    // Inside the method's class, beside its methods and fields.
     private static string MethodDefaultName(FunctionSymbol method, int parameter) =>
         $"{method.Name}_{method.Parameters[parameter].Name}_default";
 
-    // A struct is a class with mutable properties, a positional constructor and its methods (SPEC §8).
-    private void EmitStruct(BoundStruct structDef, string className)
+    private static string FieldDefaultName(string className, FieldSymbol field) => $"{FieldName(className, field)}_default";
+
+    /// <summary>A field's C# property, in the class that declares it (one the field is reached through, or a base).</summary>
+    private string Member(FieldSymbol field, TaipanType through) => FieldName(ClassName(OwnerType(field, through)), field);
+
+    // Generic classes don't derive, so a field of a generic class is reached through that class (SPEC §4.3).
+    private TaipanType OwnerType(FieldSymbol field, TaipanType through) =>
+        Concrete(through) is ClassType classType && classType.Symbol == field.Owner ? classType : field.Owner!.Type;
+
+    // A class's base list: its base class, or nothing, then the runtime interface it implements,
+    // listed again in a subclass to give it its own TypeName (SPEC §8).
+    private string BaseList(ClassSymbol symbol, string runtimeInterface) =>
+        symbol.Base is { } baseClass ? $"global::@{_names[baseClass]}, {Runtime}.{runtimeInterface}" : $"{Runtime}.{runtimeInterface}";
+
+    private void EmitClass(BoundClass classDef, string className)
     {
-        var symbol = structDef.Symbol;
-        Line($"public sealed class @{className} : {Runtime}.IStruct");
+        var symbol = classDef.Symbol;
+        // Field defaults and methods sit in the class, where globals are qualified; they can't use self.
+        _self = new VariableSymbol("self", symbol.Type, VariableKind.Parameter);
+        if (symbol.IsDataclass)
+            EmitDataclass(classDef, className);
+        else
+            EmitPlainClass(classDef, className);
+        _self = null;
+    }
+
+    // A dataclass has mutable properties and a positional constructor over every field, passing
+    // the inherited ones to its base's (SPEC §8).
+    private void EmitDataclass(BoundClass classDef, string className)
+    {
+        var symbol = classDef.Symbol;
+        Line($"public {(symbol.HasSubclasses ? "" : "sealed ")}class @{className} : {BaseList(symbol, "IStruct")}");
         Line("{");
         _indent++;
         foreach (var field in symbol.Fields)
             Line($"public {TypeName(field.Type)} @{FieldName(className, field)} {{ get; set; }}");
         Line();
 
-        var parameters = string.Join(", ", symbol.Fields.Select(f => $"{TypeName(f.Type)} @{FieldName(className, f)}"));
-        Line($"public @{className}({parameters})");
+        var all = symbol.AllFields;
+        var parameters = string.Join(", ", all.Select(f => $"{TypeName(f.Type)} @{Member(f, symbol.Type)}"));
+        var inherited = symbol.Base?.AllFields ?? [];
+        var baseCall = inherited.IsEmpty ? "" : $" : base({string.Join(", ", inherited.Select(f => $"@{Member(f, symbol.Type)}"))})";
+        Line($"public @{className}({parameters}){baseCall}");
         Line("{");
         foreach (var field in symbol.Fields)
             Line($"    this.@{FieldName(className, field)} = @{FieldName(className, field)};");
         Line("}");
         Line();
 
-        var fields = string.Join(", ", symbol.Fields.Select(f => $"(\"{f.Name}\", (object?)this.@{FieldName(className, f)})"));
+        var fields = string.Join(", ", all.Select(f => $"(\"{f.Name}\", (object?)this.@{Member(f, symbol.Type)})"));
         Line($"string {Runtime}.IStruct.TypeName => \"{symbol.Name}\";");
         Line($"{Collections}.IReadOnlyList<(string Name, object? Value)> {Runtime}.IStruct.Fields => [{fields}];");
         Line($"public override string ToString() => {Runtime}.Display.Format(this);");
+        EmitFieldDefaultHelpers(symbol, className);
 
-        foreach (var method in structDef.Methods)
+        foreach (var method in classDef.Methods)
         {
             Line();
             EmitFunction(method, isMethod: true);
         }
         _indent--;
         Line("}");
+    }
+
+    // A plain class is constructed by a static __new__, which makes the object with a hidden
+    // constructor and runs __init__ on it, so __init__ can set the subclass's fields before calling
+    // the base's (SPEC §4.3, §8). It compares by reference, since Equals isn't overridden.
+    private void EmitPlainClass(BoundClass classDef, string className)
+    {
+        var symbol = classDef.Symbol;
+        Line($"public {(symbol.HasSubclasses ? "" : "sealed ")}class @{className} : {BaseList(symbol, "IObject")}");
+        Line("{");
+        _indent++;
+        foreach (var field in symbol.Fields)
+            Line($"public {TypeName(field.Type)} @{FieldName(className, field)} {{ get; set; }} = default!;");
+        if (!symbol.Fields.IsEmpty)
+            Line();
+        Line($"{(symbol.HasSubclasses ? "protected" : "private")} @{className}() {{ }}");
+        Line();
+
+        var constructor = symbol.Constructor;
+        var parameters = string.Join(", ", constructor.Parameters.Select(p => $"{TypeName(p.Type)} @{p.Name}"));
+        var arguments = string.Join(", ", constructor.Parameters.Select(p => $"@{p.Name}"));
+        Line($"public static @{className} @__new__({parameters})");
+        Line("{");
+        Line($"    var @__self = new @{className}();");
+        Line($"    @__self.@__init__({arguments});");
+        Line("    return @__self;");
+        Line("}");
+        Line();
+        Line($"string {Runtime}.IObject.TypeName => \"{symbol.Name}\";");
+        Line($"public override string ToString() => {Runtime}.Display.Format(this);");
+        EmitFieldDefaultHelpers(symbol, className);
+
+        if (symbol.Init is null)
+        {
+            // Without its own __init__, a class sets its defaults and passes its arguments on (SPEC §4.3).
+            Line();
+            Line($"public {(symbol.Base is null ? "" : "new ")}void @__init__({parameters})");
+            Line("{");
+            _indent++;
+            EmitFieldDefaults(symbol);
+            if (symbol.Base is not null)
+                Line($"base.@__init__({arguments});");
+            _indent--;
+            Line("}");
+        }
+        foreach (var method in classDef.Methods)
+        {
+            Line();
+            EmitFunction(method, isMethod: true);
+        }
+        _indent--;
+        Line("}");
+    }
+
+    // Each field default is a static helper, evaluated anew for each object (SPEC §4.3).
+    private void EmitFieldDefaultHelpers(ClassSymbol symbol, string className)
+    {
+        var self = _self;
+        foreach (var field in symbol.Fields)
+        {
+            if (field.Default is { } value)
+                EmitDefault(value, field.Type, FieldDefaultName(className, field), "static ");
+        }
+        _self = self;
     }
 
     // An enum is an abstract record with a private constructor; each variant is a sealed record
@@ -483,7 +612,7 @@ public sealed class CSharpEmitter
             case BoundFieldAssign assign:
                 LineDirective(assign.Span);
                 EmitCompound(assign.IsCompound, [assign.Target],
-                    () => Line($"{Operand(assign.Target)}.@{FieldName(ClassName(assign.Target.Type), assign.Field)} = {Expr(assign.Value)};"));
+                    () => Line($"{Operand(assign.Target)}.@{Member(assign.Field, assign.Target.Type)} = {Expr(assign.Value)};"));
                 break;
             case BoundIndexAssign assign:
                 LineDirective(assign.Span);
@@ -520,7 +649,7 @@ public sealed class CSharpEmitter
                 LineDirective(cont.Span);
                 Line("continue;");
                 break;
-            case BoundExprStmt { Expr: BoundCall or BoundMethodCall or BoundBuiltinMethodCall or BoundPyCall or BoundInvoke or BoundSort } exprStmt:
+            case BoundExprStmt { Expr: BoundCall or BoundMethodCall or BoundBuiltinMethodCall or BoundPyCall or BoundInvoke or BoundSort or BoundSuperCall } exprStmt:
                 LineDirective(exprStmt.Span);
                 Line($"{Expr(exprStmt.Expr)};");
                 break;
@@ -593,6 +722,7 @@ public sealed class CSharpEmitter
     private static bool IsSimple(BoundExpr expr) => expr switch
     {
         BoundVariable or BoundLiteral => true,
+        BoundNarrowed narrowed => IsSimple(narrowed.Value),
         BoundFieldAccess access => IsSimple(access.Target),
         BoundIndex index => IsSimple(index.Target) && IsSimple(index.Index),
         BoundUnary unary => IsSimple(unary.Operand),
@@ -666,7 +796,7 @@ public sealed class CSharpEmitter
     {
         var type = TypeName(lambda.Type);
         var body = lambda.FunctionType.Result is not NothingType ? Expr(lambda.Body)
-            : lambda.Body is BoundCall or BoundMethodCall or BoundBuiltinMethodCall or BoundPyCall or BoundInvoke or BoundSort ? $"{{ {Expr(lambda.Body)}; }}"
+            : lambda.Body is BoundCall or BoundMethodCall or BoundBuiltinMethodCall or BoundPyCall or BoundInvoke or BoundSort or BoundSuperCall ? $"{{ {Expr(lambda.Body)}; }}"
             : $"{{ _ = {Expr(lambda.Body)}; }}";
         return $"new {type}(\"<lambda>\", ({LambdaParameters(lambda.Parameters)}) => {body})";
     }
@@ -752,6 +882,9 @@ public sealed class CSharpEmitter
         BoundVariantPattern { Bindings.IsEmpty: true } variant => $"case {VariantTypeName(variant.Variant, scrutineeType)}:",
         BoundVariantPattern variant =>
             $"case {VariantTypeName(variant.Variant, scrutineeType)}({string.Join(", ", variant.Bindings.Select(b => b is null ? "_" : $"var @{_locals[b]}"))}):",
+        BoundClassPattern { Bindings.IsEmpty: true } classPattern => $"case {TypeName(classPattern.Class)}:",
+        BoundClassPattern classPattern =>
+            $"case {TypeName(classPattern.Class)} {{ {string.Join(", ", classPattern.Bindings.Select(b => $"@{Member(b.Field, classPattern.Class)}: var @{_locals[b.Binding]}"))} }}:",
         _ => throw new InvalidOperationException($"unexpected pattern {pattern.GetType().Name}"),
     };
 
@@ -782,10 +915,9 @@ public sealed class CSharpEmitter
             BoundDictLiteral dict => DictLiteral(dict),
             BoundConstruct construct => Construct(construct),
             BoundConstructVariant construct => ConstructVariant(construct),
-            BoundFieldAccess access => $"{Operand(access.Target)}.@{FieldName(ClassName(access.Target.Type), access.Field)}",
+            BoundFieldAccess access => $"{Operand(access.Target)}.@{Member(access.Field, access.Target.Type)}",
             BoundIndex index => $"{Runtime}.Ops.Index({Expr(index.Target)}, {Expr(index.Index)})",
-            BoundMethodCall call => $"{Operand(call.Target)}.@{call.Method.Name}({ShapedArguments(call.Arguments, call.Shape,
-                p => $"@{call.Method.Parameters[p].Name}", p => $"{TypeName(call.Target.Type)}.@{MethodDefaultName(call.Method, p)}()")})",
+            BoundMethodCall call => MethodCall(call),
             BoundBuiltinMethodCall call => BuiltinMethodCall(call),
             BoundNone => "null",
             BoundPyGetAttr get => $"{Interop}.GetAttr({Expr(get.Target)}, \"{get.Name}\")",
@@ -794,7 +926,13 @@ public sealed class CSharpEmitter
             BoundToPy convert => $"{Interop}.From({Expr(convert.Value)})",
             BoundCast cast => Cast(cast),
             BoundIsSome isSome => $"{Operand(isSome.Operand)} is {{}} @{_locals[isSome.Binding]}",
-            BoundIsNone isNone => $"{Operand(isNone.Operand)} is null",
+            BoundIsNone isNone => $"{Operand(isNone.Operand)} is {(isNone.Negated ? "not " : "")}null",
+            BoundNew construct => New(construct),
+            BoundSuperCall call => SuperCall(call),
+            BoundIsInstance isInstance => $"{Operand(isInstance.Operand)} is {TypeName(isInstance.Class)}",
+            BoundNarrowed narrowed => Narrowed(narrowed),
+            BoundClassCast cast => ClassCast(cast),
+            BoundConvertFunction convert => ConvertFunction(convert),
             BoundLambda lambda => Lambda(lambda),
             BoundFunctionValue value => FunctionValue(value),
             BoundInvoke invoke => $"{Operand(invoke.Callee)}.Invoke({ShapedArguments(invoke.Arguments, invoke.Shape,
@@ -807,7 +945,84 @@ public sealed class CSharpEmitter
         };
     }
 
-    /// <summary>A function or constant: unqualified in the program class, qualified from a struct's methods.</summary>
+    /// <summary>
+    /// A method call (SPEC §4.3). The defaults it leaves out are virtual helpers on the object, so
+    /// an object that isn't a simple expression is evaluated once, into a lambda's parameter.
+    /// </summary>
+    private string MethodCall(BoundMethodCall call)
+    {
+        var once = call.Shape?.Missing.Any() == true && !IsSimple(call.Target);
+        var receiver = once ? $"@{_locals.Fresh("receiver")}" : Operand(call.Target);
+        var invocation = $"{receiver}.@{call.Method.Name}({ShapedArguments(call.Arguments, call.Shape,
+            p => $"@{call.Method.Parameters[p].Name}", p => $"{receiver}.@{MethodDefaultName(call.Method, p)}()")})";
+        if (!once)
+            return invocation;
+        var helper = call.Method.ReturnType is NothingType ? "Do" : "Let";
+        return $"{Runtime}.Ops.{helper}({Expr(call.Target)}, ({TypeName(call.Target.Type)} {receiver}) => {invocation})";
+    }
+
+    /// <summary>A plain class's construction, through its static <c>__new__</c> (SPEC §8).</summary>
+    private string New(BoundNew construct) =>
+        $"{TypeName(construct.ClassType)}.@__new__({ShapedArguments(construct.Arguments, construct.Shape,
+            p => $"@{construct.Constructor.Parameters[p].Name}", p => InitDefault(construct.Constructor, p, construct.ClassType))})";
+
+    /// <summary>
+    /// An <c>__init__</c> default: a static helper of the class whose <c>__init__</c> declares it.
+    /// A class without its own <c>__init__</c> uses its base's defaults (SPEC §4.3).
+    /// </summary>
+    private string InitDefault(FunctionSymbol constructor, int parameter, ClassType through)
+    {
+        var origin = constructor;
+        while (origin.DefaultsFrom is { } inherited)
+            origin = inherited;
+        var owner = origin.Owner!;
+        var ownerType = Concrete(through) is ClassType classType && classType.Symbol == owner ? classType : owner.Type;
+        return $"{TypeName(ownerType)}.@{MethodDefaultName(origin, parameter)}()";
+    }
+
+    // `super().m(…)` runs the base's method without dispatch: a C# base call (SPEC §8).
+    private string SuperCall(BoundSuperCall call)
+    {
+        var baseType = call.Method.Owner!.Type;
+        string Default(int p) => call.IsInit ? InitDefault(call.Method, p, baseType) : $"base.@{MethodDefaultName(call.Method, p)}()";
+        return $"base.@{call.Method.Name}({ShapedArguments(call.Arguments, call.Shape, p => $"@{call.Method.Parameters[p].Name}", Default)})";
+    }
+
+    // A narrowed name (SPEC §3.9): a cast to its class, or its value without the optional.
+    private string Narrowed(BoundNarrowed narrowed)
+    {
+        var value = Expr(narrowed.Value);
+        var original = Concrete(narrowed.Value.Type);
+        var type = Concrete(narrowed.Type);
+        if (type is ClassType && TypeChecker.Unwrap(original) != type)
+            return $"(({TypeName(type)}){value})";
+        return IsValueType(type) ? $"{value}.Value" : $"{value}!";
+    }
+
+    // `x as C` between classes (SPEC §4.3): to a base it always succeeds; to a subclass it panics
+    // when x isn't one, or for `C?` gives None.
+    private string ClassCast(BoundClassCast cast)
+    {
+        var value = Expr(cast.Value);
+        var target = Concrete(cast.Type);
+        if (target is OptionalOf optional)
+            return $"({value} as {TypeName(optional.Inner)})";
+        if (TypeChecker.Unwrap(Concrete(cast.Value.Type)) is ClassType from && from.Symbol.DerivesFrom(((ClassType)target).Symbol))
+            return $"(({TypeName(target)}){value})";
+        return $"{Runtime}.Ops.Cast<{TypeName(target)}>({value}, \"{target}\")";
+    }
+
+    // A function value as another function type (SPEC §3.3): a new delegate that calls it, with C#'s
+    // implicit conversions on the arguments and result. It keeps the original's identity.
+    private string ConvertFunction(BoundConvertFunction convert)
+    {
+        var d = $"@{_locals.Fresh("d")}";
+        var parameters = convert.FunctionType.Parameters.Select(_ => $"@{_locals.Fresh("a")}").ToList();
+        var list = string.Join(", ", parameters);
+        return $"{TypeName(convert.FunctionType)}.Convert({Expr(convert.Value)}, {d} => ({list}) => {d}({list}))";
+    }
+
+    /// <summary>A function or constant: unqualified in the program class, qualified from a class's members.</summary>
     private string Global(string name) => _self is null ? $"@{name}" : $"global::{_programClass}.@{name}";
 
     private string FunctionReference(BoundCall call) => Global(FunctionName(call));
@@ -837,9 +1052,9 @@ public sealed class CSharpEmitter
 
     private string Arguments(IEnumerable<BoundExpr> arguments) => string.Join(", ", arguments.Select(Expr));
 
-    /// <summary>An operand of an operator or member access, parenthesized when it's an operator expression.</summary>
+    /// <summary>An operand of an operator or member access, parenthesized when it's an operator expression or a C# <c>is</c> test.</summary>
     private string Operand(BoundExpr expr) =>
-        expr is BoundBinary or BoundUnary && !_hoisted.ContainsKey(expr) ? $"({Expr(expr)})" : Expr(expr);
+        expr is BoundBinary or BoundUnary or BoundIsNone or BoundIsSome or BoundIsInstance && !_hoisted.ContainsKey(expr) ? $"({Expr(expr)})" : Expr(expr);
 
     /// <summary>
     /// Whether C# would fold this int expression of literals at compile time and overflow, which
@@ -897,7 +1112,7 @@ public sealed class CSharpEmitter
         var left = Operand(binary.Left);
         var right = Operand(binary.Right);
         var compared = TypeChecker.Unwrap(leftType) is NoneType ? TypeChecker.Unwrap(Concrete(binary.Right.Type)) : TypeChecker.Unwrap(leftType);
-        var structural = compared is ListOfType or DictOfType or StructType or EnumType or TupleOfType;
+        var structural = compared is ListOfType or DictOfType or ClassType or EnumType or TupleOfType or FunctionType;
         var tuple = leftType is TupleOfType;
         return binary.Op switch
         {
@@ -1064,13 +1279,16 @@ public sealed class CSharpEmitter
         return dict.Entries.IsEmpty ? $"new {type}()" : $"new {type} {{ {entries} }}";
     }
 
-    // Keyword construction uses C# named arguments, which C# evaluates in source order.
+    // Keyword construction uses C# named arguments, which C# evaluates in source order; then each
+    // field left out takes its default, in field order (SPEC §4.6).
     private string Construct(BoundConstruct construct)
     {
-        var className = ClassName(construct.StructType);
-        var arguments = construct.Arguments.Select(a =>
-            construct.IsKeyword ? $"@{FieldName(className, a.Field)}: {Expr(a.Value)}" : Expr(a.Value));
-        return $"new {TypeName(construct.StructType)}({string.Join(", ", arguments)})";
+        var fields = construct.ClassType.Symbol.AllFields;
+        var shape = new ArgumentShape([.. construct.Arguments.Select(a => fields.IndexOf(a.Field))], fields.Length);
+        var arguments = ShapedArguments([.. construct.Arguments.Select(a => a.Value)], shape.InOrder && shape.Parameters.Length == fields.Length ? null : shape,
+            p => $"@{Member(fields[p], construct.ClassType)}",
+            p => $"{TypeName(OwnerType(fields[p], construct.ClassType))}.@{FieldDefaultName(ClassName(OwnerType(fields[p], construct.ClassType)), fields[p])}()");
+        return $"new {TypeName(construct.ClassType)}({arguments})";
     }
 
     private string ConstructVariant(BoundConstructVariant construct)
@@ -1139,8 +1357,8 @@ public sealed class CSharpEmitter
         NothingType => "void",
         ListOfType list => $"{Collections}.List<{TypeName(list.Element)}>",
         DictOfType dict => $"{Collections}.OrderedDictionary<{TypeName(dict.Key)}, {TypeName(dict.Value)}>",
-        StructType { TypeArguments.IsEmpty: true } structType => $"global::@{_names[structType.Symbol]}",
-        StructType structType => $"global::@{InstanceName(structType.Symbol, structType.TypeArguments)}",
+        ClassType { TypeArguments.IsEmpty: true } classType => $"global::@{_names[classType.Symbol]}",
+        ClassType classType => $"global::@{InstanceName(classType.Symbol, classType.TypeArguments)}",
         EnumType { TypeArguments.IsEmpty: true } enumType => $"global::@{_names[enumType.Symbol]}",
         EnumType enumType => $"global::@{InstanceName(enumType.Symbol, enumType.TypeArguments)}",
         OptionalOf optional => $"{TypeName(optional.Inner)}?",

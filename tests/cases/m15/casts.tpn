@@ -1,0 +1,23 @@
+# Converting between classes with `as` (SPEC §4.3).
+class Animal:
+    def name(self) -> str:
+        return "animal"
+
+class Cat(Animal):
+    @override
+    def name(self) -> str:
+        return "cat"
+
+    def purr(self) -> str:
+        return "purr"
+
+class Dog(Animal):
+    pass
+
+let pets: list[Animal] = [Cat(), Dog()]
+print((pets[0] as Cat).purr())
+let maybe = pets[1] as Cat?
+print(maybe is None)
+let up = Cat() as Animal
+print(up.name())
+print((pets[1] as Cat).purr())

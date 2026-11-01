@@ -1,0 +1,39 @@
+# Dataclasses: generated constructor, defaults, inheritance, equality and display (SPEC §4.3).
+@dataclass
+class Point:
+    x: float
+    y: float = 0.0
+
+    def norm2(self) -> float:
+        return self.x * self.x + self.y * self.y
+
+@dataclass
+class Point3(Point):
+    z: float = 0.0
+
+@dataclass
+class Tagged:
+    name: str
+    tags: list[str] = []
+
+let p = Point(3, 4)
+print(p, p.norm2())
+print(Point(1), Point(y=2, x=1), Point(1, y=5))
+let q = Point3(1, 2, 3)
+print(q, Point3(1, z=9), q.norm2())
+print(Point(1, 2) == Point(1, 2), Point(1, 2) == Point(2, 1))
+let base: Point = Point3(1, 2, 0)
+print(base == Point(1, 2), base == Point3(1, 2))
+
+let a = Tagged("a")
+let b = Tagged("b")
+a.tags.append("x")
+print(a, b)
+print([Tagged("t", ["u"])])
+
+@dataclass
+class Box[T]:
+    item: T
+    count: int = 1
+
+print(Box("hat"), Box([1, 2], count=3))

@@ -1,0 +1,21 @@
+# An override keeps the base's defaults, and a call uses the defaults of the method that runs (SPEC §4.3).
+class Greeter:
+    def greet(self, name: str, punct: str = "."):
+        print("hello " + name + punct)
+
+class Loud(Greeter):
+    @override
+    def greet(self, name: str, punct: str = "!"):
+        print("HELLO " + name.upper() + punct)
+
+class Polite(Greeter):
+    @override
+    def greet(self, name: str = "friend", punct: str = "."):
+        super().greet(name, punct)
+
+let gs: list[Greeter] = [Greeter(), Loud(), Polite()]
+for g in gs:
+    g.greet("ann")
+    g.greet(punct="?", name="bob")
+let p = Polite()
+p.greet()

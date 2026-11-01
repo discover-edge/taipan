@@ -1,0 +1,11 @@
+# A match on a class needs `_` or the scrutinee's own class (SPEC §5.1).
+class Shape:
+    pass
+
+class Square(Shape):
+    pass
+
+def f(s: Shape):
+    match s:
+        Square():
+            print("square")

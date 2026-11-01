@@ -13,7 +13,8 @@ print(apply_twice(lambda x: x - 1, 3))
 let ops: dict[str, Callable[[int, int], int]] = {"add": lambda a, b: a + b, "mul": lambda a, b: a * b}
 print(ops["add"](2, 3), ops["mul"](2, 3))
 
-struct Button:
+@dataclass
+class Button:
     label: str
     on_click: Callable[[str], str]
 

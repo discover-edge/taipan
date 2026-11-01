@@ -24,6 +24,7 @@ public static class Display
         ITuple t => "(" + string.Join(", ", Enumerable.Range(0, t.Length).Select(i => Repr(t[i]))) + ")",
         IVariant { Fields.Count: 0 } v => v.TypeName,
         IStruct s => $"{s.TypeName}({string.Join(", ", s.Fields.Select(f => $"{f.Name}={Repr(f.Value)}"))})",
+        IObject o => $"<{o.TypeName} object>",
         IDictionary d => "{" + string.Join(", ", d.Keys.Cast<object>().Select(k => $"{Repr(k)}: {Repr(d[k])}")) + "}",
         IList l => "[" + string.Join(", ", l.Cast<object?>().Select(Repr)) + "]",
         _ => ExternalFormat?.Invoke(value, false) ?? throw new ArgumentException($"no display form for {value.GetType()}"),
@@ -37,7 +38,7 @@ public static class Display
     public static Func<object, bool, string?>? ExternalFormat { get; set; }
 
     /// <summary>
-    /// The form of a value inside a list, dict or struct: a str is written as a literal, in
+    /// The form of a value inside a list, dict or dataclass: a str is written as a literal, in
     /// quotes with <c>\ \" \n \t</c> escaped; everything else as <see cref="Format(object?)"/>.
     /// </summary>
     public static string Repr(object? value) => value switch

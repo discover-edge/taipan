@@ -1,0 +1,63 @@
+# Class patterns in match (SPEC §5.1).
+class Event:
+    at: int
+
+    def __init__(self, at: int):
+        self.at = at
+
+class Click(Event):
+    x: int
+    y: int
+
+    def __init__(self, at: int, x: int, y: int):
+        self.x = x
+        self.y = y
+        super().__init__(at)
+
+class Key(Event):
+    code: str
+
+    def __init__(self, at: int, code: str):
+        self.code = code
+        super().__init__(at)
+
+class Enter(Key):
+    def __init__(self, at: int):
+        super().__init__(at, "enter")
+
+def handle(e: Event) -> str:
+    match e:
+        Click(x=cx, y=cy):
+            return f"click at {cx},{cy}"
+        Enter():
+            return f"enter at {e.at}"
+        Key(code=c):
+            return "key " + c + " " + e.code
+        _:
+            return "event"
+
+print(handle(Click(1, 2, 3)))
+print(handle(Enter(4)))
+print(handle(Key(5, "a")))
+print(handle(Event(6)))
+
+@dataclass
+class Pair:
+    left: int
+    right: int
+
+def sum_pair(p: Pair) -> int:
+    match p:
+        Pair(a, right=b):
+            return a + b
+
+print(sum_pair(Pair(2, 5)))
+
+def kind(e: Event) -> str:
+    match e:
+        Key():
+            return "key"
+        Event(at=t):
+            return f"other at {t}"
+
+print(kind(Enter(1)), kind(Click(7, 0, 0)))

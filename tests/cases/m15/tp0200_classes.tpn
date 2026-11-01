@@ -1,0 +1,54 @@
+# Type errors with classes (SPEC §3.3, §4.3).
+class Animal:
+    def __init__(self):
+        pass
+
+class Dog(Animal):
+    def __init__(self):
+        super().__init__()
+
+class Cat(Animal):
+    def __init__(self):
+        super().__init__()
+
+    def init_again(self):
+        self.__init__()
+
+@dataclass
+class Point:
+    x: int
+
+def pet(dogs: list[Animal]):
+    pass
+
+let dogs: list[Dog] = [Dog()]
+pet(dogs)
+let d: Dog = Animal()
+let c = Cat()
+print(isinstance(c, Dog))
+print(isinstance(3, Dog))
+print(isinstance(c, len))
+let x = c as Dog
+print(c == Dog())
+let keys: dict[Point, int] = {}
+let s = super()
+match c:
+    Cat:
+        pass
+    _:
+        pass
+match c:
+    Dog():
+        pass
+    _:
+        pass
+
+class Weird:
+    def __init__(self) -> int:
+        pass
+
+    def go(self):
+        super().go()
+
+def plain():
+    super().go()

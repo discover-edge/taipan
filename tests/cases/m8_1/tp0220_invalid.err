@@ -1,6 +1,6 @@
-tests/cases/m8_1/tp0220_invalid.tpn:4:13: error TP0220: a constraint needs at least two types
-tests/cases/m8_1/tp0220_invalid.tpn:7:20: error TP0220: 'int' is listed twice in the constraint
-tests/cases/m8_1/tp0220_invalid.tpn:10:13: error TP0220: a constraint cannot be optional or generic
-tests/cases/m8_1/tp0220_invalid.tpn:13:19: error TP0220: a constraint cannot be optional or generic
-tests/cases/m8_1/tp0220_invalid.tpn:16:16: error TP0220: constraints are only supported on functions
-tests/cases/m8_1/tp0220_invalid.tpn:19:16: error TP0220: constraints are only supported on functions
+tests/cases/m8_1/tp0220_invalid.tpn:5:13: error TP0220: a constraint needs at least two types
+tests/cases/m8_1/tp0220_invalid.tpn:8:20: error TP0220: 'int' is listed twice in the constraint
+tests/cases/m8_1/tp0220_invalid.tpn:11:13: error TP0220: a constraint cannot be optional or generic
+tests/cases/m8_1/tp0220_invalid.tpn:14:19: error TP0220: a constraint cannot be optional or generic
+tests/cases/m8_1/tp0220_invalid.tpn:18:15: error TP0220: constraints are only supported on functions
+tests/cases/m8_1/tp0220_invalid.tpn:21:16: error TP0220: constraints are only supported on functions

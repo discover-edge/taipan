@@ -1,4 +1,5 @@
-struct Thing:
+@dataclass
+class Thing:
     v: int
 
 def f():

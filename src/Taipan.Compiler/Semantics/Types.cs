@@ -31,7 +31,7 @@ public abstract record TaipanType
         ListOfType list => list.Element.ContainsError,
         DictOfType dict => dict.Key.ContainsError || dict.Value.ContainsError,
         OptionalOf optional => optional.Inner.ContainsError,
-        StructType structType => structType.TypeArguments.Any(a => a.ContainsError),
+        ClassType classType => classType.TypeArguments.Any(a => a.ContainsError),
         EnumType enumType => enumType.TypeArguments.Any(a => a.ContainsError),
         FunctionType function => function.Parameters.Any(p => p.ContainsError) || function.Result.ContainsError,
         TupleOfType tuple => tuple.Elements.Any(e => e.ContainsError),
@@ -72,7 +72,7 @@ public abstract record TaipanType
         ListOfType list => list.Element == Py || list.Element.ContainsPy,
         DictOfType dict => dict.Value == Py || dict.Value.ContainsPy,
         OptionalOf optional => optional.Inner == Py || optional.Inner.ContainsPy,
-        StructType s => s.TypeArguments.Any(a => a == Py || a.ContainsPy),
+        ClassType s => s.TypeArguments.Any(a => a == Py || a.ContainsPy),
         EnumType e => e.TypeArguments.Any(a => a == Py || a.ContainsPy),
         TupleOfType tuple => tuple.Elements.Any(e => e == Py || e.ContainsPy),
         _ => false,
@@ -106,17 +106,23 @@ public sealed record DictOfType(TaipanType Key, TaipanType Value) : TaipanType
 {
     public override string ToString() => $"dict[{Key}, {Value}]";
 
-    /// <summary>Dict keys are limited to int, str and bool (SPEC §3.1).</summary>
+    /// <summary>Dict keys are int, str, bool, tuples of keys, and plain class instances (SPEC §3.1).</summary>
     public static bool IsValidKey(TaipanType type) =>
         type.IsError || type == Int || type == Str || type == Bool
+        || type is ClassType { Symbol.IsDataclass: false }
         || type is TupleOfType tuple && tuple.Elements.All(IsValidKey)
         || type is TypeParameterType { Symbol.Constraints: [_, ..] constraints } && constraints.All(IsValidKey);
 }
 
-/// <summary>A struct, with its type arguments if it's generic (SPEC §3.6). Equal when both match.</summary>
-public sealed record StructType(StructSymbol Symbol, ImmutableArray<TaipanType> TypeArguments) : TaipanType
+/// <summary>A class, with its type arguments if it's generic (SPEC §3.6). Equal when both match.</summary>
+public sealed record ClassType(ClassSymbol Symbol, ImmutableArray<TaipanType> TypeArguments) : TaipanType
 {
-    public bool Equals(StructType? other) =>
+    /// <summary>A class that isn't generic, as named in <c>isinstance</c>, <c>as</c> and class patterns.</summary>
+    public ClassType(ClassSymbol symbol) : this(symbol, [])
+    {
+    }
+
+    public bool Equals(ClassType? other) =>
         other is not null && other.Symbol == Symbol && other.TypeArguments.SequenceEqual(TypeArguments);
 
     public override int GetHashCode() => Symbol.GetHashCode();
@@ -146,7 +152,7 @@ public sealed record EnumType(EnumSymbol Symbol, ImmutableArray<TaipanType> Type
 
     public override int GetHashCode() => Symbol.GetHashCode();
 
-    public override string ToString() => StructType.GenericName(Symbol.Name, TypeArguments);
+    public override string ToString() => ClassType.GenericName(Symbol.Name, TypeArguments);
 }
 
 /// <summary>

@@ -4,7 +4,8 @@ def double(x: int) -> int:
 def first[T](xs: list[T]) -> T:
     return xs[0]
 
-struct Point:
+@dataclass
+class Point:
     x: int
 
 let f = double

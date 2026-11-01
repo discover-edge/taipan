@@ -1,0 +1,17 @@
+# A class pattern after one for the same class or a base is unreachable (SPEC §5.1).
+class Shape:
+    pass
+
+class Square(Shape):
+    pass
+
+def f(s: Shape):
+    match s:
+        Shape():
+            print("shape")
+        Square():
+            print("square")
+        _:
+            print("other")
+
+f(Square())

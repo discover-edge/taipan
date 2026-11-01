@@ -1,7 +1,8 @@
 def connect(host: str, port: int = 80) -> str:
     return host
 
-struct Point:
+@dataclass
+class Point:
     x: int
     y: int
 

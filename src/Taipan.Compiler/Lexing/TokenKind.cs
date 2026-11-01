@@ -15,7 +15,7 @@ public enum TokenKind
 
     // Keywords (SPEC §1.3)
     DefKeyword,
-    StructKeyword,
+    ClassKeyword,
     EnumKeyword,
     LetKeyword,
     VarKeyword,
@@ -74,4 +74,5 @@ public enum TokenKind
     CloseBracket,
     OpenBrace,
     CloseBrace,
+    At,
 }

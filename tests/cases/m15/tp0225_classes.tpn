@@ -1,0 +1,62 @@
+# Invalid class definitions (SPEC §4.3).
+class A:
+    x: int = 0
+
+class B:
+    y: int = 0
+
+class Both(A, B):
+    pass
+
+class FromInt(int):
+    pass
+
+@dataclass
+class D:
+    x: int
+
+class PlainFromData(D):
+    pass
+
+@dataclass
+class DataFromPlain(A):
+    z: int
+
+class Box[T]:
+    item: T?
+
+    def __init__(self):
+        self.item = None
+
+class IntBox(Box[int]):
+    pass
+
+class Loop1(Loop2):
+    pass
+
+class Loop2(Loop1):
+    pass
+
+class Printable:
+    def __str__(self) -> str:
+        return "p"
+
+@dataclass
+class WithInit:
+    x: int
+
+    def __init__(self):
+        self.x = 1
+
+@dataclass
+class Order:
+    a: int = 0
+    b: int
+
+@dataclass
+class Sub(D):
+    w: int = 1
+
+@dataclass
+class SubOrder(Sub):
+    v: int

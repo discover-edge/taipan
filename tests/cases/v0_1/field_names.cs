@@ -6,20 +6,20 @@ public static class TaipanProgram
 {
     public static void TopLevel()
     {
-#line 11 "tests/cases/v0_1/field_names.tpn"
-        global::@Node @n = new global::@Node(@Node_: 1L, @ToString_: "s", @Equals_: true);
 #line 12 "tests/cases/v0_1/field_names.tpn"
-        @n.@Node_ = @n.@Node_ + 1L;
+        global::@Node @n = new global::@Node(1L, "s", true);
 #line 13 "tests/cases/v0_1/field_names.tpn"
-        global::Taipan.Runtime.Builtins.Print(@n, @n.@Node_, @n.@ToString_, @n.@Equals_);
+        @n.@Node_ = @n.@Node_ + 1L;
 #line 14 "tests/cases/v0_1/field_names.tpn"
-        global::@Shape @w = new global::@Shape.@Wrap(@Wrap_: 5L, @Deconstruct_: "d");
+        global::Taipan.Runtime.Builtins.Print(@n, @n.@Node_, @n.@ToString_, @n.@Equals_);
 #line 15 "tests/cases/v0_1/field_names.tpn"
+        global::@Shape @w = new global::@Shape.@Wrap(@Wrap_: 5L, @Deconstruct_: "d");
+#line 16 "tests/cases/v0_1/field_names.tpn"
         switch (@w)
         {
             case global::@Shape.@Wrap(var @inner, var @label):
             {
-#line 16 "tests/cases/v0_1/field_names.tpn"
+#line 17 "tests/cases/v0_1/field_names.tpn"
                 global::Taipan.Runtime.Builtins.Print(@inner, @label, @w);
                 break;
             }

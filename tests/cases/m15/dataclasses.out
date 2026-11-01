@@ -1,0 +1,8 @@
+Point(x=3.0, y=4.0) 25.0
+Point(x=1.0, y=0.0) Point(x=1.0, y=2.0) Point(x=1.0, y=5.0)
+Point3(x=1.0, y=2.0, z=3.0) Point3(x=1.0, y=0.0, z=9.0) 5.0
+True False
+False True
+Tagged(name="a", tags=["x"]) Tagged(name="b", tags=[])
+[Tagged(name="t", tags=["u"])]
+Box(item="hat", count=1) Box(item=[1, 2], count=3)

@@ -103,27 +103,27 @@ public class LexerTests
     [Fact]
     public void Keywords() =>
         Assert.Equal(
-            "DefKeyword StructKeyword EnumKeyword LetKeyword VarKeyword ConstKeyword IfKeyword ElifKeyword " +
+            "DefKeyword ClassKeyword EnumKeyword LetKeyword VarKeyword ConstKeyword IfKeyword ElifKeyword " +
             "ElseKeyword WhileKeyword ForKeyword InKeyword MatchKeyword ReturnKeyword PassKeyword BreakKeyword " +
             "ContinueKeyword AndKeyword OrKeyword NotKeyword IsKeyword SomeKeyword NoneKeyword TrueKeyword " +
             "FalseKeyword AsKeyword FromKeyword ImportKeyword LambdaKeyword Newline EndOfFile",
-            Dump("def struct enum let var const if elif else while for in match return pass break " +
+            Dump("def class enum let var const if elif else while for in match return pass break " +
                  "continue and or not is some None True False as from import lambda"));
 
     [Fact]
     public void NamesThatResembleKeywords() =>
         Assert.Equal(
-            "Name(self) Name(int) Name(true) Name(none) Name(_) Name(_x1) Name(define) Name(f) Newline EndOfFile",
-            Dump("self int true none _ _x1 define f"));
+            "Name(self) Name(int) Name(true) Name(none) Name(struct) Name(_) Name(_x1) Name(define) Name(f) Newline EndOfFile",
+            Dump("self int true none struct _ _x1 define f"));
 
     [Fact]
     public void OperatorsUseLongestMatch() =>
         Assert.Equal(
             "Plus Minus Star Slash SlashSlash Percent EqualsEquals BangEquals Less LessEquals Greater " +
             "GreaterEquals Equals PlusEquals MinusEquals StarEquals SlashEquals Arrow QuestionQuestion " +
-            "Question Dot Comma Colon OpenParen CloseParen OpenBracket CloseBracket OpenBrace CloseBrace " +
+            "Question Dot Comma Colon OpenParen CloseParen OpenBracket CloseBracket OpenBrace CloseBrace At " +
             "Newline EndOfFile",
-            Dump("+ - * / // % == != < <= > >= = += -= *= /= -> ?? ? . , : ( ) [ ] { }"));
+            Dump("+ - * / // % == != < <= > >= = += -= *= /= -> ?? ? . , : ( ) [ ] { } @"));
 
     [Fact]
     public void AdjacentOperatorsWithoutSpaces() =>

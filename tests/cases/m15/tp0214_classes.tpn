@@ -1,0 +1,10 @@
+# Member names must be distinct, inherited ones included (SPEC §4.3, §4.6).
+class Base:
+    name: str = ""
+
+    def run(self):
+        pass
+
+class Sub(Base):
+    name: str = "x"
+    run: int = 0

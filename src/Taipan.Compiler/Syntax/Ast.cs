@@ -28,20 +28,28 @@ public sealed record ImportName(Identifier Name, Identifier? Alias, TextSpan Spa
 // ---- Declarations ----
 
 /// <summary><see cref="TypeParams"/> is empty for a non-generic function (SPEC §3.6).</summary>
-public sealed record FuncDef(Identifier Name, ImmutableArray<TypeParam> TypeParams, ImmutableArray<Param> Params, TypeSyntax? ReturnType, Block Body, TextSpan Span)
-    : TopItem(Span);
+public sealed record FuncDef(
+    ImmutableArray<Decorator> Decorators, Identifier Name, ImmutableArray<TypeParam> TypeParams, ImmutableArray<Param> Params,
+    TypeSyntax? ReturnType, Block Body, TextSpan Span) : TopItem(Span);
+
+/// <summary><c>@name</c> on the line before a class or <c>def</c> (SPEC §2, M15).</summary>
+public sealed record Decorator(Identifier Name, TextSpan Span) : Node(Span);
 
 /// <summary>A parameter; <see cref="Default"/> is its default value, if any (SPEC §4.2, M14).</summary>
 public sealed record Param(Identifier Name, TypeSyntax Type, Expr? Default, TextSpan Span) : Node(Span);
 
-public sealed record StructDef(Identifier Name, ImmutableArray<TypeParam> TypeParams, ImmutableArray<FieldDef> Fields, ImmutableArray<MethodDef> Methods, TextSpan Span)
-    : TopItem(Span);
+/// <summary>A class (SPEC §4.3, M15). <see cref="Bases"/> has at most one entry once it type-checks.</summary>
+public sealed record ClassDef(
+    ImmutableArray<Decorator> Decorators, Identifier Name, ImmutableArray<TypeParam> TypeParams, ImmutableArray<TypeSyntax> Bases,
+    ImmutableArray<FieldDef> Fields, ImmutableArray<MethodDef> Methods, TextSpan Span) : TopItem(Span);
 
 /// <summary>A method; <see cref="Params"/> excludes the leading <c>self</c>, whose span is <see cref="Self"/>.</summary>
-public sealed record MethodDef(Identifier Name, TextSpan Self, ImmutableArray<Param> Params, TypeSyntax? ReturnType, Block Body, TextSpan Span)
-    : Node(Span);
+public sealed record MethodDef(
+    ImmutableArray<Decorator> Decorators, Identifier Name, TextSpan Self, ImmutableArray<Param> Params, TypeSyntax? ReturnType,
+    Block Body, TextSpan Span) : Node(Span);
 
-public sealed record FieldDef(Identifier Name, TypeSyntax Type, TextSpan Span) : Node(Span);
+/// <summary>A class field or variant payload field; only a class field may have a <see cref="Default"/>.</summary>
+public sealed record FieldDef(Identifier Name, TypeSyntax Type, Expr? Default, TextSpan Span) : Node(Span);
 
 public sealed record EnumDef(Identifier Name, ImmutableArray<TypeParam> TypeParams, ImmutableArray<VariantDef> Variants, TextSpan Span) : TopItem(Span);
 
@@ -110,7 +118,6 @@ public sealed record ExprCondition(Expr Expr, TextSpan Span) : Condition(Span);
 
 public sealed record IsSomeCondition(Expr Expr, Identifier Binding, TextSpan Span) : Condition(Span);
 
-public sealed record IsNoneCondition(Expr Expr, TextSpan Span) : Condition(Span);
 
 // ---- Patterns ----
 
@@ -126,11 +133,14 @@ public sealed record StringPattern(string Value, TextSpan Span) : Pattern(Span);
 public sealed record BoolPattern(bool Value, TextSpan Span) : Pattern(Span);
 
 /// <summary>
-/// <c>Variant</c>, <c>Enum.Variant</c>, <c>module.Enum.Variant</c>, or any of them with bindings. <see cref="Bindings"/> is null
-/// when there are no parentheses.
+/// <c>Variant</c>, <c>Enum.Variant</c>, <c>module.Enum.Variant</c>, or any of them with bindings; or a class pattern,
+/// <c>Class(…)</c> or <c>module.Class(…)</c> (SPEC §5.1). <see cref="Bindings"/> is null when there are no parentheses.
 /// </summary>
-public sealed record VariantPattern(Identifier? Module, Identifier? Enum, Identifier Variant, ImmutableArray<Identifier>? Bindings, TextSpan Span)
+public sealed record VariantPattern(Identifier? Module, Identifier? Enum, Identifier Variant, ImmutableArray<PatternBinding>? Bindings, TextSpan Span)
     : Pattern(Span);
+
+/// <summary>A binding in a pattern: positional, or <c>field=name</c> when <see cref="Field"/> is set (M15).</summary>
+public sealed record PatternBinding(Identifier? Field, Identifier Name, TextSpan Span) : Node(Span);
 
 public sealed record ErrorPattern(TextSpan Span) : Pattern(Span);
 
@@ -144,7 +154,7 @@ public sealed record NamedType(Identifier Name, TextSpan Span) : TypeSyntax(Span
 /// <summary>A type from an imported module: <c>m.Point</c> or <c>m.Box[int]</c> (SPEC §4.7).</summary>
 public sealed record QualifiedType(Identifier Module, TypeSyntax Type, TextSpan Span) : TypeSyntax(Span);
 
-/// <summary>An instantiated generic struct or enum: <c>Box[int]</c>.</summary>
+/// <summary>An instantiated generic class or enum: <c>Box[int]</c>.</summary>
 public sealed record GenericType(Identifier Name, ImmutableArray<TypeSyntax> Arguments, TextSpan Span) : TypeSyntax(Span);
 
 public sealed record ListType(TypeSyntax Element, TextSpan Span) : TypeSyntax(Span);
@@ -224,7 +234,10 @@ public sealed record TupleExpr(ImmutableArray<Expr> Elements, TextSpan Span) : E
 /// <summary><c>lambda x, y: body</c>; a parameter may be <c>_</c> (SPEC §3.7).</summary>
 public sealed record LambdaExpr(ImmutableArray<Identifier> Parameters, Expr Body, TextSpan Span) : Expr(Span);
 
-/// <summary><c>x as T</c>: converts a py value to a Taipan type (SPEC §10.4).</summary>
+/// <summary><c>x is None</c>, or <c>x is not None</c> when <see cref="Negated"/> (SPEC §3.4).</summary>
+public sealed record IsNoneExpr(Expr Operand, bool Negated, TextSpan Span) : Expr(Span);
+
+/// <summary><c>x as T</c>: converts a py value to a Taipan type, or between classes (SPEC §10.4, §4.3).</summary>
 public sealed record CastExpr(Expr Value, TypeSyntax Type, TextSpan Span) : Expr(Span);
 
 public sealed record ErrorExpr(TextSpan Span) : Expr(Span);

@@ -14,9 +14,10 @@ public sealed record BindResult(BoundProgram Program, ImmutableArray<Diagnostic>
 
 /// <summary>
 /// Resolves names and checks types (SPEC §3–§6), producing the bound tree for a whole program
-/// (§4.7). Works in passes over every file: type and variant names; type imports; the other
-/// hoisted declarations (constants, function signatures, struct fields and method signatures);
-/// value imports; then function and method bodies, and the main file's top-level statements.
+/// (§4.7). Works in passes over every file: type and variant names; type imports; base classes;
+/// the other hoisted declarations (constants, function signatures, class fields and method
+/// signatures); inheritance checks; value imports; defaults; then function and method bodies, and
+/// the main file's top-level statements.
 /// </summary>
 public sealed class Binder
 {
@@ -29,7 +30,7 @@ public sealed class Binder
     // The module being bound: its file, global scope and type names. Switched by Enter.
     private SourceText _source = null!;
     private Scope _global = null!;
-    private Dictionary<string, StructSymbol> _structs = null!;
+    private Dictionary<string, ClassSymbol> _classes = null!;
     private Dictionary<string, EnumSymbol> _enums = null!;
     private Dictionary<string, Symbol> _definitions = null!;
 
@@ -40,13 +41,13 @@ public sealed class Binder
 
         public Scope Global { get; } = global;
 
-        public Dictionary<string, StructSymbol> Structs { get; } = [];
+        public Dictionary<string, ClassSymbol> Classes { get; } = [];
 
         public Dictionary<string, EnumSymbol> Enums { get; } = [];
 
         public Dictionary<string, Symbol> Definitions { get; } = [];
 
-        public List<(StructDef Syntax, StructSymbol Symbol)> StructDefs { get; } = [];
+        public List<(ClassDef Syntax, ClassSymbol Symbol)> ClassDefs { get; } = [];
 
         public List<(EnumDef Syntax, EnumSymbol Symbol)> EnumDefs { get; } = [];
 
@@ -61,7 +62,7 @@ public sealed class Binder
         /// <summary><c>from m import x</c> names that weren't types, resolved once functions and constants exist.</summary>
         public List<(Module Target, ImportName Name)> PendingImports { get; } = [];
 
-        public ModuleSymbol Symbol(string name) => new(name, Definitions, Structs, Enums);
+        public ModuleSymbol Symbol(string name) => new(name, Definitions, Classes, Enums);
     }
     // Type names in scope inside a generic definition: each type parameter, or the concrete type it
     // stands for while a constrained body is checked for one combination (SPEC §3.6).
@@ -77,6 +78,9 @@ public sealed class Binder
 
     // Each nested def's name, with its function, so calls by name can use keywords and defaults.
     private readonly Dictionary<VariableSymbol, FunctionSymbol> _localFunctions = [];
+
+    // The names narrowed where the code being bound runs (SPEC §3.9).
+    private Narrowing _narrowing = Narrowing.None;
     private int _loopDepth;
     private string? _unsupported;
 
@@ -104,7 +108,7 @@ public sealed class Binder
         _diagnostics.Source = _source;
         _global = module.Global;
         _scope = _global;
-        _structs = module.Structs;
+        _classes = module.Classes;
         _enums = module.Enums;
         _definitions = module.Definitions;
     }
@@ -125,8 +129,8 @@ public sealed class Binder
             Enter(module);
             foreach (var item in module.File.Unit.Items)
             {
-                if (item is StructDef structDef)
-                    module.StructDefs.Add((structDef, DeclareStruct(structDef)));
+                if (item is ClassDef classDef)
+                    module.ClassDefs.Add((classDef, DeclareClass(classDef)));
                 else if (item is EnumDef enumDef)
                     module.EnumDefs.Add(DeclareEnum(enumDef));
             }
@@ -138,10 +142,27 @@ public sealed class Binder
             BindImports(module, byName);
         }
 
+        // Base classes, once every class name and import is known (SPEC §4.3).
+        foreach (var module in modules)
+        {
+            Enter(module);
+            foreach (var (syntax, symbol) in module.ClassDefs)
+                BindBase(syntax, symbol);
+        }
+        BreakInheritanceCycles(modules);
+
         foreach (var module in modules)
         {
             Enter(module);
             BindDeclarations(module);
+        }
+
+        // Every class's members are known now, so overrides can be checked against bases (SPEC §4.3).
+        foreach (var module in modules)
+        {
+            Enter(module);
+            foreach (var (syntax, symbol) in module.ClassDefs)
+                CheckInheritance(syntax, symbol, module.Methods.Where(m => m.Symbol.Owner == symbol));
         }
 
         foreach (var module in modules)
@@ -167,20 +188,21 @@ public sealed class Binder
             foreach (var (syntax, symbol) in module.Functions)
                 BindDefaults(symbol, syntax.Params, symbol.TypeParameters);
             foreach (var (syntax, symbol) in module.Methods)
-                BindDefaults(symbol, syntax.Params, ((StructType)symbol.Self!.Type).Symbol.TypeParameters);
+                BindDefaults(symbol, syntax.Params, symbol.Owner!.TypeParameters);
+            foreach (var (syntax, symbol) in module.ClassDefs)
+                BindFieldDefaults(syntax, symbol);
         }
 
         var functions = new List<BoundFunction>();
-        var structs = new List<BoundStruct>();
+        var classes = new List<BoundClass>();
         foreach (var module in modules)
         {
             Enter(module);
             functions.AddRange(module.Functions.SelectMany(f => BindFunctionBodies(f.Symbol, f.Syntax)));
-            structs.AddRange(module.StructDefs.Select(s => new BoundStruct(
-                s.Symbol,
-                [.. module.Methods.Where(m => m.Symbol.Self!.Type == s.Symbol.Type)
-                    .Select(m => BindBody(m.Symbol, m.Syntax.Params, m.Syntax.Name, m.Syntax.Body, m.Syntax.Span))],
-                s.Syntax.Span)));
+            classes.AddRange(module.ClassDefs.Select(c => new BoundClass(
+                c.Symbol,
+                [.. module.Methods.Where(m => m.Symbol.Owner == c.Symbol).Select(m => BindMethodBody(c.Symbol, m.Syntax, m.Symbol))],
+                c.Syntax.Span)));
         }
 
         Enter(main);
@@ -191,13 +213,13 @@ public sealed class Binder
         return new BoundProgram(
             [.. order.SelectMany(m => m.PythonImports)],
             [.. modules.SelectMany(m => m.EnumDefs.Select(e => e.Symbol))],
-            [.. structs],
+            [.. classes],
             [.. order.SelectMany(m => m.Constants)],
             [.. functions],
             new BoundBlock(topLevel, unit.Span));
     }
 
-    /// <summary>Constants, function signatures, struct members and variant fields, in source order.</summary>
+    /// <summary>Constants, function signatures, class members and variant fields, in source order.</summary>
     private void BindDeclarations(Module module)
     {
         foreach (var item in module.File.Unit.Items)
@@ -210,9 +232,9 @@ public sealed class Binder
                 case FuncDef funcDef:
                     module.Functions.Add((funcDef, BindFunctionSignature(funcDef)));
                     break;
-                case StructDef structDef:
-                    var symbol = module.StructDefs.First(s => s.Syntax == structDef).Symbol;
-                    module.Methods.AddRange(BindStructMembers(structDef, symbol));
+                case ClassDef classDef:
+                    var symbol = module.ClassDefs.First(c => c.Syntax == classDef).Symbol;
+                    module.Methods.AddRange(BindClassMembers(classDef, symbol));
                     break;
                 case EnumDef enumDef:
                     BindVariantFields(enumDef, module.EnumDefs.First(e => e.Syntax == enumDef).Symbol);
@@ -251,8 +273,8 @@ public sealed class Binder
                 case FromImportStmt from when byName.TryGetValue(from.Module.Text, out var source):
                     foreach (var name in from.Names)
                     {
-                        if (source.Structs.TryGetValue(name.Name.Text, out var structSymbol))
-                            DeclareGlobal(name.Alias ?? name.Name, structSymbol, isDefinition: false);
+                        if (source.Classes.TryGetValue(name.Name.Text, out var classSymbol))
+                            DeclareGlobal(name.Alias ?? name.Name, classSymbol, isDefinition: false);
                         else if (source.Enums.TryGetValue(name.Name.Text, out var enumSymbol))
                             ImportEnum(name, enumSymbol);
                         else
@@ -352,7 +374,7 @@ public sealed class Binder
         OptionalOf o => MentionsTypeParameter(o.Inner),
         ListOfType l => MentionsTypeParameter(l.Element),
         DictOfType d => MentionsTypeParameter(d.Key) || MentionsTypeParameter(d.Value),
-        StructType s => s.TypeArguments.Any(MentionsTypeParameter),
+        ClassType s => s.TypeArguments.Any(MentionsTypeParameter),
         EnumType e => e.TypeArguments.Any(MentionsTypeParameter),
         FunctionType f => f.Parameters.Any(MentionsTypeParameter) || MentionsTypeParameter(f.Result),
         TupleOfType t => t.Elements.Any(MentionsTypeParameter),
@@ -369,14 +391,100 @@ public sealed class Binder
         return previous;
     }
 
-    private StructSymbol DeclareStruct(StructDef structDef)
+    private ClassSymbol DeclareClass(ClassDef classDef)
     {
-        var symbol = new StructSymbol(structDef.Name.Text, NewTypeParameters(structDef.TypeParams));
+        var isDataclass = CheckDecorators(classDef.Decorators, "dataclass");
+        var symbol = new ClassSymbol(classDef.Name.Text, NewTypeParameters(classDef.TypeParams), isDataclass);
         if (BuiltinTypeNames.Contains(symbol.Name))
-            _diagnostics.ReportDuplicateDefinition(structDef.Name.Span, symbol.Name);
-        else if (DeclareGlobal(structDef.Name, symbol))
-            _structs[symbol.Name] = symbol;
+            _diagnostics.ReportDuplicateDefinition(classDef.Name.Span, symbol.Name);
+        else if (DeclareGlobal(classDef.Name, symbol))
+            _classes[symbol.Name] = symbol;
         return symbol;
+    }
+
+    /// <summary>
+    /// Reports TP0224 for any decorator but <paramref name="allowed"/>, and returns whether that
+    /// one is present (SPEC §2): <c>@dataclass</c> on a class, <c>@override</c> on a method.
+    /// </summary>
+    private bool CheckDecorators(ImmutableArray<Decorator> decorators, string? allowed)
+    {
+        var seen = new HashSet<string>();
+        var found = false;
+        foreach (var decorator in decorators)
+        {
+            var name = decorator.Name.Text;
+            if (!seen.Add(name))
+                _diagnostics.ReportDuplicateDecorator(decorator.Span, name);
+            else if (name is not ("dataclass" or "override"))
+                _diagnostics.ReportUnknownDecorator(decorator.Span, name);
+            else if (name != allowed)
+                _diagnostics.ReportMisplacedDecorator(decorator.Span, name);
+            else
+                found = true;
+        }
+        return found;
+    }
+
+    /// <summary>
+    /// A class's base (SPEC §4.3): one non-generic class of the same kind, for a class that isn't
+    /// itself generic. Anything else is TP0225, and the class is bound without a base.
+    /// </summary>
+    private void BindBase(ClassDef classDef, ClassSymbol symbol)
+    {
+        if (classDef.Bases.IsEmpty)
+            return;
+        if (classDef.Bases.Length > 1)
+            _diagnostics.ReportMultipleBases(classDef.Bases[1].Span);
+        var syntax = classDef.Bases[0];
+        if (!symbol.TypeParameters.IsEmpty)
+        {
+            _diagnostics.ReportGenericWithBase(syntax.Span);
+            return;
+        }
+        var type = BindType(syntax);
+        switch (type)
+        {
+            case { ContainsError: true }:
+                return;
+            case ClassType { Symbol.TypeParameters.IsEmpty: false }:
+                _diagnostics.ReportGenericBase(syntax.Span);
+                return;
+            case ClassType { Symbol: var baseClass } when baseClass.IsDataclass != symbol.IsDataclass:
+                _diagnostics.ReportMixedBase(syntax.Span, symbol.IsDataclass);
+                return;
+            case ClassType { Symbol: var baseClass }:
+                symbol.Base = baseClass;
+                return;
+            default:
+                _diagnostics.ReportInvalidBase(syntax.Span, type);
+                return;
+        }
+    }
+
+    /// <summary>A class that derives from itself is TP0225, and loses its base (SPEC §4.3).</summary>
+    private void BreakInheritanceCycles(List<Module> modules)
+    {
+        foreach (var module in modules)
+        {
+            Enter(module);
+            foreach (var (syntax, symbol) in module.ClassDefs)
+            {
+                var seen = new HashSet<ClassSymbol>();
+                for (var ancestor = symbol.Base; ancestor is not null && seen.Add(ancestor); ancestor = ancestor.Base)
+                {
+                    if (ancestor != symbol)
+                        continue;
+                    _diagnostics.ReportInheritanceCycle(syntax.Bases[0].Span, symbol.Name);
+                    symbol.Base = null;
+                    break;
+                }
+            }
+        }
+        foreach (var symbol in modules.SelectMany(m => m.ClassDefs).Select(c => c.Symbol))
+        {
+            if (symbol.Base is { } baseClass)
+                baseClass.HasSubclasses = true;
+        }
     }
 
     /// <summary>
@@ -493,6 +601,7 @@ public sealed class Binder
 
     private FunctionSymbol BindFunctionSignature(FuncDef funcDef)
     {
+        CheckDecorators(funcDef.Decorators, allowed: null);
         CheckTypeParameters(funcDef.TypeParams, allowConstraints: true);
         var typeParameters = NewTypeParameters(funcDef.TypeParams);
         var outer = EnterTypeParameters(typeParameters);
@@ -539,15 +648,15 @@ public sealed class Binder
 
     private TaipanType BindReturnType(TypeSyntax? type) => type is null ? TaipanType.Nothing : BindType(type);
 
-    private List<(MethodDef, FunctionSymbol)> BindStructMembers(StructDef structDef, StructSymbol symbol)
+    private List<(MethodDef, FunctionSymbol)> BindClassMembers(ClassDef classDef, ClassSymbol symbol)
     {
-        CheckTypeParameters(structDef.TypeParams, allowConstraints: false);
+        CheckTypeParameters(classDef.TypeParams, allowConstraints: false);
         var outer = EnterTypeParameters(symbol.TypeParameters);
         var names = new HashSet<string>();
         var fields = ImmutableArray.CreateBuilder<FieldSymbol>();
-        foreach (var field in structDef.Fields)
+        foreach (var field in classDef.Fields)
         {
-            var fieldSymbol = new FieldSymbol(field.Name.Text, BindType(field.Type));
+            var fieldSymbol = new FieldSymbol(field.Name.Text, BindType(field.Type)) { Owner = symbol, HasDefault = field.Default is not null };
             if (names.Add(field.Name.Text))
                 fields.Add(fieldSymbol);
             else
@@ -556,22 +665,174 @@ public sealed class Binder
         symbol.Fields = fields.ToImmutable();
 
         var methods = new List<(MethodDef, FunctionSymbol)>();
-        foreach (var method in structDef.Methods)
+        foreach (var method in classDef.Methods)
         {
+            var name = method.Name.Text;
+            var isOverride = CheckDecorators(method.Decorators, "override");
+            var returnType = BindReturnType(method.ReturnType);
+            if (name == "__init__" && method.ReturnType is { } initReturn)
+            {
+                _diagnostics.ReportInitReturnType(initReturn.Span);
+                returnType = TaipanType.Nothing;
+            }
             var self = new VariableSymbol("self", symbol.Type, VariableKind.Parameter);
-            var methodSymbol = new FunctionSymbol(
-                method.Name.Text, BindParams(method.Params), BindReturnType(method.ReturnType), self: self)
+            var methodSymbol = new FunctionSymbol(name, BindParams(method.Params), returnType, self: self)
             {
                 Defaults = PendingDefaults(method.Params),
+                IsMarkedOverride = isOverride,
             };
-            if (names.Add(method.Name.Text))
-                symbol.Methods[method.Name.Text] = methodSymbol;
-            else
-                _diagnostics.ReportDuplicateDefinition(method.Name.Span, method.Name.Text);
             methods.Add((method, methodSymbol));
+            if (!names.Add(name))
+            {
+                _diagnostics.ReportDuplicateDefinition(method.Name.Span, name);
+            }
+            else if (name == "__init__")
+            {
+                if (symbol.IsDataclass)
+                    _diagnostics.ReportDataclassInit(method.Name.Span);
+                else
+                    symbol.Init = methodSymbol;
+                if (isOverride)
+                    _diagnostics.ReportInitOverride(method.Name.Span);
+            }
+            // Other special methods are deferred to protocols (SPEC §4.3, M17).
+            else if (name.Length > 4 && name.StartsWith("__", StringComparison.Ordinal) && name.EndsWith("__", StringComparison.Ordinal))
+            {
+                _diagnostics.ReportSpecialMethod(method.Name.Span, name);
+            }
+            else
+            {
+                symbol.Methods[name] = methodSymbol;
+            }
         }
         _typeParameters = outer;
         return methods;
+    }
+
+    /// <summary>
+    /// Checks a class's own members against its base's (SPEC §4.3): no redeclared names, overrides
+    /// marked and compatible; for a dataclass, defaulted fields last, and for a plain class without
+    /// <c>__init__</c>, a default for every field.
+    /// </summary>
+    private void CheckInheritance(ClassDef classDef, ClassSymbol symbol, IEnumerable<(MethodDef Syntax, FunctionSymbol Symbol)> methods)
+    {
+        var baseClass = symbol.Base;
+        foreach (var field in classDef.Fields)
+        {
+            if (baseClass?.FindField(field.Name.Text) is not null || baseClass?.FindMethod(field.Name.Text) is not null)
+                _diagnostics.ReportDuplicateDefinition(field.Name.Span, field.Name.Text);
+        }
+        foreach (var (syntax, method) in methods)
+        {
+            if (symbol.Methods.GetValueOrDefault(method.Name) != method)
+                continue;
+            if (baseClass?.FindField(method.Name) is not null)
+            {
+                _diagnostics.ReportDuplicateDefinition(syntax.Name.Span, method.Name);
+                continue;
+            }
+            var overridden = baseClass?.FindMethod(method.Name);
+            if (overridden is null)
+            {
+                if (method.IsMarkedOverride)
+                    _diagnostics.ReportNothingToOverride(syntax.Name.Span, method.Name, baseClass?.Name);
+                continue;
+            }
+            if (method.IsMarkedOverride)
+                CheckOverride(syntax, method, overridden);
+            else
+                _diagnostics.ReportMissingOverride(syntax.Name.Span, method.Name, overridden.Owner!.Name);
+            method.Overrides = overridden;
+        }
+
+        if (symbol.IsDataclass)
+        {
+            // The fields are the constructor's parameters, inherited ones first (SPEC §4.3).
+            var sawDefault = baseClass?.AllFields.Any(f => f.HasDefault) == true;
+            foreach (var field in classDef.Fields)
+            {
+                if (field.Default is not null)
+                    sawDefault = true;
+                else if (sawDefault)
+                    _diagnostics.ReportFieldOrder(field.Name.Span);
+            }
+        }
+        else if (symbol.Init is null)
+        {
+            foreach (var field in classDef.Fields.Where(f => f.Default is null))
+                _diagnostics.ReportFieldWithoutInit(field.Name.Span, field.Name.Text, symbol.Name);
+        }
+    }
+
+    /// <summary>
+    /// An override takes the base method's parameters, with its defaults, and returns what it does
+    /// or, for a class result, a class derived from it (TP0228, SPEC §4.3).
+    /// </summary>
+    private void CheckOverride(MethodDef syntax, FunctionSymbol method, FunctionSymbol overridden)
+    {
+        var (name, owner) = (method.Name, overridden.Owner!.Name);
+        if (method.Parameters.Length != overridden.Parameters.Length)
+        {
+            _diagnostics.ReportOverrideParameters(syntax.Name.Span, name, owner);
+            return;
+        }
+        for (var i = 0; i < method.Parameters.Length; i++)
+        {
+            var (parameter, expected) = (method.Parameters[i], overridden.Parameters[i]);
+            if (parameter.Name != expected.Name)
+            {
+                _diagnostics.ReportOverrideParameters(syntax.Params[i].Name.Span, name, owner);
+                return;
+            }
+            if (parameter.Type != expected.Type && !parameter.Type.ContainsError && !expected.Type.ContainsError)
+                _diagnostics.ReportOverrideParameterType(syntax.Params[i].Span, parameter.Name, name, expected.Type, owner);
+            else if (overridden.DefaultFor(i) is not null && method.DefaultFor(i) is null)
+                _diagnostics.ReportOverrideDefault(syntax.Params[i].Span, parameter.Name, name, owner);
+        }
+
+        var (result, expectedResult) = (method.ReturnType, overridden.ReturnType);
+        var span = syntax.ReturnType?.Span ?? syntax.Name.Span;
+        static bool IsClass(TaipanType type) => TypeChecker.Unwrap(type) is ClassType;
+        if (expectedResult is NothingType)
+        {
+            if (result is not NothingType)
+                _diagnostics.ReportOverrideReturn(span, name, null, owner);
+        }
+        else if (result != expectedResult && !result.ContainsError
+            && !(IsClass(result) && IsClass(expectedResult) && TypeChecker.IsAssignable(result, expectedResult)))
+        {
+            _diagnostics.ReportOverrideReturn(span, name, expectedResult, owner);
+        }
+    }
+
+    /// <summary>
+    /// A class's field defaults, bound like a function's (SPEC §4.3): in the file's global scope,
+    /// with the class's type parameters, and checked against each field's type.
+    /// </summary>
+    private void BindFieldDefaults(ClassDef classDef, ClassSymbol symbol)
+    {
+        if (classDef.Fields.All(f => f.Default is null))
+            return;
+        var outerTypeParameters = EnterTypeParameters(symbol.TypeParameters);
+        // Named after the class, for TP0211.
+        var context = new FunctionSymbol(symbol.Name, [], TaipanType.Nothing);
+        (_function, _outerFunction, _scope) = (context, context, new Scope(_global));
+        foreach (var field in classDef.Fields)
+        {
+            if (field.Default is { } value && symbol.Fields.FirstOrDefault(f => f.Name == field.Name.Text) is { } fieldSymbol)
+                fieldSymbol.Default = BindExpected(value, fieldSymbol.Type);
+        }
+        (_function, _outerFunction, _scope) = (null, null, _global);
+        _typeParameters = outerTypeParameters;
+    }
+
+    /// <summary>A method's body; an <c>__init__</c>'s is also checked for strict initialization (SPEC §4.3).</summary>
+    private BoundFunction BindMethodBody(ClassSymbol owner, MethodDef syntax, FunctionSymbol method)
+    {
+        var body = BindBody(method, syntax.Params, syntax.Name, syntax.Body, syntax.Span);
+        if (method == owner.Init)
+            InitChecker.Check(owner, method.Self!, body.Body, syntax.Name.Span, _diagnostics);
+        return body;
     }
 
     /// <summary>
@@ -625,9 +886,9 @@ public sealed class Binder
         FunctionSymbol symbol, ImmutableArray<Param> parameters, Identifier name, Block body, TextSpan span,
         ImmutableArray<VariableSymbol>? specializedParameters = null)
     {
-        // A method sees its struct's type parameters; a function its own.
+        // A method sees its class's type parameters; a function its own.
         var outerTypeParameters = EnterTypeParameters(
-            symbol.Self?.Type is StructType { Symbol: var owner } ? owner.TypeParameters : symbol.TypeParameters);
+            symbol.Self?.Type is ClassType { Symbol: var owner } ? owner.TypeParameters : symbol.TypeParameters);
         _function = symbol;
         _outerFunction = symbol;
         _loopDepth = 0;
@@ -689,7 +950,7 @@ public sealed class Binder
                 foreach (var arm in match.Arms)
                 {
                     if (arm.Pattern is VariantPattern { Bindings: { } names })
-                        _scriptNames.UnionWith(names.Select(n => n.Text).Where(n => n != "_"));
+                        _scriptNames.UnionWith(names.Select(n => n.Name.Text).Where(n => n != "_"));
                     CollectScriptNames(arm.Body);
                 }
                 break;
@@ -784,7 +1045,7 @@ public sealed class Binder
             case DictType dict:
                 var key = BindType(dict.Key);
                 if (!DictOfType.IsValidKey(key))
-                    _diagnostics.ReportInvalidDictKey(dict.Key.Span, key);
+                    _diagnostics.ReportInvalidDictKey(dict.Key.Span, key, key is ClassType { Symbol.IsDataclass: true });
                 return new DictOfType(key, BindType(dict.Value));
             case OptionalType optional:
                 var inner = BindType(optional.Inner);
@@ -799,8 +1060,8 @@ public sealed class Binder
         }
     }
 
-    /// <summary>A struct or enum visible in this file, defined or imported (SPEC §4.7).</summary>
-    private Symbol? ResolveTypeName(string name) => _global.Lookup(name) is StructSymbol or EnumSymbol ? _global.Lookup(name) : null;
+    /// <summary>A class or enum visible in this file, defined or imported (SPEC §4.7).</summary>
+    private Symbol? ResolveTypeName(string name) => _global.Lookup(name) is ClassSymbol or EnumSymbol ? _global.Lookup(name) : null;
 
     /// <summary><c>m.Point</c> or <c>m.Box[int]</c>: a type that module <c>m</c> defines.</summary>
     private TaipanType BindQualifiedType(QualifiedType qualified)
@@ -816,7 +1077,7 @@ public sealed class Binder
             _diagnostics.ReportUndefinedName(qualified.Module.Span, qualified.Module.Text);
             return TaipanType.Error;
         }
-        Symbol? symbol = module.Structs.TryGetValue(name.Text, out var structSymbol) ? structSymbol
+        Symbol? symbol = module.Classes.TryGetValue(name.Text, out var classSymbol) ? classSymbol
             : module.Enums.TryGetValue(name.Text, out var enumSymbol) ? enumSymbol : null;
         if (symbol is null)
         {
@@ -826,13 +1087,13 @@ public sealed class Binder
         return BindGenericType(name, arguments, qualified.Span, symbol);
     }
 
-    /// <summary>A struct or enum type with exactly as many type arguments as it has parameters (SPEC §3.6).</summary>
+    /// <summary>A class or enum type with exactly as many type arguments as it has parameters (SPEC §3.6).</summary>
     private TaipanType BindGenericType(Identifier name, ImmutableArray<TypeSyntax> argumentSyntax, TextSpan span, Symbol? symbol)
     {
         var arguments = argumentSyntax.Select(BindType).ToImmutableArray();
         var parameters = symbol switch
         {
-            StructSymbol structSymbol => structSymbol.TypeParameters,
+            ClassSymbol classSymbol => classSymbol.TypeParameters,
             EnumSymbol enumSymbol => enumSymbol.TypeParameters,
             _ => default,
         };
@@ -847,8 +1108,8 @@ public sealed class Binder
             _diagnostics.ReportWrongTypeArgumentCount(span, name.Text, parameters.Length, arguments.Length);
             return TaipanType.Error;
         }
-        return symbol is StructSymbol s
-            ? new StructType(s, arguments)
+        return symbol is ClassSymbol s
+            ? new ClassType(s, arguments)
             : new EnumType((EnumSymbol)symbol!, arguments);
     }
 
@@ -969,6 +1230,7 @@ public sealed class Binder
     private BoundLocalFunction BindLocalFunction(FuncDefStmt stmt)
     {
         var def = stmt.Function;
+        CheckDecorators(def.Decorators, allowed: null);
         var outerTypeParameters = _typeParameters;
         if (!def.TypeParams.IsEmpty)
         {
@@ -1008,7 +1270,7 @@ public sealed class Binder
         var type = scrutinee.Type;
         if (ReportIfOptional(scrutinee, match.Scrutinee.Span))
             type = TaipanType.Error;
-        else if (!type.ContainsError && type is not EnumType && type != TaipanType.Int && type != TaipanType.Str && type != TaipanType.Bool)
+        else if (!type.ContainsError && type is not (EnumType or ClassType) && type != TaipanType.Int && type != TaipanType.Str && type != TaipanType.Bool)
         {
             _diagnostics.ReportCannotMatch(match.Scrutinee.Span, type);
             type = TaipanType.Error;
@@ -1029,7 +1291,12 @@ public sealed class Binder
             _scope = new Scope(outer);
             foreach (var (identifier, symbol) in bindings)
                 DeclareLocal(identifier, symbol);
+            // A class pattern narrows the scrutinee in its arm (SPEC §5.1).
+            var outerNarrowing = _narrowing;
+            if (pattern is BoundClassPattern classPattern)
+                _narrowing = _narrowing.With(Narrow(scrutinee, classPattern.Class.Symbol.DerivesFrom(((ClassType)type).Symbol) ? classPattern.Class : type));
             var body = BindBlock(arm.Body);
+            _narrowing = outerNarrowing;
             _scope = outer;
             arms.Add(new BoundArm(pattern, body, reachable));
         }
@@ -1059,6 +1326,8 @@ public sealed class Binder
                 return LiteralPattern(pattern, TaipanType.Str, type, stringPattern.Value);
             case BoolPattern boolPattern:
                 return LiteralPattern(pattern, TaipanType.Bool, type, boolPattern.Value);
+            case VariantPattern classPattern when type is ClassType classType:
+                return BindClassPattern(classPattern, classType);
             case VariantPattern variantPattern:
                 var variant = ResolveVariantPattern(variantPattern, type);
                 if (variant is null)
@@ -1074,7 +1343,7 @@ public sealed class Binder
                         return (new BoundWildcardPattern(), bindings, null);
                     }
                     var builder = ImmutableArray.CreateBuilder<VariableSymbol?>();
-                    foreach (var (name, field) in names.Zip(variant.Fields))
+                    foreach (var (name, field) in names.Select(n => n.Name).Zip(variant.Fields))
                     {
                         if (name.Text == "_")
                         {
@@ -1094,6 +1363,111 @@ public sealed class Binder
             default:
                 return (new BoundWildcardPattern(), bindings, null);
         }
+    }
+
+    /// <summary>
+    /// <c>C(…)</c> on a class scrutinee (SPEC §5.1): it matches instances of <c>C</c>, which must
+    /// derive from the scrutinee's class. Fields bind by name, or for a dataclass also by position.
+    /// Its coverage key is the class.
+    /// </summary>
+    private (BoundPattern, List<(Identifier, VariableSymbol)>, object?) BindClassPattern(VariantPattern pattern, ClassType scrutinee)
+    {
+        var bindings = new List<(Identifier, VariableSymbol)>();
+        var invalid = (new BoundWildcardPattern(), bindings, (object?)null);
+        if (pattern.Module is not null)
+        {
+            _diagnostics.ReportNotAClass(pattern.Span, _source.ToString(pattern.Span));
+            return invalid;
+        }
+        ClassSymbol? classSymbol;
+        if (pattern.Enum is { } moduleName)
+        {
+            if (_scope.Lookup(moduleName.Text) is not ModuleSymbol module)
+            {
+                _diagnostics.ReportUndefinedName(moduleName.Span, moduleName.Text);
+                return invalid;
+            }
+            if (!module.Definitions.TryGetValue(pattern.Variant.Text, out var definition))
+            {
+                _diagnostics.ReportNoDefinition(pattern.Variant.Span, module.Name, pattern.Variant.Text);
+                return invalid;
+            }
+            classSymbol = definition as ClassSymbol;
+        }
+        else
+        {
+            if (LookupName(pattern.Variant.Text, pattern.Variant.Span) is not { } found)
+                return invalid;
+            classSymbol = found as ClassSymbol;
+        }
+        var name = _source.ToString(new TextSpan(pattern.Span.Start, pattern.Variant.Span.End - pattern.Span.Start));
+        if (classSymbol is null)
+        {
+            _diagnostics.ReportNotAClass(pattern.Span, name);
+            return invalid;
+        }
+        if (pattern.Bindings is not { } names)
+        {
+            _diagnostics.ReportBareClassPattern(pattern.Span, name);
+            return invalid;
+        }
+        if (!classSymbol.DerivesFrom(scrutinee.Symbol))
+        {
+            _diagnostics.ReportNeverInstance(pattern.Span, scrutinee, classSymbol.Name);
+            return invalid;
+        }
+
+        // Generic classes don't derive, so the pattern's class is the scrutinee's type or isn't generic.
+        var classType = classSymbol == scrutinee.Symbol ? scrutinee : new ClassType(classSymbol);
+        var positional = names.TakeWhile(n => n.Field is null).Count();
+        var fields = classSymbol.AllFields;
+        if (positional > 0 && !classSymbol.IsDataclass)
+        {
+            _diagnostics.ReportPositionalOnPlainClass(pattern.Span, classSymbol.Name);
+            return invalid;
+        }
+        if (positional > fields.Length)
+        {
+            _diagnostics.ReportBindingCount(pattern.Span, classSymbol.Name, fields.Length, positional);
+            return invalid;
+        }
+        var bound = ImmutableArray.CreateBuilder<(FieldSymbol, VariableSymbol)>();
+        var given = new HashSet<FieldSymbol>();
+        var valid = true;
+        for (var i = 0; i < names.Length; i++)
+        {
+            var binding = names[i];
+            FieldSymbol? field;
+            if (binding.Field is null)
+            {
+                field = fields[i];
+            }
+            else
+            {
+                field = classSymbol.FindField(binding.Field.Text);
+                if (field is null)
+                {
+                    _diagnostics.ReportNoField(binding.Field.Span, classType, binding.Field.Text);
+                    valid = false;
+                    continue;
+                }
+            }
+            if (!given.Add(field))
+            {
+                _diagnostics.ReportRepeatedField((binding.Field ?? binding.Name).Span, field.Name);
+                valid = false;
+                continue;
+            }
+            if (binding.Name.Text == "_")
+                continue;
+            var symbol = new VariableSymbol(binding.Name.Text, FieldType(classType, field), VariableKind.Let);
+            if (bindings.Any(b => b.Item1.Text == binding.Name.Text))
+                _diagnostics.ReportDuplicateDefinition(binding.Name.Span, binding.Name.Text);
+            else
+                bindings.Add((binding.Name, symbol));
+            bound.Add((field, symbol));
+        }
+        return valid ? (new BoundClassPattern(classType, bound.ToImmutable()), bindings, classSymbol) : invalid;
     }
 
     private object? OutOfRange(TextSpan span)
@@ -1178,6 +1552,9 @@ public sealed class Binder
         {
             if (_keys.Contains(Wildcard))
                 return false;
+            // A class pattern covers every class deriving from it (SPEC §5.1).
+            if (key is ClassSymbol classSymbol && _keys.OfType<ClassSymbol>().Any(classSymbol.DerivesFrom))
+                return false;
             return key is null || _keys.Add(key);
         }
 
@@ -1189,6 +1566,7 @@ public sealed class Binder
             {
                 EnumType e => [.. e.Symbol.Variants.Where(v => !_keys.Contains(v)).Select(v => v.Name)],
                 PrimitiveType { Name: "bool" } => [.. new[] { true, false }.Where(b => !_keys.Contains(b)).Select(b => b ? "True" : "False")],
+                ClassType c when _keys.Contains(c.Symbol) => [],
                 _ => ["_"],
             };
         }
@@ -1230,7 +1608,7 @@ public sealed class Binder
         var symbol = LookupName(target.Name, target.Span);
         if (symbol is not VariableSymbol variable)
         {
-            if (symbol is FunctionSymbol or StructSymbol or EnumSymbol or VariantSymbol or AmbiguousVariantSymbol or ModuleSymbol)
+            if (symbol is FunctionSymbol or ClassSymbol or EnumSymbol or VariantSymbol or AmbiguousVariantSymbol or ModuleSymbol)
                 _diagnostics.ReportCannotAssign(target.Span, target.Name, "function", null);
             return OrphanAssign(assign, preset);
         }
@@ -1264,15 +1642,15 @@ public sealed class Binder
             return new BoundPySetAttr(target, member.Member.Text, pyValue, assign.Op != AssignOp.Assign, assign.Span);
         }
 
-        if (target.Type is StructType { Symbol: var structSymbol })
+        if (target.Type is ClassType { Symbol: var classSymbol })
         {
-            if (structSymbol.FindField(member.Member.Text) is { } field)
+            if (classSymbol.FindField(member.Member.Text) is { } field)
             {
                 var fieldType = FieldType(target.Type, field);
                 var value = BindAssignedValue(assign, new BoundFieldAccess(target, field, fieldType, member.Span), fieldType, preset);
                 return new BoundFieldAssign(target, field, value, assign.Op != AssignOp.Assign, assign.Span);
             }
-            if (structSymbol.Methods.ContainsKey(member.Member.Text))
+            if (classSymbol.FindMethod(member.Member.Text) is not null || member.Member.Text == "__init__")
                 _diagnostics.ReportCannotAssign(member.Member.Span, member.Member.Text, "method", null);
             else
                 _diagnostics.ReportNoField(member.Member.Span, target.Type, member.Member.Text);
@@ -1322,7 +1700,7 @@ public sealed class Binder
             CheckAssignable(preset, targetType, preset.Span);
             return targetType == TaipanType.Py && preset.Type != TaipanType.Py && !preset.Type.ContainsError
                 ? new BoundToPy(preset, preset.Span)
-                : preset;
+                : ConvertFunction(preset, targetType);
         }
         if (assign.Op == AssignOp.Assign)
             return BindExpected(assign.Value, targetType);
@@ -1373,14 +1751,20 @@ public sealed class Binder
         return new BoundContinue(cont.Span);
     }
 
+    /// <summary>Each later clause sees what holds when the earlier conditions are false (SPEC §3.9).</summary>
     private BoundIf BindIf(IfStmt ifStmt)
     {
-        var clauses = ifStmt.Clauses
-            .Select(c => BindGuarded(c.Condition, c.Body, isLoop: false))
-            .Select(g => new BoundIfClause(g.Condition, g.Body))
-            .ToImmutableArray();
+        var outer = _narrowing;
+        var clauses = ImmutableArray.CreateBuilder<BoundIfClause>();
+        foreach (var clause in ifStmt.Clauses)
+        {
+            var (condition, body) = BindGuarded(clause.Condition, clause.Body, isLoop: false);
+            clauses.Add(new BoundIfClause(condition, body));
+            _narrowing = _narrowing.With(Facts(condition, whenTrue: false));
+        }
         var elseBlock = ifStmt.Else is null ? null : BindBlock(ifStmt.Else);
-        return new BoundIf(clauses, elseBlock, ifStmt.Span);
+        _narrowing = outer;
+        return new BoundIf(clauses.ToImmutable(), elseBlock, ifStmt.Span);
     }
 
     private BoundWhile BindWhile(WhileStmt whileStmt)
@@ -1405,11 +1789,6 @@ public sealed class Binder
                 binding = new VariableSymbol(isSome.Binding.Text, inner, VariableKind.Let);
                 bound = new BoundIsSome(someOperand, binding, isSome.Span);
                 break;
-            case IsNoneCondition isNone:
-                var noneOperand = BindValue(isNone.Expr);
-                RequireOptional(noneOperand, isNone.Expr.Span, "is None");
-                bound = new BoundIsNone(noneOperand, isNone.Span);
-                break;
             default:
                 bound = BindCondition((ExprCondition)condition);
                 break;
@@ -1423,14 +1802,17 @@ public sealed class Binder
         }
         if (isLoop)
             _loopDepth++;
+        var outerNarrowing = _narrowing;
+        _narrowing = _narrowing.With(Facts(bound, whenTrue: true));
         var block = BindBlock(body);
+        _narrowing = outerNarrowing;
         if (isLoop)
             _loopDepth--;
         _scope = outer;
         return (bound, block);
     }
 
-    /// <summary>The inner type of an optional operand of <c>is some</c> / <c>is none</c>, else TP0200.</summary>
+    /// <summary>The inner type of an optional operand of <c>is some</c> / <c>is None</c>, else TP0200.</summary>
     private TaipanType RequireOptional(BoundExpr operand, TextSpan span, string construct)
     {
         if (operand.Type is OptionalOf optional)
@@ -1537,8 +1919,15 @@ public sealed class Binder
         // A Taipan value where a py is expected is converted to Python (SPEC §10.3).
         if (expected == TaipanType.Py && value.Type != TaipanType.Py && !value.Type.ContainsError && value.Type.IsConvertibleToPython)
             return new BoundToPy(value, value.Span);
-        return value;
+        return ConvertFunction(value, expected);
     }
+
+    /// <summary>A function value stored where another function type is expected is converted to it (SPEC §3.3).</summary>
+    private static BoundExpr ConvertFunction(BoundExpr value, TaipanType target) =>
+        value.Type is FunctionType from && TypeChecker.Unwrap(target) is FunctionType to && from != to
+        && !from.ContainsError && !to.ContainsError && TypeChecker.IsAssignable(from, to)
+            ? new BoundConvertFunction(value, to, value.Span)
+            : value;
 
     /// <summary>
     /// A value passed into a py operation: it must be convertible to Python (SPEC §10.3). py is its
@@ -1560,11 +1949,18 @@ public sealed class Binder
         return new BoundPyCall(callee, positional, keywords, call.Span);
     }
 
-    // `x as T` (SPEC §10.4): x must be py, and T a type Python values can convert to.
+    // `x as T` (SPEC §10.4): x must be py, and T a type Python values can convert to; or both are
+    // classes, one deriving from the other (§4.3).
     private BoundExpr BindCast(CastExpr cast)
     {
         var value = BindValue(cast.Value);
         var target = BindType(cast.Type);
+        if (TypeChecker.Unwrap(value.Type) is ClassType from && TypeChecker.Unwrap(target) is ClassType to)
+        {
+            return CheckRelated(to, from, cast.Type.Span) is null
+                ? new BoundErrorExpr(cast.Span)
+                : new BoundClassCast(value, target, cast.Span);
+        }
         if (value.Type != TaipanType.Py && !value.Type.ContainsError)
         {
             _diagnostics.ReportCastNeedsPy(cast.Value.Span, value.Type);
@@ -1792,6 +2188,8 @@ public sealed class Binder
         UnaryExpr unary => BindUnary(unary),
         BinaryExpr { Op: BinaryOp.Coalesce } binary => BindCoalesce(binary),
         BinaryExpr { Op: BinaryOp.Equal or BinaryOp.NotEqual } equality => BindEquality(equality),
+        BinaryExpr { Op: BinaryOp.And or BinaryOp.Or } logical => BindLogical(logical),
+        IsNoneExpr isNone => BindIsNone(isNone),
         BinaryExpr binary => BindBinaryOperation(BindValue(binary.Left), binary.Op, BindValue(binary.Right), binary.Span),
         CallExpr call => BindCall(call, expected),
         ListExpr list => BindList(list, expected),
@@ -1841,6 +2239,8 @@ public sealed class Binder
     {
         switch (symbol)
         {
+            case VariableSymbol variable when _narrowing.Types.TryGetValue(variable, out var narrowed):
+                return new BoundNarrowed(new BoundVariable(variable, span), narrowed, span);
             case VariableSymbol variable:
                 return new BoundVariable(variable, span);
             // Only a top-level function that isn't generic is a value (SPEC §3.7).
@@ -1852,7 +2252,7 @@ public sealed class Binder
                 return new BoundErrorExpr(span);
             case FunctionSymbol function:
                 return new BoundFunctionValue(function, new FunctionType([.. function.Parameters.Select(p => p.Type)], function.ReturnType), span);
-            case StructSymbol or EnumSymbol:
+            case ClassSymbol or EnumSymbol:
                 _diagnostics.ReportTypeAsValue(span, name);
                 return new BoundErrorExpr(span);
             case ModuleSymbol:
@@ -1931,6 +2331,80 @@ public sealed class Binder
         }
         return new BoundBinary(left, op, right, TaipanType.Py, span);
     }
+
+    /// <summary>In <c>a and b</c>, <c>b</c> sees what holds when <c>a</c> is true; in <c>a or b</c>, when it's false (SPEC §3.9).</summary>
+    private BoundExpr BindLogical(BinaryExpr binary)
+    {
+        var left = BindValue(binary.Left);
+        var outer = _narrowing;
+        _narrowing = _narrowing.With(Facts(left, whenTrue: binary.Op == BinaryOp.And));
+        var right = BindValue(binary.Right);
+        _narrowing = outer;
+        return BindBinaryOperation(left, binary.Op, right, binary.Span);
+    }
+
+    private BoundIsNone BindIsNone(IsNoneExpr isNone)
+    {
+        var operand = BindValue(isNone.Operand);
+        RequireOptional(operand, isNone.Operand.Span, isNone.Negated ? "is not None" : "is None");
+        return new BoundIsNone(operand, isNone.Negated, isNone.Span);
+    }
+
+    // ---- Narrowing (SPEC §3.9) ----
+
+    /// <summary>
+    /// Names narrowed to new types, and the vars and fields a condition would have narrowed if
+    /// they couldn't change (keyed by symbol, or by variable and field), for the help on TP0203 and TP0210.
+    /// </summary>
+    private sealed record Narrowing(ImmutableDictionary<VariableSymbol, TaipanType> Types, ImmutableHashSet<object> Unnarrowable)
+    {
+        public static readonly Narrowing None = new(ImmutableDictionary<VariableSymbol, TaipanType>.Empty, []);
+
+        public Narrowing With(Narrowing other) =>
+            new(Types.SetItems(other.Types), Unnarrowable.Union(other.Unnarrowable));
+    }
+
+    /// <summary>What holds when <paramref name="condition"/> is true, or when it's false.</summary>
+    private static Narrowing Facts(BoundExpr condition, bool whenTrue) => condition switch
+    {
+        BoundIsInstance isInstance when whenTrue => Narrow(isInstance.Operand, InstanceType(isInstance)),
+        BoundIsNone isNone when isNone.Negated == whenTrue => Narrow(isNone.Operand, TypeChecker.Unwrap(isNone.Operand.Type)),
+        BoundUnary { Op: UnaryOp.Not } negation => Facts(negation.Operand, !whenTrue),
+        BoundBinary { Op: BinaryOp.And } both when whenTrue => Facts(both.Left, true).With(Facts(both.Right, true)),
+        BoundBinary { Op: BinaryOp.Or } either when !whenTrue => Facts(either.Left, false).With(Facts(either.Right, false)),
+        _ => Narrowing.None,
+    };
+
+    /// <summary>The type <c>isinstance(x, C)</c> narrows <c>x</c> to: <c>C</c>, unless <c>x</c>'s own class already derives from it.</summary>
+    private static TaipanType InstanceType(BoundIsInstance isInstance) =>
+        TypeChecker.Unwrap(isInstance.Operand.Type) is ClassType current && !isInstance.Class.Symbol.DerivesFrom(current.Symbol)
+            ? current
+            : isInstance.Class;
+
+    private static Narrowing Narrow(BoundExpr operand, TaipanType type)
+    {
+        if (type.ContainsError)
+            return Narrowing.None;
+        var variable = operand switch
+        {
+            BoundVariable v => v.Symbol,
+            BoundNarrowed n => n.Value.Symbol,
+            _ => null,
+        };
+        if (variable is { Kind: VariableKind.Let or VariableKind.Parameter or VariableKind.LoopVariable })
+            return Narrowing.None with { Types = Narrowing.None.Types.Add(variable, type) };
+        object? key = variable is not null ? variable
+            : operand is BoundFieldAccess { Target: BoundVariable target } field ? (target.Symbol, field.Field) : null;
+        return key is null ? Narrowing.None : Narrowing.None with { Unnarrowable = [key] };
+    }
+
+    /// <summary>Whether <paramref name="value"/> is a var or field that a condition here would have narrowed.</summary>
+    private bool IsUnnarrowable(BoundExpr value) => value switch
+    {
+        BoundVariable v => _narrowing.Unnarrowable.Contains(v.Symbol),
+        BoundFieldAccess { Target: BoundVariable target } field => _narrowing.Unnarrowable.Contains((target.Symbol, field.Field)),
+        _ => false,
+    };
 
     // In `a == b` and `a != b`, a's type is b's expected type, so `m == Nothing` and `xs == []` work (SPEC §5.3).
     // A tuple's isn't: its elements need only be comparable, so `(1, 2) == (1.0, 2)` works (§3.8).
@@ -2042,7 +2516,7 @@ public sealed class Binder
             var pyKeys = dict.Entries.Select(e => BindValue(e.Key)).ToImmutableArray();
             var pyKeyType = InferElementType(pyKeys);
             if (!DictOfType.IsValidKey(pyKeyType))
-                _diagnostics.ReportInvalidDictKey(dict.Entries[0].Key.Span, pyKeyType);
+                _diagnostics.ReportInvalidDictKey(dict.Entries[0].Key.Span, pyKeyType, pyKeyType is ClassType { Symbol.IsDataclass: true });
             var pyValues = dict.Entries.Select(e => BindExpected(e.Value, TaipanType.Py)).ToImmutableArray();
             return new BoundDictLiteral([.. pyKeys.Zip(pyValues)], new DictOfType(pyKeyType, TaipanType.Py), dict.Span);
         }
@@ -2063,7 +2537,7 @@ public sealed class Binder
         var keyType = InferElementType([.. entries.Select(e => e.Key)]);
         if (!DictOfType.IsValidKey(keyType))
         {
-            _diagnostics.ReportInvalidDictKey(dict.Entries[0].Key.Span, keyType);
+            _diagnostics.ReportInvalidDictKey(dict.Entries[0].Key.Span, keyType, keyType is ClassType { Symbol.IsDataclass: true });
             keyType = TaipanType.Error;
         }
         var valueType = InferElementType([.. entries.Select(e => e.Value)]);
@@ -2098,6 +2572,8 @@ public sealed class Binder
                 common = type;
             else if (type.IsNumeric && common.IsNumeric)
                 common = TaipanType.Float;
+            else if (Join(type, common) is { } join)
+                common = join;
             else
             {
                 _diagnostics.ReportTypeMismatch(element.Span, optional ? new OptionalOf(common) : common, element.Type);
@@ -2127,14 +2603,16 @@ public sealed class Binder
         if (target.Type == TaipanType.Py)
             return new BoundPyGetAttr(target, name, member.Span);
 
-        if (target.Type is StructType { Symbol: var structSymbol })
+        if (target.Type is ClassType { Symbol: var classSymbol })
         {
-            if (structSymbol.FindField(name) is { } field)
+            if (classSymbol.FindField(name) is { } field)
                 return new BoundFieldAccess(target, field, FieldType(target.Type, field), member.Span);
-            if (structSymbol.Methods.ContainsKey(name))
+            if (name == "__init__")
+                _diagnostics.ReportInitCalled(member.Member.Span);
+            else if (classSymbol.FindMethod(name) is not null)
                 _diagnostics.ReportMethodAsValue(member.Member.Span, name);
             else
-                _diagnostics.ReportNoField(member.Member.Span, target.Type, name);
+                _diagnostics.ReportNoField(member.Member.Span, target.Type, name, IsUnnarrowable(target));
         }
         else if (BuiltinMethodOf(target.Type, name) is not null)
         {
@@ -2215,6 +2693,8 @@ public sealed class Binder
             return BindSort(call, name, nameSpan, target: null);
         if (symbol is FunctionSymbol { Builtin: BuiltinFunction.Enumerate } enumerate)
             return BindEnumerate(call, enumerate, nameSpan);
+        if (symbol is FunctionSymbol { Builtin: BuiltinFunction.IsInstance })
+            return BindIsInstance(call, nameSpan);
         switch (symbol)
         {
             case VariableSymbol variable when _localFunctions.TryGetValue(variable, out var local):
@@ -2222,8 +2702,8 @@ public sealed class Binder
             case VariableSymbol variable when TypeChecker.Unwrap(variable.Type) is FunctionType:
                 ReportKeywordArguments(call, function: null);
                 return BindInvoke(call, new BoundVariable(variable, nameSpan), name, nameSpan);
-            case StructSymbol structSymbol:
-                return BindConstruct(call, structSymbol, expected);
+            case ClassSymbol classSymbol:
+                return BindConstruct(call, classSymbol, expected, nameSpan);
             case VariantSymbol variant:
                 return BindConstructVariant(call, variant, expected);
             case AmbiguousVariantSymbol ambiguous:
@@ -2330,7 +2810,11 @@ public sealed class Binder
         foreach (var parameter in typeParameters.Where(p => !p.Constraints.IsEmpty))
             map[parameter] = CheckConstraint(parameter, map[parameter], nameSpan);
         for (var i = 0; i < bound.Length; i++)
-            CheckAssignable(bound[i], TypeChecker.Substitute(parameterTypes[i], map), arguments[i].Span);
+        {
+            var parameter = TypeChecker.Substitute(parameterTypes[i], map);
+            CheckAssignable(bound[i], parameter, arguments[i].Span);
+            bound[i] = ConvertFunction(bound[i], parameter);
+        }
         return ([.. bound], map);
     }
 
@@ -2381,7 +2865,7 @@ public sealed class Binder
             OptionalOf o => IsKnown(o.Inner),
             ListOfType l => IsKnown(l.Element),
             DictOfType d => IsKnown(d.Key) && IsKnown(d.Value),
-            StructType s => s.TypeArguments.All(IsKnown),
+            ClassType s => s.TypeArguments.All(IsKnown),
             EnumType e => e.TypeArguments.All(IsKnown),
             FunctionType f => f.Parameters.All(IsKnown) && IsKnown(f.Result),
             TupleOfType t => t.Elements.All(IsKnown),
@@ -2406,7 +2890,7 @@ public sealed class Binder
                     GiveUp(d.Key);
                     GiveUp(d.Value);
                     break;
-                case StructType s:
+                case ClassType s:
                     s.TypeArguments.ToList().ForEach(GiveUp);
                     break;
                 case EnumType e:
@@ -2451,7 +2935,7 @@ public sealed class Binder
                     Unify(p.Key, a.Key, fromArgument);
                     Unify(p.Value, a.Value, fromArgument);
                     break;
-                case (StructType p, StructType a) when p.Symbol == a.Symbol:
+                case (ClassType p, ClassType a) when p.Symbol == a.Symbol:
                     foreach (var (pa, aa) in p.TypeArguments.Zip(a.TypeArguments))
                         Unify(pa, aa, fromArgument);
                     break;
@@ -2501,10 +2985,19 @@ public sealed class Binder
                 map[parameter] = TaipanType.Float;
                 return;
             }
+            if (Join(existing, actual) is { } join)
+            {
+                map[parameter] = join;
+                return;
+            }
             diagnostics.ReportConflictingTypeArgument(span, parameter.Name, existing, actual);
             map[parameter] = TaipanType.Error;
         }
     }
+
+    /// <summary>Two classes mix to their nearest common base (SPEC §3.2); null for anything else.</summary>
+    private static TaipanType? Join(TaipanType a, TaipanType b) =>
+        a is ClassType x && b is ClassType y && x.Symbol.CommonBase(y.Symbol) is { } common ? common.Type : null;
 
     private void ReportAmbiguous(AmbiguousVariantSymbol ambiguous, TextSpan span) =>
         _diagnostics.ReportAmbiguousVariant(span, ambiguous.Name, ambiguous.Variants.Select(v => v.Enum.Name));
@@ -2602,12 +3095,135 @@ public sealed class Binder
     private static ArgumentShape? Simplify(ArgumentShape shape) =>
         shape.InOrder && shape.Parameters.Length == shape.ParameterCount ? null : shape;
 
-    private BoundExpr BindConstruct(CallExpr call, StructSymbol structSymbol, TaipanType? expected)
+    /// <summary>
+    /// A dataclass's constructor takes its fields; a plain class's takes its <c>__init__</c>'s
+    /// parameters, matched like a function's (SPEC §4.3).
+    /// </summary>
+    private BoundExpr BindConstruct(CallExpr call, ClassSymbol classSymbol, TaipanType? expected, TextSpan nameSpan)
     {
-        var (arguments, isKeyword, map) = BindFieldArguments(call, structSymbol.Name, structSymbol.Fields, structSymbol.TypeParameters, structSymbol.Type, expected);
-        return arguments is { } valid
-            ? new BoundConstruct((StructType)TypeChecker.Substitute(structSymbol.Type, map), valid, isKeyword, call.Span)
-            : new BoundErrorExpr(call.Span);
+        if (classSymbol.IsDataclass)
+        {
+            var (arguments, isKeyword, map) = BindFieldArguments(
+                call, classSymbol.Name, classSymbol.AllFields, classSymbol.TypeParameters, classSymbol.Type, expected);
+            return arguments is { } valid
+                ? new BoundConstruct((ClassType)TypeChecker.Substitute(classSymbol.Type, map), valid, isKeyword, call.Span)
+                : new BoundErrorExpr(call.Span);
+        }
+
+        var constructor = classSymbol.Constructor;
+        if (MatchArguments(call, constructor, classSymbol.Name, nameSpan) is not { } shape)
+        {
+            BindArguments(call);
+            return new BoundErrorExpr(call.Span);
+        }
+        var (bound, typeArguments) = InferAndBind(
+            classSymbol.Name, call.Callee.Span, classSymbol.TypeParameters, [.. shape.Parameters.Select(i => constructor.Parameters[i].Type)],
+            classSymbol.Type, [.. call.Arguments.Select(a => a.Value)], expected);
+        return new BoundNew((ClassType)TypeChecker.Substitute(classSymbol.Type, typeArguments), constructor, bound, call.Span) { Shape = Simplify(shape) };
+    }
+
+    /// <summary><c>isinstance(x, C)</c> (SPEC §6): x a class or optional class, and C a class that could be its runtime class.</summary>
+    private BoundExpr BindIsInstance(CallExpr call, TextSpan nameSpan)
+    {
+        ReportKeywordArguments(call, "isinstance");
+        if (call.Arguments.Length != 2)
+        {
+            BindArguments(call);
+            _diagnostics.ReportWrongArgumentCount(nameSpan, "isinstance", Arguments(2), call.Arguments.Length);
+            return new BoundErrorExpr(call.Span);
+        }
+        var operand = BindValue(call.Arguments[0].Value);
+        var operandClass = TypeChecker.Unwrap(operand.Type) as ClassType;
+        if (operandClass is null && !operand.Type.ContainsError)
+        {
+            _diagnostics.ReportIsInstanceNeedsClass(call.Arguments[0].Value.Span, operand.Type);
+            operand = new BoundErrorExpr(operand.Span);
+        }
+        var target = ResolveClass(call.Arguments[1].Value, TypeChecker.Unwrap(operand.Type));
+        return target is null || operand.Type.ContainsError
+            ? new BoundErrorExpr(call.Span)
+            : new BoundIsInstance(operand, target, call.Span);
+    }
+
+    /// <summary>
+    /// The class an expression names in <c>isinstance</c>: not generic, and related to the class of
+    /// the value tested (<paramref name="tested"/>), since otherwise the test could never pass.
+    /// </summary>
+    private ClassType? ResolveClass(Expr expr, TaipanType tested)
+    {
+        Symbol? symbol;
+        switch (expr)
+        {
+            case NameExpr name:
+                symbol = LookupName(name.Name, name.Span);
+                break;
+            case MemberExpr member when TryModuleMember(member, out var definition):
+                symbol = definition;
+                break;
+            default:
+                BindValue(expr);
+                _diagnostics.ReportNotAClass(expr.Span, _source.ToString(expr.Span));
+                return null;
+        }
+        switch (symbol)
+        {
+            case null:
+                return null;
+            case ClassSymbol { TypeParameters.IsEmpty: false } generic:
+                _diagnostics.ReportGenericClassTest(expr.Span, generic.Name);
+                return null;
+            case ClassSymbol classSymbol:
+                return CheckRelated(new ClassType(classSymbol), tested, expr.Span);
+            default:
+                _diagnostics.ReportNotAClass(expr.Span, _source.ToString(expr.Span));
+                return null;
+        }
+    }
+
+    /// <summary>TP0200 unless a <paramref name="tested"/> value could be a <paramref name="target"/>: one derives from the other.</summary>
+    private ClassType? CheckRelated(ClassType target, TaipanType tested, TextSpan span)
+    {
+        if (tested is ClassType testedClass && !TypeChecker.AreRelated(testedClass.Symbol, target.Symbol))
+        {
+            _diagnostics.ReportNeverInstance(span, tested, target.Symbol.Name);
+            return null;
+        }
+        return target;
+    }
+
+    /// <summary>
+    /// <c>super().m(…)</c> in a method of a class with a base: the base's <c>m</c>, found from the
+    /// base upwards, or its constructor for <c>__init__</c> (SPEC §4.3).
+    /// </summary>
+    private BoundExpr BindSuperCall(CallExpr call, MemberExpr member, CallExpr superCall)
+    {
+        var name = member.Member.Text;
+        var superSpan = superCall.Callee.Span;
+        if (_outerFunction?.Self is not { } self || self.Type is not ClassType { Symbol: var owner })
+        {
+            BindArguments(call);
+            _diagnostics.ReportSuperOutsideMethod(superSpan);
+            return new BoundErrorExpr(call.Span);
+        }
+        if (owner.Base is not { } baseClass)
+        {
+            BindArguments(call);
+            _diagnostics.ReportNoBaseClass(superSpan, owner.Name);
+            return new BoundErrorExpr(call.Span);
+        }
+        if (name == "__init__" && _outerFunction != owner.Init)
+            _diagnostics.ReportSuperInitOutsideInit(superSpan);
+        var method = name == "__init__" ? baseClass.Constructor : baseClass.FindMethod(name);
+        if (method is null)
+        {
+            BindArguments(call);
+            _diagnostics.ReportNoMethod(member.Member.Span, baseClass.Type, name);
+            return new BoundErrorExpr(call.Span);
+        }
+        if (MatchArguments(call, method, name, member.Member.Span) is not { } shape)
+            return new BoundSuperCall(method, self, BindArguments(call), method.ReturnType, call.Span);
+        var arguments = call.Arguments.Select((a, i) => BindExpected(a.Value, method.Parameters[shape.Parameters[i]].Type)).ToImmutableArray();
+        return new BoundSuperCall(method, self, arguments, method.ReturnType, call.Span) { Shape = Simplify(shape) };
     }
 
     private BoundExpr BindConstructVariant(CallExpr call, VariantSymbol variant, TaipanType? expected)
@@ -2627,7 +3243,7 @@ public sealed class Binder
     }
 
     /// <summary>
-    /// Constructor arguments for a struct or variant (SPEC §4.6), inferring a generic owner's type
+    /// Constructor arguments for a dataclass or variant (SPEC §4.6), inferring a generic owner's type
     /// arguments (§3.6). Positional ones set the fields in order, then keywords set the rest, so
     /// every field is given exactly once. The arguments are null if any of them is wrong.
     /// </summary>
@@ -2637,15 +3253,19 @@ public sealed class Binder
     {
         var isKeyword = call.Arguments.Any(a => a.Name is not null);
         var positional = call.Arguments.TakeWhile(a => a.Name is null).Count();
+        var required = fields.Count(f => !f.HasDefault);
         var valid = true;
         var chosen = new List<(FieldSymbol Field, Expr Value)>();
-        if ((!isKeyword && call.Arguments.Length != fields.Length) || positional > fields.Length)
+        if ((!isKeyword && positional < required) || positional > fields.Length)
         {
-            BindParameterArguments(call, owner, [.. fields.Select(f => f.Type)]);
+            var countSpan = call.Callee is MemberExpr member ? member.Member.Span : call.Callee.Span;
+            var expectedCount = required == fields.Length ? Arguments(fields.Length) : $"{required} to {fields.Length} arguments";
+            _diagnostics.ReportWrongArgumentCount(countSpan, owner, expectedCount, call.Arguments.Length);
+            BindArguments(call);
             return (null, false, []);
         }
         chosen.AddRange(fields.Zip(call.Arguments.Take(positional).Select(a => a.Value)));
-        if (isKeyword)
+        if (isKeyword || positional < fields.Length)
         {
             var given = fields.Take(positional).Select(f => f.Name).ToHashSet();
             foreach (var argument in call.Arguments.Skip(positional))
@@ -2666,7 +3286,7 @@ public sealed class Binder
                 }
                 chosen.Add((field, argument.Value));
             }
-            foreach (var missing in fields.Where(f => !given.Contains(f.Name)))
+            foreach (var missing in fields.Where(f => !f.HasDefault && !given.Contains(f.Name)))
             {
                 _diagnostics.ReportMissingField(call.Callee.Span, missing.Name, owner);
                 valid = false;
@@ -2754,6 +3374,10 @@ public sealed class Binder
             return new BoundErrorExpr(call.Span);
         }
 
+        if (member.Target is CallExpr { Callee: NameExpr { Name: "super" }, Arguments.IsEmpty: true } superCall
+            && _scope.Lookup("super") is FunctionSymbol { Builtin: BuiltinFunction.Super })
+            return BindSuperCall(call, member, superCall);
+
         var target = BindValue(member.Target);
         var name = member.Member.Text;
         if (target.Type == TaipanType.Py)
@@ -2766,15 +3390,21 @@ public sealed class Binder
             return new BoundErrorExpr(call.Span);
         }
 
-        if (target.Type is StructType { Symbol: var structSymbol })
+        if (target.Type is ClassType { Symbol: var classSymbol })
         {
             // A field holding a function is called like a method (SPEC §3.7).
-            if (structSymbol.FindField(name) is { } field && TypeChecker.Unwrap(FieldType(target.Type, field)) is FunctionType)
+            if (classSymbol.FindField(name) is { } field && TypeChecker.Unwrap(FieldType(target.Type, field)) is FunctionType)
             {
                 ReportKeywordArguments(call, function: null);
                 return BindInvoke(call, new BoundFieldAccess(target, field, FieldType(target.Type, field), member.Span), name, member.Member.Span);
             }
-            if (structSymbol.Methods.TryGetValue(name, out var method))
+            if (name == "__init__")
+            {
+                BindArguments(call);
+                _diagnostics.ReportInitCalled(member.Member.Span);
+                return new BoundErrorExpr(call.Span);
+            }
+            if (classSymbol.FindMethod(name) is { } method)
             {
                 var map = TypeChecker.MapOf(target.Type);
                 var returnType = TypeChecker.Substitute(method.ReturnType, map);
@@ -2786,10 +3416,10 @@ public sealed class Binder
                 return new BoundMethodCall(target, method, arguments, returnType, call.Span) { Shape = Simplify(shape) };
             }
             BindArguments(call);
-            if (structSymbol.FindField(name) is not null)
+            if (classSymbol.FindField(name) is not null)
                 _diagnostics.ReportFieldNotMethod(member.Member.Span, name);
             else
-                _diagnostics.ReportNoMethod(member.Member.Span, target.Type, name);
+                _diagnostics.ReportNoMethod(member.Member.Span, target.Type, name, IsUnnarrowable(target));
             return new BoundErrorExpr(call.Span);
         }
 
@@ -2999,6 +3629,11 @@ public sealed class Binder
                 BindArguments(call);
                 _diagnostics.ReportRangeOutsideFor(call.Callee.Span);
                 return new BoundErrorExpr(call.Span);
+            case BuiltinFunction.Super:
+                // `super().m(…)` is bound as a method call (SPEC §4.3); this is any other use.
+                BindArguments(call);
+                _diagnostics.ReportSuperMisuse(call.Callee.Span);
+                return new BoundErrorExpr(call.Span);
         }
 
         var arguments = BindArgumentValues(call);
@@ -3050,7 +3685,7 @@ public sealed class Binder
     {
         if (value.Type is not OptionalOf)
             return false;
-        _diagnostics.ReportOptionalUse(span, value.Type);
+        _diagnostics.ReportOptionalUse(span, value.Type, IsUnnarrowable(value));
         return true;
     }
 }

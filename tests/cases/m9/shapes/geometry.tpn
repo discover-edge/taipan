@@ -3,11 +3,13 @@ import colors
 const PI = 3.0
 const ORIGIN_X = 0
 
-struct Point:
+@dataclass
+class Point:
     x: int
     y: int
 
-struct Box[T]:
+@dataclass
+class Box[T]:
     value: T
 
 enum Shape:

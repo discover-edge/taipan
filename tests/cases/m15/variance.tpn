@@ -1,0 +1,40 @@
+# Function types: parameters contravariant, results covariant (SPEC §3.3).
+class Animal:
+    name: str
+
+    def __init__(self, name: str):
+        self.name = name
+
+class Dog(Animal):
+    def __init__(self, name: str):
+        super().__init__(name)
+
+def shout(a: Animal):
+    print(a.name.upper())
+
+def adopt(name: str) -> Dog:
+    return Dog(name)
+
+def walk_dogs(dogs: list[Dog], f: Callable[[Dog], None]):
+    for d in dogs:
+        f(d)
+
+def make(factory: Callable[[str], Animal]) -> Animal:
+    return factory("made")
+
+walk_dogs([Dog("rex"), Dog("fido")], shout)
+print(make(adopt).name)
+
+let handler: Callable[[Dog], None] = shout
+print(handler == shout, handler)
+handler(Dog("bo"))
+
+def count() -> int:
+    return 3
+
+let as_float: Callable[[], float] = count
+print(as_float())
+let opt: Callable[[int?], None] = lambda x: print(x)
+let narrow: Callable[[int], None] = opt
+narrow(5)
+print(narrow == opt)

@@ -23,7 +23,8 @@ while queue.pop() is some last:
     print("popped", last)
 print(queue)
 
-struct Node:
+@dataclass
+class Node:
     value: int
     next: Node?
 

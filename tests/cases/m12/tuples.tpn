@@ -22,7 +22,8 @@ a, b = b, a
 print(a, b)
 
 # Targets may be fields and elements; they're stored left to right.
-struct Point:
+@dataclass
+class Point:
     x: int
     y: int
 

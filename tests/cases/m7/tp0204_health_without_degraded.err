@@ -1,1 +1,1 @@
-tests/cases/m7/tp0204_health_without_degraded.tpn:29:5: error TP0204: non-exhaustive match (missing: Degraded)
+tests/cases/m7/tp0204_health_without_degraded.tpn:30:5: error TP0204: non-exhaustive match (missing: Degraded)

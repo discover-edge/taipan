@@ -1,0 +1,12 @@
+class Animal:
+    name: str
+
+    def __init__(self, name: str):
+        self.name = name
+
+    def sound(self) -> str:
+        return "?"
+
+@dataclass
+class Tag:
+    id: int
