@@ -262,4 +262,10 @@ public sealed record IsNoneExpr(Expr Operand, bool Negated, TextSpan Span) : Exp
 /// <summary><c>x as T</c>: converts a py value to a Taipan type, or between classes (SPEC §10.4, §4.3).</summary>
 public sealed record CastExpr(Expr Value, TypeSyntax Type, TextSpan Span) : Expr(Span);
 
+/// <summary>A <c>match</c> producing a value: the whole value of a <c>let</c>, <c>var</c>, assignment or <c>return</c> (SPEC §5.1.1, M19).</summary>
+public sealed record MatchExpr(Expr Scrutinee, ImmutableArray<ValueArm> Arms, TextSpan Span) : Expr(Span);
+
+/// <summary>An arm of a <see cref="MatchExpr"/>: exactly one of <see cref="Value"/> and <see cref="Raise"/> is set.</summary>
+public sealed record ValueArm(Pattern Pattern, Expr? Value, RaiseStmt? Raise, TextSpan Span) : Node(Span);
+
 public sealed record ErrorExpr(TextSpan Span) : Expr(Span);

@@ -1,0 +1,6 @@
+# An unreachable arm is a warning, and doesn't count toward the result type (SPEC §5.1.1).
+let n = 2
+let s = match n:
+    _: "any"
+    1: 5
+print(s)

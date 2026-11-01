@@ -62,6 +62,7 @@ public static class BoundTree
         BoundTupleLiteral tuple => tuple.Elements,
         BoundTupleElement element => [element.Tuple],
         BoundSlice slice => ((BoundExpr?[])[slice.Target, slice.Start, slice.Stop, slice.Step]).OfType<BoundExpr>(),
+        BoundMatchExpr match => [match.Scrutinee, .. match.Arms.Select(a => a.Value ?? a.Raise!.Value).OfType<BoundExpr>()],
         _ => [],
     };
 

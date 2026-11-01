@@ -105,14 +105,23 @@ public sealed class LocalNames
     {
         BoundIf ifStmt => ifStmt.Clauses.Select(c => c.Condition).OfType<BoundIsSome>().Select(c => c.Binding),
         BoundWhile { Condition: BoundIsSome isSome } => [isSome.Binding],
-        BoundMatch match => match.Arms.SelectMany(a => a.Pattern switch
-        {
-            BoundVariantPattern p => p.Bindings.OfType<VariableSymbol>(),
-            BoundClassPattern p => p.Bindings.Select(b => b.Binding),
-            _ => [],
-        }),
+        BoundMatch match => match.Arms.SelectMany(a => PatternBindings(a.Pattern)),
+        // A match expression's arms bind in the statement's own expressions (SPEC §5.1.1).
+        _ => BoundTree.Expressions(stmt).SelectMany(MatchExpressionBindings),
+    };
+
+    private static IEnumerable<VariableSymbol> PatternBindings(BoundPattern pattern) => pattern switch
+    {
+        BoundVariantPattern p => p.Bindings.OfType<VariableSymbol>(),
+        BoundClassPattern p => p.Bindings.Select(b => b.Binding),
         _ => [],
     };
+
+    // Lambdas are nested blocks, visited on their own.
+    private static IEnumerable<VariableSymbol> MatchExpressionBindings(BoundExpr expr) =>
+        expr is BoundLambda ? []
+        : (expr is BoundMatchExpr match ? match.Arms.SelectMany(a => PatternBindings(a.Pattern)) : [])
+            .Concat(BoundTree.Children(expr).SelectMany(MatchExpressionBindings));
 
     /// <summary>The C# blocks directly inside a statement, with any extra locals they declare.</summary>
     private static IEnumerable<(IReadOnlyList<BoundStmt> Statements, IReadOnlyList<VariableSymbol> Extra)> NestedBlocks(BoundStmt stmt)

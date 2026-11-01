@@ -356,6 +356,33 @@ public class ParserTests
             "MatchArm(WildcardPattern, Block([PassStmt]))])",
             Snapshot("match x:\n    0: pass\n    -1: pass\n    \"a\": pass\n    True: pass\n    False: pass\n    _: pass\n"));
 
+    // ---- match_expr / value_arm (M19) ----
+
+    [Fact]
+    public void MatchExpressionInLet() =>
+        Assert.Equal(
+            "LetStmt(label, null, MatchExpr(NameExpr(s), [" +
+            "ValueArm(VariantPattern(null, null, Ok, null), StringLiteral(\"up\"), null), " +
+            "ValueArm(WildcardPattern, null, RaiseStmt(CallExpr(NameExpr(ValueError), [])))]))\n" +
+            "ExprStmt(CallExpr(NameExpr(print), [Argument(null, NameExpr(label))]))",
+            Snapshot("let label = match s:\n    Ok: \"up\"\n    _: raise ValueError()\nprint(label)\n"));
+
+    [Fact]
+    public void MatchExpressionInReturnAndAssignments() =>
+        Assert.Equal(
+            "FuncDef(f, [], [], null, Block([" +
+            "AssignStmt(NameExpr(x), Add, MatchExpr(NameExpr(n), [ValueArm(WildcardPattern, IntLiteral(1), null)])), " +
+            "TupleAssignStmt([NameExpr(a), NameExpr(b)], MatchExpr(NameExpr(n), [ValueArm(WildcardPattern, NameExpr(t), null)])), " +
+            "ReturnStmt(MatchExpr(NameExpr(n), [ValueArm(IntPattern(0), IntLiteral(0), null)]))]))",
+            Snapshot("def f():\n    x += match n:\n        _: 1\n    a, b = match n:\n        _: t\n    return match n:\n        0: 0\n"));
+
+    [Fact]
+    public void MatchExpressionElsewhere() =>
+        Assert.Equal(
+            ["1:7 TP0100: 'match' can only be the whole value of 'let', 'var', an assignment or 'return'",
+             "2:13 TP0100: 'match' can only be the whole value of 'let', 'var', an assignment or 'return'"],
+            Errors("print(match n: _: 1)\nlet x = 1 + match n:\n    _: 1\n"));
+
     // ---- type / base_type ----
 
     [Theory]

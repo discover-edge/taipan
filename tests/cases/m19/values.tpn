@@ -1,0 +1,45 @@
+# M19 acceptance: match expressions over an enum and over a class hierarchy (SPEC §5.1.1).
+enum Status:
+    Ok
+    Degraded(load: float)
+    Down
+
+def label(s: Status) -> str:
+    return match s:
+        Ok: "up"
+        Degraded(load): f"degraded at {load}"
+        Down: "down"
+
+@dataclass
+class Shape:
+    name: str
+
+@dataclass
+class Circle(Shape):
+    radius: float
+
+@dataclass
+class Rect(Shape):
+    w: float
+    h: float
+
+def area(s: Shape) -> float:
+    return match s:
+        Circle(radius=r): 3.0 * r * r
+        Rect(w=w, h=h): w * h
+        _: raise ValueError(f"no area for {s.name}")
+
+for s in [Status.Ok, Status.Degraded(0.5), Status.Down]:
+    print(label(s))
+
+let shapes: list[Shape] = [Circle("c", 1.0), Rect("r", 2.0, 3.0)]
+for shape in shapes:
+    let size = match shape:
+        Circle(): "round"
+        _: "boxy"
+    print(shape.name, size, area(shape))
+
+try:
+    print(area(Shape("blob")))
+except ValueError as e:
+    print("error:", e)

@@ -113,13 +113,15 @@ block         = NEWLINE INDENT stmt { stmt } DEDENT ;
 stmt          = simple_stmt NEWLINE | compound_stmt ;
 simple_stmt   = let_stmt | var_stmt | assign_stmt | return_stmt | raise_stmt
               | "pass" | "break" | "continue" | expr ;
-let_stmt      = "let" ( NAME [ ":" type ] | names ) "=" expr_list ;
-var_stmt      = "var" ( NAME [ ":" type ] | names ) "=" expr_list ;
+let_stmt      = "let" ( NAME [ ":" type ] | names ) "=" ( expr_list | match_expr ) ;
+var_stmt      = "var" ( NAME [ ":" type ] | names ) "=" ( expr_list | match_expr ) ;
 names         = NAME "," NAME { "," NAME } ;                         (* unpacking: M12, §3.8 *)
-assign_stmt   = target ( "=" | "+=" | "-=" | "*=" | "/=" ) expr
-              | target "," target { "," target } "=" expr_list ;     (* M12 *)
+assign_stmt   = target ( "=" | "+=" | "-=" | "*=" | "/=" ) ( expr | match_expr )
+              | target "," target { "," target } "=" ( expr_list | match_expr ) ;   (* M12 *)
 target        = NAME | postfix "." NAME | postfix "[" expr "]" ;
-return_stmt   = "return" [ expr_list ] ;
+return_stmt   = "return" [ expr_list | match_expr ] ;
+match_expr    = "match" expr ":" NEWLINE INDENT value_arm { value_arm } DEDENT ;   (* M19, §5.1.1 *)
+value_arm     = pattern ":" ( expr | raise_stmt ) NEWLINE ;
 expr_list     = expr { "," expr } ;                                  (* two or more make a tuple: M12 *)
 raise_stmt    = "raise" [ expr ] ;                                   (* M16, §3.10 *)
 
@@ -175,6 +177,8 @@ atom          = INT | FLOAT | STRING | FSTRING | "True" | "False" | "None"
 **Grammar notes**
 - `a < b < c` is `TP0212`. Write `a < b and b < c`.
 - An `arm` may take a simple statement on the same line (`Ok: print("ok")`) or an indented block.
+- **`match` expressions (M19)** are only the whole right-hand side of a `let`, `var` or assignment, or the whole value of a `return`, so the `match` always ends its line and its arms are indented under it. A statement ending in a `match_expr` has no `NEWLINE` of its own: the arms' `DEDENT` ends it. A `match` at the start of a statement is always a `match_stmt`. A `match` anywhere else in an expression (`f(match x: …)`, `1 + match x: …`, a lambda's body) is `TP0100`, `'match' can only be the whole value of 'let', 'var', an assignment or 'return'`, at `match`.
+- A `value_arm` is an expression or a `raise` on the same line as its pattern: `Ok: "up"`, `_: raise ValueError("bad status")`. An indented block is `TP0100`, `expected expression, found newline`.
 - Keyword arguments are allowed in calls to functions and methods (M14, §4.2), class and enum-variant constructors (§4.3), `py` values (§10.2), and the keyword parameters of built-ins (`key` and `reverse` of `sorted` and `list.sort`, `start` of `enumerate`; §6). Keyword arguments may follow positional ones, as in Python. A positional argument after a keyword argument is `TP0100`.
 - In a parameter list, a parameter without a default after one with a default is `TP0100`, as in Python.
 - **Decorators (M15)** are only `@dataclass` on a `class` and `@override` on a method (§4.3). A decorator takes no arguments: `@dataclass(frozen=True)` is `TP0100`. Any other decorator name, a decorator in any other place, or a repeated one is `TP0224`.
@@ -196,7 +200,7 @@ atom          = INT | FLOAT | STRING | FSTRING | "True" | "False" | "None"
   - **X** is a token, or one of the categories `expression`, `type`, `statement`, `pattern`, `indented block`.
   - **Y** describes the token found: a keyword or punctuation token in quotes (`':'`, `'else'`), `name 'x'`, `integer`, `float`, `string`, `f-string`, `newline`, `indent`, `dedent`, or `end of file`.
   - The error points at the start of the token found.
-  - Specific messages: `cannot assign to this expression` (an `assign_stmt` target that isn't a `target`), `positional argument follows keyword argument`, `parameter without a default follows parameter with a default` (M14), `a bare 'except' must be the last except clause` (M16, at the bare `except`, after which parsing continues normally), and `a type alias must be at the top level` (M18, at `type`). A `try` with no `except` or `finally`, or an `else` with no `except`, is `expected 'except' or 'finally', found …`.
+  - Specific messages: `cannot assign to this expression` (an `assign_stmt` target that isn't a `target`), `positional argument follows keyword argument`, `parameter without a default follows parameter with a default` (M14), `a bare 'except' must be the last except clause` (M16, at the bare `except`, after which parsing continues normally), `a type alias must be at the top level` (M18, at `type`), and `'match' can only be the whole value of 'let', 'var', an assignment or 'return'` (M19, at `match`). A `try` with no `except` or `finally`, or an `else` with no `except`, is `expected 'except' or 'finally', found …`.
 - A chained comparison is reported by the parser as `TP0212`, with message `chained comparison not supported` and help `write 'a < b and b < c'`. Parsing continues normally.
 - **Recovery:** after a `TP0100`, the parser skips tokens up to and including the next `NEWLINE` at the current block depth. If the next line is indented further (an `INDENT` follows), that whole block is skipped as well. A `DEDENT` that closes the current block stops the skip without being consumed. Parsing then resumes at the next statement. So each statement reports at most one `TP0100`, and independent errors on separate statements are all reported.
 
@@ -843,7 +847,7 @@ class Point:
   - For `int` and `str`, a `_` arm is required.
   - For a class, there must be a `_` arm, or a pattern of the scrutinee's own class. Subclasses are open-ended, so listing them never covers the base.
 - An arm after `_`, or a duplicate arm, is warning `TP0300` (unreachable).
-- `match` is a statement in v0.1. A match expression is post-v0.1.
+- `match` is a statement, and since M19 also an expression (§5.1.1).
 - **Checking details:**
   - Any other scrutinee type is `TP0200`, and an optional scrutinee is `TP0203`.
   - The scrutinee is evaluated once.
@@ -856,6 +860,33 @@ class Point:
   - `TP0204` points at the `match` keyword. It lists missing variants in declaration order (`missing: Down, Ok`), `True`/`False` for bool, and `_` for int and str.
 - **Return paths:** a `match` terminates (§4.5) if every arm's body terminates. Exhaustiveness is guaranteed once it type-checks.
 - **Control flow:** `break` and `continue` in an arm apply to the enclosing loop, as anywhere else.
+
+### 5.1.1 `match` expressions (M19)
+A `match` can produce a value, with each arm an expression:
+
+```python
+let label = match status:
+    Ok: "up"
+    Degraded(h, _): f"degraded ({h})"
+    Down: "down"
+
+def area(s: Shape) -> float:
+    return match s:
+        Circle(radius=r): 3.14159 * r * r
+        Rect(w, h): w * h
+        _: raise ValueError("unknown shape")
+```
+
+- **Where:** only as the whole right-hand side of `let`, `var` or an assignment (`=` or a compound `+=`), or the whole value of `return` (§2). Python has no `match` expression; this follows the statement's syntax, with an expression after each pattern's colon instead of a statement.
+- **Patterns** are the statement's (§5.1): the same scrutinee types, patterns, bindings, narrowing and checks. Bindings are scoped to their arm's expression.
+- **Exhaustiveness** is required, as for the statement: a missing case is `TP0204` at `match`. An arm after `_` or a duplicate arm is warning `TP0300`, and is still checked, but doesn't count toward the result type and isn't emitted.
+- **Raising arms:** an arm may be `raise e` (or a bare `raise` inside an `except` clause, §3.10). It produces no value, so it doesn't count toward the result type. At least one reachable arm must give a value, or it's `TP0200`, `every arm of this 'match' raises`, with help `use a 'match' statement`.
+- **Result type:**
+  - With an expected type (an annotated `let` or `var`, an assignment target, a `return` in a function with a return type), each arm is checked against it, as each element of a list literal is (§4.6). So `let x: float = match n: …` accepts `int` arms.
+  - Without one, the arms' types join as a list literal's elements do (§4.6): the same type, `int` and `float` to `float`, classes to their nearest common base, and `None` making the result optional (`1` and `None` give `int?`). A mismatch is `TP0200`, `expected <T>, found <U>`, at the first arm that differs. An arm of type `None` alone can't be inferred (`TP0206`).
+  - In a function without a return type, `return match …` is `TP0200` like any `return` with a value.
+- **Evaluation:** the scrutinee is evaluated once, then only the matching arm's expression.
+- **Return paths (§4.5):** `return match …` terminates, as any `return` does. A `let`, `var` or assignment whose `match` has a raising arm doesn't terminate, since other arms give values.
 
 ### 5.2 Loops
 - `for x in e` works when `e` is:
@@ -1020,6 +1051,7 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 | `x is some v` | `x is {} v`. C# scopes pattern variables more widely than Taipan, so a binding whose name is used anywhere else in the method gets a numeric suffix. |
 | `x is None` / `None` | `x is null` / `null` |
 | `x ?? d` | `x ?? d` |
+| `match` expressions (M19) | A C# `switch` expression with the statement's patterns, each arm `pattern => value`. A raising arm is a `throw` expression. Without a `_` arm, a final `_ => throw new UnreachableException()` arm is emitted, as for the statement. |
 | `match` | `switch` statement with type, positional and constant patterns; each arm's body in its own braces. When there's no `_` arm, an emitted `default:` throws `UnreachableException` (exhaustiveness is guaranteed by the Taipan checker). A Taipan `break` inside an arm becomes `goto` to a label after the loop, since a C# `break` would leave the `switch`. Variants implement `Taipan.Runtime.IStruct`, and `==` on enums uses `Taipan.Runtime.Equality.Equal`, as for dataclasses. |
 | `/` `//` `%` | `Taipan.Runtime.Ops.Div / FloorDiv / Mod` |
 | f-string | C# interpolated string; every hole wrapped in `Taipan.Runtime.Display.Format(...)` |
@@ -1118,6 +1150,7 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0200 | `'is some' needs an optional, found <T>` / `'is None' needs an optional, found <T>` / `'is not None' needs an optional, found <T>` / `'??' needs an optional on the left, found <T>` |
 | TP0200 | `'<m>' is a method; call it` / `'<f>' is a field, not a method` / `cannot index <T>` / `dict keys must be int, str, bool, tuples of those, or plain class instances, found <T>` (for a dataclass, with help `a dataclass compares by value, so it cannot be a key`) |
 | TP0200 | `isinstance needs a class, found <T>` / `'<C>' is not a class` / `'<C>' is generic` / `<T> can never be a <C>` (`isinstance`, `as` and class patterns on unrelated classes) / `'<C>' is a class; write '<C>()'` (a class pattern without parentheses) (M15) |
+| TP0200 | `every arm of this 'match' raises`, with help `use a 'match' statement` (M19) |
 | TP0200 | `'<A>' is a type alias, not a value`, with help `use '<N>'` when it names a class or enum (M18) |
 | TP0200 | `cannot raise <T>` (with help `write '<C>(…)'` for a class name) / `'<C>' is not an exception class` / `'PythonError' cannot be constructed` (M16) |
 | TP0200 | `'<T>' does not satisfy '<P>': it has no method '<m>'` / `'<T>' does not satisfy '<P>': '<m>' must be 'def <m>(self, …) -> <R>'` (the protocol's signature with `Self` replaced; `-> <R>` left out when it returns nothing), at a call's callee or a declared protocol, with ` (declared by '<B>')` after `'<P>'` for an inherited declaration / `'...' can only be the body of a protocol method` / `'<m>' cannot be called directly`, with help `use '<'` (M17) |
@@ -1235,7 +1268,7 @@ Types are written as in source: `int`, `str?`, `list[int]`. The type of `None` i
 - nested unpacking (`let (a, b), c = …`) and unpacking lists
 - slice assignment and `del`
 - `zip` of more than two lists
-- `match` as an expression
+- `match` expressions inside other expressions (`f(match x: …)`, lambda bodies), and arms with indented blocks
 - type aliases inside functions and classes, recursive aliases, and showing an alias's name in diagnostics
 - keyword-only (`*`) and positional-only (`/`) parameters, `*args` and `**kwargs`, and defaults on lambda parameters
 - flow-sensitive narrowing after early return, and narrowing `var`s and fields

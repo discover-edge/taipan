@@ -1,0 +1,14 @@
+# A match expression's arms must agree on a type, and at least one must give a value (SPEC §5.1.1).
+let n = 3
+let mixed = match n:
+    1: "one"
+    2: 2
+    _: "many"
+let typed: int = match n:
+    1: 1
+    _: "many"
+let nothing = match n:
+    1: raise ValueError("one")
+    _: raise ValueError("other")
+let unknown = match n:
+    _: None
