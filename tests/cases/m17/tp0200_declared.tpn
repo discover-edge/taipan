@@ -1,0 +1,30 @@
+class Shape(Protocol):
+    def area(self) -> float: ...
+    def scaled(self, k: float) -> Self: ...
+
+class Blob(Comparable, Shape):
+    def area(self) -> float:
+        return 1.0
+
+    def scaled(self, k: float) -> Blob:
+        return self
+
+class Square(Shape):
+    side: float = 1.0
+
+    def area(self) -> float:
+        return self.side * self.side
+
+    def scaled(self, k: float) -> Square:
+        return Square()
+
+# Inherits scaled, which returns a Square rather than a Cube.
+class Cube(Square):
+    pass
+
+# Fails at Broken itself, so its subclass isn't reported again.
+class Broken(Shape):
+    pass
+
+class Child(Broken):
+    pass

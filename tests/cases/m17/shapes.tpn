@@ -1,0 +1,104 @@
+# User protocols: structural satisfaction, Self, declared and undeclared classes.
+class Shape(Protocol):
+    def area(self) -> float: ...
+    def scaled(self, k: float) -> Self: ...
+
+class Named(Protocol):
+    def name(self) -> str:
+        ...
+
+class Square(Shape):
+    side: float
+
+    def __init__(self, side: float):
+        self.side = side
+
+    def area(self) -> float:
+        return self.side * self.side
+
+    def scaled(self, k: float) -> Square:
+        return Square(self.side * k)
+
+    def name(self) -> str:
+        return "square"
+
+# Satisfies Shape without declaring it; scaled has a default the protocol doesn't use.
+@dataclass
+class Rect:
+    w: float
+    h: float
+
+    def area(self) -> float:
+        return self.w * self.h
+
+    def scaled(self, k: float = 2.0) -> Rect:
+        return Rect(self.w * k, self.h * k)
+
+# Inherits area, and overrides scaled to return its own class.
+class Tile(Square):
+    def __init__(self, side: float):
+        super().__init__(side)
+
+    @override
+    def scaled(self, k: float) -> Tile:
+        return Tile(self.side * k)
+
+    @override
+    def name(self) -> str:
+        return "tile"
+
+def total_area[S: Shape](shapes: list[S]) -> float:
+    var sum = 0.0
+    for s in shapes:
+        sum += s.area()
+    return sum
+
+def doubled[S: Shape](shapes: list[S]) -> list[S]:
+    return map(lambda s: s.scaled(k=2.0), shapes)
+
+# A bounded type parameter satisfies its own bound, so it can be passed on.
+def doubled_area[S: Shape](shapes: list[S]) -> float:
+    return total_area(doubled(shapes))
+
+def describe[T: Named](x: T) -> str:
+    return f"a {x.name()}"
+
+print(total_area([Square(1.0), Square(2.0)]))
+print(total_area([Rect(1.0, 2.0)]))
+print(doubled([Rect(1.0, 3.0)]))
+print(doubled_area([Tile(1.0)]))
+print(describe(Square(1.0)), describe(Tile(1.0)))
+
+# A list of Square and Tile infers Square, which satisfies Shape too.
+print(total_area([Square(1.0), Tile(3.0)]))
+
+# Generic classes may satisfy protocols, with Self as the instance.
+@dataclass
+class Box[T]:
+    item: T
+    size: float
+
+    def area(self) -> float:
+        return self.size
+
+    def scaled(self, k: float) -> Box[T]:
+        return Box(self.item, self.size * k)
+
+print(total_area([Box("a", 1.5), Box("b", 2.5)]))
+print(doubled([Box(1, 1.0)]))
+
+# Constrained parameters pass each of their types to a bound.
+def biggest[N: (int, float)](xs: list[N]) -> N?:
+    return largest(xs)
+
+def largest[T: Comparable](xs: list[T]) -> T?:
+    var best: T? = None
+    for x in xs:
+        if best is some b:
+            if b < x:
+                best = x
+        else:
+            best = x
+    return best
+
+print(biggest([1, 5, 2]), biggest([0.5, 0.25]))

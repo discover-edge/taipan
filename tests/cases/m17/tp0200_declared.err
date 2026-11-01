@@ -1,0 +1,3 @@
+tests/cases/m17/tp0200_declared.tpn:5:12: error TP0200: 'Blob' does not satisfy 'Comparable': it has no method '__lt__'
+tests/cases/m17/tp0200_declared.tpn:22:7: error TP0200: 'Cube' does not satisfy 'Shape' (declared by 'Square'): 'scaled' must be 'def scaled(self, k: float) -> Cube'
+tests/cases/m17/tp0200_declared.tpn:26:14: error TP0200: 'Broken' does not satisfy 'Shape': it has no method 'area'

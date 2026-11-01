@@ -15,6 +15,14 @@ class Base:
     def bump(self, by: int = 1):
         self.count += by
 
+class Shape(Protocol):
+    def area(self) -> float: ...
+    def scaled(self, k: float) -> Self:
+        ...
+
+def biggest[T: Comparable](xs: list[T]) -> T?:
+    return None
+
 class Derived(Base):
     pass
 

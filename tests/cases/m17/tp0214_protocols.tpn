@@ -1,0 +1,15 @@
+class Shape(Protocol):
+    def area(self) -> float: ...
+    def area(self) -> int: ...
+
+class Comparable:
+    pass
+
+class Protocol:
+    pass
+
+enum Self:
+    A
+
+def Shape() -> int:
+    return 1

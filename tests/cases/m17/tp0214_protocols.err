@@ -1,0 +1,5 @@
+tests/cases/m17/tp0214_protocols.tpn:3:9: error TP0214: duplicate definition of 'area'
+tests/cases/m17/tp0214_protocols.tpn:5:7: error TP0214: duplicate definition of 'Comparable'
+tests/cases/m17/tp0214_protocols.tpn:8:7: error TP0214: duplicate definition of 'Protocol'
+tests/cases/m17/tp0214_protocols.tpn:11:6: error TP0214: duplicate definition of 'Self'
+tests/cases/m17/tp0214_protocols.tpn:14:5: error TP0214: duplicate definition of 'Shape'

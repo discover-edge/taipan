@@ -1,0 +1,34 @@
+class Shape(Protocol):
+    def area(self) -> float: ...
+
+class Version(Comparable):
+    n: int
+
+    def __init__(self, n: int):
+        self.n = n
+
+    def __lt__(self, other: Version) -> bool:
+        return self.n < other.n
+
+    def area(self) -> float:
+        return 1.0
+
+def largest[T: Comparable](xs: list[T]) -> T?:
+    var best: T? = None
+    for x in xs:
+        if best is some b:
+            if x > b:
+                best = x
+        else:
+            best = x
+    return best
+
+def total[S: Shape](xs: list[S]) -> float:
+    var sum = 0.0
+    for x in xs:
+        sum += x.area()
+    return sum
+
+let vs = [Version(2), Version(1)]
+print(largest([1, 2]), largest(["a"]), total(vs), largest(vs) is not None)
+print(map(lambda v: v.n, sorted(vs)), vs[0] < vs[1])

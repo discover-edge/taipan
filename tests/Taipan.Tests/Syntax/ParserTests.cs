@@ -710,8 +710,33 @@ public class ParserTests
             "[Param(xs, ListType(NamedType(N)))], NamedType(N), Block([ReturnStmt(IntLiteral(0))]))",
             Snapshot("def total[N: (int, float), T, K: (str, list[int],)](xs: list[N]) -> N:\n    return 0\n"));
 
+    [Fact]
+    public void BoundedTypeParams() =>
+        Assert.Equal(
+            "FuncDef(f, [TypeParam(T, NamedType(Comparable)), U, TypeParam(S, QualifiedType(shapes, NamedType(Shape)))], " +
+            "[Param(x, NamedType(T))], null, Block([PassStmt]))",
+            Snapshot("def f[T: Comparable, U, S: shapes.Shape](x: T):\n    pass\n"));
+
+    [Fact]
+    public void ProtocolWithEllipsisBodies() =>
+        Assert.Equal(
+            "ClassDef(Shape, [], [NamedType(Protocol)], [], [" +
+            "MethodDef(area, [], NamedType(float), Block([ExprStmt(EllipsisExpr)])), " +
+            "MethodDef(scaled, [Param(k, NamedType(float))], NamedType(Self), Block([ExprStmt(EllipsisExpr)]))])",
+            Snapshot("class Shape(Protocol):\n    def area(self) -> float: ...\n    def scaled(self, k: float) -> Self:\n        ...\n"));
+
+    [Fact]
+    public void EllipsisIsAnAtom() =>
+        Assert.Equal("LetStmt(x, null, EllipsisExpr)", Snapshot("let x = ...\n"));
+
     [Theory]
-    [InlineData("def f[T: int](x: T):\n    pass\n", "1:10 TP0100: expected '(', found name 'int'")]
+    [InlineData("def f(): ...\n", "1:10 TP0100: expected newline, found '...'")]
+    [InlineData("class C:\n    def m(self): ... x\n", "2:22 TP0100: expected newline, found name 'x'")]
+    public void EllipsisSyntaxErrors(string text, string expected) =>
+        Assert.Equal([expected], Errors(text));
+
+    [Theory]
+    [InlineData("def f[T: ](x: T):\n    pass\n", "1:10 TP0100: expected type, found ']'")]
     [InlineData("def f[T: (int, float](x: T):\n    pass\n", "1:21 TP0100: expected ')', found ']'")]
     [InlineData("def f[](x: int):\n    pass\n", "1:7 TP0100: expected name, found ']'")]
     [InlineData("let b: Box[] = x\n", "1:12 TP0100: expected type, found ']'")]

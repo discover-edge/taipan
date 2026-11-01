@@ -58,8 +58,11 @@ public sealed record VariantDef(Identifier Name, ImmutableArray<FieldDef> Fields
 
 public sealed record ConstDef(Identifier Name, TypeSyntax? Type, Expr Value, TextSpan Span) : TopItem(Span);
 
-/// <summary>A type parameter; <see cref="Constraints"/> is empty unless it has a constraint tuple (SPEC §3.6).</summary>
-public sealed record TypeParam(Identifier Name, ImmutableArray<TypeSyntax> Constraints, TextSpan Span) : Node(Span);
+/// <summary>
+/// A type parameter; <see cref="Constraints"/> is empty unless it has a constraint tuple (SPEC §3.6),
+/// and <see cref="Bound"/> is set when it has a protocol bound (§3.11, M17).
+/// </summary>
+public sealed record TypeParam(Identifier Name, ImmutableArray<TypeSyntax> Constraints, TypeSyntax? Bound, TextSpan Span) : Node(Span);
 
 // ---- Statements ----
 
@@ -209,6 +212,9 @@ public sealed record NoneLiteral(TextSpan Span) : Expr(Span);
 
 /// <summary>A name reference, including <c>self</c>.</summary>
 public sealed record NameExpr(string Name, TextSpan Span) : Expr(Span);
+
+/// <summary><c>...</c>, valid only as a protocol method's body (SPEC §3.11, M17).</summary>
+public sealed record EllipsisExpr(TextSpan Span) : Expr(Span);
 
 public sealed record ListExpr(ImmutableArray<Expr> Elements, TextSpan Span) : Expr(Span);
 

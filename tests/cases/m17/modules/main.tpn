@@ -1,0 +1,26 @@
+import geometry
+from geometry import Sized, biggest
+
+class Word(geometry.Sized):
+    text: str
+
+    def __init__(self, text: str):
+        self.text = text
+
+    def size(self) -> int:
+        return len(self.text)
+
+class Crate(Sized):
+    items: int = 3
+
+    def size(self) -> int:
+        return self.items
+
+def total[T: geometry.Sized](xs: list[T]) -> int:
+    var sum = 0
+    for x in xs:
+        sum += x.size()
+    return sum
+
+print(biggest([Word("hi"), Word("hello")]), total([Crate(), Crate()]))
+print(geometry.biggest([Crate()]))

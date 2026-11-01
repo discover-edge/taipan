@@ -83,8 +83,8 @@ public sealed class DiagnosticBag
     public void ReportTypeMismatch(TextSpan span, object expected, object found) =>
         Add("TP0200", span, $"expected {expected}, found {found}");
 
-    public void ReportBinaryOperatorTypes(TextSpan span, string op, object left, object right) =>
-        Add("TP0200", span, $"operator '{op}' cannot be applied to {left} and {right}");
+    public void ReportBinaryOperatorTypes(TextSpan span, string op, object left, object right, string? help = null) =>
+        Add("TP0200", span, $"operator '{op}' cannot be applied to {left} and {right}", help);
 
     public void ReportUnaryOperatorType(TextSpan span, string op, object operand) =>
         Add("TP0200", span, $"operator '{op}' cannot be applied to {operand}");
@@ -214,6 +214,49 @@ public sealed class DiagnosticBag
     public void ReportConstraintNotOnFunction(TextSpan span) =>
         Add("TP0220", span, "constraints are only supported on functions");
 
+    // ---- Protocols (SPEC §3.11, M17) ----
+
+    public void ReportBoundNotOnFunction(TextSpan span) =>
+        Add("TP0220", span, "bounds are only supported on functions");
+
+    public void ReportNotProtocol(TextSpan span, object type, bool isClass) =>
+        Add("TP0220", span, $"'{type}' is not a protocol", isClass ? "class bounds are not supported" : null);
+
+    public void ReportProtocolAsType(TextSpan span, string protocol) =>
+        Add("TP0229", span, $"'{protocol}' is a protocol, so it can only be a type parameter bound",
+            $"use a bounded type parameter, e.g. 'def f[T: {protocol}](x: T)'");
+
+    /// <summary><paramref name="why"/> is "it has no method 'm'" or "'m' must be 'def …'".</summary>
+    public void ReportUnsatisfied(TextSpan span, object type, string protocol, string? declaredBy, string why) =>
+        Add("TP0200", span, $"'{type}' does not satisfy '{protocol}'{(declaredBy is null ? "" : $" (declared by '{declaredBy}')")}: {why}");
+
+    public void ReportMisplacedEllipsis(TextSpan span) =>
+        Add("TP0200", span, "'...' can only be the body of a protocol method");
+
+    public void ReportSpecialMethodCalled(TextSpan span, string name) =>
+        Add("TP0200", span, $"'{name}' cannot be called directly", "use '<'");
+
+    public void ReportLessThanSignature(TextSpan span, string className) =>
+        Add("TP0225", span, $"'__lt__' must take one parameter of type '{className}' (or a base class) and return bool");
+
+    public void ReportProtocolRepeated(TextSpan span, string protocol, string? declaredBy) =>
+        Add("TP0225", span, declaredBy is null ? $"'{protocol}' is already declared" : $"'{protocol}' is already declared by '{declaredBy}'");
+
+    public void ReportProtocolMember(TextSpan span) =>
+        Add("TP0225", span, "a protocol can only declare methods");
+
+    public void ReportProtocolBody(TextSpan span) =>
+        Add("TP0225", span, "a protocol method's body must be '...'");
+
+    public void ReportProtocolDefault(TextSpan span) =>
+        Add("TP0225", span, "protocol method parameters cannot have defaults");
+
+    public void ReportGenericProtocol(TextSpan span) =>
+        Add("TP0225", span, "protocols cannot be generic");
+
+    public void ReportProtocolBase(TextSpan span) =>
+        Add("TP0225", span, "a protocol can only derive from 'Protocol'");
+
     /// <summary>"a or b", "a, b or c".</summary>
     public static string Alternatives(IEnumerable<string> items)
     {
@@ -309,7 +352,7 @@ public sealed class DiagnosticBag
         Add("TP0201", span, $"undefined name '{name}'", NoneHelp(name));
 
     public void ReportUndefinedType(TextSpan span, string name) =>
-        Add("TP0201", span, $"undefined type '{name}'", NoneHelp(name));
+        Add("TP0201", span, $"undefined type '{name}'", name == "Self" ? "'Self' can only be used in a protocol" : NoneHelp(name));
 
     // Python's spelling is None; a lowercase none is just an undefined name (SPEC §3.4).
     private static string? NoneHelp(string name) => name == "none" ? "use 'None'" : null;

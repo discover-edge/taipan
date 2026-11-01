@@ -1,0 +1,4 @@
+tests/cases/m17/tp0201_self.tpn:2:11: error TP0201: undefined type 'Self'
+  help: 'Self' can only be used in a protocol
+tests/cases/m17/tp0201_self.tpn:4:13: error TP0201: undefined type 'Self'
+  help: 'Self' can only be used in a protocol

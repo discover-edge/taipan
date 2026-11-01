@@ -1,0 +1,16 @@
+tests/cases/m17/tp0200_protocols.tpn:30:12: error TP0200: 'T' does not satisfy 'Comparable': it has no method '__lt__'
+tests/cases/m17/tp0200_protocols.tpn:33:7: error TP0210: S has no method 'perimeter'
+tests/cases/m17/tp0200_protocols.tpn:34:12: error TP0200: operator '<' cannot be applied to S and S
+tests/cases/m17/tp0200_protocols.tpn:37:13: error TP0200: '__lt__' cannot be called directly
+  help: use '<'
+tests/cases/m17/tp0200_protocols.tpn:38:12: error TP0200: operator '<=' cannot be applied to Version and Version
+  help: '__lt__' defines only '<' and '>'
+tests/cases/m17/tp0200_protocols.tpn:38:22: error TP0200: operator '>=' cannot be applied to Version and Version
+  help: '__lt__' defines only '<' and '>'
+tests/cases/m17/tp0200_protocols.tpn:40:1: error TP0200: 'Point' does not satisfy 'Comparable': it has no method '__lt__'
+tests/cases/m17/tp0200_protocols.tpn:41:1: error TP0200: 'bool' does not satisfy 'Comparable': it has no method '__lt__'
+tests/cases/m17/tp0200_protocols.tpn:43:1: error TP0200: 'int?' does not satisfy 'Comparable': it has no method '__lt__'
+tests/cases/m17/tp0200_protocols.tpn:44:1: error TP0200: 'Circle' does not satisfy 'Shape': 'area' must be 'def area(self) -> float'
+tests/cases/m17/tp0200_protocols.tpn:45:1: error TP0200: 'Point' does not satisfy 'Shape': it has no method 'area'
+tests/cases/m17/tp0200_protocols.tpn:46:9: error TP0200: '...' can only be the body of a protocol method
+tests/cases/m17/tp0200_protocols.tpn:49:28: error TP0200: '...' can only be the body of a protocol method

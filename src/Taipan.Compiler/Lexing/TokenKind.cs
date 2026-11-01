@@ -70,6 +70,7 @@ public enum TokenKind
     QuestionQuestion,
     Question,
     Dot,
+    Ellipsis,
     Comma,
     Colon,
     OpenParen,

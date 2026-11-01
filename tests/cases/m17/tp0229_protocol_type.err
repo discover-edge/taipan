@@ -1,0 +1,14 @@
+tests/cases/m17/tp0229_protocol_type.tpn:8:16: error TP0229: 'Shape' is a protocol, so it can only be a type parameter bound
+  help: use a bounded type parameter, e.g. 'def f[T: Shape](x: T)'
+tests/cases/m17/tp0229_protocol_type.tpn:11:15: error TP0229: 'Comparable' is a protocol, so it can only be a type parameter bound
+  help: use a bounded type parameter, e.g. 'def f[T: Comparable](x: T)'
+tests/cases/m17/tp0229_protocol_type.tpn:14:18: error TP0229: 'Shape' is a protocol, so it can only be a type parameter bound
+  help: use a bounded type parameter, e.g. 'def f[T: Shape](x: T)'
+tests/cases/m17/tp0229_protocol_type.tpn:15:9: error TP0229: 'Shape' is a protocol, so it can only be a type parameter bound
+  help: use a bounded type parameter, e.g. 'def f[T: Shape](x: T)'
+tests/cases/m17/tp0229_protocol_type.tpn:17:22: error TP0229: 'Shape' is a protocol, so it can only be a type parameter bound
+  help: use a bounded type parameter, e.g. 'def f[T: Shape](x: T)'
+tests/cases/m17/tp0229_protocol_type.tpn:20:8: error TP0229: 'Shape' is a protocol, so it can only be a type parameter bound
+  help: use a bounded type parameter, e.g. 'def f[T: Shape](x: T)'
+tests/cases/m17/tp0229_protocol_type.tpn:23:5: error TP0229: 'Shape' is a protocol, so it can only be a type parameter bound
+  help: use a bounded type parameter, e.g. 'def f[T: Shape](x: T)'

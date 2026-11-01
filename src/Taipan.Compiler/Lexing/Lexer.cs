@@ -454,6 +454,7 @@ public sealed class Lexer
             '>' => (TokenKind.Greater, 1),
             '?' when next == '?' => (TokenKind.QuestionQuestion, 2),
             '?' => (TokenKind.Question, 1),
+            '.' when next == '.' && Peek(2) == '.' => (TokenKind.Ellipsis, 3),
             '.' => (TokenKind.Dot, 1),
             ',' => (TokenKind.Comma, 1),
             ':' => (TokenKind.Colon, 1),

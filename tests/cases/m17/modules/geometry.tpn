@@ -1,0 +1,9 @@
+class Sized(Protocol):
+    def size(self) -> int: ...
+
+def biggest[T: Sized](xs: list[T]) -> int:
+    var best = 0
+    for x in xs:
+        if x.size() > best:
+            best = x.size()
+    return best

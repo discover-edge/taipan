@@ -1,0 +1,49 @@
+class Shape(Protocol):
+    def area(self) -> float: ...
+    def scaled(self, k: float) -> Self: ...
+
+class Point:
+    x: int = 0
+
+class Circle:
+    r: float = 1.0
+
+    def area(self) -> int:
+        return 3
+
+    def scaled(self, factor: float) -> Circle:
+        return self
+
+class Version:
+    n: int = 0
+
+    def __lt__(self, other: Version) -> bool:
+        return self.n < other.n
+
+def largest[T: Comparable](xs: list[T]) -> T?:
+    return None
+
+def total[S: Shape](xs: list[S]) -> float:
+    return 0.0
+
+def opaque[T](xs: list[T]) -> T?:
+    return largest(xs)
+
+def bounded[S: Shape](x: S, y: S) -> bool:
+    x.perimeter()
+    return x < y
+
+def compare(a: Version, b: Version) -> bool:
+    print(a.__lt__(b))
+    return a <= b or a >= b
+
+largest([Point()])
+largest([True, False])
+let maybe: list[int?] = [1, None]
+largest(maybe)
+total([Circle()])
+total([Point()])
+let x = ...
+
+class Stub:
+    def name(self) -> str: ...

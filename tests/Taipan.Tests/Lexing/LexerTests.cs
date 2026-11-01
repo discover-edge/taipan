@@ -111,6 +111,15 @@ public class LexerTests
             Dump("def class enum let var const if elif else while for in match return pass break " +
                  "continue and or not is some None True False as from import lambda try except finally raise"));
 
+    [Theory]
+    [InlineData("...", "Ellipsis EndOfFile")]
+    [InlineData("a.b", "Name(a) Dot Name(b) EndOfFile")]
+    [InlineData("..", "Dot Dot EndOfFile")]
+    [InlineData("....", "Ellipsis Dot EndOfFile")]
+    [InlineData("1...", "Int(1) Ellipsis EndOfFile")]
+    public void Ellipsis(string text, string expected) =>
+        Assert.Equal(expected.Replace(" EndOfFile", " Newline EndOfFile"), Dump(text));
+
     [Fact]
     public void NamesThatResembleKeywords() =>
         Assert.Equal(

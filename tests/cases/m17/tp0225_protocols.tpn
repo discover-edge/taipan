@@ -1,0 +1,40 @@
+class Animal:
+    pass
+
+class Shape(Protocol):
+    sides: int
+    def area(self) -> float:
+        return 1.0
+    def scaled(self, k: float = 1.0) -> Self: ...
+    def __init__(self): ...
+    def __eq__(self, other: Self) -> bool: ...
+    def __lt__(self, other: int) -> bool: ...
+
+class Pair[T](Protocol):
+    def first(self) -> T: ...
+
+class Pet(Animal, Protocol):
+    def name(self) -> str: ...
+
+class Bad:
+    def __lt__(self, a: Bad, b: Bad) -> bool:
+        return True
+
+class Worse:
+    def __lt__(self, other: int) -> bool:
+        return True
+
+class Worst:
+    def __lt__(self, other: Worst) -> int:
+        return 0
+
+class Twice(Comparable, Comparable):
+    def __lt__(self, other: Twice) -> bool:
+        return True
+
+class Ordered(Comparable):
+    def __lt__(self, other: Ordered) -> bool:
+        return True
+
+class Again(Ordered, Comparable):
+    pass
