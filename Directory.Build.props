@@ -6,4 +6,18 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
+
+  <!-- One version for every package and for the version option of taipan (SPEC §12.2). -->
+  <PropertyGroup>
+    <Version>0.2.0</Version>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+    <Authors>Discover Edge, LLC</Authors>
+    <Copyright>Copyright (c) 2026 Discover Edge, LLC</Copyright>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/discover-edge/taipan</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/discover-edge/taipan</RepositoryUrl>
+    <PackageTags>taipan;language;compiler;python</PackageTags>
+    <!-- Only the projects that are packages say so. -->
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
 </Project>

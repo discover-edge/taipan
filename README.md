@@ -60,6 +60,14 @@ Run a program with:
 dotnet run --project src/Taipan.Cli -- run examples/health.tpn
 ```
 
+To put `taipan` on your path instead, pack it as a .NET tool and install it from the local package. It needs only the .NET 10 runtime to run:
+
+```
+dotnet pack -c Release -o packages
+dotnet tool install -g TaipanLang --add-source packages
+taipan run examples/health.tpn
+```
+
 ### Commands
 
 | Command | What it does |
@@ -68,6 +76,7 @@ dotnet run --project src/Taipan.Cli -- run examples/health.tpn
 | `taipan run <file>` | Compiles and runs the program |
 | `taipan emit <file>` | Prints the generated C# |
 | `taipan build <file> -o <dir>` | Writes a runnable `<dir>/<file>.dll` (run it with `dotnet`) |
+| `taipan --version` | Prints the version |
 
 Exit codes: `0` success, `1` compile error, `2` usage error, `101` runtime panic.
 

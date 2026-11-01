@@ -1278,3 +1278,37 @@ Types are written as in source: `int`, `str?`, `list[int]`. The type of `None` i
 - an LSP server
 - NativeAOT publish
 - emitting CPython extension modules (interop level 3)
+- an MSBuild project SDK (`TaipanLang.Sdk`), for building `.tpn` files with `dotnet build` as part of a .NET solution
+
+---
+
+## 12. The `taipan` tool (M20)
+
+### 12.1 Commands
+```
+taipan check <file>              type-check only, printing diagnostics
+taipan emit  <file>              print the generated C# (§8)
+taipan build <file> -o <dir>     write a runnable program to <dir>
+taipan run   <file> [-- args]    compile and run
+taipan --version                 print "taipan <version>", e.g. "taipan 0.2.0"
+taipan --help                    print the usage text
+```
+- `--version` and `--help` print to stdout and exit `0`. Each takes no other arguments.
+- No arguments, an unknown command or option, or wrong arguments to a command print a one-line error (if there is one) and the usage text to stderr, and exit `2` (§9).
+- `build -o <dir>` writes `<name>.dll` with `Taipan.Runtime.dll`, `Python.Runtime.dll` and a `runtimeconfig.json`, so `dotnet <dir>/<name>.dll` runs it on the .NET 10 runtime.
+
+### 12.2 Packages
+Taipan is distributed as two NuGet packages, with the same version:
+
+| Package | Contents |
+|---|---|
+| `TaipanLang` | the `taipan` command, as a .NET tool: the compiler, the runtime and its dependencies (Roslyn, pythonnet) |
+| `TaipanLang.Runtime` | the `Taipan.Runtime` library that compiled programs reference, depending on `pythonnet` |
+
+- `TaipanLang` installs with `dotnet tool install -g TaipanLang`, which puts `taipan` on the path. It runs on the .NET 10 runtime, and compiles programs against that runtime's assemblies. It needs no SDK.
+- The NuGet ID `taipan` belongs to another project, hence `TaipanLang`. Assembly and namespace names don't change: the runtime is still `Taipan.Runtime.dll`, namespace `Taipan.Runtime`.
+- `TaipanLang.Runtime` isn't needed to run programs, since the tool carries the runtime. It's published for Taipan libraries referenced from other .NET code (M22).
+- **Version:** one version for both packages and `taipan --version`, set in one place in the build. M20's is `0.2.0`, the first packaged release after v0.1.
+- `dotnet pack -c Release -o <dir>` at the repository root builds both packages.
+- An installed tool behaves exactly as a source build, Python interop included: CPython is found as §10.6 says, at run time.
+- Publishing to nuget.org is done by hand and isn't part of the build.

@@ -1,10 +1,12 @@
 using System.Collections.Immutable;
+using static System.Reflection.CustomAttributeExtensions;
 using Taipan.Compiler.Diagnostics;
 using Taipan.Compiler.Emit;
 using Taipan.Compiler.Lexing;
 using Taipan.Compiler.Semantics;
 using Taipan.Compiler.Syntax;
 using Taipan.Compiler.Text;
+using InformationalVersion = System.Reflection.AssemblyInformationalVersionAttribute;
 
 namespace Taipan.Cli;
 
@@ -24,6 +26,8 @@ public static class Cli
           taipan emit  <file>
           taipan build <file> -o <dir>
           taipan run   <file> [-- args]
+          taipan --version
+          taipan --help
         """;
 
     public static int Run(string[] args, TextWriter stdout, TextWriter stderr)
@@ -39,6 +43,10 @@ public static class Cli
             "emit" => Emit(rest, stdout, stderr),
             "build" => Build(rest, stdout, stderr),
             "run" => RunFile(rest, stdout, stderr),
+            "--version" or "--help" when rest.Length > 0 => UsageError(stderr, $"{command} takes no arguments"),
+            "--version" => Print(stdout, $"taipan {Version}"),
+            "--help" => Print(stdout, Usage),
+            _ when command.StartsWith('-') => UsageError(stderr, $"unknown option '{command}'"),
             _ => UsageError(stderr, $"unknown command '{command}'"),
         };
     }
@@ -133,6 +141,16 @@ public static class Cli
     {
         stderr.WriteLine($"taipan: {feature} is not implemented yet");
         return ExitUsage;
+    }
+
+    /// <summary>The package version, which the build sets once for every package (SPEC §12.2).</summary>
+    private static string Version =>
+        typeof(Cli).Assembly.GetCustomAttribute<InformationalVersion>()?.InformationalVersion ?? "unknown";
+
+    private static int Print(TextWriter stdout, string text)
+    {
+        stdout.WriteLine(text);
+        return ExitSuccess;
     }
 
     private static int UsageError(TextWriter stderr, string? message)

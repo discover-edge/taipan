@@ -23,8 +23,10 @@ jobs:
       - name: Build
         run: dotnet build
 
-      # Fail, rather than skip, the interop cases if Python can't be found.
+      # Fail, rather than skip, the interop cases if Python can't be found, and pack and install
+      # the tool to run programs with it (SPEC §12.2).
       - name: Test
         run: dotnet test --no-build
         env:
           TAIPAN_REQUIRE_PYTHON: "1"
+          TAIPAN_TEST_PACKAGE: "1"
