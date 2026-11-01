@@ -1,0 +1,82 @@
+# Narrowing a name with isinstance and `is not None` (SPEC §3.9).
+class Shape:
+    def area(self) -> float:
+        return 0.0
+
+class Square(Shape):
+    side: float
+
+    def __init__(self, side: float):
+        self.side = side
+        super().__init__()
+
+    @override
+    def area(self) -> float:
+        return self.side * self.side
+
+class Circle(Shape):
+    radius: float
+
+    def __init__(self, radius: float):
+        self.radius = radius
+        super().__init__()
+
+    @override
+    def area(self) -> float:
+        return 3.0 * self.radius * self.radius
+
+def describe(s: Shape?) -> str:
+    if isinstance(s, Square):
+        return f"square of side {s.side}"
+    elif isinstance(s, Circle) and s.radius > 1:
+        return f"big circle {s.radius}"
+    elif s is None:
+        return "nothing"
+    else:
+        return f"shape with area {s.area()}"
+
+print(describe(Square(2)))
+print(describe(Circle(2)))
+print(describe(Circle(1)))
+print(describe(None))
+print(describe(Shape()))
+
+def first_long(words: list[str]) -> str?:
+    for w in words:
+        if len(w) > 3:
+            return w
+    return None
+
+let found = first_long(["a", "abcd"])
+if found is not None:
+    print(found.upper())
+let missing = first_long(["a"])
+print(missing is None, found is None, missing is not None)
+if missing is None or missing == "x":
+    print("missing or x")
+if not (found is None):
+    print(found + "!")
+
+def size(n: int?) -> int:
+    if n is None:
+        return 0
+    else:
+        return n + 1
+
+print(size(None), size(41))
+
+def lengths(s: Shape?) -> list[float]:
+    if isinstance(s, Square):
+        let scale: Callable[[float], float] = lambda k: s.side * k
+        return [scale(1.0), scale(2.0)]
+    return []
+
+print(lengths(Square(3)), lengths(None))
+
+def count_down(n: int?):
+    while n is not None and n > 0:
+        print(n)
+        return
+
+count_down(3)
+count_down(None)

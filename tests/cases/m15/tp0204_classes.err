@@ -1,0 +1,1 @@
+tests/cases/m15/tp0204_classes.tpn:9:5: error TP0204: non-exhaustive match (missing: _)

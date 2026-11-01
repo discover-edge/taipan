@@ -1,0 +1,12 @@
+generic (4 legs) says ...
+rex (4 legs) says woof
+rex the lab fetches
+tweety (2 legs) says tweet, not ...
+bit (4 legs) says yip
+bit the pug fetches
+False True True
+<Dog object>
+[<Dog object>, <Bird object>]
+11 2 2
+True False
+2 [1, 2] 1 [1]

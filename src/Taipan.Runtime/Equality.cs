@@ -3,7 +3,10 @@ using System.Collections;
 
 namespace Taipan.Runtime;
 
-/// <summary>Structural equality for lists, dicts and structs (SPEC §5.3). Dict equality ignores order.</summary>
+/// <summary>
+/// Structural equality for lists, dicts, dataclasses and enums (SPEC §5.3). Dict equality ignores
+/// order. Plain class instances and functions compare by identity.
+/// </summary>
 public static class Equality
 {
     public static bool Equal(object? left, object? right) => (left, right) switch
@@ -16,7 +19,8 @@ public static class Equality
         (double l, long r) => l == r,
         (string l, string r) => string.Equals(l, r, StringComparison.Ordinal),
         (bool l, bool r) => l == r,
-        (IFunction l, IFunction r) => ReferenceEquals(l, r),
+        (IFunction l, IFunction r) => ReferenceEquals(l.Identity, r.Identity),
+        (IObject l, IObject r) => ReferenceEquals(l, r),
         (ITuple l, ITuple r) => l.Length == r.Length && Enumerable.Range(0, l.Length).All(i => Equal(l[i], r[i])),
         (IStruct l, IStruct r) => l.GetType() == r.GetType() && FieldsEqual(l, r),
         (IDictionary l, IDictionary r) => DictsEqual(l, r),

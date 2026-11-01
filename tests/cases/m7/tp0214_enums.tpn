@@ -9,7 +9,8 @@ def Green():
 enum Signal:
     Green
 
-struct Light:
+@dataclass
+class Light:
     x: int
 
 enum int:

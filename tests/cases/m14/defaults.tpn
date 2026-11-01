@@ -29,7 +29,8 @@ def three(a: int, b: int = note("default b", 2), c: int = note("default c", 3)) 
 print(three(c=note("c", 9), a=note("a", 1)))
 
 # Methods take defaults and keywords, and constructors mix positional and keyword arguments.
-struct Service:
+@dataclass
+class Service:
     name: str
     replicas: int
     healthy: int

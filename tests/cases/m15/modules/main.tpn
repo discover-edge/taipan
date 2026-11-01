@@ -1,0 +1,21 @@
+# Classes from another module: as bases, in isinstance and in patterns (SPEC §4.3, §4.7).
+import zoo
+from zoo import Tag
+
+class Lion(zoo.Animal):
+    def __init__(self):
+        super().__init__("leo")
+
+    @override
+    def sound(self) -> str:
+        return "roar"
+
+let animals: list[zoo.Animal] = [Lion(), zoo.Animal("x")]
+for a in animals:
+    print(a.name, a.sound(), isinstance(a, Lion), isinstance(a, zoo.Animal))
+    match a:
+        Lion():
+            print("a lion")
+        zoo.Animal(name=n):
+            print("an animal called " + n)
+print(Tag(1), Tag(1) == Tag(1))

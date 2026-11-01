@@ -173,8 +173,11 @@ public sealed class DiagnosticBag
     public void ReportOptionalNotNarrowed(TextSpan span, object expected, object found) =>
         Add("TP0203", span, $"expected {expected}, found {found}", NarrowHelp);
 
-    public void ReportOptionalUse(TextSpan span, object type) =>
-        Add("TP0203", span, $"{type} must be narrowed before use", NarrowHelp);
+    /// <summary><paramref name="unnarrowable"/>: a var or field that a condition would have narrowed (SPEC §3.9).</summary>
+    public void ReportOptionalUse(TextSpan span, object type, bool unnarrowable = false) =>
+        Add("TP0203", span, $"{type} must be narrowed before use", unnarrowable ? CopyHelp : NarrowHelp);
+
+    private const string CopyHelp = "copy it to a 'let' first";
 
     private const string NarrowHelp = "narrow it with 'is some', or give a default with '??'";
 
@@ -267,8 +270,9 @@ public sealed class DiagnosticBag
     public void ReportCannotIndex(TextSpan span, object type) =>
         Add("TP0200", span, $"cannot index {type}");
 
-    public void ReportInvalidDictKey(TextSpan span, object type) =>
-        Add("TP0200", span, $"dict keys must be int, str, or bool, found {type}");
+    public void ReportInvalidDictKey(TextSpan span, object type, bool isDataclass) =>
+        Add("TP0200", span, $"dict keys must be int, str, bool, tuples of those, or plain class instances, found {type}",
+            isDataclass ? "a dataclass compares by value, so it cannot be a key" : null);
 
     public void ReportCannotAssignStrElement(TextSpan span) =>
         Add("TP0202", span, "cannot assign to an element of str");
@@ -282,11 +286,11 @@ public sealed class DiagnosticBag
     public void ReportRepeatedField(TextSpan span, string field) =>
         Add("TP0209", span, $"field '{field}' is given more than once");
 
-    public void ReportNoField(TextSpan span, object type, string name) =>
-        Add("TP0210", span, $"{type} has no field '{name}'");
+    public void ReportNoField(TextSpan span, object type, string name, bool unnarrowable = false) =>
+        Add("TP0210", span, $"{type} has no field '{name}'", unnarrowable ? CopyHelp : null);
 
-    public void ReportNoMethod(TextSpan span, object type, string name) =>
-        Add("TP0210", span, $"{type} has no method '{name}'");
+    public void ReportNoMethod(TextSpan span, object type, string name, bool unnarrowable = false) =>
+        Add("TP0210", span, $"{type} has no method '{name}'", unnarrowable ? CopyHelp : null);
 
     public void ReportUndefinedName(TextSpan span, string name) =>
         Add("TP0201", span, $"undefined name '{name}'", NoneHelp(name));
@@ -346,6 +350,132 @@ public sealed class DiagnosticBag
     /// <summary>A keyword argument to a built-in, or (with no name) to a function value.</summary>
     public void ReportKeywordArguments(TextSpan span, string? function) =>
         Add("TP0218", span, function is null ? "a function value takes no keyword arguments" : $"'{function}' takes no keyword arguments");
+
+    // ---- Classes (SPEC §4.3, M15) ----
+
+    public void ReportUnknownDecorator(TextSpan span, string name) =>
+        Add("TP0224", span, $"unknown decorator '@{name}'");
+
+    public void ReportMisplacedDecorator(TextSpan span, string name) =>
+        Add("TP0224", span, $"'@{name}' cannot be used here", "'@dataclass' goes on a class, '@override' on a method");
+
+    public void ReportDuplicateDecorator(TextSpan span, string name) =>
+        Add("TP0224", span, $"duplicate decorator '@{name}'");
+
+    public void ReportMultipleBases(TextSpan span) =>
+        Add("TP0225", span, "a class can have only one base class");
+
+    public void ReportInvalidBase(TextSpan span, object type) =>
+        Add("TP0225", span, $"'{type}' cannot be a base class");
+
+    public void ReportMixedBase(TextSpan span, bool isDataclass) =>
+        Add("TP0225", span, isDataclass ? "a dataclass can only derive from a dataclass" : "a plain class can only derive from a plain class");
+
+    public void ReportGenericBase(TextSpan span) =>
+        Add("TP0225", span, "generic classes cannot be derived from");
+
+    public void ReportGenericWithBase(TextSpan span) =>
+        Add("TP0225", span, "generic classes cannot have a base class");
+
+    public void ReportInheritanceCycle(TextSpan span, string name) =>
+        Add("TP0225", span, $"'{name}' derives from itself");
+
+    public void ReportSpecialMethod(TextSpan span, string name) =>
+        Add("TP0225", span, $"special method '{name}' is not supported");
+
+    public void ReportDataclassInit(TextSpan span) =>
+        Add("TP0225", span, "a dataclass cannot define '__init__'");
+
+    public void ReportFieldOrder(TextSpan span) =>
+        Add("TP0225", span, "field without a default follows field with a default");
+
+    public void ReportFieldNotSet(TextSpan span, string field) =>
+        Add("TP0226", span, $"'__init__' does not set '{field}'");
+
+    public void ReportFieldWithoutInit(TextSpan span, string field, string className) =>
+        Add("TP0226", span, $"'{field}' has no default, and '{className}' has no '__init__'");
+
+    public void ReportFieldReadEarly(TextSpan span, string field) =>
+        Add("TP0226", span, $"'{field}' is read before it is set");
+
+    /// <summary><paramref name="field"/> is null when only <c>super().__init__</c> is still to come.</summary>
+    public void ReportSelfUsedEarly(TextSpan span, string? field) =>
+        Add("TP0226", span, field is null ? "'self' is used before 'super().__init__' is called" : $"'self' is used before '{field}' is set");
+
+    public void ReportInheritedFieldEarly(TextSpan span, string field) =>
+        Add("TP0226", span, $"'{field}' is inherited, so it is set by 'super().__init__'");
+
+    public void ReportSuperInitEarly(TextSpan span, string field) =>
+        Add("TP0226", span, $"'super().__init__' is called before '{field}' is set");
+
+    public void ReportMissingSuperInit(TextSpan span, string className) =>
+        Add("TP0226", span, $"'{className}.__init__' must call 'super().__init__(…)'");
+
+    public void ReportMisplacedSuperInit(TextSpan span) =>
+        Add("TP0226", span, "'super().__init__' must be called once, directly in '__init__'");
+
+    public void ReportSuperInitOutsideInit(TextSpan span) =>
+        Add("TP0226", span, "'super().__init__' can only be called in '__init__'");
+
+    /// <summary><paramref name="field"/> is null when only <c>super().__init__</c> is still to come.</summary>
+    public void ReportEarlyReturn(TextSpan span, string? field) =>
+        Add("TP0226", span, field is null ? "'__init__' returns before 'super().__init__' is called" : $"'__init__' returns before '{field}' is set");
+
+    public void ReportMissingOverride(TextSpan span, string method, string baseClass) =>
+        Add("TP0227", span, $"'{method}' overrides '{baseClass}.{method}'; mark it '@override'");
+
+    /// <summary><paramref name="baseClass"/> is null for a class without a base.</summary>
+    public void ReportNothingToOverride(TextSpan span, string method, string? baseClass) =>
+        Add("TP0227", span, $"'{method}' does not override a method of {(baseClass is null ? "a base class" : $"'{baseClass}'")}");
+
+    public void ReportInitOverride(TextSpan span) =>
+        Add("TP0227", span, "'__init__' cannot be marked '@override'");
+
+    public void ReportOverrideParameters(TextSpan span, string method, string baseClass) =>
+        Add("TP0228", span, $"'{method}' must take the same parameters as '{baseClass}.{method}'");
+
+    public void ReportOverrideParameterType(TextSpan span, string parameter, string method, object type, string baseClass) =>
+        Add("TP0228", span, $"parameter '{parameter}' of '{method}' must have type {type}, as in '{baseClass}.{method}'");
+
+    public void ReportOverrideDefault(TextSpan span, string parameter, string method, string baseClass) =>
+        Add("TP0228", span, $"parameter '{parameter}' of '{method}' needs a default, as in '{baseClass}.{method}'");
+
+    /// <summary><paramref name="type"/> is null when the base method returns nothing.</summary>
+    public void ReportOverrideReturn(TextSpan span, string method, object? type, string baseClass) =>
+        Add("TP0228", span, $"'{method}' must return {type?.ToString() ?? "nothing"}, as '{baseClass}.{method}' does");
+
+    public void ReportIsInstanceNeedsClass(TextSpan span, object type) =>
+        Add("TP0200", span, $"isinstance needs a class, found {type}");
+
+    public void ReportNotAClass(TextSpan span, string name) =>
+        Add("TP0200", span, $"'{name}' is not a class");
+
+    public void ReportGenericClassTest(TextSpan span, string name) =>
+        Add("TP0200", span, $"'{name}' is generic");
+
+    public void ReportNeverInstance(TextSpan span, object type, string className) =>
+        Add("TP0200", span, $"{type} can never be a {className}");
+
+    public void ReportBareClassPattern(TextSpan span, string name) =>
+        Add("TP0200", span, $"'{name}' is a class; write '{name}()'");
+
+    public void ReportSuperMisuse(TextSpan span) =>
+        Add("TP0200", span, "'super()' can only be used as 'super().<method>(…)'");
+
+    public void ReportSuperOutsideMethod(TextSpan span) =>
+        Add("TP0200", span, "'super()' can only be used in a method");
+
+    public void ReportNoBaseClass(TextSpan span, string className) =>
+        Add("TP0200", span, $"'{className}' has no base class");
+
+    public void ReportInitCalled(TextSpan span) =>
+        Add("TP0200", span, "'__init__' cannot be called directly");
+
+    public void ReportInitReturnType(TextSpan span) =>
+        Add("TP0200", span, "'__init__' cannot have a return type");
+
+    public void ReportPositionalOnPlainClass(TextSpan span, string className) =>
+        Add("TP0209", span, $"'{className}' is not a dataclass, so its fields can only be bound by name");
 
     public void AddRange(IEnumerable<Diagnostic> diagnostics) => _items.AddRange(diagnostics);
 

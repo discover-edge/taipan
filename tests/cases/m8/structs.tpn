@@ -1,4 +1,5 @@
-struct Box[T]:
+@dataclass
+class Box[T]:
     value: T
 
     def get(self) -> T:
@@ -10,7 +11,8 @@ struct Box[T]:
     def map_str(self) -> Box[str]:
         return Box(str(self.value))
 
-struct Pair[A, B]:
+@dataclass
+class Pair[A, B]:
     first: A
     second: B
 

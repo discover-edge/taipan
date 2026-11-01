@@ -1,0 +1,76 @@
+# Plain classes: __init__, inheritance, overriding, dispatch and identity (SPEC §4.3).
+class Animal:
+    name: str
+    legs: int = 4
+
+    def __init__(self, name: str):
+        self.name = name
+
+    def speak(self) -> str:
+        return "..."
+
+    def describe(self) -> str:
+        return f"{self.name} ({self.legs} legs) says {self.speak()}"
+
+class Dog(Animal):
+    breed: str
+
+    def __init__(self, name: str, breed: str):
+        self.breed = breed
+        super().__init__(name)
+
+    @override
+    def speak(self) -> str:
+        return "woof"
+
+    def fetch(self) -> str:
+        return f"{self.name} the {self.breed} fetches"
+
+class Bird(Animal):
+    def __init__(self, name: str):
+        super().__init__(name)
+        self.legs = 2
+
+    @override
+    def speak(self) -> str:
+        return "tweet, not " + super().speak()
+
+class Puppy(Dog):
+    @override
+    def speak(self) -> str:
+        return "yip"
+
+let animals: list[Animal] = [Animal("generic"), Dog("rex", "lab"), Bird("tweety"), Puppy("bit", "pug")]
+for a in animals:
+    print(a.describe())
+    if isinstance(a, Dog):
+        print(a.fetch())
+
+let rex = Dog("rex", "lab")
+let other = Dog("rex", "lab")
+let same: Animal = rex
+print(rex == other, rex == same, rex != other)
+print(rex)
+print([rex, Bird("b")])
+
+var seen: dict[Animal, int] = {}
+seen[rex] = 1
+seen[other] = 2
+seen[rex] += 10
+print(seen[rex], seen[other], len(seen))
+print(rex in seen, Dog("x", "y") in seen)
+
+class Counter:
+    count: int = 0
+    history: list[int] = []
+
+    def bump(self):
+        self.count += 1
+        self.history.append(self.count)
+
+let c1 = Counter()
+let c2 = Counter()
+c1.bump()
+c1.bump()
+c2.bump()
+print(c1.count, c1.history, c2.count, c2.history)

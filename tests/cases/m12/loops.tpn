@@ -17,7 +17,8 @@ for x, y in zip(names, [1, 2, 3]):
     print(x, y)
 
 # Tuples sort lexicographically, so they make good sort keys.
-struct Service:
+@dataclass
+class Service:
     name: str
     healthy: int
 

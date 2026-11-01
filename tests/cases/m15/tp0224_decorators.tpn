@@ -1,0 +1,28 @@
+# Decorators: only @dataclass on a class and @override on a method (SPEC §2).
+@override
+class A:
+    x: int = 0
+
+@dataclass
+@dataclass
+class B:
+    x: int
+
+@staticmethod
+def f():
+    pass
+
+@dataclass
+def g():
+    pass
+
+class C:
+    @dataclass
+    def m(self):
+        pass
+
+def h():
+    @override
+    def inner():
+        pass
+    inner()

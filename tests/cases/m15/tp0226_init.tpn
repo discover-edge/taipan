@@ -1,0 +1,88 @@
+# Strict initialization (SPEC §4.3).
+class Unset:
+    a: int
+    b: int
+
+    def __init__(self, flag: bool):
+        self.a = 1
+        if flag:
+            self.b = 2
+
+class ReadEarly:
+    a: int
+    b: int
+
+    def __init__(self):
+        self.a = self.b
+        self.b = 1
+
+class UseEarly:
+    a: int
+
+    def __init__(self):
+        print(self)
+        self.a = 1
+        self.show()
+
+    def show(self):
+        print(self.a)
+
+class NoInit:
+    a: int
+
+class Base:
+    n: int
+
+    def __init__(self, n: int):
+        self.n = n
+
+class SuperFirst(Base):
+    m: int
+
+    def __init__(self):
+        super().__init__(1)
+        self.m = 2
+
+class NoSuper(Base):
+    def __init__(self):
+        pass
+
+class InheritedEarly(Base):
+    def __init__(self):
+        self.n = 3
+        super().__init__(self.n)
+
+class SuperInIf(Base):
+    def __init__(self, flag: bool):
+        if flag:
+            super().__init__(1)
+        super().__init__(2)
+
+class EarlyReturn:
+    a: int
+
+    def __init__(self, flag: bool):
+        if flag:
+            return
+        self.a = 1
+
+class Capture:
+    a: int
+
+    def __init__(self):
+        let f = lambda: self
+        self.a = 1
+
+class Elsewhere(Base):
+    def __init__(self):
+        super().__init__(1)
+
+    def again(self):
+        super().__init__(2)
+
+class LoopSet:
+    a: int
+
+    def __init__(self, n: int):
+        for i in range(n):
+            self.a = i

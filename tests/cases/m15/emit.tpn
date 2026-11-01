@@ -1,0 +1,45 @@
+# How classes are emitted (SPEC §8).
+class Animal:
+    name: str
+    legs: int = 4
+
+    def __init__(self, name: str, loud: bool = False):
+        if loud:
+            self.name = name.upper()
+        else:
+            self.name = name
+
+    def speak(self, times: int = 1) -> str:
+        return "..."
+
+class Dog(Animal):
+    def __init__(self, name: str):
+        super().__init__(name)
+
+    @override
+    def speak(self, times: int = 2) -> str:
+        return super().speak() + "woof"
+
+class Puppy(Dog):
+    pass
+
+@dataclass
+class Point:
+    x: float
+    y: float = 0.0
+
+def pick(a: Animal?) -> str:
+    if isinstance(a, Dog) and a.legs > 2:
+        return a.speak()
+    elif a is not None:
+        let d = a as Dog?
+        if d is not None:
+            return "dog " + d.name
+        return a.name
+    return "none"
+
+let pets: list[Animal] = [Dog("rex"), Puppy("bit"), Animal("cat", loud=True)]
+for p in pets:
+    print(p.speak(), pick(p))
+let f: Callable[[Dog], str] = pick
+print(f(Dog("x")), Point(1), Point(y=2, x=1))

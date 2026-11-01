@@ -6,45 +6,45 @@ public static class TaipanProgram
 {
     public static void TopLevel()
     {
-#line 13 "tests/cases/m6/find.tpn"
-        global::System.Collections.Generic.List<global::@Service> @services = new global::System.Collections.Generic.List<global::@Service> { new global::@Service("api", 3L, 3L), new global::@Service("worker", 4L, 3L) };
 #line 14 "tests/cases/m6/find.tpn"
+        global::System.Collections.Generic.List<global::@Service> @services = new global::System.Collections.Generic.List<global::@Service> { new global::@Service("api", 3L, 3L), new global::@Service("worker", 4L, 3L) };
+#line 15 "tests/cases/m6/find.tpn"
         global::@Service? @svc = @find(@services, "worker");
-#line 16 "tests/cases/m6/find.tpn"
+#line 17 "tests/cases/m6/find.tpn"
         if (@svc is {} @s)
         {
-#line 17 "tests/cases/m6/find.tpn"
+#line 18 "tests/cases/m6/find.tpn"
             global::Taipan.Runtime.Builtins.Print(@s.@name, @s.@healthy, "/", @s.@replicas);
         }
         else
         {
-#line 19 "tests/cases/m6/find.tpn"
+#line 20 "tests/cases/m6/find.tpn"
             global::Taipan.Runtime.Builtins.Print("no such service");
         }
-#line 21 "tests/cases/m6/find.tpn"
+#line 22 "tests/cases/m6/find.tpn"
         if (@find(@services, "db") is null)
         {
-#line 22 "tests/cases/m6/find.tpn"
+#line 23 "tests/cases/m6/find.tpn"
             global::Taipan.Runtime.Builtins.Print("no db");
         }
-#line 23 "tests/cases/m6/find.tpn"
+#line 24 "tests/cases/m6/find.tpn"
         global::Taipan.Runtime.Builtins.Print(@find(@services, "api"), @find(@services, "db"));
 #line hidden
     }
 
     public static global::@Service? @find(global::System.Collections.Generic.List<global::@Service> @services, string @name)
     {
-#line 8 "tests/cases/m6/find.tpn"
+#line 9 "tests/cases/m6/find.tpn"
         foreach (global::@Service @s in global::Taipan.Runtime.Iter.Over(@services))
         {
-#line 9 "tests/cases/m6/find.tpn"
+#line 10 "tests/cases/m6/find.tpn"
             if (@s.@name == @name)
             {
-#line 10 "tests/cases/m6/find.tpn"
+#line 11 "tests/cases/m6/find.tpn"
                 return @s;
             }
         }
-#line 11 "tests/cases/m6/find.tpn"
+#line 12 "tests/cases/m6/find.tpn"
         return null;
 #line hidden
     }

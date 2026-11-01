@@ -1,4 +1,5 @@
-struct Stack:
+@dataclass
+class Stack:
     items: list[int]
 
     def top(self) -> int:

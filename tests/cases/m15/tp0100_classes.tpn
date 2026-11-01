@@ -1,0 +1,14 @@
+# Syntax errors with classes (SPEC §2).
+@dataclass(frozen=True)
+class A:
+    x: int
+
+def f():
+    class Inner:
+        pass
+
+def g(x: int?) -> bool:
+    return x is 3
+
+@dataclass
+let y = 1

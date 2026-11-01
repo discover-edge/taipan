@@ -1,0 +1,54 @@
+# Initialization order: own fields, then super().__init__, so a base's __init__ may call
+# overridden methods safely (SPEC §4.3).
+class Base:
+    label: str
+    log: list[str] = []
+
+    def __init__(self, label: str):
+        self.label = label
+        self.log.append("base " + self.label)
+        self.log.append(self.greeting())
+
+    def greeting(self) -> str:
+        return "hello from base"
+
+class Child(Base):
+    extra: str
+    count: int = 10
+
+    def __init__(self, extra: str):
+        self.extra = extra
+        self.count += 1
+        super().__init__("child")
+        self.log.append("child done")
+
+    @override
+    def greeting(self) -> str:
+        return f"hello from child with {self.extra} and {self.count}"
+
+class Grandchild(Child):
+    pass
+
+let c = Child("x")
+print(c.log)
+print(Grandchild("y").log)
+
+class Node:
+    value: int
+    next: Node?
+
+    def __init__(self, value: int, next: Node? = None):
+        if value < 0:
+            self.value = 0
+        else:
+            self.value = value
+        self.next = next
+
+    def total(self) -> int:
+        let rest = self.next
+        if rest is None:
+            return self.value
+        else:
+            return self.value + rest.total()
+
+print(Node(1, Node(-5, Node(3))).total())

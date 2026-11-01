@@ -5,7 +5,7 @@ public static class TokenFacts
     public static readonly IReadOnlyDictionary<string, TokenKind> Keywords = new Dictionary<string, TokenKind>
     {
         ["def"] = TokenKind.DefKeyword,
-        ["struct"] = TokenKind.StructKeyword,
+        ["class"] = TokenKind.ClassKeyword,
         ["enum"] = TokenKind.EnumKeyword,
         ["let"] = TokenKind.LetKeyword,
         ["var"] = TokenKind.VarKeyword,
@@ -69,6 +69,7 @@ public static class TokenFacts
         [TokenKind.CloseBracket] = "]",
         [TokenKind.OpenBrace] = "{",
         [TokenKind.CloseBrace] = "}",
+        [TokenKind.At] = "@",
     };
 
     /// <summary>How a token kind is named in TP0100 messages (SPEC §2.1).</summary>

@@ -6,31 +6,31 @@ public static class TaipanProgram
 {
     public static void TopLevel()
     {
-#line 14 "tests/cases/m5/structs.tpn"
-        global::@Service @api = new global::@Service("api", 3L, 3L, new global::System.Collections.Generic.List<string> { "web" });
 #line 15 "tests/cases/m5/structs.tpn"
-        global::@Service @worker = new global::@Service(@name: "worker", @tags: new global::System.Collections.Generic.List<string>(), @healthy: 1L, @replicas: 4L);
+        global::@Service @api = new global::@Service("api", 3L, 3L, new global::System.Collections.Generic.List<string> { "web" });
 #line 16 "tests/cases/m5/structs.tpn"
-        global::Taipan.Runtime.Builtins.Print(@api);
+        global::@Service @worker = new global::@Service("worker", @tags: new global::System.Collections.Generic.List<string>(), @healthy: 1L, @replicas: 4L);
 #line 17 "tests/cases/m5/structs.tpn"
-        global::Taipan.Runtime.Builtins.Print(@worker);
+        global::Taipan.Runtime.Builtins.Print(@api);
 #line 18 "tests/cases/m5/structs.tpn"
+        global::Taipan.Runtime.Builtins.Print(@worker);
+#line 19 "tests/cases/m5/structs.tpn"
         global::Taipan.Runtime.Builtins.Print(@api.@ratio(), @worker.@ratio());
-#line 21 "tests/cases/m5/structs.tpn"
-        @worker.@scale(2L);
 #line 22 "tests/cases/m5/structs.tpn"
-        global::@Service @alias = @worker;
+        @worker.@scale(2L);
 #line 23 "tests/cases/m5/structs.tpn"
-        @alias.@tags.Add("batch");
+        global::@Service @alias = @worker;
 #line 24 "tests/cases/m5/structs.tpn"
+        @alias.@tags.Add("batch");
+#line 25 "tests/cases/m5/structs.tpn"
         global::Taipan.Runtime.Builtins.Print(@worker.@replicas, @worker.@healthy, @worker.@tags);
-#line 27 "tests/cases/m5/structs.tpn"
-        global::Taipan.Runtime.Builtins.Print(global::Taipan.Runtime.Equality.Equal(new global::@Service("a", 1L, 1L, new global::System.Collections.Generic.List<string> { "x" }), new global::@Service("a", 1L, 1L, new global::System.Collections.Generic.List<string> { "x" })));
 #line 28 "tests/cases/m5/structs.tpn"
-        global::Taipan.Runtime.Builtins.Print(global::Taipan.Runtime.Equality.Equal(new global::@Service("a", 1L, 1L, new global::System.Collections.Generic.List<string> { "x" }), new global::@Service("a", 1L, 1L, new global::System.Collections.Generic.List<string> { "y" })));
+        global::Taipan.Runtime.Builtins.Print(global::Taipan.Runtime.Equality.Equal(new global::@Service("a", 1L, 1L, new global::System.Collections.Generic.List<string> { "x" }), new global::@Service("a", 1L, 1L, new global::System.Collections.Generic.List<string> { "x" })));
 #line 29 "tests/cases/m5/structs.tpn"
-        global::Taipan.Runtime.Builtins.Print(!global::Taipan.Runtime.Equality.Equal(@api, @worker));
+        global::Taipan.Runtime.Builtins.Print(global::Taipan.Runtime.Equality.Equal(new global::@Service("a", 1L, 1L, new global::System.Collections.Generic.List<string> { "x" }), new global::@Service("a", 1L, 1L, new global::System.Collections.Generic.List<string> { "y" })));
 #line 30 "tests/cases/m5/structs.tpn"
+        global::Taipan.Runtime.Builtins.Print(!global::Taipan.Runtime.Equality.Equal(@api, @worker));
+#line 31 "tests/cases/m5/structs.tpn"
         global::Taipan.Runtime.Builtins.Print($"{(global::Taipan.Runtime.Display.Format(@api.@name))} has {(global::Taipan.Runtime.Display.Format(global::Taipan.Runtime.Builtins.Len(@api.@tags)))} tag(s)");
 #line hidden
     }
@@ -57,16 +57,16 @@ public sealed class @Service : global::Taipan.Runtime.IStruct
 
     public double @ratio()
     {
-#line 8 "tests/cases/m5/structs.tpn"
+#line 9 "tests/cases/m5/structs.tpn"
         return global::Taipan.Runtime.Ops.Div(this.@healthy, this.@replicas);
 #line hidden
     }
 
     public void @scale(long @by)
     {
-#line 11 "tests/cases/m5/structs.tpn"
-        this.@replicas = this.@replicas + @by;
 #line 12 "tests/cases/m5/structs.tpn"
+        this.@replicas = this.@replicas + @by;
+#line 13 "tests/cases/m5/structs.tpn"
         this.@healthy = this.@healthy + @by;
 #line hidden
     }

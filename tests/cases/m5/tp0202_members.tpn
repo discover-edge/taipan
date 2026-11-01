@@ -1,4 +1,5 @@
-struct Point:
+@dataclass
+class Point:
     x: int
 
     def get(self) -> int:

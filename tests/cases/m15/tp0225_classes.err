@@ -1,0 +1,10 @@
+tests/cases/m15/tp0225_classes.tpn:8:15: error TP0225: a class can have only one base class
+tests/cases/m15/tp0225_classes.tpn:11:15: error TP0225: 'int' cannot be a base class
+tests/cases/m15/tp0225_classes.tpn:18:21: error TP0225: a plain class can only derive from a plain class
+tests/cases/m15/tp0225_classes.tpn:22:21: error TP0225: a dataclass can only derive from a dataclass
+tests/cases/m15/tp0225_classes.tpn:31:14: error TP0225: generic classes cannot be derived from
+tests/cases/m15/tp0225_classes.tpn:34:13: error TP0225: 'Loop1' derives from itself
+tests/cases/m15/tp0225_classes.tpn:41:9: error TP0225: special method '__str__' is not supported
+tests/cases/m15/tp0225_classes.tpn:48:9: error TP0225: a dataclass cannot define '__init__'
+tests/cases/m15/tp0225_classes.tpn:54:5: error TP0225: field without a default follows field with a default
+tests/cases/m15/tp0225_classes.tpn:62:5: error TP0225: field without a default follows field with a default

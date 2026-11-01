@@ -12,7 +12,8 @@ def fold[T, R](xs: list[T], start: R, step: Callable[[R, T], R]) -> R:
         acc = step(acc, x)
     return acc
 
-struct Box[T]:
+@dataclass
+class Box[T]:
     value: T
 
 print(apply(lambda x: x * 2, 21))

@@ -8,6 +8,27 @@ namespace Taipan.Runtime;
 public static class Ops
 {
     /// <summary><c>/</c>: always true division; dividing by zero panics, for floats too.</summary>
+    /// <summary>
+    /// <c>x as C</c> between classes (SPEC §4.3): <paramref name="value"/> itself if it's a
+    /// <typeparamref name="T"/>, else a panic naming its runtime class.
+    /// </summary>
+    public static T Cast<T>(object? value, string target) where T : class =>
+        value as T ?? throw Panic.Create($"cannot convert {RuntimeClass(value)} to {target}");
+
+    private static string RuntimeClass(object? value) => value switch
+    {
+        null => "None",
+        IObject o => o.TypeName,
+        IStruct s => s.TypeName,
+        _ => value.GetType().Name,
+    };
+
+    /// <summary>Evaluates <paramref name="value"/> once for an expression that uses it twice (SPEC §8).</summary>
+    public static TResult Let<T, TResult>(T value, Func<T, TResult> body) => body(value);
+
+    /// <inheritdoc cref="Let"/>
+    public static void Do<T>(T value, Action<T> body) => body(value);
+
     public static double Div(double left, double right)
     {
         if (right == 0.0)

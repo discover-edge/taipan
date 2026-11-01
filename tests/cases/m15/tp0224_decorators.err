@@ -1,0 +1,10 @@
+tests/cases/m15/tp0224_decorators.tpn:2:1: error TP0224: '@override' cannot be used here
+  help: '@dataclass' goes on a class, '@override' on a method
+tests/cases/m15/tp0224_decorators.tpn:7:1: error TP0224: duplicate decorator '@dataclass'
+tests/cases/m15/tp0224_decorators.tpn:11:1: error TP0224: unknown decorator '@staticmethod'
+tests/cases/m15/tp0224_decorators.tpn:15:1: error TP0224: '@dataclass' cannot be used here
+  help: '@dataclass' goes on a class, '@override' on a method
+tests/cases/m15/tp0224_decorators.tpn:20:5: error TP0224: '@dataclass' cannot be used here
+  help: '@dataclass' goes on a class, '@override' on a method
+tests/cases/m15/tp0224_decorators.tpn:25:5: error TP0224: '@override' cannot be used here
+  help: '@dataclass' goes on a class, '@override' on a method

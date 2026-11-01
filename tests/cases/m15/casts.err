@@ -1,0 +1,2 @@
+panic: cannot convert Dog to Cat
+  at tests/cases/m15/casts.tpn:23

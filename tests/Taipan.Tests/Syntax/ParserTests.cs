@@ -96,25 +96,57 @@ public class ParserTests
     // ---- struct_def / struct_member ----
 
     [Fact]
-    public void StructDef() =>
+    public void ClassDef() =>
         Assert.Equal(
-            "StructDef(Service, [], [FieldDef(name, NamedType(str)), FieldDef(tags, ListType(NamedType(str)))], [])",
-            Snapshot("struct Service:\n    name: str\n    tags: list[str]\n"));
+            "ClassDef(Service, [], [], [FieldDef(name, NamedType(str)), FieldDef(tags, ListType(NamedType(str)))], [])",
+            Snapshot("class Service:\n    name: str\n    tags: list[str]\n"));
 
     // ---- method_def ----
 
     [Fact]
     public void StructWithMethods() =>
         Assert.Equal(
-            "StructDef(Counter, [], [FieldDef(n, NamedType(int))], [" +
+            "ClassDef(Counter, [], [], [FieldDef(n, NamedType(int))], [" +
             "MethodDef(bump, [Param(by, NamedType(int))], null, Block([AssignStmt(MemberExpr(NameExpr(self), n), Add, NameExpr(by))])), " +
             "MethodDef(get, [], NamedType(int), Block([ReturnStmt(MemberExpr(NameExpr(self), n))]))])",
-            Snapshot("struct Counter:\n    n: int\n    def bump(self, by: int,):\n        self.n += by\n    def get(self) -> int:\n        return self.n\n"));
+            Snapshot("class Counter:\n    n: int\n    def bump(self, by: int,):\n        self.n += by\n    def get(self) -> int:\n        return self.n\n"));
+
+    [Fact]
+    public void ClassWithDecoratorsBaseAndFieldDefault() =>
+        Assert.Equal(
+            "ClassDef([Decorator(dataclass)], P, [], [NamedType(Base)], [FieldDef(x, NamedType(int), IntLiteral(0))], [])",
+            Snapshot("@dataclass\nclass P(Base):\n    x: int = 0\n"));
+
+    [Fact]
+    public void DecoratedMethodAndPassMember() =>
+        Assert.Equal(
+            "ClassDef(C, [], [QualifiedType(m, NamedType(B))], [], [MethodDef([Decorator(override)], f, [], null, Block([PassStmt]))])",
+            Snapshot("class C(m.B):\n    pass\n    @override\n    def f(self):\n        pass\n"));
+
+    [Fact]
+    public void IsNotNoneIsAComparison() =>
+        Assert.Equal(
+            "ExprStmt(BinaryExpr(IsNoneExpr(NameExpr(x), True), And, IsNoneExpr(NameExpr(y), False)))",
+            Snapshot("x is not None and y is None\n"));
+
+    [Fact]
+    public void ClassPatternBindings() =>
+        Assert.Equal(
+            "MatchStmt(NameExpr(e), [MatchArm(VariantPattern(null, null, Pair, [a, PatternBinding(right, b)]), Block([PassStmt]))])",
+            Snapshot("match e:\n    Pair(a, right=b): pass\n"));
 
     [Theory]
-    [InlineData("struct S:\n    def m():\n        pass\n", "2:11 TP0100: expected 'self', found ')'")]
-    [InlineData("struct S:\n    def m(x: int):\n        pass\n", "2:11 TP0100: expected 'self', found name 'x'")]
-    [InlineData("struct S:\n    def m(self x: int):\n        pass\n", "2:16 TP0100: expected ')', found name 'x'")]
+    [InlineData("@dataclass(frozen=True)\nclass A:\n    x: int\n", "1:11 TP0100: expected newline, found '('")]
+    [InlineData("@dataclass\nlet y = 1\n", "2:1 TP0100: expected 'def' or 'class', found 'let'")]
+    [InlineData("def f():\n    class C:\n        pass\n", "2:5 TP0100: expected statement, found 'class'")]
+    [InlineData("if x is not 3:\n    pass\n", "1:13 TP0100: expected 'None', found integer")]
+    public void ClassSyntaxErrors(string text, string expected) =>
+        Assert.Equal([expected], Errors(text));
+
+    [Theory]
+    [InlineData("class S:\n    def m():\n        pass\n", "2:11 TP0100: expected 'self', found ')'")]
+    [InlineData("class S:\n    def m(x: int):\n        pass\n", "2:11 TP0100: expected 'self', found name 'x'")]
+    [InlineData("class S:\n    def m(self x: int):\n        pass\n", "2:16 TP0100: expected ')', found name 'x'")]
     public void MethodNeedsSelf(string text, string expected) =>
         Assert.Equal([expected], Errors(text));
 
@@ -202,7 +234,7 @@ public class ParserTests
     public void ConditionIsSomeAndIsNone() =>
         Assert.Equal(
             "IfStmt([IfClause(IsSomeCondition(CallExpr(NameExpr(find), []), s), Block([PassStmt])), " +
-            "IfClause(IsNoneCondition(NameExpr(x)), Block([PassStmt]))], null)",
+            "IfClause(ExprCondition(IsNoneExpr(NameExpr(x), False)), Block([PassStmt]))], null)",
             Snapshot("if find() is some s:\n    pass\nelif x is None:\n    pass\n"));
 
     // ---- while_stmt ----
@@ -524,7 +556,7 @@ public class ParserTests
     [InlineData("else:\n    pass\n", "1:1 TP0100: expected statement, found 'else'")]
     [InlineData("    x\n", "1:5 TP0100: expected statement, found indent")]
     [InlineData("x = y z\n", "1:7 TP0100: expected newline, found name 'z'")]
-    [InlineData("if x is y:\n    pass\n", "1:9 TP0100: expected 'some' or 'None', found name 'y'")]
+    [InlineData("if x is y:\n    pass\n", "1:9 TP0100: expected 'some', 'not' or 'None', found name 'y'")]
     [InlineData("match x:\n    +: pass\n", "2:5 TP0100: expected pattern, found '+'")]
     [InlineData("def f(:\n    pass\n", "1:7 TP0100: expected name, found ':'")]
     [InlineData("enum E:\n    V()\n", "2:7 TP0100: expected name, found ')'")]
@@ -628,7 +660,7 @@ public class ParserTests
         Assert.Equal(
             ["2:5 TP0100: expected pattern, found '+'", "3:10 TP0100: expected newline, found name 'y'",
              "6:8 TP0100: expected type, found integer"],
-            Errors("match x:\n    +: pass\n    _: x y\n    0: pass\nstruct S:\n    a: 1\n    b: int\n"));
+            Errors("match x:\n    +: pass\n    _: x y\n    0: pass\nclass S:\n    a: 1\n    b: int\n"));
 
     // ---- f-string holes ----
 
@@ -660,9 +692,9 @@ public class ParserTests
     [Fact]
     public void GenericStructAndEnum() =>
         Assert.Equal(
-            "StructDef(Pair, [A, B], [FieldDef(a, NamedType(A)), FieldDef(b, NamedType(B))], [])\n" +
+            "ClassDef(Pair, [A, B], [], [FieldDef(a, NamedType(A)), FieldDef(b, NamedType(B))], [])\n" +
             "EnumDef(Maybe, [T], [VariantDef(Just, [FieldDef(value, NamedType(T))]), VariantDef(Nothing, [])])",
-            Snapshot("struct Pair[A, B]:\n    a: A\n    b: B\nenum Maybe[T]:\n    Just(value: T)\n    Nothing\n"));
+            Snapshot("class Pair[A, B]:\n    a: A\n    b: B\nenum Maybe[T]:\n    Just(value: T)\n    Nothing\n"));
 
     [Theory]
     [InlineData("Box[int]", "GenericType(Box, [NamedType(int)])")]

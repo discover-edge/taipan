@@ -164,13 +164,12 @@ public sealed class Parser
         return new CompilationUnit(items.ToImmutable(), new TextSpan(0, _source.Length));
     }
 
-    // top_item = import_stmt | func_def | struct_def | enum_def | const_def | stmt
+    // top_item = import_stmt | func_def | class_def | enum_def | const_def | stmt
     private TopItem ParseTopItem() => Current.Kind switch
     {
         TokenKind.ImportKeyword => ParseImportStmt(),
         TokenKind.FromKeyword => ParseFromImportStmt(),
-        TokenKind.DefKeyword => ParseFuncDef(),
-        TokenKind.StructKeyword => ParseStructDef(),
+        TokenKind.DefKeyword or TokenKind.ClassKeyword or TokenKind.At => ParseDecoratedDef(),
         TokenKind.EnumKeyword => ParseEnumDef(),
         TokenKind.ConstKeyword => ParseConstDef(),
         _ => ParseStmt(),
@@ -234,10 +233,38 @@ public sealed class Parser
         return new ConstDef(name, type, value, span);
     }
 
-    // func_def = "def" NAME [ type_params ] "(" [ params ] ")" [ "->" type ] ":" block
-    private FuncDef ParseFuncDef()
+    // { decorator } ( func_def | class_def ) at the top level
+    private TopItem ParseDecoratedDef()
     {
-        var start = Next().Span.Start;
+        var start = Current.Span.Start;
+        var decorators = ParseDecorators();
+        if (At(TokenKind.ClassKeyword))
+            return ParseClassDef(start, decorators);
+        if (At(TokenKind.DefKeyword))
+            return ParseFuncDef(start, decorators);
+        ReportExpected("'def' or 'class'");
+        return new ExprStmt(new ErrorExpr(Here), Here);
+    }
+
+    // decorator = "@" NAME NEWLINE
+    private ImmutableArray<Decorator> ParseDecorators()
+    {
+        var decorators = ImmutableArray.CreateBuilder<Decorator>();
+        while (At(TokenKind.At))
+        {
+            var start = Next().Span.Start;
+            var name = ExpectIdentifier();
+            var span = SpanFrom(start);
+            Expect(TokenKind.Newline);
+            decorators.Add(new Decorator(name, span));
+        }
+        return decorators.ToImmutable();
+    }
+
+    // func_def = { decorator } "def" NAME [ type_params ] "(" [ params ] ")" [ "->" type ] ":" block
+    private FuncDef ParseFuncDef(int start, ImmutableArray<Decorator> decorators)
+    {
+        Expect(TokenKind.DefKeyword);
         var name = ExpectIdentifier();
         var typeParams = ParseTypeParams();
         Expect(TokenKind.OpenParen);
@@ -253,7 +280,7 @@ public sealed class Parser
 
         Expect(TokenKind.Colon);
         var body = ParseBlock();
-        return new FuncDef(name, typeParams, parameters, returnType, body, SpanFrom(start));
+        return new FuncDef(decorators, name, typeParams, parameters, returnType, body, SpanFrom(start));
     }
 
     // type_params = "[" type_param { "," type_param } "]"
@@ -315,31 +342,58 @@ public sealed class Parser
         return new Param(name, type, defaultValue, SpanFrom(name.Span.Start));
     }
 
-    // struct_def = "struct" NAME [ type_params ] ":" NEWLINE INDENT struct_member { struct_member } DEDENT
-    private StructDef ParseStructDef()
+    // class_def = { decorator } "class" NAME [ type_params ] [ "(" base { "," base } ")" ] ":"
+    //             NEWLINE INDENT class_member { class_member } DEDENT
+    private ClassDef ParseClassDef(int start, ImmutableArray<Decorator> decorators)
     {
-        var start = Next().Span.Start;
+        Expect(TokenKind.ClassKeyword);
         var name = ExpectIdentifier();
         var typeParams = ParseTypeParams();
+        var bases = ImmutableArray<TypeSyntax>.Empty;
+        if (At(TokenKind.OpenParen))
+        {
+            Next();
+            bases = ParseCommaList(TokenKind.CloseParen, ParseType);
+            Expect(TokenKind.CloseParen);
+        }
         Expect(TokenKind.Colon);
-        var members = ParseIndentedBody(ParseStructMember);
-        return new StructDef(name, typeParams, [.. members.OfType<FieldDef>()], [.. members.OfType<MethodDef>()], SpanFrom(start));
+        var members = ParseIndentedBody(ParseClassMember);
+        return new ClassDef(decorators, name, typeParams, bases, [.. members.OfType<FieldDef>()], [.. members.OfType<MethodDef>()], SpanFrom(start));
     }
 
-    // struct_member = NAME ":" type NEWLINE | method_def
-    private Node ParseStructMember()
+    // class_member = NAME ":" type [ "=" expr ] NEWLINE | method_def | "pass" NEWLINE
+    private Node ParseClassMember()
     {
-        if (At(TokenKind.DefKeyword))
-            return ParseMethodDef();
-        var field = ParseNamedField();
+        if (At(TokenKind.DefKeyword) || At(TokenKind.At))
+        {
+            var start = Current.Span.Start;
+            var decorators = ParseDecorators();
+            return ParseMethodDef(start, decorators);
+        }
+        if (At(TokenKind.PassKeyword))
+        {
+            var pass = new PassStmt(Next().Span);
+            Expect(TokenKind.Newline);
+            return pass;
+        }
+        var name = ExpectIdentifier();
+        Expect(TokenKind.Colon);
+        var type = ParseType();
+        Expr? defaultValue = null;
+        if (At(TokenKind.Equals))
+        {
+            Next();
+            defaultValue = ParseExpr();
+        }
+        var field = new FieldDef(name, type, defaultValue, SpanFrom(name.Span.Start));
         Expect(TokenKind.Newline);
         return field;
     }
 
-    // method_def = "def" NAME "(" "self" [ "," params ] ")" [ "->" type ] ":" block
-    private MethodDef ParseMethodDef()
+    // method_def = { decorator } "def" NAME "(" "self" [ "," params ] ")" [ "->" type ] ":" block
+    private MethodDef ParseMethodDef(int start, ImmutableArray<Decorator> decorators)
     {
-        var start = Next().Span.Start;
+        Expect(TokenKind.DefKeyword);
         var name = ExpectIdentifier();
         Expect(TokenKind.OpenParen);
 
@@ -366,7 +420,7 @@ public sealed class Parser
 
         Expect(TokenKind.Colon);
         var body = ParseBlock();
-        return new MethodDef(name, self, parameters, returnType, body, SpanFrom(start));
+        return new MethodDef(decorators, name, self, parameters, returnType, body, SpanFrom(start));
     }
 
     // enum_def = "enum" NAME [ type_params ] ":" NEWLINE INDENT variant { variant } DEDENT
@@ -410,7 +464,7 @@ public sealed class Parser
         var name = ExpectIdentifier();
         Expect(TokenKind.Colon);
         var type = ParseType();
-        return new FieldDef(name, type, SpanFrom(name.Span.Start));
+        return new FieldDef(name, type, null, SpanFrom(name.Span.Start));
     }
 
     // block = NEWLINE INDENT stmt { stmt } DEDENT
@@ -471,9 +525,10 @@ public sealed class Parser
                 return ParseForStmt();
             case TokenKind.MatchKeyword:
                 return ParseMatchStmt();
-            case TokenKind.DefKeyword:
+            case TokenKind.DefKeyword or TokenKind.At:
                 var start = Current.Span.Start;
-                return new FuncDefStmt(ParseFuncDef(), SpanFrom(start));
+                var decorators = ParseDecorators();
+                return new FuncDefStmt(ParseFuncDef(start, decorators), SpanFrom(start));
             default:
                 var stmt = ParseSimpleStmt();
                 Expect(TokenKind.Newline);
@@ -657,7 +712,7 @@ public sealed class Parser
         return new IfClause(condition, body, SpanFrom(start));
     }
 
-    // condition = expr "is" "some" NAME | expr "is" "None" | expr
+    // condition = expr "is" "some" NAME | expr   — `is None` is a comparison (SPEC §2)
     private Condition ParseCondition()
     {
         var start = Current.Span.Start;
@@ -666,12 +721,7 @@ public sealed class Parser
             return new ExprCondition(expr, SpanFrom(start));
 
         Next();
-        if (At(TokenKind.NoneKeyword))
-        {
-            Next();
-            return new IsNoneCondition(expr, SpanFrom(start));
-        }
-        Expect(TokenKind.SomeKeyword, "'some' or 'None'");
+        Expect(TokenKind.SomeKeyword);
         var binding = ExpectIdentifier();
         return new IsSomeCondition(expr, binding, SpanFrom(start));
     }
@@ -763,7 +813,7 @@ public sealed class Parser
         return new ErrorPattern(Here);
     }
 
-    // qual_name [ "(" [ NAME { "," NAME } ] ")" ]  where  qual_name = NAME [ "." NAME [ "." NAME ] ]
+    // qual_name [ "(" [ pat_args ] ")" ]  where  qual_name = NAME [ "." NAME [ "." NAME ] ]
     private VariantPattern ParseVariantPattern()
     {
         var first = ExpectIdentifier();
@@ -777,24 +827,25 @@ public sealed class Parser
         var enumName = path.Count >= 2 ? path[^2] : null;
         var variant = path[^1];
 
-        ImmutableArray<Identifier>? bindings = null;
+        ImmutableArray<PatternBinding>? bindings = null;
         if (At(TokenKind.OpenParen))
         {
             Next();
-            var names = ImmutableArray.CreateBuilder<Identifier>();
-            if (!At(TokenKind.CloseParen))
-            {
-                names.Add(ExpectIdentifier());
-                while (At(TokenKind.Comma))
-                {
-                    Next();
-                    names.Add(ExpectIdentifier());
-                }
-            }
+            bindings = ParseCommaList(TokenKind.CloseParen, ParsePatternBinding);
             Expect(TokenKind.CloseParen);
-            bindings = names.ToImmutable();
         }
         return new VariantPattern(module, enumName, variant, bindings, SpanFrom(first.Span.Start));
+    }
+
+    // pat_arg = NAME | NAME "=" NAME
+    private PatternBinding ParsePatternBinding()
+    {
+        var first = ExpectIdentifier();
+        if (!At(TokenKind.Equals))
+            return new PatternBinding(null, first, first.Span);
+        Next();
+        var name = ExpectIdentifier();
+        return new PatternBinding(first, name, SpanFrom(first.Span.Start));
     }
 
     // ---- Types ----
@@ -983,16 +1034,30 @@ public sealed class Parser
         return new UnaryExpr(UnaryOp.Not, operand, SpanFrom(start));
     }
 
-    // comparison = additive [ comp_op additive ]   — a second comp_op is TP0212 (SPEC §2.1)
+    // comparison = additive [ comp_op additive | "is" [ "not" ] "None" ]   — a second comp_op is TP0212 (SPEC §2.1)
     private Expr ParseComparison()
     {
         var left = ParseAdditive();
-        if (!TryParseCompOp(out var op, out _))
+        if (At(TokenKind.IsKeyword) && Peek(1).Kind != TokenKind.SomeKeyword)
+        {
+            Next();
+            var negated = At(TokenKind.NotKeyword);
+            if (negated)
+                Next();
+            Expect(TokenKind.NoneKeyword, negated ? null : "'some', 'not' or 'None'");
+            left = new IsNoneExpr(left, negated, SpanFrom(left.Span.Start));
+        }
+        else if (TryParseCompOp(out var op, out _))
+        {
+            left = Binary(left, op, ParseAdditive());
+        }
+        else
+        {
             return left;
-        left = Binary(left, op, ParseAdditive());
+        }
 
         var reported = false;
-        while (TryParseCompOp(out op, out var opSpan))
+        while (TryParseCompOp(out var op, out var opSpan))
         {
             if (!reported)
                 _diagnostics.ReportChainedComparison(opSpan);

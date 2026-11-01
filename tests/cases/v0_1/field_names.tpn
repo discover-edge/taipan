@@ -1,5 +1,6 @@
 # Field names that clash with members C# generates are renamed in the C# output only.
-struct Node:
+@dataclass
+class Node:
     Node: int
     ToString: str
     Equals: bool

@@ -1,0 +1,4 @@
+tests/cases/m15/tp0100_classes.tpn:2:11: error TP0100: expected newline, found '('
+tests/cases/m15/tp0100_classes.tpn:7:5: error TP0100: expected statement, found 'class'
+tests/cases/m15/tp0100_classes.tpn:11:17: error TP0100: expected 'some', 'not' or 'None', found integer
+tests/cases/m15/tp0100_classes.tpn:14:1: error TP0100: expected 'def' or 'class', found 'let'

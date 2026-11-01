@@ -1,0 +1,24 @@
+# Overrides must be marked @override, and only overrides may be (SPEC §4.3).
+class Animal:
+    def __init__(self):
+        pass
+
+    def speak(self) -> str:
+        return "..."
+
+class Dog(Animal):
+    def speak(self) -> str:
+        return "woof"
+
+    @override
+    def speek(self) -> str:
+        return "typo"
+
+    @override
+    def __init__(self):
+        super().__init__()
+
+class Lone:
+    @override
+    def m(self):
+        pass

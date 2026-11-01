@@ -48,7 +48,8 @@ def power_table(base: int, n: int) -> list[int]:
 print(power_table(2, 5))
 
 # Methods capture self.
-struct Account:
+@dataclass
+class Account:
     balance: int
 
     def depositor(self) -> Callable[[int], None]:

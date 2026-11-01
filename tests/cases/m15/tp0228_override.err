@@ -1,0 +1,6 @@
+tests/cases/m15/tp0228_override.tpn:14:9: error TP0228: 'eat' must take the same parameters as 'Animal.eat'
+tests/cases/m15/tp0228_override.tpn:22:23: error TP0228: 'rest' must return nothing, as 'Animal.rest' does
+tests/cases/m15/tp0228_override.tpn:27:19: error TP0228: 'eat' must take the same parameters as 'Animal.eat'
+tests/cases/m15/tp0228_override.tpn:32:19: error TP0228: parameter 'food' of 'eat' must have type str, as in 'Animal.eat'
+tests/cases/m15/tp0228_override.tpn:37:30: error TP0228: parameter 'amount' of 'eat' needs a default, as in 'Animal.eat'
+tests/cases/m15/tp0228_override.tpn:42:50: error TP0228: 'eat' must return int, as 'Animal.eat' does

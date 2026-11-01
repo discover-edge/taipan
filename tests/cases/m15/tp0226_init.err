@@ -1,0 +1,13 @@
+tests/cases/m15/tp0226_init.tpn:6:9: error TP0226: '__init__' does not set 'b'
+tests/cases/m15/tp0226_init.tpn:16:18: error TP0226: 'b' is read before it is set
+tests/cases/m15/tp0226_init.tpn:23:15: error TP0226: 'self' is used before 'a' is set
+tests/cases/m15/tp0226_init.tpn:31:5: error TP0226: 'a' has no default, and 'NoInit' has no '__init__'
+tests/cases/m15/tp0226_init.tpn:43:9: error TP0226: 'super().__init__' is called before 'm' is set
+tests/cases/m15/tp0226_init.tpn:47:9: error TP0226: 'NoSuper.__init__' must call 'super().__init__(…)'
+tests/cases/m15/tp0226_init.tpn:52:9: error TP0226: 'n' is inherited, so it is set by 'super().__init__'
+tests/cases/m15/tp0226_init.tpn:53:26: error TP0226: 'n' is inherited, so it is set by 'super().__init__'
+tests/cases/m15/tp0226_init.tpn:58:13: error TP0226: 'super().__init__' must be called once, directly in '__init__'
+tests/cases/m15/tp0226_init.tpn:66:13: error TP0226: '__init__' returns before 'a' is set
+tests/cases/m15/tp0226_init.tpn:73:25: error TP0226: 'self' is used before 'a' is set
+tests/cases/m15/tp0226_init.tpn:81:9: error TP0226: 'super().__init__' can only be called in '__init__'
+tests/cases/m15/tp0226_init.tpn:86:9: error TP0226: '__init__' does not set 'a'

@@ -1,6 +1,7 @@
 const UNIT = "m"
 
-struct Size:
+@dataclass
+class Size:
     value: int
 
 def area(side: float) -> float:

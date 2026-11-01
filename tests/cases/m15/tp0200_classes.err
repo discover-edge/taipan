@@ -1,0 +1,16 @@
+tests/cases/m15/tp0200_classes.tpn:15:14: error TP0200: '__init__' cannot be called directly
+tests/cases/m15/tp0200_classes.tpn:25:5: error TP0200: expected list[Animal], found list[Dog]
+tests/cases/m15/tp0200_classes.tpn:26:14: error TP0200: expected Dog, found Animal
+tests/cases/m15/tp0200_classes.tpn:28:21: error TP0200: Cat can never be a Dog
+tests/cases/m15/tp0200_classes.tpn:29:18: error TP0200: isinstance needs a class, found int
+tests/cases/m15/tp0200_classes.tpn:30:21: error TP0200: 'len' is not a class
+tests/cases/m15/tp0200_classes.tpn:31:14: error TP0200: Cat can never be a Dog
+tests/cases/m15/tp0200_classes.tpn:32:7: error TP0200: cannot compare Cat and Dog
+tests/cases/m15/tp0200_classes.tpn:33:16: error TP0200: dict keys must be int, str, bool, tuples of those, or plain class instances, found Point
+  help: a dataclass compares by value, so it cannot be a key
+tests/cases/m15/tp0200_classes.tpn:34:9: error TP0200: 'super()' can only be used as 'super().<method>(…)'
+tests/cases/m15/tp0200_classes.tpn:36:5: error TP0200: 'Cat' is a class; write 'Cat()'
+tests/cases/m15/tp0200_classes.tpn:41:5: error TP0200: Cat can never be a Dog
+tests/cases/m15/tp0200_classes.tpn:47:27: error TP0200: '__init__' cannot have a return type
+tests/cases/m15/tp0200_classes.tpn:51:9: error TP0200: 'Weird' has no base class
+tests/cases/m15/tp0200_classes.tpn:54:5: error TP0200: 'super()' can only be used in a method

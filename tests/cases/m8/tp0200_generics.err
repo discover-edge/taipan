@@ -1,7 +1,7 @@
 tests/cases/m8/tp0200_generics.tpn:2:12: error TP0200: operator '+' cannot be applied to T and T
 tests/cases/m8/tp0200_generics.tpn:5:12: error TP0200: operator '<' cannot be applied to T and T
 tests/cases/m8/tp0200_generics.tpn:8:14: error TP0210: T has no field 'name'
-tests/cases/m8/tp0200_generics.tpn:10:27: error TP0200: dict keys must be int, str, or bool, found T
+tests/cases/m8/tp0200_generics.tpn:10:27: error TP0200: dict keys must be int, str, bool, tuples of those, or plain class instances, found T
 tests/cases/m8/tp0200_generics.tpn:14:14: error TP0200: cannot iterate over T
 tests/cases/m8/tp0200_generics.tpn:20:15: error TP0200: 'T' is inferred as both int and str
 tests/cases/m8/tp0200_generics.tpn:21:14: error TP0200: expected int, found bool

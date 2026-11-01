@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Collections;
 using System.Globalization;
 using System.Numerics;
@@ -8,7 +9,8 @@ namespace Taipan.Tests.Syntax;
 
 /// <summary>
 /// Prints an AST as a compact one-line snapshot: <c>Kind(child, child, …)</c>, without spans (any TextSpan property).
-/// Children print in declaration order; identifiers print as bare text and strings quoted.
+/// Children print in declaration order; identifiers print as bare text and strings quoted. An empty
+/// decorator list and a missing default are left out, since most declarations have neither.
 /// Uses reflection so that every node type is covered without a hand-written case per node.
 /// </summary>
 public static class AstPrinter
@@ -21,6 +23,8 @@ public static class AstPrinter
         NameExpr name => $"NameExpr({name.Name})",
         TypeParam { Constraints.IsEmpty: true } parameter => parameter.Name.Text,
         Param { Default: null } parameter => $"Param({parameter.Name.Text}, {Print(parameter.Type)})",
+        FieldDef { Default: null } field => $"FieldDef({field.Name.Text}, {Print(field.Type)})",
+        PatternBinding { Field: null } binding => binding.Name.Text,
         bool b => b ? "True" : "False",
         BigInteger i => i.ToString(CultureInfo.InvariantCulture),
         double d => d.ToString("R", CultureInfo.InvariantCulture),
@@ -35,6 +39,7 @@ public static class AstPrinter
         var type = node.GetType();
         var children = type.GetProperties()
             .Where(p => p.PropertyType != typeof(TextSpan))
+            .Where(p => !(p.Name == "Decorators" && p.GetValue(node) is ImmutableArray<Decorator> { IsEmpty: true }))
             .Select(p => Print(p.GetValue(node)))
             .ToList();
         return children.Count == 0 ? type.Name : $"{type.Name}({string.Join(", ", children)})";

@@ -1,6 +1,7 @@
 from other import inner
 
-struct Thing:
+@dataclass
+class Thing:
     v: int
 
 def helper() -> int:

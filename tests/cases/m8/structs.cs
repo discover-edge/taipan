@@ -6,46 +6,46 @@ public static class TaipanProgram
 {
     public static void TopLevel()
     {
-#line 20 "tests/cases/m8/structs.tpn"
-        global::@Box_int @b = new global::@Box_int(5L);
-#line 21 "tests/cases/m8/structs.tpn"
-        @b.@set(@b.@get() + 1L);
 #line 22 "tests/cases/m8/structs.tpn"
-        global::Taipan.Runtime.Builtins.Print(@b, @b.@get(), @b.@map_str(), @b.@map_str().@get() + "!");
+        global::@Box_int @b = new global::@Box_int(5L);
 #line 23 "tests/cases/m8/structs.tpn"
-        global::@Box_str @named = new global::@Box_str(@value: "x");
+        @b.@set(@b.@get() + 1L);
 #line 24 "tests/cases/m8/structs.tpn"
-        global::@Box_float @wide = new global::@Box_float(1L);
+        global::Taipan.Runtime.Builtins.Print(@b, @b.@get(), @b.@map_str(), @b.@map_str().@get() + "!");
 #line 25 "tests/cases/m8/structs.tpn"
-        global::Taipan.Runtime.Builtins.Print(@named, @wide, new global::@Box_list_int(new global::System.Collections.Generic.List<long> { 1L, 2L }), new global::@Box_Box_int_opt(new global::@Box_int_opt(@none_or(3L))));
+        global::@Box_str @named = new global::@Box_str("x");
 #line 26 "tests/cases/m8/structs.tpn"
-        global::@Pair_int_str @p = new global::@Pair_int_str(1L, "one");
+        global::@Box_float @wide = new global::@Box_float(1L);
 #line 27 "tests/cases/m8/structs.tpn"
-        global::Taipan.Runtime.Builtins.Print(@p, @p.@swap(), global::Taipan.Runtime.Equality.Equal(@p.@swap().@swap(), @p));
+        global::Taipan.Runtime.Builtins.Print(@named, @wide, new global::@Box_list_int(new global::System.Collections.Generic.List<long> { 1L, 2L }), new global::@Box_Box_int_opt(new global::@Box_int_opt(@none_or(3L))));
 #line 28 "tests/cases/m8/structs.tpn"
-        global::System.Collections.Generic.List<global::@Box_int> @boxes = new global::System.Collections.Generic.List<global::@Box_int> { new global::@Box_int(1L), new global::@Box_int(2L) };
+        global::@Pair_int_str @p = new global::@Pair_int_str(1L, "one");
 #line 29 "tests/cases/m8/structs.tpn"
-        long @total = 0L;
+        global::Taipan.Runtime.Builtins.Print(@p, @p.@swap(), global::Taipan.Runtime.Equality.Equal(@p.@swap().@swap(), @p));
 #line 30 "tests/cases/m8/structs.tpn"
+        global::System.Collections.Generic.List<global::@Box_int> @boxes = new global::System.Collections.Generic.List<global::@Box_int> { new global::@Box_int(1L), new global::@Box_int(2L) };
+#line 31 "tests/cases/m8/structs.tpn"
+        long @total = 0L;
+#line 32 "tests/cases/m8/structs.tpn"
         foreach (global::@Box_int @bx in global::Taipan.Runtime.Iter.Over(@boxes))
         {
-#line 31 "tests/cases/m8/structs.tpn"
+#line 33 "tests/cases/m8/structs.tpn"
             @total = @total + @bx.@value;
         }
-#line 32 "tests/cases/m8/structs.tpn"
+#line 34 "tests/cases/m8/structs.tpn"
         global::Taipan.Runtime.Builtins.Print(@total);
 #line hidden
     }
 
     public static long? @none_or(long @n)
     {
-#line 35 "tests/cases/m8/structs.tpn"
+#line 37 "tests/cases/m8/structs.tpn"
         if (@n > 0L)
         {
-#line 36 "tests/cases/m8/structs.tpn"
+#line 38 "tests/cases/m8/structs.tpn"
             return @n;
         }
-#line 37 "tests/cases/m8/structs.tpn"
+#line 39 "tests/cases/m8/structs.tpn"
         return null;
 #line hidden
     }
@@ -66,21 +66,21 @@ public sealed class @Box_int : global::Taipan.Runtime.IStruct
 
     public long @get()
     {
-#line 5 "tests/cases/m8/structs.tpn"
+#line 6 "tests/cases/m8/structs.tpn"
         return this.@value;
 #line hidden
     }
 
     public void @set(long @value)
     {
-#line 8 "tests/cases/m8/structs.tpn"
+#line 9 "tests/cases/m8/structs.tpn"
         this.@value = @value;
 #line hidden
     }
 
     public global::@Box_str @map_str()
     {
-#line 11 "tests/cases/m8/structs.tpn"
+#line 12 "tests/cases/m8/structs.tpn"
         return new global::@Box_str(global::Taipan.Runtime.Display.Format(this.@value));
 #line hidden
     }
@@ -101,21 +101,21 @@ public sealed class @Box_str : global::Taipan.Runtime.IStruct
 
     public string @get()
     {
-#line 5 "tests/cases/m8/structs.tpn"
+#line 6 "tests/cases/m8/structs.tpn"
         return this.@value;
 #line hidden
     }
 
     public void @set(string @value)
     {
-#line 8 "tests/cases/m8/structs.tpn"
+#line 9 "tests/cases/m8/structs.tpn"
         this.@value = @value;
 #line hidden
     }
 
     public global::@Box_str @map_str()
     {
-#line 11 "tests/cases/m8/structs.tpn"
+#line 12 "tests/cases/m8/structs.tpn"
         return new global::@Box_str(global::Taipan.Runtime.Display.Format(this.@value));
 #line hidden
     }
@@ -136,21 +136,21 @@ public sealed class @Box_float : global::Taipan.Runtime.IStruct
 
     public double @get()
     {
-#line 5 "tests/cases/m8/structs.tpn"
+#line 6 "tests/cases/m8/structs.tpn"
         return this.@value;
 #line hidden
     }
 
     public void @set(double @value)
     {
-#line 8 "tests/cases/m8/structs.tpn"
+#line 9 "tests/cases/m8/structs.tpn"
         this.@value = @value;
 #line hidden
     }
 
     public global::@Box_str @map_str()
     {
-#line 11 "tests/cases/m8/structs.tpn"
+#line 12 "tests/cases/m8/structs.tpn"
         return new global::@Box_str(global::Taipan.Runtime.Display.Format(this.@value));
 #line hidden
     }
@@ -171,56 +171,21 @@ public sealed class @Box_list_int : global::Taipan.Runtime.IStruct
 
     public global::System.Collections.Generic.List<long> @get()
     {
-#line 5 "tests/cases/m8/structs.tpn"
+#line 6 "tests/cases/m8/structs.tpn"
         return this.@value;
 #line hidden
     }
 
     public void @set(global::System.Collections.Generic.List<long> @value)
     {
-#line 8 "tests/cases/m8/structs.tpn"
+#line 9 "tests/cases/m8/structs.tpn"
         this.@value = @value;
 #line hidden
     }
 
     public global::@Box_str @map_str()
     {
-#line 11 "tests/cases/m8/structs.tpn"
-        return new global::@Box_str(global::Taipan.Runtime.Display.Format(this.@value));
-#line hidden
-    }
-}
-
-public sealed class @Box_Box_int_opt : global::Taipan.Runtime.IStruct
-{
-    public global::@Box_int_opt @value { get; set; }
-
-    public @Box_Box_int_opt(global::@Box_int_opt @value)
-    {
-        this.@value = @value;
-    }
-
-    string global::Taipan.Runtime.IStruct.TypeName => "Box";
-    global::System.Collections.Generic.IReadOnlyList<(string Name, object? Value)> global::Taipan.Runtime.IStruct.Fields => [("value", (object?)this.@value)];
-    public override string ToString() => global::Taipan.Runtime.Display.Format(this);
-
-    public global::@Box_int_opt @get()
-    {
-#line 5 "tests/cases/m8/structs.tpn"
-        return this.@value;
-#line hidden
-    }
-
-    public void @set(global::@Box_int_opt @value)
-    {
-#line 8 "tests/cases/m8/structs.tpn"
-        this.@value = @value;
-#line hidden
-    }
-
-    public global::@Box_str @map_str()
-    {
-#line 11 "tests/cases/m8/structs.tpn"
+#line 12 "tests/cases/m8/structs.tpn"
         return new global::@Box_str(global::Taipan.Runtime.Display.Format(this.@value));
 #line hidden
     }
@@ -241,21 +206,56 @@ public sealed class @Box_int_opt : global::Taipan.Runtime.IStruct
 
     public long? @get()
     {
-#line 5 "tests/cases/m8/structs.tpn"
+#line 6 "tests/cases/m8/structs.tpn"
         return this.@value;
 #line hidden
     }
 
     public void @set(long? @value)
     {
-#line 8 "tests/cases/m8/structs.tpn"
+#line 9 "tests/cases/m8/structs.tpn"
         this.@value = @value;
 #line hidden
     }
 
     public global::@Box_str @map_str()
     {
-#line 11 "tests/cases/m8/structs.tpn"
+#line 12 "tests/cases/m8/structs.tpn"
+        return new global::@Box_str(global::Taipan.Runtime.Display.Format(this.@value));
+#line hidden
+    }
+}
+
+public sealed class @Box_Box_int_opt : global::Taipan.Runtime.IStruct
+{
+    public global::@Box_int_opt @value { get; set; }
+
+    public @Box_Box_int_opt(global::@Box_int_opt @value)
+    {
+        this.@value = @value;
+    }
+
+    string global::Taipan.Runtime.IStruct.TypeName => "Box";
+    global::System.Collections.Generic.IReadOnlyList<(string Name, object? Value)> global::Taipan.Runtime.IStruct.Fields => [("value", (object?)this.@value)];
+    public override string ToString() => global::Taipan.Runtime.Display.Format(this);
+
+    public global::@Box_int_opt @get()
+    {
+#line 6 "tests/cases/m8/structs.tpn"
+        return this.@value;
+#line hidden
+    }
+
+    public void @set(global::@Box_int_opt @value)
+    {
+#line 9 "tests/cases/m8/structs.tpn"
+        this.@value = @value;
+#line hidden
+    }
+
+    public global::@Box_str @map_str()
+    {
+#line 12 "tests/cases/m8/structs.tpn"
         return new global::@Box_str(global::Taipan.Runtime.Display.Format(this.@value));
 #line hidden
     }
@@ -278,7 +278,7 @@ public sealed class @Pair_int_str : global::Taipan.Runtime.IStruct
 
     public global::@Pair_str_int @swap()
     {
-#line 18 "tests/cases/m8/structs.tpn"
+#line 20 "tests/cases/m8/structs.tpn"
         return new global::@Pair_str_int(this.@second, this.@first);
 #line hidden
     }
@@ -301,7 +301,7 @@ public sealed class @Pair_str_int : global::Taipan.Runtime.IStruct
 
     public global::@Pair_int_str @swap()
     {
-#line 18 "tests/cases/m8/structs.tpn"
+#line 20 "tests/cases/m8/structs.tpn"
         return new global::@Pair_int_str(this.@second, this.@first);
 #line hidden
     }

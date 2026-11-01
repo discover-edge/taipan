@@ -1,5 +1,6 @@
 # The find(...) example from examples/health.tpn (ROADMAP M6).
-struct Service:
+@dataclass
+class Service:
     name: str
     replicas: int
     healthy: int

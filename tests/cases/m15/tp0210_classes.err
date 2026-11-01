@@ -1,0 +1,8 @@
+tests/cases/m15/tp0210_classes.tpn:7:14: error TP0210: Animal has no field 'age'
+tests/cases/m15/tp0210_classes.tpn:17:3: error TP0210: Animal has no method 'fetch'
+tests/cases/m15/tp0210_classes.tpn:20:7: error TP0210: Animal has no method 'fetch'
+  help: copy it to a 'let' first
+tests/cases/m15/tp0210_classes.tpn:26:11: error TP0203: Animal? must be narrowed before use
+  help: copy it to a 'let' first
+tests/cases/m15/tp0210_classes.tpn:33:20: error TP0203: Animal? must be narrowed before use
+  help: copy it to a 'let' first

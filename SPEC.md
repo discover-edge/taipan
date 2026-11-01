@@ -33,7 +33,9 @@ Taipan is a statically typed, compiled language with Python's surface syntax. Th
 - **Comments:** `#` to end of line.
 - **Identifiers:** `[A-Za-z_][A-Za-z0-9_]*`. A lone `_` is the wildcard pattern only.
 - **Keywords:**
-  `def struct enum let var const if elif else while for in match return pass break continue and or not is some None True False as from import lambda`
+  `def class enum let var const if elif else while for in match return pass break continue and or not is some None True False as from import lambda`
+  - `struct` was a keyword before M15. It's now an ordinary name, and records are declared with `@dataclass class` (§4.3).
+  - `isinstance` and `super` are built-in functions (§6), not keywords.
 - **Integer literals:** decimal, with `_` separators allowed (`1_000`). They're 64-bit signed, and overflow at compile time is `TP0200`. The range check belongs to the type checker, not the lexer, so `-9223372036854775808` is valid.
 - **Float literals:** `1.5`, `1e9`, `2.5e-3`. A leading digit is required, so `.5` is invalid. Formally: `digits "." digits [exp] | digits exp`, where `exp = ("e" | "E") ["+" | "-"] digits`. `1.` lexes as the int `1` followed by `.`.
 - **Number literal rules:** `_` may appear only between two digits. A multi-digit integer part can't start with `0`. A number immediately followed by a letter, digit-less exponent, or `_` (`12abc`, `1e`, `1_`, `007`) is `TP0007`.
@@ -43,7 +45,8 @@ Taipan is a statically typed, compiled language with Python's surface syntax. Th
   - `TP0006`: a lone `}` in literal text, an empty or whitespace-only hole, or an f-string inside a hole.
   - An f-string, or a hole, still open at end of line is `TP0003`.
 - **Operators and punctuation:**
-  `+ - * / // % == != < <= > >= = += -= *= /= -> ?? ? . , : ( ) [ ] { }`
+  `+ - * / // % == != < <= > >= = += -= *= /= -> ?? ? . , : ( ) [ ] { } @`
+  - `@` begins a decorator (M15, §4.3). It isn't an operator.
 - Any other character outside a string or comment, including a non-ASCII letter or a lone `\r`, is `TP0004`.
 
 ### 1.4 Lexical errors
@@ -75,7 +78,7 @@ Terminal names in CAPS come from the lexer.
 
 ```ebnf
 file          = { NEWLINE | top_item } EOF ;
-top_item      = import_stmt | func_def | struct_def | enum_def | const_def | stmt ;
+top_item      = import_stmt | func_def | class_def | enum_def | const_def | stmt ;
 
 import_stmt   = "import" NAME [ "as" NAME ] NEWLINE                                  (* M9, §4.7 *)
               | "from" NAME "import" import_name { "," import_name } NEWLINE ;
@@ -83,15 +86,18 @@ import_name   = NAME [ "as" NAME ] ;
 
 const_def     = "const" NAME [ ":" type ] "=" expr NEWLINE ;
 
-func_def      = "def" NAME [ type_params ] "(" [ params ] ")" [ "->" type ] ":" block ;
+func_def      = { decorator } "def" NAME [ type_params ] "(" [ params ] ")" [ "->" type ] ":" block ;
+decorator     = "@" NAME NEWLINE ;                                   (* M15: @dataclass, @override; §4.3 *)
 params        = param { "," param } [ "," ] ;
 param         = NAME ":" type [ "=" expr ] ;                         (* default: M14, §4.2 *)
 type_params   = "[" type_param { "," type_param } "]" ;             (* M8, §3.6 *)
 type_param    = NAME [ ":" "(" type { "," type } [ "," ] ")" ] ;   (* constraints: M8.1; fewer than two types is TP0220 *)
 
-struct_def    = "struct" NAME [ type_params ] ":" NEWLINE INDENT struct_member { struct_member } DEDENT ;
-struct_member = NAME ":" type NEWLINE | method_def ;
-method_def    = "def" NAME "(" "self" [ "," params ] ")" [ "->" type ] ":" block ;   (* M5 *)
+class_def     = { decorator } "class" NAME [ type_params ] [ "(" base { "," base } ")" ] ":"   (* M15, §4.3 *)
+                NEWLINE INDENT class_member { class_member } DEDENT ;
+base          = NAME [ "." NAME ] [ "[" type { "," type } "]" ] ;   (* more than one base is TP0225 *)
+class_member  = NAME ":" type [ "=" expr ] NEWLINE | method_def | "pass" NEWLINE ;
+method_def    = { decorator } "def" NAME "(" "self" [ "," params ] ")" [ "->" type ] ":" block ;   (* M5 *)
 
 enum_def      = "enum" NAME [ type_params ] ":" NEWLINE INDENT variant { variant } DEDENT ;
 variant       = NAME [ "(" named_fields ")" ] NEWLINE ;
@@ -113,13 +119,15 @@ expr_list     = expr { "," expr } ;                                  (* two or m
 
 compound_stmt = if_stmt | while_stmt | for_stmt | match_stmt | func_def ;     (* in a block: nested function, M11 *)
 if_stmt       = "if" condition ":" block { "elif" condition ":" block } [ "else" ":" block ] ;
-condition     = expr "is" "some" NAME | expr "is" "None" | expr ;
+condition     = expr "is" "some" NAME | expr ;
 while_stmt    = "while" condition ":" block ;
 for_stmt      = "for" ( NAME | names ) "in" expr ":" block ;
 match_stmt    = "match" expr ":" NEWLINE INDENT arm { arm } DEDENT ;
 arm           = pattern ":" ( simple_stmt NEWLINE | block ) ;
 pattern       = "_" | [ "-" ] INT | STRING | "True" | "False"
-              | qual_name [ "(" [ NAME { "," NAME } ] ")" ] ;
+              | qual_name [ "(" [ pat_args ] ")" ] ;
+pat_args      = pat_arg { "," pat_arg } [ "," ] ;
+pat_arg       = NAME | NAME "=" NAME ;                               (* keyword form: class patterns, M15, §5.1 *)
 qual_name     = NAME [ "." NAME [ "." NAME ] ] ;                    (* module.Enum.Variant: M9 *)
 
 type          = base_type { "?" } ;                               (* more than one "?" is TP0213, §3.1 *)
@@ -138,7 +146,7 @@ coalesce      = or_expr [ "??" coalesce ] ;                        (* right-asso
 or_expr       = and_expr { "or" and_expr } ;
 and_expr      = not_expr { "and" not_expr } ;
 not_expr      = "not" not_expr | comparison ;
-comparison    = additive [ comp_op additive ] ;                   (* no chaining *)
+comparison    = additive [ comp_op additive | "is" [ "not" ] "None" ] ;   (* no chaining; 'is not None': M15 *)
 comp_op       = "==" | "!=" | "<" | "<=" | ">" | ">=" | "in" | "not" "in" ;
 additive      = term { ( "+" | "-" ) term } ;
 term          = unary { ( "*" | "/" | "//" | "%" ) unary } ;
@@ -158,8 +166,11 @@ atom          = INT | FLOAT | STRING | FSTRING | "True" | "False" | "None"
 **Grammar notes**
 - `a < b < c` is `TP0212`. Write `a < b and b < c`.
 - An `arm` may take a simple statement on the same line (`Ok: print("ok")`) or an indented block.
-- Keyword arguments are allowed in calls to functions and methods (M14, §4.2), struct and enum-variant constructors (§4.3), `py` values (§10.2), and the keyword parameters of built-ins (`key` and `reverse` of `sorted` and `list.sort`, `start` of `enumerate`; §6). Keyword arguments may follow positional ones, as in Python. A positional argument after a keyword argument is `TP0100`.
+- Keyword arguments are allowed in calls to functions and methods (M14, §4.2), class and enum-variant constructors (§4.3), `py` values (§10.2), and the keyword parameters of built-ins (`key` and `reverse` of `sorted` and `list.sort`, `start` of `enumerate`; §6). Keyword arguments may follow positional ones, as in Python. A positional argument after a keyword argument is `TP0100`.
 - In a parameter list, a parameter without a default after one with a default is `TP0100`, as in Python.
+- **Decorators (M15)** are only `@dataclass` on a `class` and `@override` on a method (§4.3). A decorator takes no arguments: `@dataclass(frozen=True)` is `TP0100`. Any other decorator name, a decorator in any other place, or a repeated one is `TP0224`.
+- **`is`:** `x is None` and `x is not None` are comparisons that give `bool`, usable in any expression (M15). `x is some v` binds a name, so it's only a whole `if`/`elif`/`while` condition. Any other right operand of `is`, including another expression (`x is y`), is `TP0100`, `expected 'some', 'not' or 'None'`.
+- A class body holds field declarations, methods and `pass`. Classes are top-level only, so a `class` inside a block is `TP0100`.
 - A `def` at the top level is a `top_item`, a hoisted global function. A `def` inside a block is a nested function (§3.7).
 - An `expr_list` of two or more expressions is a tuple, as if parenthesized (§3.8): `return lo, hi`, `let p = 1, 2`, `a, b = b, a`. An expression statement can't be a bare tuple: `a, b` alone is `TP0100`.
 - In a cast (`x as T`), a `??` after the type is the coalescing operator, so `x as int? ?? 0` is `(x as int?) ?? 0`.
@@ -188,10 +199,11 @@ atom          = INT | FLOAT | STRING | FSTRING | "True" | "False" | "None"
 | `bool` | `True` / `False` | `bool` |
 | `str` | immutable Unicode string | `string` |
 | `list[T]` | growable array | `List<T>` |
-| `dict[K, V]` | hash map that keeps insertion order; `K` ∈ {`int`, `str`, `bool`}, or a tuple of valid keys (M12), otherwise `TP0200` | `OrderedDictionary<K, V>` |
+| `dict[K, V]` | hash map that keeps insertion order; `K` ∈ {`int`, `str`, `bool`}, a tuple of valid keys (M12), or a plain class, compared by identity (M15), otherwise `TP0200` | `OrderedDictionary<K, V>` |
 | `tuple[A, B, …]` | fixed-size, immutable group of values (M12, §3.8) | `ValueTuple<A, B, …>` |
 | `T?` | optional `T` | `T?` (C# nullable) |
 | `py` | dynamic Python object (M10, §10) | `Python.Runtime.PyObject` |
+| `C` | instance of a class `C` (M15, §4.3) | a C# class (§8) |
 | `Callable[[A, B], R]` | function value (M11, §3.7) | `Taipan.Runtime.Function<D>` (§8) |
 
 - A function without `-> type` returns nothing (C# `void`). Using its result as a value is `TP0200`.
@@ -201,7 +213,7 @@ atom          = INT | FLOAT | STRING | FSTRING | "True" | "False" | "None"
 - **Local inference only.** A `let` or `var` without an annotation takes the type of its initializer.
 - **Function parameters must be annotated.** The return type is declared, or the function returns nothing.
 - `[]` and `{}` without an expected type are `TP0206`. The expected type can come from an annotation, a parameter, a return type, or an assignment target.
-- List literals need all elements to have the same type, except that `int` and `float` mix to `float`.
+- List literals need all elements to have the same type, except that `int` and `float` mix to `float`, and classes with a common base mix to their nearest common base (M15): `[Dog("a"), Cat("b")]` is `list[Animal]`.
 
 ### 3.3 Assignability
 `S` is assignable to `T` when one of these holds:
@@ -209,22 +221,28 @@ atom          = INT | FLOAT | STRING | FSTRING | "True" | "False" | "None"
 - `S` is `int` and `T` is `float` (implicit widening)
 - `T` is `U?` and `S` is assignable to `U`
 - `S` is the type of `None` and `T` is any optional
+- `S` is a class that derives from `T`, directly or indirectly, or `S` is `V?` and `T` is `U?` for such classes (M15, §4.3). So a `Dog` can be passed where an `Animal` is expected, and a `Dog?` where an `Animal?` is.
+- `S` is `Callable[[P1, …, Pn], R]` and `T` is `Callable[[Q1, …, Qn], U]`, where each `Qi` is assignable to `Pi`, and `R` is assignable to `U` or both are `None` (M15). Parameters go the opposite way to results: a function that handles any `Animal` can stand in for one that handles a `Dog`, and one that returns a `Dog` for one that returns an `Animal`.
 
-There are no other implicit conversions. Explicit conversions use the built-ins `int(x)`, `float(x)`, and `str(x)` (§6).
+Other generic types are invariant. `list[Dog]` isn't assignable to `list[Animal]`, since code holding it as a `list[Animal]` could append a `Cat`. The same holds for `dict`, tuples and type arguments of user generics. This is C#'s rule and mypy's (except that mypy lets tuples vary), but Python itself never checks it. A literal is checked against its expected type, so `let xs: list[Animal] = [Dog("rex")]` is still valid.
+
+There are no other implicit conversions. Explicit conversions use the built-ins `int(x)`, `float(x)`, and `str(x)` (§6), and `as` converts between related classes (§4.3).
 
 ### 3.4 Optionals and narrowing
 - A value of type `T?` can't be used where `T` is expected (`TP0203`). Member access and indexing on `T?` are also `TP0203`.
 - These forms narrow it:
   - `if x is some v:` binds `v: T` in that branch only.
-  - `if x is None:` (no binding). Narrowing of `x` itself after an early return is a post-v0.1 feature.
+  - `if x is not None:` and `if x is None: … else: …` narrow `x` itself, when `x` is a name that can't change (M15, §3.9).
   - `x ?? default` has type `T` when `default: T`.
+  - Narrowing of `x` after an early return (`if x is None: return`) is post-M15.
 - `x == None` is allowed and returns `bool`, but it doesn't narrow.
 - **Using an optional:**
   - A `T?` is `TP0203` wherever a `T` is expected. That includes operands of operators other than `==`/`!=`, the target of member access, indexing or a method call, and the iterable of a `for`.
   - It's `TP0200` where some unrelated type is expected.
   - `==` and `!=` may compare a `T?` with a `T`, a `T?` or `None`. The result is `True` only when both are `None`, or both hold equal values.
-- **`is some` / `is None`:**
+- **`is some` / `is None` / `is not None`:**
   - The tested expression is evaluated once and must be optional. Otherwise it's `TP0200`.
+  - `x is None` and `x is not None` give `bool` and may appear in any expression (M15): `return x is None`, `if x is not None and x > 0:`.
   - The binding `v` is a `let` and follows the usual shadowing rules (`TP0207`).
   - In `while x is some v:`, `x` is re-tested on each iteration and `v` is bound in the body.
   - In an `elif` clause, the binding is visible only in that clause's branch.
@@ -242,10 +260,10 @@ There are no other implicit conversions. Explicit conversions use the built-ins 
 `if`, `elif`, and `while` conditions and the operands of `and`, `or`, and `not` must be `bool`. There's no truthiness, so `if xs:` is `TP0205`.
 
 ### 3.6 Generics (M8)
-- **Declarations:** functions, structs and enums may take type parameters, in PEP 695 style: `def first[T](xs: list[T]) -> T?:`, `struct Box[T]:`, `enum Maybe[T]:`.
-  - Type parameter names live in the type namespace of their definition, including a generic struct's methods. Methods take no type parameters of their own.
+- **Declarations:** functions, classes and enums may take type parameters, in PEP 695 style: `def first[T](xs: list[T]) -> T?:`, `class Box[T]:`, `enum Maybe[T]:`.
+  - Type parameter names live in the type namespace of their definition, including a generic class's methods. Methods take no type parameters of their own.
   - A repeated type parameter is `TP0214`. One that shadows an existing type name is `TP0207`.
-- **Instantiation in types:** a generic struct or enum must be given exactly as many type arguments as it has parameters (`Box[int]`, `Maybe[list[str]]`). A count mismatch, including a bare `Box` or arguments on a non-generic type, is `TP0209`.
+- **Instantiation in types:** a generic class or enum must be given exactly as many type arguments as it has parameters (`Box[int]`, `Maybe[list[str]]`). A count mismatch, including a bare `Box` or arguments on a non-generic type, is `TP0209`.
 - **Type parameters are unconstrained.** Bodies are checked once, with each type parameter treated as an opaque type `T`:
   - A `T` may be assigned, passed, returned, stored in lists and fields, compared with `==`/`!=` against another `T`, tested with `in` on a `list[T]`, and displayed (`print`, `str`, f-strings).
   - Anything else on a `T` is `TP0200` or `TP0210`, as for any type lacking the operation: arithmetic, ordering, member access, method calls, indexing, iteration, `match`, or use as a dict key.
@@ -255,14 +273,14 @@ There are no other implicit conversions. Explicit conversions use the built-ins 
   - **Then arguments:** the remaining parameters are inferred from the argument types, in order. Lambda arguments come last (§3.7).
   - An argument whose type doesn't fit what the expected type inferred overrides it. So `let b: Box[float] = Box(1)` keeps `T = float`, but `let x: int? = first(xs)` with `xs: list[int?]` infers `T = int?`.
   - Arguments are then checked against the substituted parameter types, with the usual widening.
-  - When two arguments infer `int` and `float` for the same parameter, it's `float`. Any other disagreement is `TP0200`.
+  - When two arguments infer `int` and `float` for the same parameter, it's `float`. When they infer two classes with a common base, it's their nearest common base (M15), so `pick(dog, cat)` infers `Animal`. Any other disagreement is `TP0200`.
   - A `None` argument infers nothing, and an argument of type `U?` for a `T?` parameter infers `T = U`.
   - A parameter left undetermined is `TP0206`. For example, `Nothing` from `enum Maybe[T]` has no expected type to infer from.
-- Generic enum variants and generic struct constructors infer their type arguments the same way: `Box(5)` is `Box[int]`, and `Just("x")` is `Maybe[str]`.
+- Generic enum variants and generic class constructors infer their type arguments the same way: `Box(5)` is `Box[int]`, and `Just("x")` is `Maybe[str]`.
 - **Optionals don't nest, even through substitution:** `T?` with `T = int?` is `int?`, as in Python's `Optional[Optional[int]]`. Only a literal `T??` in source is `TP0213`.
 - **Constraints (M8.1):** a function's type parameter may list the types it can stand for, as a PEP 695 constraint tuple: `def total[N: (int, float)](xs: list[N]) -> N:`.
   - **Valid tuples:** at least two distinct types, none of them optional and none mentioning a type parameter. Otherwise it's `TP0220`.
-  - **Functions only:** constraints on a struct's or enum's type parameters are also `TP0220` in v0.1.
+  - **Functions only:** constraints on a class's or enum's type parameters are also `TP0220` in v0.1.
   - **Checking:** the body is checked once for every combination of its constrained parameters' types, with each one replaced by that concrete type. Unconstrained parameters stay opaque.
     - So a constrained parameter allows exactly what all of its types support: `+` for `(int, float)`, `<` for `(int, str)`, and so on.
     - A diagnostic that only some combinations produce is reported once, with ` (when 'N' is str)` appended to its message. One that every combination produces is reported once, as usual.
@@ -276,13 +294,14 @@ There are no other implicit conversions. Explicit conversions use the built-ins 
 ### 3.7 Functions as values (M11)
 - **Function types** are written as in Python's `typing`. `Callable[[int, str], bool]` takes an `int` and a `str` and returns a `bool`, and `Callable[[], int]` takes nothing. A result of `None` means the function returns nothing: `Callable[[str], None]`.
   - `Callable` is a built-in type name, like `list`. A bare `Callable` is `TP0209`.
-  - A function type is assignable only to an identical one. Parameter and result types must match exactly, with no widening. A lambda is checked against its expected type, though, so `lambda x: x` fits `Callable[[int], float]`.
+  - A function type is assignable to another whose parameter types are assignable to its own and whose result type its own is assignable to (§3.3, M15). Before M15 they had to match exactly. A lambda is checked against its expected type, so `lambda x: x` fits `Callable[[int], float]`.
+  - A function value converted this way is still the same value: it compares equal (`==`) to the original and displays the same way.
   - Function types may appear wherever a type can: as `T?`, in lists, as dict values, as fields, and as type arguments. They can't be dict keys, and they aren't convertible to Python (§10.3).
 - **Function values** are:
   - the name of a top-level function that isn't generic, used without calling it (`apply(double, xs)`)
   - a nested `def`
   - a `lambda`
-  - Generic functions, built-in functions, methods, struct constructors and enum variants aren't values (`TP0200`, §9.1). Wrap them in a lambda instead: `lambda s: s.total()`.
+  - Generic functions, built-in functions, methods, class constructors and enum variants aren't values (`TP0200`, §9.1). Wrap them in a lambda instead: `lambda s: s.total()`.
 - **Calls:** any expression of function type can be called: `f(x)`, `handlers[0](req)`, or `s.on_done()` for a field. Arguments are positional only (`TP0218`), since a function type has no parameter names or defaults, as in Python's typing. They're checked against the parameter types. A wrong count is `TP0209`. Calling a `T?` is `TP0203`.
 - **Lambdas:** `lambda x, y: x + y`. The body is a single expression, whose value is the result.
   - Parameters take no annotations. Their types come from the expected type (§4.6), which must be a function type with as many parameters as the lambda has (`TP0209` otherwise).
@@ -336,6 +355,29 @@ There are no other implicit conversions. Explicit conversions use the built-ins 
 - **Display:** `(1, "a")`, with elements written as inside a list.
 - **Generics:** tuple types may be type arguments, and inference matches them element by element.
 
+### 3.9 Narrowing a name (M15)
+- Some conditions narrow a name's type in the code they guard, as mypy does:
+  - `isinstance(x, C)` narrows `x` to the class `C` (§4.3). On an `x` of type `A?`, it also rules out `None`, since `isinstance(None, C)` is `False`.
+  - `x is not None` narrows `x: T?` to `T`.
+- **Which names:** only a name that can't change: a `let`, a parameter (including `self`), a loop variable, or a `match` or `is some` binding. A `var` isn't narrowed, nor is a field (`self.x is not None`) or any other expression, since it could change in between. Using one as if it were narrowed reports the usual error (`TP0203`, `TP0210`), with help `copy it to a 'let' first`.
+- **When a condition is true**, these narrowings hold:
+  - `isinstance(x, C)` and `x is not None` narrow as above.
+  - `a and b` narrows by both `a` and `b`.
+  - `not a` narrows by whatever holds when `a` is false.
+  - `(a)` narrows as `a` does.
+- **When a condition is false**, these hold:
+  - `x is None` narrows `x: T?` to `T`.
+  - `a or b` narrows by whatever holds when `a` and `b` are both false.
+  - `not a` narrows by whatever holds when `a` is true.
+- **Where narrowing applies:**
+  - In `if c:`, the `if` block sees what holds when `c` is true. Each later `elif` condition and block, and the `else` block, see what holds when `c` is false. So does everything after earlier `elif` conditions that were false.
+  - In `while c:`, the body sees what holds when `c` is true.
+  - In `a and b`, `b` sees what holds when `a` is true. In `a or b`, `b` sees what holds when `a` is false. So `x is None or x > 0` is valid.
+  - Lambdas and nested functions written in a narrowed region see the narrowed type too, since the name can't change.
+  - `match` class patterns narrow the scrutinee inside their arm (§5.1).
+- A narrowed name has the narrowed type for every use: member access, calls, arguments and assignments. It's still the same binding, so it follows the shadowing rules as before.
+- `isinstance(x, C)` where `C` is `x`'s own class or a base of it doesn't narrow `x` further, apart from ruling out `None`.
+
 ---
 
 ## 4. Declarations
@@ -347,7 +389,7 @@ There are no other implicit conversions. Explicit conversions use the built-ins 
 - **Scoping** is per block, as in C#. A name is visible from its declaration to the end of its block.
 - **Shadowing** a name from an enclosing block is `TP0207`. Redeclaring a name in the same block is `TP0214`.
 - **Top level:**
-  - `def`, `struct`, `enum`, and `const` are hoisted and visible everywhere.
+  - `def`, `class`, `enum`, and `const` are hoisted and visible everywhere.
   - Top-level `let` and `var` are script locals. They're visible only to later top-level statements. Referencing one from inside a function is `TP0211`.
 
 ### 4.2 Functions
@@ -370,13 +412,105 @@ There are no other implicit conversions. Explicit conversions use the built-ins 
   - Arguments are evaluated in source order, then the missing defaults in parameter order.
   - The same rules apply to functions, nested `def`s and methods. A function used as a value (§3.7) loses its parameter names and defaults: its type lists every parameter, and calls through it pass them all, positionally.
 
-### 4.3 Structs
-- A struct is a named record with typed fields and, from M5, methods.
-- **Construction:** `Service("api", 3, 3)`, `Service(name="api", replicas=3, healthy=3)`, or a mix of the two (M14): `Service("api", healthy=3, replicas=3)`. Every field must be given exactly once.
-- Fields are mutable through any binding: `s.healthy = 2` is valid even when `s` is a `let`. `let` fixes the binding, not the object.
-- Structs are reference types with structural equality (`==` compares fields).
-- **Methods** take an explicit `self` as the first parameter, typed implicitly as the enclosing struct. They're called as `s.method(args)`.
-- An unknown field or method is `TP0210`.
+### 4.3 Classes (M15)
+Classes are Python's, with the checks a static type system needs. Before M15, records were declared with `struct`. A `@dataclass class` replaces it, with the same behavior.
+
+```python
+class Animal:
+    name: str
+    legs: int = 4
+
+    def __init__(self, name: str):
+        self.name = name
+
+    def speak(self) -> str:
+        return "..."
+
+class Dog(Animal):
+    breed: str
+
+    def __init__(self, name: str, breed: str):
+        self.breed = breed
+        super().__init__(name)
+
+    @override
+    def speak(self) -> str:
+        return f"{self.name} the {self.breed} says woof"
+
+@dataclass
+class Point:
+    x: float
+    y: float = 0.0
+```
+
+- **Two kinds of class:**
+  - A **plain class** has an `__init__` that sets its fields, compares by identity, and displays as `<Dog object>`. Its instances may be dict keys, compared by identity.
+  - A **dataclass**, marked `@dataclass`, gets a generated constructor that takes its fields in order. It compares field by field and displays as `Point(x=1.0, y=0.0)`, as in Python. Like Python's (without `frozen=True`), its instances can't be dict keys (`TP0200`).
+- **Fields** are declared in the class body, with a type and an optional default: `legs: int = 4`. Assigning a field that isn't declared, through `self` or otherwise, is `TP0210`. Python would create it.
+  - A field's default is evaluated each time an instance is made: in a plain class, just before the class's own `__init__` body runs, and in a dataclass, as the constructor's parameter default. This differs from Python, where a class-level `items: list[int] = []` is one list shared by every instance.
+  - Defaults follow the rules for parameter defaults (§4.2): checked against the field's type, and unable to use `self` or the `__init__` parameters (`TP0201`).
+  - Fields are mutable through any binding: `s.healthy = 2` is valid even when `s` is a `let`. `let` fixes the binding, not the object.
+- **Methods** take an explicit `self` as the first parameter, typed implicitly as the enclosing class. They're called as `s.method(args)`, with arguments matched as for functions (§4.2), and are dispatched on the object's runtime class, so a `Dog` in a `list[Animal]` runs `Dog.speak`. Inside a method, other methods are reached as `self.m()`, and a bare `m()` refers to a global function.
+- **Special methods:** a plain class may define `__init__`. Any other method named `__x__` (`__str__`, `__eq__`, `__hash__`, …) is `TP0225`. They're deferred to protocols (M17), and Taipan reports them rather than silently ignore them.
+- **Members** are looked up on the static type. An unknown field or method is `TP0210`. A `Dog`-only method on an `Animal` needs narrowing first (§3.9).
+
+**Construction**
+- A class's name, called, constructs an instance: `Dog("rex", "lab")`, `Point(1.0, y=2.0)`. Arguments are matched as for functions (§4.2).
+- **Plain class:** the arguments are matched to `__init__`'s parameters, after `self`.
+  - A plain class without `__init__` uses its base class's `__init__`, as in Python. With no base class, it takes no arguments.
+  - `__init__` has no return type (`TP0200`), and may use a bare `return`.
+  - `__init__` can't be called directly (`x.__init__()` is `TP0200`), except as `super().__init__(…)` (below).
+- **Dataclass:** the parameters are the fields, in declaration order, with inherited fields first, and with the fields' defaults as their defaults.
+  - A field without a default after one with a default is `TP0225`, as Python's `dataclass` reports it. That includes a field after an inherited field with a default.
+  - Messages say `field` rather than `argument`: `missing field '<f>' in '<C>'`, `field '<f>' is given more than once` (`TP0209`), and an unknown keyword is `TP0210`.
+  - A dataclass can't define `__init__` (`TP0225`). `__post_init__` is deferred.
+
+**Strict initialization (`TP0226`).** An object can never be seen with a field unset.
+- At the end of `__init__`, on every path, each of the class's own fields must have been assigned, or have a default. Otherwise it's `TP0226` at `__init__`'s name: `'__init__' does not set 'breed'`.
+- A plain class without `__init__` needs a default for each of its own fields (`TP0226` at the field).
+- Until the object is complete, `self` may only be used to assign a field, or to read one of its own fields already assigned on every path to that point:
+  - Reading a field that may be unset is `TP0226`: `'breed' is read before it is set`.
+  - Any other use of `self` is `TP0226`: `'self' is used before 'breed' is set`. That includes calling a method, passing or storing `self`, displaying it, and capturing it in a lambda or nested function.
+  - Inherited fields belong to the base class's `__init__`. Reading or assigning one before `super().__init__(…)` is `TP0226`.
+- **The object is complete** once every own field is assigned on every path and, in a class with a base, `super().__init__(…)` has been called. From then on, `self` may be used freely, including calling methods.
+- **`super().__init__(…)` in a subclass:**
+  - It's required, exactly once, as a statement directly in `__init__`'s body, not inside an `if`, loop, `match` or nested function (`TP0226`).
+  - **The subclass sets its own fields first**, then calls `super().__init__(…)`, as in Swift. Calling it before an own field is set is `TP0226`, `'super().__init__' is called before 'breed' is set`. The base's `__init__` may call methods once its own fields are set. Since methods dispatch on the runtime class, `speak` would then run `Dog.speak`, which can read `breed` only because the subclass set it first. Python allows either order, and the other order fails, or reads stale values, only at run time.
+  - Its arguments can't use `self` (`TP0226`).
+  - Outside `__init__`, `super().__init__` is `TP0226`.
+- Assignments analysed are the plain `self.f = e` and `self.f op= e` statements. The analysis follows `if`/`elif`/`else`, `match` arms and loops. A field assigned only inside a loop body, or in only some branches, isn't assigned after it. A `return` in `__init__` before the object is complete is `TP0226`.
+
+**Inheritance**
+- `class Dog(Animal):` derives `Dog` from `Animal`. A class has at most one base, which must be a class: `class Dog(Animal, Pet)` is `TP0225`, as is a base that's an enum, a built-in type or a type parameter. The base may come from another module: `class Dog(zoo.Animal):`.
+- A subclass inherits every field and method of its base. A `Dog` is assignable to `Animal` (§3.3), and to every class above it.
+- **Restrictions in M15**, each `TP0225`:
+  - A dataclass's base must be a dataclass, and a plain class's base a plain class.
+  - Generic classes can't derive or be derived from.
+  - A class can't derive from itself, directly or through other classes.
+- A subclass can't declare a field or method with the name of an inherited field (`TP0214`), or a field with the name of an inherited method (`TP0214`).
+- **`super().m(…)`** calls the base class's `m`, found from the base upwards, without dispatching on the runtime class. It's valid in any method of a class with a base. `super` used any other way, or in a class without a base, is `TP0200`.
+
+**Overriding**
+- A method with the name of an inherited method overrides it, and must be marked `@override` (`TP0227`): `'speak' overrides 'Animal.speak'; mark it '@override'`. `@override` on a method that overrides nothing is also `TP0227`. This catches a misspelled override, and a base method added later that would silently take over a subclass's method. Python 3.12's `typing.override` is optional; in Taipan it's required.
+- `__init__` doesn't override: each class has its own, with any parameters. `@override` on `__init__` is `TP0227`.
+- **An override must be compatible (`TP0228`)**, so that every call valid on the base is valid on the subclass:
+  - the same number of parameters, with the same names, in the same order, and the same types
+  - a default wherever the base method has one. The override may add defaults. A call evaluates the defaults of the method that runs, as in Python.
+  - a return type that's the same as the base's, or, when both are classes or optional classes, one assignable to the base's (`Dog` for `Animal`). If the base returns nothing, the override must too.
+
+**Narrowing and conversion**
+- `isinstance(x, C)` tests the runtime class (§6), and narrows `x` (§3.9).
+- `x as C` converts `x` to the class `C`, which must derive from `x`'s class or be a base of it (`TP0200` otherwise). If `x` doesn't hold a `C`, it panics with `cannot convert <runtime class> to <C>` (§7). `x as C?` gives `None` instead of panicking.
+- `match` takes class patterns (§5.1).
+
+**Equality, display and keys**
+- **Plain class:** `==` and `!=` compare identity, as in Python without `__eq__`. Each construction makes a new object, equal only to itself. The display form is `<Dog object>`, by runtime class.
+- **Dataclass:** `==` compares the runtime classes, then every field, inherited ones included, structurally. Values of different classes are never equal, as in Python's `dataclass`. The display form is the runtime class's name and every field: `Dog(name="rex", breed="lab")`.
+- `==` between two class types is valid when one is assignable to the other. Unrelated classes are `TP0200`.
+- `dict[C, V]` is valid for a plain class `C`, with keys compared by identity (§3.1).
+- Class values aren't convertible to Python (§10.3).
+
+**Generics:** classes may take type parameters, plain or dataclass, as structs could (§3.6): `class Box[T]:`, with `@dataclass` on the line before it for a dataclass.
 
 ### 4.4 Enums (sum types)
 - Variants have no payload or named payload fields.
@@ -388,17 +522,17 @@ There are no other implicit conversions. Explicit conversions use the built-ins 
 - Payload fields are read-only and reachable only through `match` bindings.
 - Enums have structural equality.
 - **Names:**
-  - An enum's name lives in the type namespace and the global value scope, like a struct's.
-  - Each variant name also occupies the global value scope. A variant can't share its name with a function, constant, struct, enum or built-in (`TP0214`).
+  - An enum's name lives in the type namespace and the global value scope, like a class's.
+  - Each variant name also occupies the global value scope. A variant can't share its name with a function, constant, class, enum or built-in (`TP0214`).
   - Two enums may share a variant name, but then only the qualified form is valid. The unqualified form is `TP0216`, even when an expected type would disambiguate.
   - A local can't take a variant's name (`TP0207`).
 - **Construction details:**
-  - A variant with a payload follows the struct constructor rules of §4.6 (`TP0209`, `TP0210`). Without arguments, it's `TP0209`.
+  - A variant with a payload follows the dataclass constructor rules of §4.3 and §4.6 (`TP0209`, `TP0210`). Without arguments, it's `TP0209`.
   - A variant without a payload is a value. Calling it, as in `Ok()`, is `TP0200`.
   - An enum name used as a value is `TP0200`. So is member access on an enum value: payloads are reached only through `match`.
 
 ### 4.5 Names and checking rules
-- **Namespaces:** types (`int`, `float`, `bool`, `str`, user structs and enums) and values (functions, constants, variables, parameters, built-in functions) are separate. An unknown type name is `TP0201`.
+- **Namespaces:** types (`int`, `float`, `bool`, `str`, user classes and enums) and values (functions, constants, variables, parameters, built-in functions) are separate. An unknown type name is `TP0201`.
 - **Global scope:** functions, constants and built-in functions share one global scope. Defining a name twice there, including a `def` or `const` with a built-in function's name, is `TP0214`.
 - **Shadowing (`TP0207`)** covers every name visible at the declaration, including globals and built-ins: `let len = 3` is `TP0207`. A function body can't see top-level `let`/`var` bindings (§4.1), so declaring the same name inside a function is allowed.
 - **Parameters** are immutable, like `let`. They're declared in the function's outermost scope, so `let x` in a body with a parameter `x` is `TP0207`. Two parameters with the same name are `TP0214`.
@@ -415,20 +549,20 @@ There are no other implicit conversions. Explicit conversions use the built-ins 
 - **Expression statements:** any expression may be used as a statement, and its value is discarded.
 - **Error types:** once an expression has an error, its type is treated as compatible with everything. This means one mistake is reported once, not again at every use.
 
-### 4.6 Structs, lists and dicts: checking rules
-- **Struct names** live in the type namespace and also in the global value scope, as the struct's constructor. So a struct can't share a name with a function, constant or built-in (`TP0214`), and a local can't take its name (`TP0207`). A struct named `int`, `float`, `bool`, `str`, `list`, `dict`, `py`, `Callable` or `tuple` is also `TP0214`.
-- **Members:** field and method names within one struct must be distinct (`TP0214`). Field types may name any struct, including the struct itself, for example through `list[Node]`.
-- **Construction:**
-  - Arguments are matched to fields as to parameters (§4.2): positional ones in declaration order, then keyword ones by name. Fields have no defaults.
+### 4.6 Classes, lists and dicts: checking rules
+- **Class names** live in the type namespace and also in the global value scope, as the class's constructor. So a class can't share a name with a function, constant or built-in (`TP0214`), and a local can't take its name (`TP0207`). A class named `int`, `float`, `bool`, `str`, `list`, `dict`, `py`, `Callable` or `tuple` is also `TP0214`.
+- **Members:** field and method names within one class, inherited ones included, must be distinct (`TP0214`). Field types may name any class, including the class itself, for example through `list[Node]` or `Node?`.
+- **Dataclass construction:**
+  - Arguments are matched to fields as to parameters (§4.2): positional ones in field order, then keyword ones by name. A field with a default may be left out.
   - Too many positional arguments, or a missing or repeated field, is `TP0209`. An unknown name is `TP0210`.
-  - Arguments are evaluated in source order.
-- **Methods** are hoisted with their struct. Inside a method, `self` is an immutable parameter (`TP0202` to reassign), and other methods are reached as `self.m()`. A bare `m()` refers to a global function. `self` outside a method is `TP0201`.
+  - Arguments are evaluated in source order, then the missing defaults in field order.
+- **Methods** are hoisted with their class. Inside a method, `self` is an immutable parameter (`TP0202` to reassign), and other methods are reached as `self.m()`. A bare `m()` refers to a global function. `self` outside a method is `TP0201`.
 - **Member access:**
   - An unknown field or method is `TP0210`.
   - A method used without calling it is `TP0200`. So is calling a field, unless the field has a function type (§3.7).
   - Assigning to a method is `TP0202`.
 - **Expected types.** An expression is checked against an expected type when its context supplies one: an annotation, a parameter (including constructor fields and built-in method parameters), a return type, an assignment target (variable, field or element), or an enclosing list or dict literal that has an expected type. `[]` and `{}` need one (`TP0206`). With an expected type, each element is checked against the expected element type, so `let xs: list[float] = [1, 2]` is valid.
-- **Literals without an expected type:** all elements (or all keys, or all values) must have the same type, except that `int` and `float` mix to `float`. A mismatch is `TP0200` at the first element that differs.
+- **Literals without an expected type:** all elements (or all keys, or all values) must have the same type, except that `int` and `float` mix to `float`, and classes mix to their nearest common base (§3.2). A mismatch is `TP0200` at the first element that differs.
 - **Assignment targets:**
   - `xs[i] = v` and `d[k] = v` are allowed (a `d[k]` assignment inserts or updates).
   - `s[i] = v` on a `str` is `TP0202`, and so is `t[i] = v` on a tuple (M12).
@@ -442,8 +576,8 @@ There are no other implicit conversions. Explicit conversions use the built-ins 
   - `import geometry` loads `geometry.tpn` from the main file's directory. Every module of a program lives in that one directory, so there are no packages or dotted module names in v0.1.
   - A missing file is `TP0221`, reported at the import.
   - The module name `python` is reserved for Python interop (§10).
-- **Module files contain declarations only:** `import`, `def`, `struct`, `enum` and `const`. A top-level statement (including `let` and `var`) in a module other than the main file is `TP0222`. Only the main file has a top level that runs.
-- **Exports:** a module exports every name it defines, meaning its functions, structs, enums, their variants, and constants. There's no privacy, no re-export (a name a module itself imported can't be imported from it), and no `from m import *` (`TP0100`).
+- **Module files contain declarations only:** `import`, `def`, `class`, `enum` and `const`. A top-level statement (including `let` and `var`) in a module other than the main file is `TP0222`. Only the main file has a top level that runs.
+- **Exports:** a module exports every name it defines, meaning its functions, classes, enums, their variants, and constants. There's no privacy, no re-export (a name a module itself imported can't be imported from it), and no `from m import *` (`TP0100`).
 - **Imports:**
   - `import m` binds `m` in the importing file. Its names are then reached as `m.f(…)`, `m.LIMIT`, `m.Point(…)`, `m.Health.Ok` and `m.Ok` in expressions, `m.Point` and `m.Box[int]` in types, and `m.Health.Ok` in patterns.
   - `from m import f, Point` binds those names directly. Importing an enum also binds its variants unqualified, under the usual ambiguity rule (`TP0216`).
@@ -463,15 +597,23 @@ There are no other implicit conversions. Explicit conversions use the built-ins 
 ## 5. Statements and expressions
 
 ### 5.1 `match`
-- The scrutinee can be an enum, `int`, `str`, or `bool`.
+- The scrutinee can be an enum, `int`, `str`, `bool`, or a class (M15).
 - **Patterns:**
   - Variant patterns bind payload fields positionally: `Degraded(h, t)`. With a payload, the binding count must equal the field count. A variant with a payload may also be matched as `Degraded` without parentheses, binding nothing.
   - Literal patterns apply to `int`, `str`, and `bool`.
   - `_` matches anything.
+- **Class patterns (M15)** match when the scrutinee's runtime class is the named class or derives from it, as with `isinstance`:
+  - `Dog()` binds nothing. Unlike a variant, a class pattern always has parentheses, as in Python: a bare `Dog` is `TP0200`.
+  - `Dog(name=n, breed=b)` binds fields by name, in any order. Any field of `Dog`, inherited ones included, may be bound.
+  - For a dataclass, `Point(x, y)` binds fields by position, in constructor order, as Python's `__match_args__` does. Positional bindings may be followed by keyword ones. Positional bindings on a plain class are `TP0209`, and more than there are fields is `TP0209`.
+  - A field named twice is `TP0209`, and an unknown one is `TP0210`.
+  - The class must derive from the scrutinee's class, or be it (`TP0200` otherwise). In its arm, a scrutinee that's a name that can't change (§3.9) is narrowed to that class.
+  - Python's sub-patterns inside a class pattern (`Dog(name="rex")`) aren't supported: each argument is a binding.
 - **Exhaustiveness:**
   - For an enum, every variant must be covered, or there must be a `_` arm. Otherwise it's `TP0204`, and the message lists the missing variants.
   - For `bool`, the arms must cover `True` and `False`, or include `_`.
   - For `int` and `str`, a `_` arm is required.
+  - For a class, there must be a `_` arm, or a pattern of the scrutinee's own class. Subclasses are open-ended, so listing them never covers the base.
 - An arm after `_`, or a duplicate arm, is warning `TP0300` (unreachable).
 - `match` is a statement in v0.1. A match expression is post-v0.1.
 - **Checking details:**
@@ -482,7 +624,7 @@ There are no other implicit conversions. Explicit conversions use the built-ins 
   - A binding count that differs from the payload's field count is `TP0209`. A variant without a payload may be written with or without empty parentheses.
   - **`_` as a binding** (`Degraded(_, t)`) ignores that field and may repeat.
   - Other bindings are `let`s scoped to their arm. They follow the shadowing rules (`TP0207`), and a name repeated within one pattern is `TP0214`.
-  - **Duplicates (`TP0300`):** a duplicate arm is the same variant, literal or `True`/`False` as an earlier arm, regardless of its bindings. Unreachable arms are still checked, but not emitted.
+  - **Duplicates (`TP0300`):** a duplicate arm is the same variant, literal or `True`/`False` as an earlier arm, regardless of its bindings. A class pattern is unreachable after a pattern of the same class or one of its bases, since bindings never fail to match. Unreachable arms are still checked, but not emitted.
   - `TP0204` points at the `match` keyword. It lists missing variants in declaration order (`missing: Down, Ok`), `True`/`False` for bool, and `_` for int and str.
 - **Return paths:** a `match` terminates (§4.5) if every arm's body terminates. Exhaustiveness is guaranteed once it type-checks.
 - **Control flow:** `break` and `continue` in an arm apply to the enclosing loop, as anywhere else.
@@ -508,7 +650,8 @@ There are no other implicit conversions. Explicit conversions use the built-ins 
 | `%` | int, int | int | result takes the divisor's sign (Python semantics) |
 | `+` | str, str | str | concatenation |
 | `+` | list[T], list[T] | list[T] | new list |
-| `== !=` | same type, or int/float | bool | structural for structs, enums, lists, dicts, tuples; identity for functions (§3.7) |
+| `== !=` | same type, int/float, or related classes | bool | structural for dataclasses, enums, lists, dicts, tuples; identity for plain classes (§4.3) and functions (§3.7) |
+| `is None`, `is not None` | T? | bool | M15; narrows (§3.9) |
 | `< <= > >=` | numeric, or str (ordinal), or tuples of those (M12) | bool | tuples compare lexicographically |
 | `in`, `not in` | T in list[T]; K in dict[K,V]; str in str | bool | |
 | `??` | T?, T | T | |
@@ -554,6 +697,11 @@ In `a == b` and `a != b`, `a`'s type is `b`'s expected type (§4.6), so `m == No
   - `key` and `reverse` are optional and keyword-only.
 - `map(f: Callable[[T], U], xs: list[T]) -> list[U]` and `filter(f: Callable[[T], bool], xs: list[T]) -> list[T]` (M11) call `f` once per element, in order, and return new lists. Python's versions return iterators, which Taipan doesn't have.
 - `enumerate(xs)` and `enumerate(xs, start)` (M12) give a new list of `(index, element)` tuples: `list[tuple[int, T]]` for a `list[T]`, or `list[tuple[int, str]]` for a `str`'s characters. `start` is an `int` that defaults to 0. It may be given by position, or as the keyword argument `start=`, as in Python.
+- `isinstance(x, C) -> bool` (M15) is `True` when `x`'s runtime class is `C` or derives from it, as in Python, and `False` for `None`.
+  - `x` must be a class or an optional class, and `C` the name of a class (qualified for another module: `zoo.Dog`) that isn't generic. Anything else is `TP0200`. A tuple of classes (`isinstance(x, (A, B))`) is deferred.
+  - `C` must derive from `x`'s class, or be it or one of its bases. An unrelated class is `TP0200`, since the test could never be `True`.
+  - It narrows `x` (§3.9).
+- `super()` (M15) is valid only as `super().m(…)` in a method (§4.3).
 - `zip(xs: list[A], ys: list[B]) -> list[tuple[A, B]]` (M12) pairs the elements up, stopping at the shorter list, as in Python. It takes exactly two lists.
 - `sorted`, `sort`, `map`, `filter`, `enumerate` and `zip` iterate their lists (§5.2), so a function argument that changes a list panics with `list mutated during iteration`.
 
@@ -571,11 +719,12 @@ In `a == b` and `a != b`, `a`'s type is `b`'s expected type (§4.6), so `m == No
 | `float` | as Python's `repr`: the shortest digits that round-trip. Fixed notation when the decimal exponent is in [-4, 16), with `.0` appended when integral (`1.0`, `0.0001`, `1000000000000000.0`, `-0.0`). Otherwise scientific notation, with a lowercase `e`, a sign, and at least two exponent digits (`1e+16`, `1e-05`, `1.5e-07`). Also `inf`, `-inf`, `nan` |
 | `bool` | `True` / `False` |
 | `None` | `None` |
-| `str` | as-is at top level. Inside a list, dict or struct, written as a literal: in `"` quotes, with `\\`, `\"`, `\n` and `\t` escaped |
+| `str` | as-is at top level. Inside a list, dict or dataclass, written as a literal: in `"` quotes, with `\\`, `\"`, `\n` and `\t` escaped |
 | list | `[1, 2, 3]` |
 | tuple | `(1, "a")` (M12) |
 | dict | `{"a": 1}` |
-| struct | `Service(name="api", replicas=3, healthy=3)` |
+| dataclass | `Service(name="api", replicas=3, healthy=3)`, by runtime class, with inherited fields first |
+| plain class | `<Dog object>`, by runtime class (M15) |
 | enum | `Ok`, `Degraded(healthy=1, total=4)` |
 | function | `<function name>`, `<function <lambda>>` (M11) |
 
@@ -595,7 +744,7 @@ In `a == b` and `a != b`, `a`'s type is `b`'s expected type (§4.6), so `m == No
   - `split("")` / `replace("", …)`: `empty separator`
   - a slice step of 0: `slice step cannot be zero` (M12)
   - Python interop (§10.5): `cannot convert Python <type> to <T>`, `Python <ExceptionType>: <message>`, `cannot load Python: <reason>`
-  - failed non-optional `as` (M10)
+  - failed non-optional `as` (M10), and `as` to a class the value isn't an instance of: `cannot convert <runtime class> to <C>` (M15)
 
 ---
 
@@ -611,8 +760,14 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 | program | `public static class TaipanProgram { ...constants... static void TopLevel() { ...constant initializers, then top-level stmts... } ...functions... }`, plus `public static class TaipanEntry { static int Main() => Taipan.Runtime.Panic.Run(TaipanProgram.TopLevel); }`. `Panic.Run` turns panics into the §7 output and the exit code. A generated name that clashes with a user name gets a numeric suffix. |
 | identifiers | always verbatim-escaped (`@name`) to avoid C# keyword collisions |
 | `def f(a: int) -> str` | `public static string @f(long @a)` |
-| default values | Each default of a top-level function or method is a static helper method next to it (`connect_port()`, or `scale_by_default()` in a struct's class), called by each call that leaves the parameter out, so every call evaluates its own (M14). A nested `def`'s default is emitted inline at each such call. Arguments are passed positionally while each is its own parameter, then by name (`arg1`, `arg2`, … for a nested `def`'s delegate), which C# evaluates in source order. The C# methods have no optional parameters. |
-| `struct S` | `public sealed class S : Taipan.Runtime.IStruct`, with a mutable `{ get; set; }` property per field, a positional constructor, methods as instance methods (`self` is `this`), and `ToString` overridden to the display form. Not a C# record: Taipan equality is deep (lists inside structs compare by contents), so `==` on structs, lists and dicts calls `Taipan.Runtime.Equality.Equal` rather than C# `Equals`. |
+| default values | Each default of a top-level function or method is a static helper method next to it (`connect_port()`, or `scale_by_default()` in a class), called by each call that leaves the parameter out, so every call evaluates its own (M14). A method's helpers are virtual instance methods, overridden along with the method, so a call evaluates the defaults of the method that runs (M15). A nested `def`'s default is emitted inline at each such call. Arguments are passed positionally while each is its own parameter, then by name (`arg1`, `arg2`, … for a nested `def`'s delegate), which C# evaluates in source order. The C# methods have no optional parameters. |
+| `@dataclass class S` | `public class S : Taipan.Runtime.IStruct` (or `: Base`), `sealed` when no class derives from it, with a mutable `{ get; set; }` property per own field, a positional constructor over every field that passes the inherited ones to `: base(…)`, methods as instance methods (`self` is `this`), and `ToString` overridden to the display form. Not a C# record: Taipan equality is deep (lists inside dataclasses compare by contents), so `==` on dataclasses, lists and dicts calls `Taipan.Runtime.Equality.Equal` rather than C# `Equals`, and it compares runtime classes first. |
+| `class C` (plain, M15) | `public class C : Taipan.Runtime.IObject` (or `: Base`), `sealed` when no class derives from it, with a `{ get; set; }` property per own field and `ToString` giving `<C object>`. C# `Equals` and `GetHashCode` aren't overridden, so `==` and dict keys use reference identity. Construction is `C.@__new__(args)`, a static method that creates the object with a protected parameterless constructor, then calls `__init__`. Each class's `__init__` is an instance method `@__init__` that first evaluates its own fields' defaults (`new` when it hides a base's), so `super().__init__(…)` is `base.@__init__(…)` and can follow the subclass's own field assignments, which a C# constructor's `: base(…)` couldn't. A class without `__init__` gets one that sets its defaults and passes its parameters on to the base's. |
+| methods (M15) | `public virtual` where a method is introduced and `public override` for `@override`, with C#'s covariant return types for a narrower class result. `super().m(…)` is `base.@m(…)`. |
+| `isinstance(x, C)` / narrowed `x` | `x is C`. A narrowed read is `((C)x)`, or `x!` / `x.Value` for `x is not None` on a reference / value type. |
+| `x as C` / `x as C?` | `Taipan.Runtime.Ops.Cast<C>(x)`, which panics as §7 says / `x as C` |
+| class patterns | C# type patterns with property sub-patterns: `case Dog { @name: var n }`. The scrutinee is narrowed as above. |
+| function conversion | Converting a function value to a different function type (§3.3) wraps the delegate in an adapter. The new `Function<D>` keeps the original's identity, which its `==` compares, and its display name. |
 | `enum E` | `public abstract record E` with a private constructor; each variant is `public sealed record V(...) : E` nested inside |
 | `T?` | `T?` |
 | `list[T]` / `dict[K, V]` | `List<T>` / `OrderedDictionary<K, V>`. `for` over them goes through a runtime iterator that turns concurrent modification into the §7 panic. |
@@ -628,7 +783,7 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 | `x is some v` | `x is {} v`. C# scopes pattern variables more widely than Taipan, so a binding whose name is used anywhere else in the method gets a numeric suffix. |
 | `x is None` / `None` | `x is null` / `null` |
 | `x ?? d` | `x ?? d` |
-| `match` | `switch` statement with type, positional and constant patterns; each arm's body in its own braces. When there's no `_` arm, an emitted `default:` throws `UnreachableException` (exhaustiveness is guaranteed by the Taipan checker). A Taipan `break` inside an arm becomes `goto` to a label after the loop, since a C# `break` would leave the `switch`. Variants implement `Taipan.Runtime.IStruct`, and `==` on enums uses `Taipan.Runtime.Equality.Equal`, as for structs. |
+| `match` | `switch` statement with type, positional and constant patterns; each arm's body in its own braces. When there's no `_` arm, an emitted `default:` throws `UnreachableException` (exhaustiveness is guaranteed by the Taipan checker). A Taipan `break` inside an arm becomes `goto` to a label after the loop, since a C# `break` would leave the `switch`. Variants implement `Taipan.Runtime.IStruct`, and `==` on enums uses `Taipan.Runtime.Equality.Equal`, as for dataclasses. |
 | `/` `//` `%` | `Taipan.Runtime.Ops.Div / FloorDiv / Mod` |
 | f-string | C# interpolated string; every hole wrapped in `Taipan.Runtime.Display.Format(...)` |
 | `print` | `Taipan.Runtime.Builtins.Print(params object?[])` |
@@ -691,6 +846,11 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 | TP0221 | module not found |
 | TP0222 | top-level statement in an imported module |
 | TP0223 | nested function with type parameters |
+| TP0224 | invalid decorator |
+| TP0225 | invalid class definition |
+| TP0226 | object used before it is fully initialized |
+| TP0227 | missing or unneeded `@override` |
+| TP0228 | incompatible override |
 | TP0300 | warning: unreachable match arm |
 
 New codes go into this table before they're implemented.
@@ -715,8 +875,10 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0200 | `'<m>' is a module, not a value` |
 | TP0200 | `'as' converts py values; found <T>` / `cannot convert to <T>` / `cannot pass <T> to Python` (§10) |
 | TP0200 | `cannot match on <T>` / `'<E>' is a type, not a value` / `'<v>' is not a function` (a variant without a payload) |
-| TP0200 | `'is some' needs an optional, found <T>` / `'is None' needs an optional, found <T>` / `'??' needs an optional on the left, found <T>` |
-| TP0200 | `'<m>' is a method; call it` / `'<f>' is a field, not a method` / `cannot index <T>` / `dict keys must be int, str, or bool, found <T>` |
+| TP0200 | `'is some' needs an optional, found <T>` / `'is None' needs an optional, found <T>` / `'is not None' needs an optional, found <T>` / `'??' needs an optional on the left, found <T>` |
+| TP0200 | `'<m>' is a method; call it` / `'<f>' is a field, not a method` / `cannot index <T>` / `dict keys must be int, str, bool, tuples of those, or plain class instances, found <T>` (for a dataclass, with help `a dataclass compares by value, so it cannot be a key`) |
+| TP0200 | `isinstance needs a class, found <T>` / `'<C>' is not a class` / `'<C>' is generic` / `<T> can never be a <C>` (`isinstance`, `as` and class patterns on unrelated classes) / `'<C>' is a class; write '<C>()'` (a class pattern without parentheses) (M15) |
+| TP0200 | `'super()' can only be used as 'super().<method>(…)'` / `'super()' can only be used in a method` / `'<C>' has no base class` / `'__init__' cannot be called directly` / `'__init__' cannot have a return type` (M15) |
 | TP0201 | `undefined name '<x>'` (with help `use 'None'` for `none`) / `undefined type '<T>'` / `module '<m>' has no definition '<x>'` |
 | TP0202 | `cannot assign to '<x>': it is a <let binding\|parameter\|loop variable\|constant\|function\|method>`, with help `declare it with 'var'` for a `let` binding / `cannot assign to an element of str` / `cannot assign to an element of a tuple` |
 | TP0203 | `expected <T>, found <T>?` / `<T>? must be narrowed before use`, with help `narrow it with 'is some', or give a default with '??'` |
@@ -726,7 +888,7 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0207 | `'<x>' shadows an outer binding` |
 | TP0208 | `not all paths in '<f>' return a value` |
 | TP0209 | `'<S>' takes <n> type arguments, found <m>` (`type argument` when n is 1) |
-| TP0209 | `'<v>' has <n> fields, found <m> bindings` (variant patterns; `field` / `binding` when the count is 1) |
+| TP0209 | `'<v>' has <n> fields, found <m> bindings` (variant and dataclass patterns; `field` / `binding` when the count is 1) / `'<C>' is not a dataclass, so its fields can only be bound by name` / `field '<f>' is given more than once` (class patterns, M15) |
 | TP0209 | `<T> has <n> elements, found <m> names` (unpacking) / `a tuple needs at least two elements` (M12) |
 | TP0209 | `'<f>' takes <n> arguments, found <m>` (`argument` when n is 1; `1 or 2 arguments` for `range`; `<a> to <b> arguments` for a function with defaults, M14; `function takes …` when the callee isn't a name) / `missing argument '<x>'` (M14) / `missing field '<f>' in '<S>'` / `field '<f>' is given more than once` / `argument '<k>' is given more than once` |
 | TP0209 | `expected a lambda with <n> parameters, found <m>` (`parameter` when n is 1) / `'Callable' takes a parameter list and a result type` |
@@ -742,6 +904,11 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0221 | `module '<m>' not found`, with help `looked for <path>` / `'python' is not a module`, with help `use 'from python import <module>'` |
 | TP0222 | `only the main file can have top-level statements` |
 | TP0223 | `nested functions cannot have type parameters` |
+| TP0224 | `unknown decorator '@<d>'` / `'@<d>' cannot be used here` (with help `'@dataclass' goes on a class, '@override' on a method`) / `duplicate decorator '@<d>'` |
+| TP0225 | `a class can have only one base class` / `'<T>' cannot be a base class` / `a dataclass can only derive from a dataclass` / `a plain class can only derive from a plain class` / `generic classes cannot be derived from` / `generic classes cannot have a base class` / `'<C>' derives from itself` / `special method '<m>' is not supported` / `a dataclass cannot define '__init__'` / `field without a default follows field with a default` |
+| TP0226 | `'__init__' does not set '<f>'` / `'<f>' has no default, and '<C>' has no '__init__'` / `'<f>' is read before it is set` / `'self' is used before '<f>' is set` (or `before 'super().__init__' is called`) / `'<f>' is inherited, so it is set by 'super().__init__'` / `'super().__init__' is called before '<f>' is set` / `'<C>.__init__' must call 'super().__init__(…)'` / `'super().__init__' must be called once, directly in '__init__'` / `'super().__init__' can only be called in '__init__'` / `'__init__' returns before '<f>' is set` (or `before 'super().__init__' is called`) (when several fields are unset, the first in declaration order is named) |
+| TP0227 | `'<m>' overrides '<B>.<m>'; mark it '@override'` / `'<m>' does not override a method of <a base class\|'<B>'>` / `'__init__' cannot be marked '@override'` |
+| TP0228 | `'<m>' must take the same parameters as '<B>.<m>'` / `parameter '<p>' of '<m>' must have type <T>, as in '<B>.<m>'` / `parameter '<p>' of '<m>' needs a default, as in '<B>.<m>'` / `'<m>' must return <T>, as '<B>.<m>' does` (or `return nothing`) |
 | TP0220 | `a constraint needs at least two types` / `'<T>' is listed twice in the constraint` / `a constraint cannot be optional or generic` / `constraints are only supported on functions` |
 | TP0300 | `unreachable match arm` |
 
@@ -774,10 +941,10 @@ Types are written as in source: `int`, `str?`, `list[int]`. The type of `None` i
 - A convertible value is converted when it's passed into a `py` operation, and when it's assigned to something of type `py` (so `let x: py = [1, 2]` is valid).
 - Lists and dicts are copied, so changes on either side aren't seen by the other.
 - **Mixed literals:** in a `py` operation's arguments and operands, a list literal has element type `py` and a dict literal has value type `py`, so their elements may mix types: `json.dumps({"xs": [1, 2], "ok": True, "None": None})`.
-- A struct or enum value, or any other non-convertible type, passed to Python is `TP0200` (`cannot pass <T> to Python`).
+- A class or enum value, or any other non-convertible type, passed to Python is `TP0200` (`cannot pass <T> to Python`).
 
 ### 10.4 Python → Taipan: `as`
-- A `py` value reaches a static type only through `as` (cast, §2). Any other use where a static type is expected is `TP0200`. `as` applied to a non-`py` value is also `TP0200`.
+- A `py` value reaches a static type only through `as` (cast, §2). Any other use where a static type is expected is `TP0200`. `as` applied to a non-`py` value is also `TP0200`, except between classes (M15, §4.3).
 - `x as T` converts or panics. `x as T?` converts or gives `None`.
 - **Targets and what each accepts:**
   - `int`: a Python `int` in the 64-bit range. A `bool` is not accepted, even though Python's `bool` is an `int`.
@@ -789,7 +956,7 @@ Types are written as in source: `int`, `str?`, `list[int]`. The type of `None` i
   - `tuple[A, B, …]` (M12): a Python `tuple` or `list` with exactly that many elements, each converting to its type.
   - `T?` inside another target (for example `list[int?]`): Python `None` becomes Taipan's `None`, and anything else converts as `T`. As the outer target, `x as int?` gives `None` both for `None` and on a mismatch.
   - `py`: always succeeds, so `x as py` is allowed but pointless.
-  - Any other target (a struct, an enum) is `TP0200`.
+  - Any other target (a class, an enum) is `TP0200`. Converting between classes with `as` is §4.3.
 - Conversion is all-or-nothing: one failing element fails the whole conversion.
 
 ### 10.5 Errors at run time
@@ -807,7 +974,13 @@ Types are written as in source: `int`, `str?`, `list[int]`. The type of `None` i
 ---
 
 ## 11. Deferred (post-v0.1)
-- protocols (structural interfaces)
+- protocols (structural interfaces), and special methods such as `__str__`, `__eq__` and `__lt__` (M17)
+- multiple inheritance, mixing dataclasses and plain classes in one hierarchy, and inheritance involving generic classes
+- `@dataclass` options (`frozen`, `order`), `__post_init__`, and an `__init__` written in a dataclass
+- class attributes, `@staticmethod`, `@classmethod`, `@property`, abstract classes, `@final`, and `Self`
+- `isinstance` with a tuple of classes or on `py` values, and `is` between two expressions (identity)
+- sub-patterns inside class patterns
+- `-> None` as an explicit "returns nothing" annotation
 - generic functions, built-ins, methods and constructors as values (wrap them in a lambda)
 - iterators and generators (`map` and `filter` return lists)
 - tuple patterns in `match`
@@ -816,7 +989,7 @@ Types are written as in source: `int`, `str?`, `list[int]`. The type of `None` i
 - `zip` of more than two lists
 - `match` as an expression
 - keyword-only (`*`) and positional-only (`/`) parameters, `*args` and `**kwargs`, and defaults on lambda parameters
-- flow-sensitive narrowing after early return
+- flow-sensitive narrowing after early return, and narrowing `var`s and fields
 - exceptions and `try`
 - format specs in f-strings
 - an LSP server

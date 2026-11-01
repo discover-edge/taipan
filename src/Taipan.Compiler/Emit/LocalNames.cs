@@ -105,7 +105,12 @@ public sealed class LocalNames
     {
         BoundIf ifStmt => ifStmt.Clauses.Select(c => c.Condition).OfType<BoundIsSome>().Select(c => c.Binding),
         BoundWhile { Condition: BoundIsSome isSome } => [isSome.Binding],
-        BoundMatch match => match.Arms.SelectMany(a => a.Pattern is BoundVariantPattern p ? p.Bindings.OfType<VariableSymbol>() : []),
+        BoundMatch match => match.Arms.SelectMany(a => a.Pattern switch
+        {
+            BoundVariantPattern p => p.Bindings.OfType<VariableSymbol>(),
+            BoundClassPattern p => p.Bindings.Select(b => b.Binding),
+            _ => [],
+        }),
         _ => [],
     };
 

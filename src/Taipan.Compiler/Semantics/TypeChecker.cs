@@ -6,12 +6,29 @@ namespace Taipan.Compiler.Semantics;
 /// <summary>Assignability (SPEC §3.3), operator typing (§5.3) and return-path analysis (§4.5).</summary>
 public static class TypeChecker
 {
-    /// <summary>SPEC §3.3: equal; int to float; S or none to an optional of something S is assignable to.</summary>
+    /// <summary>
+    /// SPEC §3.3: equal; int to float; S or None to an optional of something S is assignable to; a
+    /// class to a base; a function type to one whose parameters it accepts and whose result it gives.
+    /// </summary>
     public static bool IsAssignable(TaipanType from, TaipanType to) =>
+        IsSubtype(from, to) || (to == TaipanType.Py && from.IsConvertibleToPython);
+
+    /// <summary>Assignability without conversion to Python, which a function value's parameters and result never need.</summary>
+    private static bool IsSubtype(TaipanType from, TaipanType to) =>
         from.ContainsError || to.ContainsError || from == to
         || (from == TaipanType.Int && to == TaipanType.Float)
-        || (to == TaipanType.Py && from.IsConvertibleToPython)
-        || (to is OptionalOf optional && (from is NoneType || (from is not OptionalOf && IsAssignable(from, optional.Inner))));
+        || (to is OptionalOf optional && (from is NoneType || (from is not OptionalOf && IsSubtype(from, optional.Inner))))
+        || (from is OptionalOf { Inner: ClassType fromClass } && to is OptionalOf { Inner: ClassType toClass } && Derives(fromClass, toClass))
+        || (from is ClassType fromType && to is ClassType toType && Derives(fromType, toType))
+        || (from is FunctionType f && to is FunctionType t && f.Parameters.Length == t.Parameters.Length
+            && t.Parameters.Zip(f.Parameters).All(pair => IsSubtype(pair.First, pair.Second))
+            && (f.Result == t.Result || (f.Result is not NothingType && t.Result is not NothingType && IsSubtype(f.Result, t.Result))));
+
+    // Generic classes can't derive, so a class deriving from another has no type arguments (SPEC §4.3).
+    private static bool Derives(ClassType from, ClassType to) => from.Symbol != to.Symbol && from.Symbol.DerivesFrom(to.Symbol);
+
+    /// <summary>Whether a value of one class could be a value of the other: one derives from the other.</summary>
+    public static bool AreRelated(ClassSymbol a, ClassSymbol b) => a.DerivesFrom(b) || b.DerivesFrom(a);
 
     /// <summary>
     /// Whether <c>==</c> may compare the two types: equal, or both numeric. A <c>T?</c> may also be
@@ -24,6 +41,11 @@ public static class TypeChecker
             return false;
         if (left.ContainsError || right.ContainsError || left == right || (left.IsNumeric && right.IsNumeric))
             return true;
+        // A class and a base of it, or function types one of which converts to the other (SPEC §4.3, §3.7).
+        if (left is ClassType lc && right is ClassType rc)
+            return lc.Symbol != rc.Symbol && AreRelated(lc.Symbol, rc.Symbol);
+        if (left is FunctionType && right is FunctionType)
+            return IsSubtype(left, right) || IsSubtype(right, left);
         // Element by element (SPEC §3.8).
         if (left is TupleOfType l && right is TupleOfType r)
             return l.Elements.Length == r.Elements.Length && l.Elements.Zip(r.Elements).All(pair => AreComparable(pair.First, pair.Second));
@@ -50,7 +72,7 @@ public static class TypeChecker
             OptionalOf optional => Flatten(Substitute(optional.Inner, map)),
             ListOfType list => new ListOfType(Substitute(list.Element, map)),
             DictOfType dict => new DictOfType(Substitute(dict.Key, map), Substitute(dict.Value, map)),
-            StructType structType => structType with { TypeArguments = [.. structType.TypeArguments.Select(a => Substitute(a, map))] },
+            ClassType classType => classType with { TypeArguments = [.. classType.TypeArguments.Select(a => Substitute(a, map))] },
             EnumType enumType => enumType with { TypeArguments = [.. enumType.TypeArguments.Select(a => Substitute(a, map))] },
             FunctionType function => new FunctionType([.. function.Parameters.Select(p => Substitute(p, map))], Substitute(function.Result, map)),
             TupleOfType tuple => new TupleOfType([.. tuple.Elements.Select(e => Substitute(e, map))]),
@@ -60,10 +82,10 @@ public static class TypeChecker
 
     private static TaipanType Flatten(TaipanType inner) => inner is OptionalOf or ErrorType ? inner : new OptionalOf(inner);
 
-    /// <summary>The substitution for a generic struct or enum type's members.</summary>
+    /// <summary>The substitution for a generic class or enum type's members.</summary>
     public static Dictionary<TypeParameterSymbol, TaipanType> MapOf(TaipanType type) => type switch
     {
-        StructType s => Zip(s.Symbol.TypeParameters, s.TypeArguments),
+        ClassType s => Zip(s.Symbol.TypeParameters, s.TypeArguments),
         EnumType e => Zip(e.Symbol.TypeParameters, e.TypeArguments),
         _ => [],
     };

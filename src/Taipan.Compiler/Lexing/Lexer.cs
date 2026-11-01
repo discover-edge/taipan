@@ -463,6 +463,7 @@ public sealed class Lexer
             ']' => (TokenKind.CloseBracket, 1),
             '{' => (TokenKind.OpenBrace, 1),
             '}' => (TokenKind.CloseBrace, 1),
+            '@' => (TokenKind.At, 1),
             _ => (TokenKind.EndOfFile, 0),
         };
 

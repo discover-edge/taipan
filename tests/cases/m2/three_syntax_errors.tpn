@@ -1,4 +1,5 @@
-struct Service:
+@dataclass
+class Service:
     name: str
     replicas int
 

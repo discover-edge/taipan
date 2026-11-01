@@ -22,14 +22,14 @@ public static class TaipanProgram
 
     public static double @area(double @side)
     {
-#line 7 "tests/cases/m9/clash/metric.tpn"
+#line 8 "tests/cases/m9/clash/metric.tpn"
         return @side * @side;
 #line hidden
     }
 
     public static double @area2(double @side)
     {
-#line 7 "tests/cases/m9/clash/imperial.tpn"
+#line 8 "tests/cases/m9/clash/imperial.tpn"
         return (@side * @side) * 10.7639;
 #line hidden
     }

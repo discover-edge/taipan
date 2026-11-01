@@ -1,9 +1,26 @@
 const LIMIT: int = 1_000
 
-struct Service:
+@dataclass
+class Service:
     name: str
     replicas: int
     tags: list[str]
+
+class Base:
+    count: int = 0
+
+    def __init__(self):
+        pass
+
+    def bump(self, by: int = 1):
+        self.count += by
+
+class Derived(Base):
+    pass
+
+    @override
+    def bump(self, by: int = 2):
+        super().bump(by)
 
 enum Health:
     Ok
@@ -46,5 +63,11 @@ def main():
         return lambda x: x + n
     let pick: Callable[[int, str], None]? = lambda _, s: print(s)
     print(sorted([2, 1], key=lambda: 0), adder(1)(2))
+    let b: Base? = Derived()
+    if isinstance(b, Derived) and b is not None or b is None:
+        match b:
+            Derived(count=c): print(c)
+            _: pass
+    print((b as Derived?) is None)
 
 main()

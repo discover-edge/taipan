@@ -1,0 +1,2 @@
+tests/cases/m15/tp0214_classes.tpn:9:5: error TP0214: duplicate definition of 'name'
+tests/cases/m15/tp0214_classes.tpn:10:5: error TP0214: duplicate definition of 'run'

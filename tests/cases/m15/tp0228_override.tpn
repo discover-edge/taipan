@@ -1,0 +1,47 @@
+# Overrides must be compatible with the base method (SPEC §4.3).
+class Animal:
+    def eat(self, food: str, amount: int = 1) -> int:
+        return amount
+
+    def mate(self) -> Animal?:
+        return None
+
+    def rest(self):
+        pass
+
+class Cat(Animal):
+    @override
+    def eat(self, food: str) -> int:
+        return 0
+
+    @override
+    def mate(self) -> Cat?:
+        return None
+
+    @override
+    def rest(self) -> int:
+        return 1
+
+class Dog(Animal):
+    @override
+    def eat(self, meal: str, amount: int = 1) -> int:
+        return 0
+
+class Fish(Animal):
+    @override
+    def eat(self, food: int, amount: int = 1) -> int:
+        return 0
+
+class Bird(Animal):
+    @override
+    def eat(self, food: str, amount: int) -> int:
+        return 0
+
+class Snake(Animal):
+    @override
+    def eat(self, food: str, amount: int = 1) -> float:
+        return 0.0
+
+    @override
+    def mate(self) -> Animal:
+        return Snake()
