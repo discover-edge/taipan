@@ -1688,26 +1688,71 @@ public sealed class Binder
 
     private BoundMatch BindMatch(MatchStmt match)
     {
-        var scrutinee = BindValue(match.Scrutinee);
+        var (scrutinee, type) = BindScrutinee(match.Scrutinee);
+        var arms = BindArms(scrutinee, type, match.Span, [.. match.Arms.Select(a => a.Pattern)],
+            (i, pattern, reachable) => new BoundArm(pattern, BindBlock(match.Arms[i].Body), reachable));
+        return new BoundMatch(scrutinee, arms, match.Span);
+    }
+
+    /// <summary>
+    /// A match expression (SPEC §5.1.1): each arm is checked against the expected type, or the
+    /// arms' types join as list elements do. Raising and unreachable arms give no type.
+    /// </summary>
+    private BoundExpr BindMatchExpr(MatchExpr match, TaipanType? expected)
+    {
+        var (scrutinee, type) = BindScrutinee(match.Scrutinee);
+        var arms = BindArms(scrutinee, type, match.Span, [.. match.Arms.Select(a => a.Pattern)], (i, pattern, reachable) =>
+        {
+            var arm = match.Arms[i];
+            if (arm.Raise is { } raise)
+                return new BoundValueArm(pattern, null, BindRaise(raise), reachable);
+            var value = expected is null ? BindValue(arm.Value!) : BindExpected(arm.Value!, expected);
+            return new BoundValueArm(pattern, value, null, reachable);
+        });
+
+        var values = arms.Where(a => a.IsReachable && a.Value is not null).Select(a => a.Value!).ToImmutableArray();
+        if (values.IsEmpty)
+        {
+            _diagnostics.ReportEveryArmRaises(MatchKeyword(match.Span));
+            return new BoundMatchExpr(scrutinee, arms, TaipanType.Error, match.Span);
+        }
+        return new BoundMatchExpr(scrutinee, arms, expected ?? InferElementType(values), match.Span);
+    }
+
+    private static TextSpan MatchKeyword(TextSpan match) => new(match.Start, "match".Length);
+
+    /// <summary>A match's scrutinee, and the type its patterns are checked against (an error type if it can't be matched).</summary>
+    private (BoundExpr Scrutinee, TaipanType Type) BindScrutinee(Expr syntax)
+    {
+        var scrutinee = BindValue(syntax);
         var type = scrutinee.Type;
-        if (ReportIfOptional(scrutinee, match.Scrutinee.Span))
+        if (ReportIfOptional(scrutinee, syntax.Span))
             type = TaipanType.Error;
         else if (!type.ContainsError && type is not (EnumType or ClassType) && type != TaipanType.Int && type != TaipanType.Str && type != TaipanType.Bool)
         {
-            _diagnostics.ReportCannotMatch(match.Scrutinee.Span, type);
+            _diagnostics.ReportCannotMatch(syntax.Span, type);
             type = TaipanType.Error;
         }
+        return (scrutinee, type);
+    }
 
+    /// <summary>
+    /// Binds each arm's pattern and then, with its bindings in scope and a class pattern's narrowing
+    /// applied, its body; then checks exhaustiveness (SPEC §5.1).
+    /// </summary>
+    private ImmutableArray<TArm> BindArms<TArm>(
+        BoundExpr scrutinee, TaipanType type, TextSpan matchSpan, ImmutableArray<Pattern> patterns, Func<int, BoundPattern, bool, TArm> bindBody)
+    {
         var covered = new MatchCoverage();
-        var arms = ImmutableArray.CreateBuilder<BoundArm>();
+        var arms = ImmutableArray.CreateBuilder<TArm>();
         var allValid = true;
-        foreach (var arm in match.Arms)
+        for (var i = 0; i < patterns.Length; i++)
         {
-            var (pattern, bindings, key) = BindPattern(arm.Pattern, type);
+            var (pattern, bindings, key) = BindPattern(patterns[i], type);
             allValid &= key is not null;
             var reachable = covered.Add(key);
             if (!reachable)
-                _diagnostics.ReportUnreachableArm(arm.Pattern.Span);
+                _diagnostics.ReportUnreachableArm(patterns[i].Span);
 
             var outer = _scope;
             _scope = new Scope(outer);
@@ -1717,16 +1762,15 @@ public sealed class Binder
             var outerNarrowing = _narrowing;
             if (pattern is BoundClassPattern classPattern)
                 _narrowing = _narrowing.With(Narrow(scrutinee, classPattern.Class.Symbol.DerivesFrom(((ClassType)type).Symbol) ? classPattern.Class : type));
-            var body = BindBlock(arm.Body);
+            arms.Add(bindBody(i, pattern, reachable));
             _narrowing = outerNarrowing;
             _scope = outer;
-            arms.Add(new BoundArm(pattern, body, reachable));
         }
 
         // An invalid pattern was already reported; don't also call its variant missing.
         if (allValid && !type.ContainsError && covered.Missing(type) is { Count: > 0 } missing)
-            _diagnostics.ReportNonExhaustiveMatch(new TextSpan(match.Span.Start, "match".Length), missing);
-        return new BoundMatch(scrutinee, arms.ToImmutable(), match.Span);
+            _diagnostics.ReportNonExhaustiveMatch(MatchKeyword(matchSpan), missing);
+        return arms.ToImmutable();
     }
 
     /// <summary>
@@ -2372,7 +2416,11 @@ public sealed class Binder
 
     /// <summary>Whether a block contains a <c>raise</c>, outside any nested function.</summary>
     private static bool Raises(BoundStmt stmt) =>
-        stmt is BoundRaise || (stmt is not BoundLocalFunction && BoundTree.Statements(stmt).Any(Raises));
+        stmt is BoundRaise || BoundTree.Expressions(stmt).Any(RaisesIn) || (stmt is not BoundLocalFunction && BoundTree.Statements(stmt).Any(Raises));
+
+    /// <summary>Whether an expression contains a match expression with a raising arm (SPEC §5.1.1).</summary>
+    private static bool RaisesIn(BoundExpr expr) =>
+        expr is BoundMatchExpr match && match.Arms.Any(a => a.Raise is not null) || BoundTree.Children(expr).Any(RaisesIn);
 
     /// <summary>Whether a statement reads <paramref name="variable"/> anywhere, nested functions and lambdas included.</summary>
     private static bool Uses(BoundStmt stmt, VariableSymbol variable)
@@ -2831,6 +2879,7 @@ public sealed class Binder
         NoneLiteral => new BoundNone(expr.Span),
         CastExpr cast => BindCast(cast),
         LambdaExpr lambda => BindLambda(lambda, expected),
+        MatchExpr match => BindMatchExpr(match, expected),
         TupleExpr tuple => BindTuple(tuple, expected),
         SliceExpr slice => BindSlice(slice),
         ErrorExpr => new BoundErrorExpr(expr.Span),

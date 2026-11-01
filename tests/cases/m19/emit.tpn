@@ -1,0 +1,17 @@
+# A match expression is a C# switch expression; arms of another type are cast to the result (SPEC §8).
+enum Status:
+    Ok
+    Degraded(load: float)
+    Down
+
+def weight(s: Status) -> float:
+    return match s:
+        Ok: 0
+        Degraded(load): load
+        Down: raise ValueError("down")
+
+let n = 2
+let found = match n:
+    2: n
+    _: None
+print(weight(Status.Degraded(0.5)), found)

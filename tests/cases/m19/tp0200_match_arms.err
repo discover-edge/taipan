@@ -1,0 +1,6 @@
+tests/cases/m19/tp0200_match_arms.tpn:5:8: error TP0200: expected str, found int
+tests/cases/m19/tp0200_match_arms.tpn:9:8: error TP0200: expected int, found str
+tests/cases/m19/tp0200_match_arms.tpn:10:15: error TP0200: every arm of this 'match' raises
+  help: use a 'match' statement
+tests/cases/m19/tp0200_match_arms.tpn:14:8: error TP0206: cannot infer the type of None
+  help: add a type annotation

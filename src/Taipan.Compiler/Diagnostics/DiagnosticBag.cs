@@ -75,6 +75,9 @@ public sealed class DiagnosticBag
     public void ReportAliasNotTopLevel(TextSpan span) =>
         Add("TP0100", span, "a type alias must be at the top level");
 
+    public void ReportMisplacedMatch(TextSpan span) =>
+        Add("TP0100", span, "'match' can only be the whole value of 'let', 'var', an assignment or 'return'");
+
     public void ReportBareExceptNotLast(TextSpan span) =>
         Add("TP0100", span, "a bare 'except' must be the last except clause");
 
@@ -323,6 +326,9 @@ public sealed class DiagnosticBag
         Add("TP0216", span, $"'{variant}' is ambiguous: it is a variant of {string.Join(" and ", names)}",
             $"qualify it, e.g. '{names[0]}.{variant}'");
     }
+
+    public void ReportEveryArmRaises(TextSpan span) =>
+        Add("TP0200", span, "every arm of this 'match' raises", "use a 'match' statement");
 
     public void ReportUnreachableArm(TextSpan span) =>
         Warn("TP0300", span, "unreachable match arm");

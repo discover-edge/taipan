@@ -685,7 +685,7 @@ public sealed class CSharpEmitter
                 break;
             case BoundRaise raise:
                 LineDirective(raise.Span);
-                Line(raise.Value is null ? $"throw {Runtime}.Exceptions.Rethrow({_caught.Peek()});" : $"throw {Expr(raise.Value)};");
+                Line($"{Throw(raise)};");
                 break;
             case BoundTry tryStmt:
                 EmitTry(tryStmt);
@@ -985,18 +985,45 @@ public sealed class CSharpEmitter
         Line("}");
     }
 
-    private string CaseLabel(BoundPattern pattern, TaipanType scrutineeType) => pattern switch
+    private string CaseLabel(BoundPattern pattern, TaipanType scrutineeType) =>
+        pattern is BoundWildcardPattern ? "default:" : $"case {Pattern(pattern, scrutineeType)}:";
+
+    /// <summary>A pattern as C# writes it in a <c>case</c> label or a switch expression's arm.</summary>
+    private string Pattern(BoundPattern pattern, TaipanType scrutineeType) => pattern switch
     {
-        BoundWildcardPattern => "default:",
-        BoundLiteralPattern literal => $"case {Literal(literal.Value)}:",
-        BoundVariantPattern { Bindings.IsEmpty: true } variant => $"case {VariantTypeName(variant.Variant, scrutineeType)}:",
+        BoundWildcardPattern => "_",
+        BoundLiteralPattern literal => Literal(literal.Value),
+        BoundVariantPattern { Bindings.IsEmpty: true } variant => VariantTypeName(variant.Variant, scrutineeType),
         BoundVariantPattern variant =>
-            $"case {VariantTypeName(variant.Variant, scrutineeType)}({string.Join(", ", variant.Bindings.Select(b => b is null ? "_" : $"var @{_locals[b]}"))}):",
-        BoundClassPattern { Bindings.IsEmpty: true } classPattern => $"case {TypeName(classPattern.Class)}:",
+            $"{VariantTypeName(variant.Variant, scrutineeType)}({string.Join(", ", variant.Bindings.Select(b => b is null ? "_" : $"var @{_locals[b]}"))})",
+        BoundClassPattern { Bindings.IsEmpty: true } classPattern => TypeName(classPattern.Class),
         BoundClassPattern classPattern =>
-            $"case {TypeName(classPattern.Class)} {{ {string.Join(", ", classPattern.Bindings.Select(b => $"@{Member(b.Field, classPattern.Class)}: var @{_locals[b.Binding]}"))} }}:",
+            $"{TypeName(classPattern.Class)} {{ {string.Join(", ", classPattern.Bindings.Select(b => $"@{Member(b.Field, classPattern.Class)}: var @{_locals[b.Binding]}"))} }}",
         _ => throw new InvalidOperationException($"unexpected pattern {pattern.GetType().Name}"),
     };
+
+    /// <summary>
+    /// A switch expression (SPEC §8). A value of another type than the result is cast to it, since
+    /// C# can't always find one type for the arms (int and float, sibling classes, None); a raising
+    /// arm is a throw.
+    /// </summary>
+    private string MatchExpr(BoundMatchExpr match)
+    {
+        var scrutineeType = Concrete(match.Scrutinee.Type);
+        var result = Concrete(match.Type);
+        var arms = match.Arms.Where(a => a.IsReachable).Select(arm =>
+        {
+            var value = arm.Raise is { } raise ? Throw(raise)
+                : Concrete(arm.Value!.Type) == result ? Expr(arm.Value) : $"({TypeName(result)})({Expr(arm.Value)})";
+            return $"{Pattern(arm.Pattern, scrutineeType)} => {value}";
+        }).ToList();
+        if (!match.Arms.Any(a => a.IsReachable && a.Pattern is BoundWildcardPattern))
+            arms.Add("_ => throw new global::System.Diagnostics.UnreachableException()");
+        return $"{Operand(match.Scrutinee)} switch {{ {string.Join(", ", arms)} }}";
+    }
+
+    private string Throw(BoundRaise raise) =>
+        raise.Value is null ? $"throw {Runtime}.Exceptions.Rethrow({_caught.Peek()})" : $"throw {Expr(raise.Value)}";
 
     /// <summary>A variant's nested record, inside its enum's class (or the enum instance's, if generic).</summary>
     private string VariantTypeName(VariantSymbol variant, TaipanType enumType) => $"{TypeName(enumType)}.@{variant.Name}";
@@ -1051,6 +1078,7 @@ public sealed class CSharpEmitter
             BoundTupleLiteral tuple => NewTuple(((TupleOfType)Concrete(tuple.Type)).Elements, [.. tuple.Elements.Select(Expr)]),
             BoundTupleElement element => $"{Operand(element.Tuple)}.Item{element.Index + 1}",
             BoundSlice slice => Slice(slice),
+            BoundMatchExpr match => MatchExpr(match),
             _ => throw new InvalidOperationException($"unexpected bound expression {expr.GetType().Name}"),
         };
     }

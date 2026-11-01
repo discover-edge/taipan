@@ -1,0 +1,4 @@
+tests/cases/m19/tp0100_match_expr.tpn:3:7: error TP0100: 'match' can only be the whole value of 'let', 'var', an assignment or 'return'
+tests/cases/m19/tp0100_match_expr.tpn:4:13: error TP0100: 'match' can only be the whole value of 'let', 'var', an assignment or 'return'
+tests/cases/m19/tp0100_match_expr.tpn:6:19: error TP0100: 'match' can only be the whole value of 'let', 'var', an assignment or 'return'
+tests/cases/m19/tp0100_match_expr.tpn:9:7: error TP0100: expected expression, found newline

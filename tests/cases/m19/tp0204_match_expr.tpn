@@ -1,0 +1,16 @@
+# A match expression must be exhaustive, as the statement is (SPEC §5.1.1).
+enum Status:
+    Ok
+    Degraded(load: float)
+    Down
+
+def label(s: Status) -> str:
+    return match s:
+        Ok: "up"
+
+let n = 3
+let word = match n:
+    1: "one"
+    2: "two"
+let yes = match n > 2:
+    True: "yes"

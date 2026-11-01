@@ -126,6 +126,12 @@ public sealed record BoundMatch(BoundExpr Scrutinee, ImmutableArray<BoundArm> Ar
 
 public sealed record BoundArm(BoundPattern Pattern, BoundBlock Body, bool IsReachable);
 
+/// <summary>A <c>match</c> expression (SPEC §5.1.1); arms marked unreachable are checked but not emitted.</summary>
+public sealed record BoundMatchExpr(BoundExpr Scrutinee, ImmutableArray<BoundValueArm> Arms, TaipanType Type, TextSpan Span) : BoundExpr(Type, Span);
+
+/// <summary>Exactly one of <see cref="Value"/> and <see cref="Raise"/> is set.</summary>
+public sealed record BoundValueArm(BoundPattern Pattern, BoundExpr? Value, BoundRaise? Raise, bool IsReachable);
+
 public abstract record BoundPattern;
 
 public sealed record BoundWildcardPattern : BoundPattern;

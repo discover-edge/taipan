@@ -579,10 +579,31 @@ public sealed class Parser
                 return new FuncDefStmt(ParseFuncDef(start, decorators), SpanFrom(start));
             default:
                 var stmt = ParseSimpleStmt();
-                Expect(TokenKind.Newline);
+                ExpectStatementEnd(stmt);
                 return stmt;
         }
     }
+
+    /// <summary>A simple statement's NEWLINE, unless it ends in a match expression, whose DEDENT ends it (SPEC §2).</summary>
+    private void ExpectStatementEnd(Stmt stmt)
+    {
+        var value = stmt switch
+        {
+            LetStmt let => let.Value,
+            VarStmt var => var.Value,
+            UnpackStmt unpack => unpack.Value,
+            AssignStmt assign => assign.Value,
+            TupleAssignStmt assign => assign.Value,
+            ReturnStmt ret => ret.Value,
+            _ => null,
+        };
+        if (value is not MatchExpr)
+            Expect(TokenKind.Newline);
+    }
+
+    /// <summary>The value of a <c>let</c>, <c>var</c>, assignment or <c>return</c>: an expression list, or a match expression (M19).</summary>
+    private Expr ParseValue(bool list = true) =>
+        At(TokenKind.MatchKeyword) ? ParseMatchExpr() : list ? ParseExprList() : ParseExpr();
 
     // simple_stmt = let_stmt | var_stmt | assign_stmt | return_stmt | raise_stmt | "pass" | "break" | "continue" | expr
     private Stmt ParseSimpleStmt()
@@ -628,11 +649,11 @@ public sealed class Parser
         {
             var names = ParseMoreNames(name);
             Expect(TokenKind.Equals);
-            return new UnpackStmt(isVar, names, ParseExprList(), SpanFrom(start));
+            return new UnpackStmt(isVar, names, ParseValue(), SpanFrom(start));
         }
         var type = ParseOptionalAnnotation();
         Expect(TokenKind.Equals);
-        var value = ParseExprList();
+        var value = ParseValue();
         return isVar ? new VarStmt(name, type, value, SpanFrom(start)) : new LetStmt(name, type, value, SpanFrom(start));
     }
 
@@ -697,7 +718,7 @@ public sealed class Parser
         if (!IsTarget(target))
             ReportSyntaxError(bag => bag.ReportInvalidAssignmentTarget(target.Span));
         Next();
-        var value = op == AssignOp.Assign ? ParseExprList() : ParseExpr();
+        var value = ParseValue(list: op == AssignOp.Assign);
         return new AssignStmt(target, op.Value, value, SpanFrom(start));
     }
 
@@ -719,18 +740,18 @@ public sealed class Parser
             }
         }
         Expect(TokenKind.Equals);
-        var value = ParseExprList();
+        var value = ParseValue();
         return new TupleAssignStmt(targets.ToImmutable(), value, SpanFrom(start));
     }
 
     // target = NAME | postfix "." NAME | postfix "[" expr "]"
     private static bool IsTarget(Expr expr) => expr is NameExpr or MemberExpr or IndexExpr;
 
-    // return_stmt = "return" [ expr_list ]
+    // return_stmt = "return" [ expr_list | match_expr ]
     private ReturnStmt ParseReturnStmt()
     {
         var start = Next().Span.Start;
-        var value = !_recovering && CanStartExpression(Current.Kind) ? ParseExprList() : null;
+        var value = At(TokenKind.MatchKeyword) || (!_recovering && CanStartExpression(Current.Kind)) ? ParseValue() : null;
         return new ReturnStmt(value, SpanFrom(start));
     }
 
@@ -927,9 +948,32 @@ public sealed class Parser
         {
             var stmt = ParseSimpleStmt();
             body = new Block([stmt], stmt.Span);
-            Expect(TokenKind.Newline);
+            ExpectStatementEnd(stmt);
         }
         return new MatchArm(pattern, body, new TextSpan(start, Math.Max(0, body.Span.End - start)));
+    }
+
+    // match_expr = "match" expr ":" NEWLINE INDENT value_arm { value_arm } DEDENT
+    private MatchExpr ParseMatchExpr()
+    {
+        var start = Next().Span.Start;
+        var scrutinee = ParseExpr();
+        Expect(TokenKind.Colon);
+        var arms = ParseIndentedBody(ParseValueArm);
+        return new MatchExpr(scrutinee, arms, SpanFrom(start));
+    }
+
+    // value_arm = pattern ":" ( expr | raise_stmt ) NEWLINE
+    private ValueArm ParseValueArm()
+    {
+        var start = Current.Span.Start;
+        var pattern = ParsePattern();
+        Expect(TokenKind.Colon);
+        var raise = At(TokenKind.RaiseKeyword) ? ParseRaiseStmt() : null;
+        var value = raise is null ? ParseExpr() : null;
+        var arm = new ValueArm(pattern, value, raise, SpanFrom(start));
+        Expect(TokenKind.Newline);
+        return arm;
     }
 
     // pattern = "_" | [ "-" ] INT | STRING | "True" | "False" | qual_name [ "(" [ NAME { "," NAME } ] ")" ]
@@ -1462,6 +1506,9 @@ public sealed class Parser
                 Expect(TokenKind.CloseBrace);
                 return new DictExpr(entries, SpanFrom(token.Span.Start));
             }
+            case TokenKind.MatchKeyword:
+                ReportSyntaxError(bag => bag.ReportMisplacedMatch(token.Span));
+                return new ErrorExpr(Here);
             default:
                 ReportExpected("expression");
                 return new ErrorExpr(Here);

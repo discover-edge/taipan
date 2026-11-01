@@ -1,0 +1,11 @@
+# A match expression is only the whole value of 'let', 'var', an assignment or 'return' (SPEC §2).
+let n = 3
+print(match n: _: 1)
+let x = 1 + match n:
+    _: 1
+let f = lambda m: match m:
+    _: 1
+let y = match n:
+    _:
+        1
+print("done")

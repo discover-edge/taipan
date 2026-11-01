@@ -1,0 +1,91 @@
+# A match expression's type: arms join as list elements do, or check against an expected type (SPEC §5.1.1).
+class Animal:
+    def __init__(self):
+        pass
+
+    def speak(self) -> str:
+        return "..."
+
+class Dog(Animal):
+    def __init__(self):
+        super().__init__()
+
+    @override
+    def speak(self) -> str:
+        return "woof"
+
+    def fetch(self) -> str:
+        return "fetching"
+
+class Cat(Animal):
+    def __init__(self):
+        super().__init__()
+
+    @override
+    def speak(self) -> str:
+        return "meow"
+
+let n = 3
+let kind = match n:
+    0: "zero"
+    1: "one"
+    _: "many"
+print(kind)
+
+# int and float join to float, and None makes the result optional.
+let ratio = match n:
+    0: 0
+    _: 1.5
+let found = match n:
+    3: n * 2
+    _: None
+let missing = match n:
+    4: n
+    _: None
+print(ratio, found, missing)
+
+# With an expected type, each arm is checked against it.
+var total: float = match n:
+    3: 1
+    _: 2
+total += match kind:
+    "many": 10
+    _: 0
+print(total)
+
+# Classes join to their nearest common base, and a class pattern narrows its arm.
+let pet = match n:
+    3: Dog()
+    _: Cat()
+print(pet.speak())
+let trick = match pet:
+    Dog(): pet.fetch()
+    _: "nothing"
+print(trick)
+
+let a, b = match n:
+    3: (1, "x")
+    _: (2, "y")
+print(a, b)
+
+def describe(flag: bool, n: int) -> str:
+    var word = "unset"
+    match flag:
+        True:
+            word = match n:
+                3: "three"
+                _: "other"
+        False: word = "no"
+    return word
+
+print(describe(True, 3), describe(False, 3))
+
+# The scrutinee is evaluated once, and only the matching arm's expression.
+def noisy(x: int) -> int:
+    print("eval", x)
+    return x
+
+let picked = match noisy(1):
+    1: noisy(10)
+    _: noisy(20)
+print(picked)
