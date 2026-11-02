@@ -1,0 +1,18 @@
+# The order of '/', '*', '*args' and '**kwargs' (SPEC §4.2).
+def a(/, x: int):
+    pass
+
+def b(x: int, *, y: int, /):
+    pass
+
+def c(x: int, *):
+    pass
+
+def d(**kw: int, x: int):
+    pass
+
+def e(*args: int = 1):
+    pass
+
+def f(*a: int, *b: int):
+    pass

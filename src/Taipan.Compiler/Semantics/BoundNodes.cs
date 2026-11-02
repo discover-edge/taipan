@@ -265,7 +265,24 @@ public sealed record ArgumentShape(ImmutableArray<int> Parameters, int Parameter
 
     /// <summary>The parameters left to their defaults, in parameter order.</summary>
     public IEnumerable<int> Missing => Enumerable.Range(0, ParameterCount).Except(Parameters);
+
+    /// <summary>
+    /// When not empty (M30), the call evaluates these, the arguments as written in source order,
+    /// into temporaries before it: an unpacked tuple, or arguments collected out of order.
+    /// </summary>
+    public ImmutableArray<BoundExpr> Sources { get; init; } = [];
 }
+
+/// <summary>The arguments a call gives <c>*args</c> (SPEC §4.2, M30): each an element, or a list spread into it.</summary>
+public sealed record BoundCollectedArguments(ImmutableArray<(BoundExpr Value, bool Spread)> Items, ListOfType ListType, TextSpan Span)
+    : BoundExpr(ListType, Span);
+
+/// <summary>
+/// The arguments a call gives <c>**kwargs</c> (M30): each a keyword, or a dict spread into it
+/// (<c>Key</c> null), whose keys mustn't name a parameter in <see cref="Reserved"/> or repeat.
+/// </summary>
+public sealed record BoundCollectedKeywords(ImmutableArray<(string? Key, BoundExpr Value)> Items, ImmutableArray<string> Reserved, string Function,
+    DictOfType DictType, TextSpan Span) : BoundExpr(DictType, Span);
 
 /// <summary>
 /// <see cref="Shape"/> is null when the arguments are positional and none is left out. Arguments

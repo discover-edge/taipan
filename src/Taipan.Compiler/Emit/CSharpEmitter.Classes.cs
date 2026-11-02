@@ -314,4 +314,64 @@ public sealed partial class CSharpEmitter
             }
         }
     }
+
+    // ---- Parameters (SPEC §4.2, M30) ----
+
+    // Calls being emitted with their arguments evaluated first, so they aren't wrapped twice.
+    private readonly HashSet<BoundExpr> _withSources = new(ReferenceEqualityComparer.Instance);
+
+    private static ArgumentShape? ShapeOf(BoundExpr expr) => expr switch
+    {
+        BoundCall call => call.Shape,
+        BoundMethodCall call => call.Shape,
+        BoundClassMethodCall call => call.Shape,
+        BoundSuperCall call => call.Shape,
+        BoundNew construct => construct.Shape,
+        BoundInvoke invoke => invoke.Shape,
+        _ => null,
+    };
+
+    /// <summary>
+    /// A call whose arguments must be evaluated before it, in source order (SPEC §4.2): a lambda
+    /// that stores the receiver and each argument as written in a temporary, then calls.
+    /// </summary>
+    private string CallWithSources(BoundExpr call, ArgumentShape shape)
+    {
+        var receiver = call switch
+        {
+            BoundMethodCall method => method.Target,
+            BoundClassMethodCall { Instance: { } instance } => instance,
+            _ => null,
+        };
+        var stores = new List<string>();
+        var hoisted = new List<BoundExpr>();
+        foreach (var source in ((BoundExpr?[])[receiver]).OfType<BoundExpr>().Where(r => !IsSimple(r)).Concat(shape.Sources))
+        {
+            var name = $"@{_locals.Fresh("arg")}";
+            stores.Add($"{TypeName(source.Type)} {name} = {Expr(source)};");
+            _hoisted[source] = name;
+            hoisted.Add(source);
+        }
+        var invocation = Expr(call);
+        foreach (var source in hoisted)
+            _hoisted.Remove(source);
+        var body = string.Join(" ", stores);
+        return call.Type is NothingType
+            ? $"((global::System.Action)(() => {{ {body} {invocation}; }}))()"
+            : $"((global::System.Func<{TypeName(call.Type)}>)(() => {{ {body} return {invocation}; }}))()";
+    }
+
+    // `*args`'s new list: the arguments, and the lists spread into it, in order.
+    private string CollectedArguments(BoundCollectedArguments collected) => collected.Items.IsEmpty
+        ? $"new {TypeName(collected.ListType)}()"
+        : $"({TypeName(collected.ListType)})[{string.Join(", ", collected.Items.Select(i => i.Spread ? $".. {Expr(i.Value)}" : Expr(i.Value)))}]";
+
+    // `**kwargs`'s new dict: the keywords, and the dicts spread into it, in order, with Python's check for repeated keys.
+    private string CollectedKeywords(BoundCollectedKeywords collected)
+    {
+        var builder = $"new {Runtime}.Keywords<{TypeName(collected.DictType.Value)}>(\"{collected.Function}\", [{string.Join(", ", collected.Reserved.Select(r => $"\"{r}\""))}])";
+        foreach (var (key, value) in collected.Items)
+            builder += key is null ? $".Spread({Expr(value)})" : $".Add(\"{key}\", {Expr(value)})";
+        return $"{builder}.Dict";
+    }
 }

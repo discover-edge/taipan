@@ -53,3 +53,10 @@ def square(n: int) -> int:
 
 def report(message: str):
     print(f"report: {message}")
+
+# Parameter kinds (SPEC §4.2, §17.3, M30).
+def resize(w: float, /, *, by: float = 1.0, round: bool) -> float:
+    return w * by
+
+def stack(*heights: int, **labels: str) -> str:
+    return f"{heights} {labels}"

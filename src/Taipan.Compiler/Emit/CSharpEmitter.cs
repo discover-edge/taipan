@@ -378,7 +378,11 @@ public sealed partial class CSharpEmitter
         var owner = symbol.Owner;
         _self = symbol.Self ?? (owner is null ? null : NoSelf);
         _cls = symbol.Cls;
-        var parameters = string.Join(", ", function.Parameters.Select(p => $"{TypeName(p.Type)} @{_locals[p]}"));
+        // In a library, a method's *args is params when it's last, and its **kwargs may be null (SPEC §14.2).
+        var library = _library is not null && owner is not null;
+        var last = function.Parameters.Length - 1;
+        var parameters = string.Join(", ", function.Parameters.Select((p, i) =>
+            $"{(library && i == last && symbol.Kinds[i] == ParamKind.VarArgs ? "params " : "")}{TypeName(p.Type)}{(library && symbol.Kinds[i] == ParamKind.VarKeywords ? "?" : "")} @{_locals[p]}"));
         var isInit = owner is not null && symbol == owner.Init;
         // Methods dispatch on the runtime class (SPEC §4.3); each class's __init__ is its own.
         var modifier = owner is null ? "static "
@@ -404,6 +408,11 @@ public sealed partial class CSharpEmitter
         _indent++;
         EmitTracked(function.Span, () =>
         {
+            if (library)
+            {
+                foreach (var keywords in function.Parameters.Where((_, i) => symbol.Kinds[i] == ParamKind.VarKeywords))
+                    Line($"@{_locals[keywords]} ??= new();");
+            }
             if (isInit)
                 EmitFieldDefaults(owner!);
             EmitStatements(function.Body.Statements);
@@ -1275,6 +1284,18 @@ public sealed partial class CSharpEmitter
     {
         if (_hoisted.TryGetValue(expr, out var temporary))
             return temporary;
+        // Arguments collected out of order, or unpacked from a tuple, are evaluated first (M30).
+        if (ShapeOf(expr) is { Sources.IsEmpty: false } shape && _withSources.Add(expr))
+        {
+            try
+            {
+                return CallWithSources(expr, shape);
+            }
+            finally
+            {
+                _withSources.Remove(expr);
+            }
+        }
 
         return expr switch
         {
@@ -1326,6 +1347,8 @@ public sealed partial class CSharpEmitter
             BoundSort sort => Sort(sort),
             BoundTupleLiteral tuple => NewTuple(((TupleOfType)Concrete(tuple.Type)).Elements, [.. tuple.Elements.Select(Expr)]),
             BoundTupleElement element => $"{Operand(element.Tuple)}.Item{element.Index + 1}",
+            BoundCollectedArguments collected => CollectedArguments(collected),
+            BoundCollectedKeywords collected => CollectedKeywords(collected),
             BoundListElement { Index: >= 0 } element => $"{Operand(element.List)}[{element.Index}]",
             BoundListElement element => $"{Operand(element.List)}[{Operand(element.List)}.Count - {-element.Index}]",
             BoundListRest rest => $"{Runtime}.Ops.UnpackRest({Expr(rest.List)}, {rest.Start}, {rest.After})",

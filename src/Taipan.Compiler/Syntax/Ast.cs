@@ -36,8 +36,17 @@ public sealed record FuncDef(
 /// <summary><c>@name</c>, or <c>@name.member</c> for a property's setter (SPEC §4.8, M28).</summary>
 public sealed record Decorator(Identifier Name, Identifier? Member, TextSpan Span) : Node(Span);
 
-/// <summary>A parameter; <see cref="Default"/> is its default value, if any (SPEC §4.2, M14).</summary>
-public sealed record Param(Identifier Name, TypeSyntax Type, Expr? Default, TextSpan Span) : Node(Span);
+/// <summary>How a parameter takes its argument (SPEC §4.2, M30).</summary>
+public enum ParamKind { Normal, PositionalOnly, KeywordOnly, VarArgs, VarKeywords }
+
+/// <summary>
+/// A parameter; <see cref="Default"/> is its default value, if any (SPEC §4.2, M14). For
+/// <c>*args: T</c> and <c>**kwargs: T</c>, <see cref="Type"/> is the element type <c>T</c> (M30).
+/// </summary>
+public sealed record Param(Identifier Name, TypeSyntax Type, Expr? Default, TextSpan Span) : Node(Span)
+{
+    public ParamKind Kind { get; init; }
+}
 
 /// <summary>A class (SPEC §4.3, M15). <see cref="Bases"/> has at most one entry once it type-checks.</summary>
 public sealed record ClassDef(
@@ -282,7 +291,13 @@ public sealed record BinaryExpr(Expr Left, BinaryOp Op, Expr Right, TextSpan Spa
 public sealed record CallExpr(Expr Callee, ImmutableArray<Argument> Arguments, TextSpan Span) : Expr(Span);
 
 /// <summary><see cref="Name"/> is set for a keyword argument.</summary>
-public sealed record Argument(Identifier? Name, Expr Value, TextSpan Span) : Node(Span);
+public sealed record Argument(Identifier? Name, Expr Value, TextSpan Span) : Node(Span)
+{
+    /// <summary><c>*e</c> or <c>**e</c> (M30): unpacked into arguments.</summary>
+    public ArgumentUnpack Unpack { get; init; }
+}
+
+public enum ArgumentUnpack { None, Positional, Keyword }
 
 public sealed record MemberExpr(Expr Target, Identifier Member, TextSpan Span) : Expr(Span);
 
@@ -316,3 +331,6 @@ public sealed record ValueArm(Pattern Pattern, Expr? Value, RaiseStmt? Raise, Te
 public sealed record StarredExpr(Expr Value, TextSpan Span) : Expr(Span);
 
 public sealed record ErrorExpr(TextSpan Span) : Expr(Span);
+
+/// <summary>An argument the binder has already bound, such as an element of a tuple unpacked into a call (M30).</summary>
+public sealed record PreboundExpr(Semantics.BoundExpr Bound, TextSpan Span) : Expr(Span);

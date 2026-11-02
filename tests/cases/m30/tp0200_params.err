@@ -1,0 +1,10 @@
+tests/cases/m30/tp0200_params.tpn:8:14: error TP0200: expected str, found int
+tests/cases/m30/tp0200_params.tpn:9:11: error TP0200: expected int, found str
+tests/cases/m30/tp0200_params.tpn:10:10: error TP0200: expected list[str], found list[int]
+tests/cases/m30/tp0200_params.tpn:11:11: error TP0200: expected dict[str, int], found dict[str, str]
+tests/cases/m30/tp0200_params.tpn:12:10: error TP0200: cannot unpack int into arguments
+tests/cases/m30/tp0200_params.tpn:13:11: error TP0200: cannot unpack dict[int, int] into arguments
+tests/cases/m30/tp0200_params.tpn:14:9: error TP0200: 'f' has '*args' or '**kwargs', so it cannot be used as a value
+  help: wrap it in a lambda
+tests/cases/m30/tp0200_params.tpn:15:13: error TP0200: 'g' has '*args' or '**kwargs', so it cannot be used as a value
+  help: wrap it in a lambda

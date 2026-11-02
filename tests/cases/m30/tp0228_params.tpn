@@ -1,0 +1,16 @@
+# An override keeps the base method's parameter kinds (SPEC §4.3).
+class Base:
+    def run(self, x: int, *, fast: bool) -> int:
+        return x
+
+    def log(self, *parts: str):
+        pass
+
+class Derived(Base):
+    @override
+    def run(self, x: int, fast: bool) -> int:
+        return x
+
+    @override
+    def log(self, parts: list[str]):
+        pass

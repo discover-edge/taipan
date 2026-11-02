@@ -88,6 +88,9 @@ public sealed class DiagnosticBag
     public void ReportMixedArguments(TextSpan span) =>
         Add("TP0100", span, "positional argument follows keyword argument");
 
+    public void ReportParameterOrder(TextSpan span, string message) =>
+        Add("TP0100", span, message);
+
     public void ReportRequiredAfterDefault(TextSpan span) =>
         Add("TP0100", span, "parameter without a default follows parameter with a default");
 
@@ -768,6 +771,29 @@ public sealed class DiagnosticBag
         var list = items.ToList();
         return list.Count <= 1 ? string.Concat(list) : $"{string.Join(", ", list[..^1])} and {list[^1]}";
     }
+
+    // ---- Parameters (SPEC §4.2, M30) ----
+
+    public void ReportPositionalOnlyByKeyword(TextSpan span, string parameter) =>
+        Add("TP0218", span, $"'{parameter}' is positional-only, so it can't be passed by keyword");
+
+    public void ReportMissingKeywordOnly(TextSpan span, string parameter) =>
+        Add("TP0209", span, $"missing keyword-only argument '{parameter}'");
+
+    public void ReportListOnlyFillsArgs(TextSpan span, string unpacked, string args) =>
+        Add("TP0209", span, $"'*{unpacked}' can only fill '*{args}'");
+
+    public void ReportNoVarArgs(TextSpan span, string function, string unpacked, bool keywords) =>
+        Add("TP0209", span, keywords ? $"'{function}' has no '**kwargs' for '**{unpacked}'" : $"'{function}' has no '*args' for '*{unpacked}'");
+
+    public void ReportKeywordsCantFill(TextSpan span, string unpacked, string parameter) =>
+        Add("TP0209", span, $"'**{unpacked}' can't fill '{parameter}'");
+
+    public void ReportCannotUnpackArguments(TextSpan span, object type) =>
+        Add("TP0200", span, $"cannot unpack {type} into arguments");
+
+    public void ReportVariadicAsValue(TextSpan span, string function) =>
+        Add("TP0200", span, $"'{function}' has '*args' or '**kwargs', so it cannot be used as a value", "wrap it in a lambda");
 
     // ---- Destructuring (SPEC §3.8, §5.1, M29) ----
 

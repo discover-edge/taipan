@@ -385,6 +385,30 @@ public class ParserTests
             "ReturnStmt(MatchExpr(NameExpr(n), [ValueArm(IntPattern(0), IntLiteral(0), null)]))]))",
             Snapshot("def f():\n    x += match n:\n        _: 1\n    a, b = match n:\n        _: t\n    return match n:\n        0: 0\n"));
 
+    // ---- Parameter kinds and unpacked arguments (M30) ----
+
+    [Fact]
+    public void ParameterKinds() =>
+        Assert.Equal(
+            "FuncDef(f, [], [Param(a, NamedType(int), null, PositionalOnly), Param(b, NamedType(int)), Param(rest, NamedType(str), null, VarArgs), " +
+            "Param(c, NamedType(int), IntLiteral(1), KeywordOnly), Param(kw, NamedType(int), null, VarKeywords)], null, Block([PassStmt]))",
+            Snapshot("def f(a: int, /, b: int, *rest: str, c: int = 1, **kw: int):\n    pass\n"));
+
+    [Fact]
+    public void UnpackedArguments() =>
+        Assert.Equal(
+            "ExprStmt(CallExpr(NameExpr(f), [Argument(null, NameExpr(a)), Argument(null, NameExpr(xs), Positional), " +
+            "Argument(k, IntLiteral(1)), Argument(null, NameExpr(d), Keyword)]))",
+            Snapshot("f(a, *xs, k=1, **d)\n"));
+
+    [Theory]
+    [InlineData("def f(/, x: int):\n    pass\n", "1:7 TP0100: '/' must follow a parameter")]
+    [InlineData("def f(x: int, *):\n    pass\n", "1:15 TP0100: named arguments must follow bare '*'")]
+    [InlineData("def f(**k: int, x: int):\n    pass\n", "1:17 TP0100: nothing can follow '**' parameters")]
+    [InlineData("f(**d, *xs)\n", "1:8 TP0100: positional argument follows keyword argument")]
+    public void ParameterKindErrors(string text, string expected) =>
+        Assert.Equal([expected], Errors(text));
+
     // Since M29 a match expression is an atom, whose colon ends its line (SPEC §2).
     [Fact]
     public void MatchExpressionColonEndsItsLine() =>

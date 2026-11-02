@@ -103,10 +103,8 @@ public sealed partial class Binder
     private BoundExpr BindStaticCall(CallExpr call, MemberExpr member, ClassSymbol through, BoundExpr? instance, bool viaCls, FunctionSymbol method)
     {
         Index(member.Member.Span, method);
-        if (MatchArguments(call, method, method.Name, member.Member.Span) is not { } shape)
-            return new BoundClassMethodCall(through, instance, viaCls, method, BindArguments(call), method.ReturnType, call.Span);
-        var arguments = call.Arguments.Select((a, i) => BindExpected(a.Value, method.Parameters[shape.Parameters[i]].Type)).ToImmutableArray();
-        return new BoundClassMethodCall(through, instance, viaCls, method, arguments, method.ReturnType, call.Span) { Shape = Simplify(shape) };
+        var (arguments, shape, _, valid) = BindCallArguments(call, method, method.Name, member.Member.Span, [], t => t, method.ReturnType, null);
+        return new BoundClassMethodCall(through, instance, viaCls, method, arguments, method.ReturnType, call.Span) { Shape = valid ? shape : null };
     }
 
     /// <summary>

@@ -25,7 +25,7 @@ public static class AstPrinter
         TypeParam { Constraints.IsEmpty: true, Bound: null } parameter => parameter.Name.Text,
         TypeParam { Bound: null } parameter => $"TypeParam({parameter.Name.Text}, {Print(parameter.Constraints)})",
         TypeParam parameter => $"TypeParam({parameter.Name.Text}, {Print(parameter.Bound)})",
-        Param { Default: null } parameter => $"Param({parameter.Name.Text}, {Print(parameter.Type)})",
+        Param { Default: null, Kind: ParamKind.Normal } parameter => $"Param({parameter.Name.Text}, {Print(parameter.Type)})",
         FieldDef { Default: null } field => $"FieldDef({field.Name.Text}, {Print(field.Type)})",
         // A bare name prints as itself, as before patterns nested (M29).
         PatternBinding { Field: null, Pattern: VariantPattern { Module: null, Enum: null, Bindings: null } bare } => bare.Variant.Text,
@@ -51,6 +51,8 @@ public static class AstPrinter
             .Where(p => !(p.Name == "Member" && node is Decorator { Member: null }))
             .Where(p => !(p.Name == "Receiver" && node is MethodDef { Receiver: Receiver.Self }))
             .Where(p => !(p.Name == "Block" && node is ValueArm { Block: null }))
+            .Where(p => !(p.Name == "Unpack" && node is Argument { Unpack: ArgumentUnpack.None }))
+            .Where(p => !(p.Name == "Kind" && node is Param { Kind: ParamKind.Normal }))
             .Select(p => Print(p.GetValue(node)))
             .ToList();
         return children.Count == 0 ? type.Name : $"{type.Name}({string.Join(", ", children)})";

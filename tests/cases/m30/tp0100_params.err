@@ -1,0 +1,6 @@
+tests/cases/m30/tp0100_params.tpn:2:7: error TP0100: '/' must follow a parameter
+tests/cases/m30/tp0100_params.tpn:5:26: error TP0100: '/' must come before '*'
+tests/cases/m30/tp0100_params.tpn:8:15: error TP0100: named arguments must follow bare '*'
+tests/cases/m30/tp0100_params.tpn:11:18: error TP0100: nothing can follow '**' parameters
+tests/cases/m30/tp0100_params.tpn:14:20: error TP0100: '*' parameters can't have a default
+tests/cases/m30/tp0100_params.tpn:17:16: error TP0100: '*' may appear only once

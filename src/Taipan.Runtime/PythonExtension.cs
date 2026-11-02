@@ -134,22 +134,36 @@ public static unsafe class PythonExtension
     // ---- Arguments (SPEC §17.3) ----
 
     /// <summary>
-    /// Binds a call's positional and keyword arguments to the parameters, as Python binds them:
-    /// a borrowed reference for each parameter, or 0 for one left out (which has a default).
+    /// Binds a call's positional and keyword arguments to the parameters, as Python binds them (SPEC
+    /// §17.3, §4.2): a borrowed reference for each parameter, or 0 for one left out (which has a
+    /// default) and for <c>*args</c> and <c>**kwargs</c>, whose arguments are returned separately.
+    /// <paramref name="kinds"/> holds each parameter's kind: 0 ordinary, 1 positional-only,
+    /// 2 keyword-only, 3 <c>*args</c>, 4 <c>**kwargs</c> (M30).
     /// </summary>
-    public static nint[] Arguments(nint args, nint kwargs, string function, string[] parameters, int required)
+    public static nint[] Arguments(nint args, nint kwargs, string function, string[] parameters, int[] kinds, bool[] hasDefault,
+        out List<nint> extra, out List<(string Key, nint Value)> extraKeywords)
     {
         var bound = new nint[parameters.Length];
-        var positional = (int)TupleSize(args);
-        if (positional > parameters.Length)
+        (extra, extraKeywords) = ([], []);
+        var positional = Enumerable.Range(0, parameters.Length).Where(i => kinds[i] is 0 or 1).ToList();
+        var (varArgs, varKeywords) = (Array.IndexOf(kinds, 3), Array.IndexOf(kinds, 4));
+        var given = (int)TupleSize(args);
+        if (given > positional.Count && varArgs < 0)
         {
-            var takes = required == parameters.Length
-                ? $"{parameters.Length} positional argument{(parameters.Length == 1 ? "" : "s")}"
-                : $"from {required} to {parameters.Length} positional arguments";
-            throw TypeError($"{function}() takes {takes} but {positional} {(positional == 1 ? "was" : "were")} given");
+            var required = positional.Count(i => !hasDefault[i]);
+            var takes = required == positional.Count
+                ? $"{positional.Count} positional argument{(positional.Count == 1 ? "" : "s")}"
+                : $"from {required} to {positional.Count} positional arguments";
+            throw TypeError($"{function}() takes {takes} but {given} {(given == 1 ? "was" : "were")} given");
         }
-        for (var i = 0; i < positional; i++)
-            bound[i] = TupleGetItem(args, i);
+        for (var i = 0; i < given; i++)
+        {
+            if (i < positional.Count)
+                bound[positional[i]] = TupleGetItem(args, i);
+            else
+                extra.Add(TupleGetItem(args, i));
+        }
+        var positionalOnly = new List<string>();
         if (kwargs != 0)
         {
             nint position = 0, key, value;
@@ -157,19 +171,45 @@ public static unsafe class PythonExtension
             {
                 var name = Str(key);
                 var index = Array.IndexOf(parameters, name);
-                if (index < 0)
+                if (index >= 0 && kinds[index] is 0 or 2)
+                {
+                    if (bound[index] != 0)
+                        throw TypeError($"{function}() got multiple values for argument '{name}'");
+                    bound[index] = value;
+                }
+                else if (varKeywords >= 0)
+                {
+                    extraKeywords.Add((name, value));
+                }
+                else if (index >= 0 && kinds[index] == 1)
+                {
+                    positionalOnly.Add(name);
+                }
+                else
+                {
                     throw TypeError($"{function}() got an unexpected keyword argument '{name}'");
-                if (bound[index] != 0)
-                    throw TypeError($"{function}() got multiple values for argument '{name}'");
-                bound[index] = value;
+                }
             }
         }
-        for (var i = 0; i < required; i++)
+        if (positionalOnly.Count > 0)
+            throw TypeError($"{function}() got some positional-only arguments passed as keyword arguments: '{string.Join(", ", positionalOnly)}'");
+        for (var i = 0; i < parameters.Length; i++)
         {
-            if (bound[i] == 0)
+            if (bound[i] == 0 && !hasDefault[i] && kinds[i] is 0 or 1)
                 throw TypeError($"{function}() missing required argument '{parameters[i]}'");
+            if (bound[i] == 0 && !hasDefault[i] && kinds[i] == 2)
+                throw TypeError($"{function}() missing required keyword-only argument '{parameters[i]}'");
         }
         return bound;
+    }
+
+    /// <summary>A <c>**kwargs</c> parameter's dict, from the keywords no other parameter took, in order.</summary>
+    public static OrderedDictionary<string, T> Keywords<T>(List<(string Key, nint Value)> keywords, Func<nint, T> convert)
+    {
+        var dict = new OrderedDictionary<string, T>();
+        foreach (var (key, value) in keywords)
+            dict[key] = convert(value);
+        return dict;
     }
 
     /// <summary>One argument converted to its parameter's Taipan type, or a <c>TypeError</c> naming both types.</summary>
