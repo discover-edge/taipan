@@ -1,0 +1,18 @@
+# Format specs are checked against the hole's type (SPEC §6).
+let name = "taipan"
+let n = 42
+let x = 1.5
+let ok = True
+let maybe: int? = None
+let xs = [1, 2]
+print(f"{name:.2f}")
+print(f"{name:+}")
+print(f"{name:=10}")
+print(f"{n:.3d}")
+print(f"{n:,x}")
+print(f"{x:d}")
+print(f"{n:s}")
+print(f"{ok:>5}")
+print(f"{maybe:5}")
+print(f"{xs:>10}")
+print(f"{n!r:.2f}")

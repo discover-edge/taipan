@@ -57,6 +57,22 @@ public sealed class DiagnosticBag
     public void ReportNestedFString(TextSpan span) =>
         Add("TP0006", span, "f-strings cannot be nested");
 
+    public void ReportLambdaDefault(TextSpan span) =>
+        Add("TP0100", span, "lambda parameters can't have defaults",
+            "each loop iteration has its own variable, so 'lambda: i' already sees this iteration's value");
+
+    public void ReportInvalidDeleteTarget(TextSpan span) =>
+        Add("TP0100", span, "cannot delete this expression");
+
+    public void ReportInvalidConversion(TextSpan span, string conversion) =>
+        Add("TP0006", span, $"invalid conversion '!{conversion}'", "use '!r' or '!s'");
+
+    public void ReportNestedFormatSpec(TextSpan span) =>
+        Add("TP0006", span, "format specs can't be nested");
+
+    public void ReportInvalidFormatSpec(TextSpan span, string spec) =>
+        Add("TP0006", span, $"invalid format spec '{spec}'");
+
     public void ReportInvalidNumber(TextSpan span) =>
         Add("TP0007", span, "invalid number literal");
 
@@ -380,6 +396,18 @@ public sealed class DiagnosticBag
         Add("TP0200", span, $"dict keys must be int, str, bool, tuples of those, or plain class instances, found {type}",
             isDataclass ? "a dataclass compares by value, so it cannot be a key" : null);
 
+    public void ReportCompoundSliceAssign(TextSpan span, string op) =>
+        Add("TP0202", span, $"cannot use '{op}' on a slice");
+
+    public void ReportCannotDeleteName(TextSpan span, string name) =>
+        Add("TP0202", span, $"cannot delete '{name}'", "assign it a new value instead");
+
+    public void ReportCannotDeleteField(TextSpan span) =>
+        Add("TP0202", span, "cannot delete a field");
+
+    public void ReportCannotDeleteElement(TextSpan span, object type) =>
+        Add("TP0202", span, $"cannot delete an element of {type}");
+
     public void ReportCannotAssignStrElement(TextSpan span) =>
         Add("TP0202", span, "cannot assign to an element of str");
 
@@ -603,6 +631,12 @@ public sealed class DiagnosticBag
 
     public void ReportMixedExceptionBinding(TextSpan span) =>
         Add("TP0200", span, "cannot bind both Taipan and .NET exceptions", "write separate clauses");
+
+    public void ReportFormatSpecNotValid(TextSpan span, string spec, object type, string help) =>
+        Add("TP0200", span, $"format spec '{spec}' isn't valid for {type}", help);
+
+    public void ReportFormatSpecType(TextSpan span, object type, string help) =>
+        Add("TP0200", span, $"format specs apply to int, float and str, found {type}", help);
 
     public void ReportCannotConstruct(TextSpan span, string name) =>
         Add("TP0200", span, $"'{name}' cannot be constructed");

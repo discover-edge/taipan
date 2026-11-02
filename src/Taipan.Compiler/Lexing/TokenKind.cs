@@ -47,6 +47,7 @@ public enum TokenKind
     ExceptKeyword,
     FinallyKeyword,
     RaiseKeyword,
+    DelKeyword,
 
     // Operators and punctuation
     Plus,

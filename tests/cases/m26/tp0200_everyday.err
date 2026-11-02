@@ -1,0 +1,2 @@
+tests/cases/m26/tp0200_everyday.tpn:9:25: error TP0200: A can never be a B
+tests/cases/m26/tp0200_everyday.tpn:10:7: error TP0209: 'zip' takes 2 or more arguments, found 1

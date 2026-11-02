@@ -205,6 +205,30 @@ public class LexerTests
         Assert.Equal(["d[\"k\"]", "g({'a': 1})", "'}'"], holes);
     }
 
+    [Theory]
+    [InlineData("f\"{x}\"", "x", null, null, null)]
+    [InlineData("f\"{x=}\"", "x", "x=", null, null)]
+    [InlineData("f\"{ x = }\"", " x", " x = ", null, null)]
+    [InlineData("f\"{x!r}\"", "x", null, 'r', null)]
+    [InlineData("f\"{x:>8.2f}\"", "x", null, null, ">8.2f")]
+    [InlineData("f\"{x=!s:^5}\"", "x", "x=", 's', "^5")]
+    [InlineData("f\"{x:}\"", "x", null, null, "")]
+    [InlineData("f\"{a != b}\"", "a != b", null, null, null)]
+    [InlineData("f\"{a == b}\"", "a == b", null, null, null)]
+    [InlineData("f\"{a <= b=}\"", "a <= b", "a <= b=", null, null)]
+    [InlineData("f\"{xs[1:2]:>4}\"", "xs[1:2]", null, null, ">4")]
+    [InlineData("f\"{d[\"a:b\"]!r}\"", "d[\"a:b\"]", null, 'r', null)]
+    public void FStringHoleParts(string text, string expression, string? debug, char? conversion, string? spec)
+    {
+        var lexed = Lexer.Lex(SourceText.From(text));
+        Assert.Empty(lexed.Diagnostics);
+        var hole = Assert.Single(lexed.Tokens[0].Parts.OfType<FStringHole>());
+        Assert.Equal(expression, text.Substring(hole.Span.Start, hole.Span.Length));
+        Assert.Equal(debug, hole.DebugText);
+        Assert.Equal(conversion, hole.Conversion);
+        Assert.Equal(spec, hole.Spec);
+    }
+
     [Fact]
     public void SingleQuotedFString() =>
         Assert.Equal("FString(f'{x}') Newline EndOfFile", Dump("f'{x}'"));

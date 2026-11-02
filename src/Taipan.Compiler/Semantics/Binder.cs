@@ -1645,6 +1645,7 @@ public sealed partial class Binder
         ForStmt forStmt => BindFor(forStmt),
         MatchStmt match => BindMatch(match),
         RaiseStmt raise => BindRaise(raise),
+        DelStmt delete => BindDelete(delete),
         TryStmt tryStmt => BindTry(tryStmt),
         FuncDefStmt funcDef => BindLocalFunction(funcDef),
         UnpackStmt unpack => BindUnpack(unpack),
@@ -2162,6 +2163,7 @@ public sealed partial class Binder
     {
         MemberExpr member => BindFieldAssign(assign, member, value),
         IndexExpr index => BindIndexAssign(assign, index, value),
+        SliceExpr slice => BindSliceAssign(assign, slice, value),
         NameExpr name => BindVariableAssign(assign, name, value),
         _ => throw new InvalidOperationException($"unexpected assignment target {assign.Target.GetType().Name}"),
     };
@@ -3039,13 +3041,64 @@ public sealed partial class Binder
 
     private BoundFString BindFString(FStringExpr fstring)
     {
-        var parts = fstring.Segments.Select(segment => segment switch
+        var parts = ImmutableArray.CreateBuilder<BoundExpr>();
+        foreach (var segment in fstring.Segments)
         {
-            FStringTextSegment text => new BoundLiteral(text.Value, TaipanType.Str, text.Span),
-            FStringHoleSegment hole => BindValue(hole.Expr),
-            _ => throw new InvalidOperationException($"unexpected f-string segment {segment.GetType().Name}"),
-        }).ToImmutableArray();
-        return new BoundFString(parts, fstring.Span);
+            switch (segment)
+            {
+                case FStringTextSegment text:
+                    parts.Add(new BoundLiteral(text.Value, TaipanType.Str, text.Span));
+                    break;
+                case FStringHoleSegment hole:
+                    // `{x=}` writes the text as written, then the value as `!r` would, unless the
+                    // hole converts or formats it itself (SPEC §6).
+                    if (hole.DebugText is { } debugText)
+                        parts.Add(new BoundLiteral(debugText, TaipanType.Str, hole.Span));
+                    var conversion = hole.Conversion ?? (hole.DebugText is not null && hole.Spec is null ? 'r' : null);
+                    parts.Add(BindHole(hole, BindValue(hole.Expr), conversion));
+                    break;
+            }
+        }
+        return new BoundFString(parts.ToImmutable(), fstring.Span);
+    }
+
+    /// <summary>A hole's value, converted and formatted as its spec says, which is checked against the value's type (SPEC §6).</summary>
+    private BoundExpr BindHole(FStringHoleSegment hole, BoundExpr value, char? conversion)
+    {
+        if (conversion is null && hole.Spec is null)
+            return value;
+        // A spec the lexer rejected (TP0006) isn't checked again.
+        if (hole.Spec is not { } specText || Taipan.Runtime.FormatSpec.Parse(specText) is not { } spec)
+            return new BoundFormat(value, conversion, null, null, hole.Span);
+        if (value.Type.ContainsError)
+            return new BoundFormat(value, conversion, null, null, hole.Span);
+
+        // After a conversion, the value is a str.
+        var formatted = conversion is null ? value.Type : TaipanType.Str;
+        Taipan.Runtime.FormatKind? kind = formatted switch
+        {
+            PrimitiveType { Name: "int" } => Taipan.Runtime.FormatKind.Int,
+            PrimitiveType { Name: "float" } => Taipan.Runtime.FormatKind.Float,
+            PrimitiveType { Name: "str" } => Taipan.Runtime.FormatKind.Str,
+            _ => null,
+        };
+        var span = hole.SpecSpan.Length == 0 ? hole.Span : hole.SpecSpan;
+        if (kind is not { } formatKind)
+        {
+            var help = formatted switch
+            {
+                OptionalOf => "narrow the optional first",
+                PrimitiveType { Name: "bool" } => "convert it with str() or int() first",
+                PrimitiveType { Name: "py" } => "convert it with 'as' first",
+                _ => "convert it with str() first",
+            };
+            _diagnostics.ReportFormatSpecType(span, formatted, help);
+        }
+        else if (spec.Problem(formatKind) is { } problem)
+        {
+            _diagnostics.ReportFormatSpecNotValid(span, specText, formatted, problem);
+        }
+        return new BoundFormat(value, conversion, spec, specText, hole.Span);
     }
 
     private BoundExpr BindName(NameExpr name, TaipanType? expected) =>
@@ -4009,6 +4062,17 @@ public sealed partial class Binder
             _diagnostics.ReportIsInstanceNeedsClass(call.Arguments[0].Value.Span, operand.Type);
             operand = new BoundErrorExpr(operand.Span);
         }
+        // A tuple of classes tests any of them, and narrows to their nearest common base (SPEC §6, M26).
+        if (call.Arguments[1].Value is TupleExpr tuple)
+        {
+            var classes = tuple.Elements.Select(e => ResolveClass(e, TypeChecker.Unwrap(operand.Type))).ToList();
+            if (classes.Any(c => c is null) || operand.Type.ContainsError)
+                return new BoundErrorExpr(call.Span);
+            var tested = classes.Select(c => c!).ToImmutableArray();
+            var common = tested.Select(c => c.Symbol).Aggregate((a, b) => a.CommonBase(b) ?? a);
+            var narrowed = tested.All(c => c.Symbol.DerivesFrom(common)) ? common.Type : operandClass!;
+            return new BoundIsInstance(operand, (ClassType)narrowed, call.Span) { Tested = tested };
+        }
         var target = ResolveClass(call.Arguments[1].Value, TypeChecker.Unwrap(operand.Type));
         return target is null || operand.Type.ContainsError
             ? new BoundErrorExpr(call.Span)
@@ -4519,12 +4583,13 @@ public sealed partial class Binder
         return new BoundCall(function, start is null ? [items] : [items, start], type, call.Span);
     }
 
-    // zip(xs, ys): a list of pairs, as long as the shorter list (SPEC §6).
+    // zip(xs, ys, …): a list of tuples, as long as the shortest list (SPEC §6). Two or more lists
+    // since M26; one would need a one-element tuple.
     private BoundExpr BindZip(CallExpr call, FunctionSymbol function)
     {
-        if (call.Arguments.Length != 2)
+        if (call.Arguments.Length < 2)
         {
-            _diagnostics.ReportWrongArgumentCount(call.Callee.Span, function.Name, Arguments(2), call.Arguments.Length);
+            _diagnostics.ReportWrongArgumentCount(call.Callee.Span, function.Name, "2 or more arguments", call.Arguments.Length);
             BindArguments(call);
             return new BoundErrorExpr(call.Span);
         }

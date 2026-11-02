@@ -704,6 +704,15 @@ public sealed partial class CSharpEmitter
                 EmitCompound(assign.IsCompound, [assign.Target, assign.Index],
                     () => Line($"{Interop}.SetItem({Expr(assign.Target)}, {Expr(assign.Index)}, {Expr(assign.Value)});"));
                 break;
+            case BoundSliceAssign assign:
+                LineDirective(assign.Span);
+                Line($"{SliceOwner(assign.Slice)}.SetSlice({Expr(assign.Slice.Target)}, {SliceParts(assign.Slice)}, {Expr(assign.Value)});");
+                break;
+            case BoundDelete delete:
+                LineDirective(delete.Span);
+                foreach (var target in delete.Targets)
+                    Line($"{Deletion(target)};");
+                break;
             case BoundReturn ret:
                 LineDirective(ret.Span);
                 Line(ret.Value is null ? "return;" : $"return {Expr(ret.Value)};");
@@ -1005,12 +1014,22 @@ public sealed partial class CSharpEmitter
         return $"new global::System.ValueTuple<{string.Join(", ", names.Take(7))}, {(types.Length == 8 ? $"global::System.ValueTuple<{names[7]}>" : rest)}>({string.Join(", ", values.Take(7))}, {restValue})";
     }
 
-    private string Slice(BoundSlice slice)
+    private string Slice(BoundSlice slice) => $"{SliceOwner(slice)}.Slice({Expr(slice.Target)}, {SliceParts(slice)})";
+
+    // A slice's start, stop and step, with null for an omitted part (SPEC §8).
+    private string SliceParts(BoundSlice slice) =>
+        string.Join(", ", ((BoundExpr?[])[slice.Start, slice.Stop, slice.Step]).Select(p => p is null ? "null" : Expr(p)));
+
+    private string SliceOwner(BoundSlice slice) => Concrete(slice.Target.Type) == TaipanType.Py ? Interop : $"{Runtime}.Ops";
+
+    // `del` of one target, as bound for reading it (SPEC §5.5).
+    private string Deletion(BoundExpr target) => target switch
     {
-        var parts = string.Join(", ", ((BoundExpr?[])[slice.Start, slice.Stop, slice.Step]).Select(p => p is null ? "null" : Expr(p)));
-        var owner = Concrete(slice.Target.Type) == TaipanType.Py ? Interop : $"{Runtime}.Ops";
-        return $"{owner}.Slice({Expr(slice.Target)}, {parts})";
-    }
+        BoundIndex index => $"{Runtime}.Ops.DelItem({Expr(index.Target)}, {Expr(index.Index)})",
+        BoundPyGetItem item => $"{Interop}.DelItem({Expr(item.Target)}, {Expr(item.Index)})",
+        BoundSlice slice => $"{SliceOwner(slice)}.DelSlice({Expr(slice.Target)}, {SliceParts(slice)})",
+        _ => throw new InvalidOperationException($"cannot delete {target.GetType().Name}"),
+    };
 
     // sorted(xs, …) and xs.sort(…): key and reverse are C# named arguments, kept in source order.
     // Classes sort by their __lt__, passed as `less` (SPEC §3.11).
@@ -1129,6 +1148,7 @@ public sealed partial class CSharpEmitter
             BoundBinary binary => Binary(binary),
             BoundCall call => Call(call),
             BoundFString fstring => FString(fstring),
+            BoundFormat format => Format(format),
             BoundListLiteral list => ListLiteral(list),
             BoundDictLiteral dict => DictLiteral(dict),
             BoundConstruct construct => Construct(construct),
@@ -1147,7 +1167,7 @@ public sealed partial class CSharpEmitter
             BoundIsNone isNone => $"{Operand(isNone.Operand)} is {(isNone.Negated ? "not " : "")}null",
             BoundNew construct => New(construct),
             BoundSuperCall call => SuperCall(call),
-            BoundIsInstance isInstance => $"{Operand(isInstance.Operand)} is {TypeName(isInstance.Class)}",
+            BoundIsInstance isInstance => $"{Operand(isInstance.Operand)} is {string.Join(" or ", isInstance.Tested.Select(TypeName))}",
             BoundNarrowed narrowed => Narrowed(narrowed),
             BoundClassCast cast => ClassCast(cast),
             BoundConvertFunction convert => ConvertFunction(convert),
@@ -1403,9 +1423,19 @@ public sealed partial class CSharpEmitter
             BuiltinFunction.Map => $"{Runtime}.Ops.Map({arguments})",
             BuiltinFunction.Filter => $"{Runtime}.Ops.Filter({arguments})",
             BuiltinFunction.Enumerate => $"{Runtime}.Ops.Enumerate({arguments})",
-            BuiltinFunction.Zip => $"{Runtime}.Ops.Zip({arguments})",
+            BuiltinFunction.Zip when call.Arguments.Length == 2 => $"{Runtime}.Ops.Zip({arguments})",
+            BuiltinFunction.Zip => ZipRows(call, arguments),
             _ => throw new InvalidOperationException($"unexpected builtin {call.Function.Builtin}"),
         };
+    }
+
+    // zip of three or more lists: the runtime's untyped rows, each made into the result's tuple (SPEC §6).
+    private string ZipRows(BoundCall call, string arguments)
+    {
+        var elements = ((TupleOfType)((ListOfType)Concrete(call.Type)).Element).Elements;
+        var row = $"@{_locals.Fresh("row")}";
+        var tuple = NewTuple(elements, [.. elements.Select((e, i) => $"({TypeName(e)}){row}[{i}]!")]);
+        return $"{Runtime}.Ops.Zip({arguments}).ConvertAll(static {row} => {tuple})";
     }
 
     private string BuiltinMethodCall(BoundBuiltinMethodCall call)
@@ -1543,10 +1573,24 @@ public sealed partial class CSharpEmitter
         {
             if (part is BoundLiteral { Value: string literal })
                 text.Append(Escape(literal).Replace("{", "{{").Replace("}", "}}"));
+            else if (part is BoundFormat format)
+                text.Append($"{{({Format(format)})}}");
             else
                 text.Append($"{{({Runtime}.Display.Format({Expr(part)}))}}");
         }
         return text.Append('"').ToString();
+    }
+
+    // A hole's conversion (!r is the form inside a list, !s the display form), then its format spec (SPEC §6).
+    private string Format(BoundFormat format)
+    {
+        var value = format.Conversion switch
+        {
+            'r' => $"{Runtime}.Display.Repr({Expr(format.Value)})",
+            's' => $"{Runtime}.Display.Format({Expr(format.Value)})",
+            _ => Expr(format.Value),
+        };
+        return format.SpecText is { } spec ? $"{Runtime}.Display.Format({value}, \"{Escape(spec)}\")" : value;
     }
 
     private static string Literal(object value) => value switch

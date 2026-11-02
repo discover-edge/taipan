@@ -106,6 +106,16 @@ public sealed record BoundPySetAttr(BoundExpr Target, string Name, BoundExpr Val
 /// <summary><c>x[k] = v</c> on a py value.</summary>
 public sealed record BoundPySetItem(BoundExpr Target, BoundExpr Index, BoundExpr Value, bool IsCompound, TextSpan Span) : BoundStmt(Span);
 
+/// <summary><c>xs[a:b:c] = ys</c> on a list or a <c>py</c> value (SPEC §5.5, M26).</summary>
+public sealed record BoundSliceAssign(BoundSlice Slice, BoundExpr Value, TextSpan Span) : BoundStmt(Span);
+
+/// <summary>
+/// <c>del t1, t2</c> (SPEC §5.5, M26): each target as it would be read, a list element or dict
+/// entry (<see cref="BoundIndex"/>), a <c>py</c> item (<see cref="BoundPyGetItem"/>) or a slice
+/// (<see cref="BoundSlice"/>), deleted left to right.
+/// </summary>
+public sealed record BoundDelete(ImmutableArray<BoundExpr> Targets, TextSpan Span) : BoundStmt(Span);
+
 public sealed record BoundReturn(BoundExpr? Value, TextSpan Span) : BoundStmt(Span);
 
 public sealed record BoundBreak(TextSpan Span) : BoundStmt(Span);
@@ -276,6 +286,13 @@ public sealed record BoundBuiltinMethodCall(BoundExpr Target, BuiltinMethod Meth
 /// <summary>Literal text parts are <see cref="BoundLiteral"/> strings; holes are any expression.</summary>
 public sealed record BoundFString(ImmutableArray<BoundExpr> Parts, TextSpan Span) : BoundExpr(TaipanType.Str, Span);
 
+/// <summary>
+/// An f-string hole's value with a conversion (<c>r</c> or <c>s</c>) or a format spec, checked
+/// against the value's type (SPEC §6, M26). The conversion applies first, then the spec.
+/// </summary>
+public sealed record BoundFormat(BoundExpr Value, char? Conversion, Taipan.Runtime.FormatSpec? Spec, string? SpecText, TextSpan Span)
+    : BoundExpr(TaipanType.Str, Span);
+
 public sealed record BoundErrorExpr(TextSpan Span) : BoundExpr(TaipanType.Error, Span);
 
 // ---- Tuples and slices (SPEC §3.8, §5.4) ----
@@ -341,7 +358,14 @@ public sealed record BoundSuperCall(FunctionSymbol Method, VariableSymbol Self, 
 }
 
 /// <summary><c>isinstance(x, C)</c>.</summary>
-public sealed record BoundIsInstance(BoundExpr Operand, ClassType Class, TextSpan Span) : BoundExpr(TaipanType.Bool, Span);
+/// <summary>
+/// <c>isinstance(x, C)</c>, or <c>isinstance(x, (A, B))</c> (M26), which tests <see cref="Tested"/>
+/// and narrows to <see cref="Class"/>, the nearest class they all derive from.
+/// </summary>
+public sealed record BoundIsInstance(BoundExpr Operand, ClassType Class, TextSpan Span) : BoundExpr(TaipanType.Bool, Span)
+{
+    public ImmutableArray<ClassType> Tested { get; init; } = [Class];
+}
 
 /// <summary>A name read where a condition has narrowed it (SPEC §3.9): <see cref="Value"/> is the variable.</summary>
 public sealed record BoundNarrowed(BoundVariable Value, TaipanType Type, TextSpan Span) : BoundExpr(Type, Span);

@@ -1,0 +1,2 @@
+# Lambda parameters take no defaults (SPEC §3.7).
+let fs = [lambda i=1: i]

@@ -1,0 +1,5 @@
+# A call is not something del can delete (SPEC §5.5).
+def f() -> list[int]:
+    return [1]
+
+del f()

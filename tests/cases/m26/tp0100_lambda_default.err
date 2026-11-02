@@ -1,0 +1,2 @@
+tests/cases/m26/tp0100_lambda_default.tpn:2:19: error TP0100: lambda parameters can't have defaults
+  help: each loop iteration has its own variable, so 'lambda: i' already sees this iteration's value

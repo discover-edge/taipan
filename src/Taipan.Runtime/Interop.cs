@@ -104,6 +104,27 @@ public static class Interop
 
     public static void SetItem(PyObject target, object? key, object? value) => Run(() => target.SetItem(From(key), From(value)));
 
+    // Slice assignment and del in Python (SPEC §5.5, M26).
+    public static void SetSlice(PyObject target, object? start, object? stop, object? step, object? value) => Run(() =>
+    {
+        using var slice = MakeSlice(start, stop, step);
+        target.SetItem(slice, From(value));
+    });
+
+    public static void DelItem(PyObject target, object? key) => Run(() => target.DelItem(From(key)));
+
+    public static void DelSlice(PyObject target, object? start, object? stop, object? step) => Run(() =>
+    {
+        using var slice = MakeSlice(start, stop, step);
+        target.DelItem(slice);
+    });
+
+    private static PyObject MakeSlice(object? start, object? stop, object? step)
+    {
+        using var builtins = Py.Import("builtins");
+        return builtins.GetAttr("slice").Invoke(Convert(start), Convert(stop), Convert(step));
+    }
+
     /// <summary>A call, with keyword arguments as (name, value) pairs.</summary>
     public static PyObject Call(PyObject target, object?[] arguments, (string Name, object? Value)[] keywords) => Run(() =>
     {

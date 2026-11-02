@@ -329,7 +329,9 @@ public sealed class Lexer
 
     /// <summary>
     /// Scans a hole from its <c>{</c> through its matching <c>}</c>, tracking nested brackets and
-    /// skipping nested string literals. Returns false if the line ends first (reported as TP0003).
+    /// skipping nested string literals. At the hole's top level, a <c>!</c> (not <c>!=</c>) starts
+    /// a conversion and a <c>:</c> a format spec, and a trailing <c>=</c> marks a debug hole (SPEC §1).
+    /// Returns false if the line ends first (reported as TP0003).
     /// </summary>
     private bool ScanHole(ImmutableArray<FStringPart>.Builder parts, int quotePos)
     {
@@ -337,6 +339,7 @@ public sealed class Lexer
         _pos++;
         var exprStart = _pos;
         var depth = 0;
+        int? conversionAt = null, specAt = null;
 
         while (true)
         {
@@ -348,6 +351,34 @@ public sealed class Lexer
             var c = Current;
             if (c == '}' && depth == 0)
                 break;
+            // A spec is literal text up to the hole's end; a brace in it would be a nested spec,
+            // reported once, with its braces matched so the hole still ends at its own.
+            if (specAt is not null)
+            {
+                if (c == '{' && depth++ == 0)
+                    _diagnostics.ReportNestedFormatSpec(new TextSpan(_pos, 1));
+                else if (c == '}')
+                    depth--;
+                _pos++;
+                continue;
+            }
+            if (depth == 0 && c == ':')
+            {
+                specAt = _pos;
+                _pos++;
+                continue;
+            }
+            if (depth == 0 && c == '!' && Peek(1) != '=' && conversionAt is null)
+            {
+                conversionAt = _pos;
+                _pos++;
+                continue;
+            }
+            if (conversionAt is not null)
+            {
+                _pos++;
+                continue;
+            }
             if (c is '(' or '[' or '{')
                 depth++;
             else if (c is ')' or ']' or '}' && depth > 0)
@@ -364,10 +395,41 @@ public sealed class Lexer
             _pos++;
         }
 
-        var exprSpan = new TextSpan(exprStart, _pos - exprStart);
+        var close = _pos;
+        var exprEnd = conversionAt ?? specAt ?? close;
+        var region = _text[exprStart..exprEnd];
+        // `{x=}` and `{x = }`: an `=` ending the expression, which isn't part of ==, !=, <= or >=.
+        string? debugText = null;
+        var trimmed = region.TrimEnd();
+        if (trimmed.EndsWith('=') && (trimmed.Length == 1 || trimmed[^2] is not ('=' or '!' or '<' or '>')))
+        {
+            debugText = region;
+            exprEnd = exprStart + trimmed[..^1].TrimEnd().Length;
+        }
+        var exprSpan = new TextSpan(exprStart, exprEnd - exprStart);
         if (string.IsNullOrWhiteSpace(_text.Substring(exprSpan.Start, exprSpan.Length)))
             _diagnostics.ReportEmptyFStringHole(new TextSpan(open, 1));
-        parts.Add(new FStringHole(exprSpan));
+
+        char? conversion = null;
+        if (conversionAt is { } bang)
+        {
+            var text = _text[(bang + 1)..(specAt ?? close)];
+            if (text is "r" or "s")
+                conversion = text[0];
+            else
+                _diagnostics.ReportInvalidConversion(new TextSpan(bang, (specAt ?? close) - bang), text);
+        }
+        string? spec = null;
+        var specSpan = default(TextSpan);
+        if (specAt is { } colon)
+        {
+            spec = _text[(colon + 1)..close];
+            specSpan = new TextSpan(colon + 1, close - colon - 1);
+            // `n` depends on the locale, which Taipan's formatting doesn't use (SPEC §6).
+            if (!spec.Contains('{') && Taipan.Runtime.FormatSpec.Parse(spec) is not { Type: not 'n' })
+                _diagnostics.ReportInvalidFormatSpec(specSpan.Length == 0 ? new TextSpan(colon, 1) : specSpan, spec);
+        }
+        parts.Add(new FStringHole(exprSpan) { DebugText = debugText, Conversion = conversion, Spec = spec, SpecSpan = specSpan });
         _pos++;
         return true;
     }

@@ -1,0 +1,13 @@
+# F-string holes with '=', conversions and format specs, as Python writes them (SPEC §1, §6).
+let price = 1234.5678
+let count = 42
+let name = "taipan"
+let ratio = 0.125
+
+print(f"{price:.2f}|{price:,.2f}|{price:>12.1f}|{price:e}|{price:.3g}|{ratio:%}|{ratio:.1%}")
+print(f"{count:5}|{count:<5}|{count:^7}|{count:*>6}|{count:+}|{count:08}|{count:x}|{count:#b}|{count:#o}|{count:X}")
+print(f"{1234567:,}|{1234567:_}|{255:_x}|{1234:010,}|{-42:=+8}|{65:c}|{count:.2f}")
+print(f"{name:>10}|{name:<10}|{name:^10}|{name:.3}|{name:*^12.4}")
+print(f"{count=}|{name=}|{price = :.1f}|{name=!s}|{name!r}|{[1, 2]!r}|{name!r:>10}")
+print(f"{2.0}|{2.0:.3}|{1e16:,}|{-0.0:z.1f}|{0.000123:.2e}|{float(count):g}")
+print(f"{count == 42}|{count != 42}|{ {"k": 1}["k"] }|{[1, 2][0]:>3}")

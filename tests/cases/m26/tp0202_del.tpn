@@ -1,0 +1,17 @@
+# What can't be deleted or slice-assigned (SPEC §5.5).
+@dataclass
+class Point:
+    x: int
+
+var n = 1
+var p = Point(1)
+var s = "taipan"
+let t = (1, 2)
+var xs = [1, 2, 3]
+del n
+del p.x
+del s[0]
+del s[1:]
+del t[0]
+xs[1:2] += [4]
+s[0:1] = "T"

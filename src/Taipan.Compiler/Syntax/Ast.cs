@@ -93,6 +93,9 @@ public sealed record ReturnStmt(Expr? Value, TextSpan Span) : Stmt(Span);
 /// <summary><c>raise e</c>, or a bare <c>raise</c> when <see cref="Value"/> is null (SPEC §3.10).</summary>
 public sealed record RaiseStmt(Expr? Value, TextSpan Span) : Stmt(Span);
 
+/// <summary><c>del a[i], d[k]</c>: its targets, deleted left to right (SPEC §5.5, M26).</summary>
+public sealed record DelStmt(ImmutableArray<Expr> Targets, TextSpan Span) : Stmt(Span);
+
 public sealed record PassStmt(TextSpan Span) : Stmt(Span);
 
 public sealed record BreakStmt(TextSpan Span) : Stmt(Span);
@@ -207,7 +210,17 @@ public abstract record FStringSegment(TextSpan Span) : Node(Span);
 
 public sealed record FStringTextSegment(string Value, TextSpan Span) : FStringSegment(Span);
 
-public sealed record FStringHoleSegment(Expr Expr, TextSpan Span) : FStringSegment(Span);
+/// <summary>A hole: its expression, with an optional debug text, conversion and format spec (SPEC §1, M26).</summary>
+public sealed record FStringHoleSegment(Expr Expr, TextSpan Span) : FStringSegment(Span)
+{
+    public string? DebugText { get; init; }
+
+    public char? Conversion { get; init; }
+
+    public string? Spec { get; init; }
+
+    public TextSpan SpecSpan { get; init; }
+}
 
 public sealed record BoolLiteral(bool Value, TextSpan Span) : Expr(Span);
 

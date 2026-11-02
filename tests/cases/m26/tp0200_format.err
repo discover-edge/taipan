@@ -1,0 +1,22 @@
+tests/cases/m26/tp0200_format.tpn:8:15: error TP0200: format spec '.2f' isn't valid for str
+  help: 'f' formats a number, not str
+tests/cases/m26/tp0200_format.tpn:9:15: error TP0200: format spec '+' isn't valid for str
+  help: a sign isn't allowed for str
+tests/cases/m26/tp0200_format.tpn:10:15: error TP0200: format spec '=10' isn't valid for str
+  help: '=' alignment isn't allowed for str
+tests/cases/m26/tp0200_format.tpn:11:12: error TP0200: format spec '.3d' isn't valid for int
+  help: precision isn't allowed for an int formatted with 'd'
+tests/cases/m26/tp0200_format.tpn:12:12: error TP0200: format spec ',x' isn't valid for int
+  help: ',' grouping isn't allowed with 'x'; use '_'
+tests/cases/m26/tp0200_format.tpn:13:12: error TP0200: format spec 'd' isn't valid for float
+  help: 'd' doesn't format a float
+tests/cases/m26/tp0200_format.tpn:14:12: error TP0200: format spec 's' isn't valid for int
+  help: 's' formats a str, not int
+tests/cases/m26/tp0200_format.tpn:15:13: error TP0200: format specs apply to int, float and str, found bool
+  help: convert it with str() or int() first
+tests/cases/m26/tp0200_format.tpn:16:16: error TP0200: format specs apply to int, float and str, found int?
+  help: narrow the optional first
+tests/cases/m26/tp0200_format.tpn:17:13: error TP0200: format specs apply to int, float and str, found list[int]
+  help: convert it with str() first
+tests/cases/m26/tp0200_format.tpn:18:14: error TP0200: format spec '.2f' isn't valid for str
+  help: 'f' formats a number, not str

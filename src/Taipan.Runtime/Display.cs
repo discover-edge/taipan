@@ -9,6 +9,17 @@ public static class Display
 {
     public static string Format(long value) => value.ToString(CultureInfo.InvariantCulture);
 
+    // An f-string hole's format spec (SPEC §6, M26), checked at compile time. Parsed specs are cached.
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, FormatSpec> Specs = new();
+
+    private static FormatSpec SpecOf(string spec) => Specs.GetOrAdd(spec, s => FormatSpec.Parse(s)!);
+
+    public static string Format(long value, string spec) => SpecOf(spec).Format(value);
+
+    public static string Format(double value, string spec) => SpecOf(spec).Format(value);
+
+    public static string Format(string value, string spec) => SpecOf(spec).Format(value);
+
     public static string Format(bool value) => value ? "True" : "False";
 
     public static string Format(string? value) => value ?? "None";
