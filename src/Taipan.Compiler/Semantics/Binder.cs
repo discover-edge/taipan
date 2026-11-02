@@ -2716,7 +2716,15 @@ public sealed partial class Binder
     {
         var value = BindValue(expr, expected);
         CheckAssignable(value, expected, expr.Span);
-        // A Taipan value where a py is expected is converted to Python (SPEC §10.3).
+        return Convert(value, expected);
+    }
+
+    /// <summary>
+    /// A value checked against <paramref name="expected"/>, converted for it: to Python where a py
+    /// is expected (SPEC §10.3), or to another function type (SPEC §3.3).
+    /// </summary>
+    private static BoundExpr Convert(BoundExpr value, TaipanType expected)
+    {
         if (expected == TaipanType.Py && value.Type != TaipanType.Py && !value.Type.ContainsError && value.Type.IsConvertibleToPython)
             return new BoundToPy(value, value.Span);
         return ConvertFunction(value, expected);
@@ -3658,11 +3666,12 @@ public sealed partial class Binder
             _diagnostics.ReportUnsatisfied(nameSpan, map[parameter], parameter.Bound!.Name, declaredBy: null, why);
             map[parameter] = TaipanType.Error;
         }
+        // A type parameter inferred as py takes its arguments converted to Python (SPEC §3.6, §10.3).
         for (var i = 0; i < bound.Length; i++)
         {
             var parameter = TypeChecker.Substitute(parameterTypes[i], map);
             CheckAssignable(bound[i], parameter, arguments[i].Span);
-            bound[i] = ConvertFunction(bound[i], parameter);
+            bound[i] = Convert(bound[i], parameter);
         }
         return ([.. bound], map);
     }
