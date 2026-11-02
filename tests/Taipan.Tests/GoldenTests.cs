@@ -7,9 +7,10 @@ namespace Taipan.Tests;
 /// <c>.out</c> (stdout; its presence selects <c>run</c> over <c>check</c>),
 /// <c>.err</c> (stderr, exact), <c>.exit</c> (default 0, or 1 when <c>.err</c> exists), and
 /// <c>.cs</c> (the exact output of <c>taipan emit</c>), <c>.requires</c> (naming <c>python</c>
-/// for a case that needs CPython), and <c>.library</c> (empty, for a case checked and emitted with
-/// <c>--library</c>, SPEC §14).
+/// for a case that needs CPython), and <c>.library</c> or <c>.native</c> (empty, for a case checked
+/// and emitted with <c>--library</c> or <c>--native</c>, SPEC §14, §15).
 /// </summary>
+[Collection(RunningPrograms.Name)]
 public class GoldenTests
 {
     // Diagnostics and panics print the path as given (SPEC §7, §9), so cases run from the repo
@@ -48,7 +49,7 @@ public class GoldenTests
         var exitText = ReadSidecar(casePath, ".exit");
         var expectedExit = exitText is not null ? int.Parse(exitText.Trim()) : expectedErr is not null ? 1 : 0;
 
-        string[] flags = File.Exists(Path.ChangeExtension(casePath, ".library")) ? ["--library"] : [];
+        string[] flags = [.. ((string[])["library", "native"]).Where(f => File.Exists(Path.ChangeExtension(casePath, $".{f}"))).Select(f => $"--{f}")];
         var (exit, stdout, stderr) = RunCli([expectedOut is not null ? "run" : "check", casePath, .. flags]);
         Assert.Equal(expectedErr ?? "", stderr);
         Assert.Equal(expectedOut ?? "", stdout);
@@ -73,4 +74,14 @@ public class GoldenTests
     }
 
     private static string Normalize(string text) => text.Replace("\r\n", "\n");
+}
+
+/// <summary>
+/// Test classes that run programs in-process, which share the runtime's output writers
+/// (<c>Io.Out</c>, <c>Io.Error</c>), so they can't run in parallel with each other.
+/// </summary>
+[CollectionDefinition(Name)]
+public sealed class RunningPrograms
+{
+    public const string Name = "Running programs";
 }

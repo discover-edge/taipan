@@ -1,0 +1,21 @@
+# A native program records its own panic locations (SPEC §8, §15.3): a line local set before
+# each statement, conditions that set it again, and a filter that records it.
+def ratio(a: int, b: int) -> int:
+    var n = a
+    while n > 100 // b:
+        n -= 1
+    if n > 10:
+        return n
+    elif n // b > 1:
+        return 1
+    return 0
+
+let pick: Callable[[int], int] = lambda x: ratio(x, 2)
+for i in [1, 2, 3]:
+    if i == 2:
+        continue
+    print(pick(i))
+try:
+    print(ratio(1, 0))
+except ZeroDivisionError as e:
+    raise e

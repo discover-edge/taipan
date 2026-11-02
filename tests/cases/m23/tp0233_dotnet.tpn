@@ -1,0 +1,12 @@
+# .NET members that need run-time code generation or reflection can't be used natively (SPEC §15.2).
+from dotnet.System import Type, Enum
+from dotnet.System.Reflection import Assembly
+from dotnet.System.Text import StringBuilder
+
+let types = Assembly.GetExecutingAssembly().GetTypes()
+let day = Type.GetType("System.DayOfWeek")
+if day is some d:
+    print(Enum.GetValues(d))
+let sb = StringBuilder()
+sb.Append(len(types))
+print(sb.ToString())

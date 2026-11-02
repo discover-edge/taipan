@@ -1,0 +1,3 @@
+tests/cases/m23/tp0233_dotnet.tpn:6:45: error TP0233: 'Assembly.GetTypes' can't be used in a native program: Types might be removed
+tests/cases/m23/tp0233_dotnet.tpn:7:16: error TP0233: 'Type.GetType' can't be used in a native program: The type might be removed
+tests/cases/m23/tp0233_dotnet.tpn:9:16: error TP0233: 'Enum.GetValues' can't be used in a native program: It might not be possible to create an array of the enum type at runtime. Use the GetValues<TEnum> overload or the GetValuesAsUnderlyingType method instead.

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 
 namespace Taipan.Runtime;
 
@@ -32,7 +33,7 @@ public static class Panic
             var message = MessageFor(e);
             Io.Out.Flush();
             Io.Error.WriteLine($"panic: {message}");
-            if (FindLocation(e) is { } location)
+            if ((Recorded.TryGetValue(e, out var recorded) ? recorded.Text : FindLocation(e)) is { } location)
                 Io.Error.WriteLine($"  at {location}");
             return ExitCode;
         }
@@ -63,13 +64,40 @@ public static class Panic
         return exception.GetType().Assembly == typeof(Panic).Assembly ? exception.message : $"{name}: {exception.message}";
     }
 
+    private sealed record Location(string Text);
+
+    // Where each exception was raised, as a native program records it (SPEC §15.3).
+    private static readonly ConditionalWeakTable<Exception, Location> Recorded = [];
+
+    /// <summary>
+    /// A native program's exception filter around each method body (SPEC §15.3): records the
+    /// location the first time an exception passes, which is in the innermost Taipan frame, since
+    /// filters run innermost first. Returns false, so it never catches.
+    /// </summary>
+    public static bool Locate(Exception exception, string file, int line)
+    {
+        Recorded.TryAdd(exception, new Location($"{file}:{line}"));
+        return false;
+    }
+
+    /// <summary>Sets a native method's current line inside a condition, such as an <c>elif</c>'s. Always true.</summary>
+    public static bool At(ref int current, int line)
+    {
+        current = line;
+        return true;
+    }
+
+    /// <summary><c>raise e</c> in a native program: <c>e</c> is raised anew, so it's located anew (SPEC §3.10).</summary>
+    internal static void Forget(Exception exception) => Recorded.Remove(exception);
+
     // The first frame with source info that isn't in this runtime is generated code, whose
     // #line directives point at the .tpn source.
     private static string? FindLocation(Exception e)
     {
         foreach (var frame in new StackTrace(e, fNeedFileInfo: true).GetFrames())
         {
-            if (frame.GetMethod()?.DeclaringType?.Assembly == typeof(Panic).Assembly)
+            // By name, without reflection, so the runtime stays trim-safe for native builds (SPEC §15.1).
+            if (DiagnosticMethodInfo.Create(frame)?.DeclaringAssemblyName is { } assembly && IsRuntime(assembly))
                 continue;
             var file = frame.GetFileName();
             var line = frame.GetFileLineNumber();
@@ -78,4 +106,7 @@ public static class Panic
         }
         return null;
     }
+
+    private static bool IsRuntime(string assemblyName) =>
+        new System.Reflection.AssemblyName(assemblyName).Name == typeof(Panic).Assembly.GetName().Name;
 }

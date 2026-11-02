@@ -1,0 +1,6 @@
+tests/cases/m23/tp0233_python.tpn:2:1: error TP0233: a native program can't use Python
+  help: build it without '--native'
+tests/cases/m23/tp0233_python.tpn:4:20: error TP0233: a native program can't use Python
+  help: build it without '--native'
+tests/cases/m23/tp0233_python.tpn:7:10: error TP0233: a native program can't use Python
+  help: build it without '--native'

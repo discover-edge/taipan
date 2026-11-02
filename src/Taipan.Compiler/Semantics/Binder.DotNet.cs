@@ -71,6 +71,27 @@ public sealed partial class Binder
 
     private static string MemberName(INamedTypeSymbol owner, string name) => $"{new DotNetType(owner)}.{name}";
 
+    // ---- Native programs (SPEC §15.2) ----
+
+    private static readonly string[] NativeUnsafe = ["RequiresDynamicCodeAttribute", "RequiresUnreferencedCodeAttribute"];
+
+    /// <summary>
+    /// For a native build, a member .NET marks as needing run-time code generation or reflection,
+    /// on itself, the accessor used or a containing type, is TP0233.
+    /// </summary>
+    private void CheckNative(ISymbol member, IMethodSymbol? accessor, TextSpan span, string name)
+    {
+        if (!_asNative)
+            return;
+        IEnumerable<ISymbol> holders = [member, .. accessor is null ? [] : (ISymbol[])[accessor]];
+        for (var type = member.ContainingType; type is not null; type = type.ContainingType)
+            holders = holders.Append(type);
+        var attribute = holders.SelectMany(h => h.GetAttributes()).FirstOrDefault(a =>
+            NativeUnsafe.Contains(a.AttributeClass?.Name) && a.AttributeClass?.ContainingNamespace?.ToDisplayString() == "System.Diagnostics.CodeAnalysis");
+        if (attribute is not null)
+            _diagnostics.ReportNativeDotNet(span, name, attribute.ConstructorArguments.FirstOrDefault().Value as string ?? attribute.AttributeClass!.Name);
+    }
+
     // ---- Exceptions (SPEC §13.6) ----
 
     private static bool IsDotNetException(INamedTypeSymbol type) => Bases(type).Any(t => IsSystemType(t, "Exception"));
@@ -167,6 +188,7 @@ public sealed partial class Binder
             _diagnostics.ReportDotNetUnsupported(member.Member.Span, MemberName(owner, name), DotNetTypes.Display(unsupported!));
             return new BoundErrorExpr(member.Span);
         }
+        CheckNative(found, (found as IPropertySymbol)?.GetMethod, member.Member.Span, MemberName(owner, name));
         return new BoundDotNetMember(target, found, type, member.Span);
     }
 
@@ -198,6 +220,7 @@ public sealed partial class Binder
             _diagnostics.ReportDotNetUnsupported(member.Member.Span, MemberName(owner, name), DotNetTypes.Display(unsupported!));
             return OrphanAssign(assign, preset);
         }
+        CheckNative(found, (found as IPropertySymbol)?.SetMethod, member.Member.Span, MemberName(owner, name));
         var current = new BoundDotNetMember(target, found, DotNetTypes.Map(netType, result: true, out _) ?? type, member.Span);
         var value = BindAssignedValue(assign, current, type, preset);
         CheckLiteralFits(value, netType);
@@ -223,6 +246,7 @@ public sealed partial class Binder
         }
         if (ResolveOverload(call, methods, MemberName(owner, name.Text), name.Span) is not var (method, arguments))
             return new BoundErrorExpr(call.Span);
+        CheckNative(method, null, name.Span, MemberName(owner, name.Text));
         var result = DotNetTypes.Map(DotNetTypes.ResultOf(method), result: true, out _)!;
         return new BoundDotNetCall(target, method, arguments, result, call.Span);
     }
@@ -245,6 +269,7 @@ public sealed partial class Binder
             return new BoundDotNetNew(created, null, [], call.Span);
         if (ResolveOverload(call, constructors, created.ToString(), nameSpan) is not var (constructor, arguments))
             return new BoundErrorExpr(call.Span);
+        CheckNative(constructor, null, nameSpan, created.ToString());
         return new BoundDotNetNew(created, constructor, arguments, call.Span);
     }
 

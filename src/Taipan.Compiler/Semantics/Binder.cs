@@ -101,12 +101,16 @@ public sealed partial class Binder
     private int? _finallyLoopDepth;
     private string? _unsupported;
 
-    private Binder(DotNetLibrary library, bool asLibrary)
+    private Binder(DotNetLibrary library, bool asLibrary, bool asNative)
     {
         _scope = _builtins;
         _library = library;
         _asLibrary = asLibrary;
+        _asNative = asNative;
     }
+
+    // A program checked for a native build (SPEC §15.2).
+    private readonly bool _asNative;
 
     public static BindResult Bind(SourceText source, CompilationUnit unit) =>
         Bind([new SourceModule(Path.GetFileNameWithoutExtension(source.Path), source, unit)]);
@@ -114,11 +118,12 @@ public sealed partial class Binder
     /// <summary>
     /// Binds a program: the main file first, then its modules (SPEC §4.7). Its .NET types come
     /// from <paramref name="library"/>, the runtime's own assemblies by default (SPEC §13.2). With
-    /// <paramref name="asLibrary"/>, it's bound as a .NET library (SPEC §14).
+    /// <paramref name="asLibrary"/>, it's bound as a .NET library (SPEC §14), and with
+    /// <paramref name="asNative"/> for a native executable (SPEC §15).
     /// </summary>
-    public static BindResult Bind(ImmutableArray<SourceModule> files, DotNetLibrary? library = null, bool asLibrary = false)
+    public static BindResult Bind(ImmutableArray<SourceModule> files, DotNetLibrary? library = null, bool asLibrary = false, bool asNative = false)
     {
-        var binder = new Binder(library ?? DotNetLibrary.Framework, asLibrary);
+        var binder = new Binder(library ?? DotNetLibrary.Framework, asLibrary, asNative);
         var program = binder.BindProgram(files);
         return new BindResult(program, binder._diagnostics.ToImmutable(), binder._unsupported);
     }
@@ -319,6 +324,9 @@ public sealed partial class Binder
                     ImportDotNet(from);
                     break;
                 case FromImportStmt { Module.Text: ModuleLoader.PythonModule } fromPython:
+                    // A native program can't use Python (SPEC §15.2).
+                    if (_asNative)
+                        _diagnostics.ReportNativePython(fromPython.Span);
                     // Each name holds a Python module, imported at startup (SPEC §10.1).
                     foreach (var name in fromPython.Names)
                     {
@@ -1420,7 +1428,9 @@ public sealed partial class Binder
                 return TaipanType.Bool;
             case NamedType { Name.Text: "str" }:
                 return TaipanType.Str;
-            case NamedType { Name.Text: "py" }:
+            case NamedType { Name.Text: "py" } py:
+                if (_asNative)
+                    _diagnostics.ReportNativePython(py.Span);
                 return TaipanType.Py;
             case NamedType { Name.Text: "Callable" } bare:
                 _diagnostics.ReportBareCallable(bare.Span);

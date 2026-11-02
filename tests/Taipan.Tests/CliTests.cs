@@ -50,6 +50,15 @@ public class CliTests
     }
 
     [Fact]
+    public void LibraryAndNativeDontCombine()
+    {
+        var (exit, stdout, stderr) = Run("build", "examples/health.tpn", "--library", "--native", "-o", "out");
+        Assert.Equal(2, exit);
+        Assert.Equal("", stdout);
+        Assert.StartsWith("taipan: --library and --native can't be combined\nusage:\n", stderr);
+    }
+
+    [Fact]
     public void UnknownOptionIsAUsageError()
     {
         var (exit, stdout, stderr) = Run("--frobnicate");

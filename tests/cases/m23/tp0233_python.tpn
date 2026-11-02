@@ -1,0 +1,8 @@
+# A native program can't use Python (SPEC §15.2).
+from python import json
+
+def first_key(doc: py) -> str:
+    return "?"
+
+let doc: py = json.loads("{}")
+print(first_key(doc))
