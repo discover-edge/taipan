@@ -1428,6 +1428,8 @@ public sealed partial class Binder
         else if (_scope.Parent?.Lookup(name.Text) is not null)
             _diagnostics.ReportShadowing(name.Span, name.Text);
         _scope.Declare(symbol);
+        if (symbol is VariableSymbol variable)
+            _declaredIn[variable] = _function;
         Index(name.Span, symbol, isDefinition: true);
     }
 
@@ -1759,7 +1761,8 @@ public sealed partial class Binder
         _scope = new Scope(outerScope);
         for (var i = 0; i < parameters.Length; i++)
             DeclareLocal(def.Params[i].Name, parameters[i]);
-        var body = BindBlock(def.Body);
+        // It runs later, so it doesn't see narrowed vars or paths (SPEC §3.9).
+        var body = InDeferredRegion(() => BindBlock(def.Body));
         if (returnType != TaipanType.Nothing && !TypeChecker.Terminates(body))
             _diagnostics.ReportNotAllPathsReturn(def.Name.Span, def.Name.Text);
         (_function, _loopDepth, _scope) = (outerFunction, outerLoopDepth, outerScope);
@@ -1773,8 +1776,17 @@ public sealed partial class Binder
     private BoundMatch BindMatch(MatchStmt match)
     {
         var (scrutinee, type) = BindScrutinee(match.Scrutinee);
-        var arms = BindArms(scrutinee, type, match.Span, [.. match.Arms.Select(a => a.Pattern)],
-            (i, pattern, reachable) => new BoundArm(pattern, BindBlock(match.Arms[i].Body), reachable));
+        // After a match statement, what holds at the end of every arm that can finish (SPEC §3.9).
+        var ends = new List<Narrowing>();
+        var arms = BindArms(scrutinee, type, match.Span, [.. match.Arms.Select(a => a.Pattern)], (i, pattern, reachable) =>
+        {
+            var arm = new BoundArm(pattern, BindBlock(match.Arms[i].Body), reachable);
+            if (reachable && !Exits(arm.Body))
+                ends.Add(_narrowing);
+            return arm;
+        });
+        if (ends.Count > 0)
+            _narrowing = Join(ends);
         return new BoundMatch(scrutinee, arms, match.Span);
     }
 
@@ -1843,11 +1855,12 @@ public sealed partial class Binder
             foreach (var (identifier, symbol) in bindings)
                 DeclareLocal(identifier, symbol);
             // A class pattern narrows the scrutinee in its arm (SPEC §5.1).
-            var outerNarrowing = _narrowing;
+            var (outerNarrowing, mark) = (_narrowing, _endings.Count);
             if (pattern is BoundClassPattern classPattern)
                 _narrowing = _narrowing.With(Narrow(scrutinee, classPattern.Class.Symbol.DerivesFrom(((ClassType)type).Symbol) ? classPattern.Class : type));
             arms.Add(bindBody(i, pattern, reachable));
-            _narrowing = outerNarrowing;
+            // Each arm starts from the state before the match; a statement collects the arms' ends.
+            _narrowing = Replay(outerNarrowing, mark);
             _scope = outer;
         }
 
@@ -2152,6 +2165,8 @@ public sealed partial class Binder
         }
         var symbol = new VariableSymbol(name.Text, declared ?? value.Type, kind);
         DeclareLocal(name, symbol);
+        // A var starts narrowed to its value's type, if that's narrower than its declared one (SPEC §3.9).
+        AfterAssigning(symbol, value, span);
         return new BoundVariableDecl(symbol, value, span);
     }
 
@@ -2196,6 +2211,7 @@ public sealed partial class Binder
         }
 
         var value = BindAssignedValue(assign, new BoundVariable(variable, target.Span), variable.Type, preset);
+        AfterAssigning(variable, value, assign.Span);
         return new BoundAssign(variable, value, assign.Span);
     }
 
@@ -2221,7 +2237,8 @@ public sealed partial class Binder
             {
                 Index(member.Member.Span, field);
                 var fieldType = FieldType(target.Type, field);
-                var value = BindAssignedValue(assign, new BoundFieldAccess(target, field, fieldType, member.Span), fieldType, preset);
+                var value = BindAssignedValue(assign, NarrowedField(new BoundFieldAccess(target, field, fieldType, member.Span)), fieldType, preset);
+                EndPathsThrough(field, assign.Span);
                 return new BoundFieldAssign(target, field, value, assign.Op != AssignOp.Assign, assign.Span);
             }
             if (classSymbol.FindMethod(member.Member.Text) is not null || member.Member.Text == "__init__")
@@ -2367,15 +2384,27 @@ public sealed partial class Binder
         _ => null,
     };
 
+    // Each block can be left at any point, so they and the code after see what held before the try,
+    // less what any of them can end (SPEC §3.9).
     private BoundTry BindTry(TryStmt tryStmt)
     {
+        return Repeatable(() => BindTryBlocks(tryStmt),
+            t => new BoundStmt?[] { t.Body, t.Else, t.Finally }.Concat(t.Handlers.Select(h => h.Body)).OfType<BoundStmt>());
+    }
+
+    private BoundTry BindTryBlocks(TryStmt tryStmt)
+    {
+        var start = _narrowing;
         var body = BindBlock(tryStmt.Body);
+        _narrowing = start;
 
         // The classes earlier clauses catch, for clauses that can never match (TP0300).
         var caught = new List<ClassSymbol>();
         var caughtDotNet = new List<Microsoft.CodeAnalysis.INamedTypeSymbol>();
-        var handlers = tryStmt.Handlers.Select(clause => BindHandler(clause, caught, caughtDotNet)).ToImmutableArray();
+        var handlers = tryStmt.Handlers.Select(clause => { _narrowing = start; return BindHandler(clause, caught, caughtDotNet); }).ToImmutableArray();
+        _narrowing = start;
         var elseBlock = tryStmt.Else is null ? null : BindBlock(tryStmt.Else);
+        _narrowing = start;
 
         BoundBlock? finallyBlock = null;
         if (tryStmt.Finally is not null)
@@ -2385,6 +2414,7 @@ public sealed partial class Binder
             finallyBlock = BindBlock(tryStmt.Finally);
             _finallyLoopDepth = outer;
         }
+        _narrowing = start;
         return new BoundTry(body, handlers, elseBlock, finallyBlock, tryStmt.Span);
     }
 
@@ -2554,24 +2584,44 @@ public sealed partial class Binder
     }
 
     /// <summary>Each later clause sees what holds when the earlier conditions are false (SPEC §3.9).</summary>
+    // After an if, the rest of the block sees what holds at the end of every branch that can
+    // finish, a missing else being one where every condition was false (SPEC §3.9).
     private BoundIf BindIf(IfStmt ifStmt)
     {
-        var outer = _narrowing;
         var clauses = ImmutableArray.CreateBuilder<BoundIfClause>();
+        var ends = new List<Narrowing>();
         foreach (var clause in ifStmt.Clauses)
         {
-            var (condition, body) = BindGuarded(clause.Condition, clause.Body, isLoop: false);
+            var (condition, body, afterCondition) = BindGuarded(clause.Condition, clause.Body, isLoop: false);
             clauses.Add(new BoundIfClause(condition, body));
-            _narrowing = _narrowing.With(Facts(condition, whenTrue: false));
+            if (!Exits(body))
+                ends.Add(_narrowing);
+            _narrowing = afterCondition.With(Facts(condition, whenTrue: false));
         }
-        var elseBlock = ifStmt.Else is null ? null : BindBlock(ifStmt.Else);
-        _narrowing = outer;
+        BoundBlock? elseBlock = null;
+        if (ifStmt.Else is not null)
+        {
+            elseBlock = BindBlock(ifStmt.Else);
+            if (!Exits(elseBlock))
+                ends.Add(_narrowing);
+        }
+        else
+        {
+            ends.Add(_narrowing);
+        }
+        if (ends.Count > 0)
+            _narrowing = Join(ends);
         return new BoundIf(clauses.ToImmutable(), elseBlock, ifStmt.Span);
     }
 
+    // The body runs again, so it starts from what it can't end; after a loop with no break, the
+    // condition is false (SPEC §3.9).
     private BoundWhile BindWhile(WhileStmt whileStmt)
     {
-        var (condition, body) = BindGuarded(whileStmt.Condition, whileStmt.Body, isLoop: true);
+        var (condition, body, afterCondition) = Repeatable(
+            () => BindGuarded(whileStmt.Condition, whileStmt.Body, isLoop: true),
+            bound => [new BoundExprStmt(bound.Condition, bound.Condition.Span), bound.Body]);
+        _narrowing = Breaks(body) ? afterCondition : afterCondition.With(Facts(condition, whenTrue: false));
         return new BoundWhile(condition, body, whileStmt.Span);
     }
 
@@ -2579,14 +2629,14 @@ public sealed partial class Binder
     /// Binds a condition and the block it guards. For <c>x is some v</c>, <c>v</c> is declared in a
     /// scope around the block, so it's visible in that branch only (SPEC §3.4).
     /// </summary>
-    private (BoundExpr Condition, BoundBlock Body) BindGuarded(Condition condition, Block body, bool isLoop)
+    private (BoundExpr Condition, BoundBlock Body, Narrowing AfterCondition) BindGuarded(Condition condition, Block body, bool isLoop)
     {
         BoundExpr bound;
         VariableSymbol? binding = null;
         switch (condition)
         {
             case IsSomeCondition isSome:
-                var someOperand = BindValue(isSome.Expr);
+                var someOperand = Declared(BindValue(isSome.Expr));
                 var inner = RequireOptional(someOperand, isSome.Expr.Span, "is some");
                 binding = new VariableSymbol(isSome.Binding.Text, inner, VariableKind.Let);
                 bound = new BoundIsSome(someOperand, binding, isSome.Span);
@@ -2604,14 +2654,14 @@ public sealed partial class Binder
         }
         if (isLoop)
             _loopDepth++;
-        var outerNarrowing = _narrowing;
+        // The block's end state is left in _narrowing, for an if to join (SPEC §3.9).
+        var afterCondition = _narrowing;
         _narrowing = _narrowing.With(Facts(bound, whenTrue: true));
         var block = BindBlock(body);
-        _narrowing = outerNarrowing;
         if (isLoop)
             _loopDepth--;
         _scope = outer;
-        return (bound, block);
+        return (bound, block, afterCondition);
     }
 
     /// <summary>The inner type of an optional operand of <c>is some</c> / <c>is None</c>, else TP0200.</summary>
@@ -2669,7 +2719,10 @@ public sealed partial class Binder
             unpacked = UnpackInto(variable, elements, forStmt.Variables, VariableKind.LoopVariable, forStmt.Span);
         }
         _loopDepth++;
-        var statements = BindStatements(forStmt.Body.Statements);
+        // The body runs again, and maybe not at all, so it and the code after it see what it can't end (SPEC §3.9).
+        var bodyStart = _narrowing;
+        var statements = Repeatable(() => { bodyStart = _narrowing; return BindStatements(forStmt.Body.Statements); }, bound => bound);
+        _narrowing = bodyStart;
         _loopDepth--;
         _scope = outer;
 
@@ -2916,19 +2969,15 @@ public sealed partial class Binder
             parameters.Add(symbol);
         }
 
-        BoundExpr body;
-        // An error result (an undefined type, say) was already reported, so any body fits it.
-        if (result is NothingType or ErrorType)
+        // A lambda runs later, so it doesn't see narrowed vars or paths (SPEC §3.9).
+        var expectedResult = result;
+        var body = InDeferredRegion(() =>
+            // An error result (an undefined type, say) was already reported, so any body fits it.
+            expectedResult is NothingType or ErrorType ? BindExpr(lambda.Body)
+            : expectedResult is not null ? BindExpected(lambda.Body, expectedResult)
+            : resultMayBeNothing ? BindExpr(lambda.Body) : BindValue(lambda.Body));
+        if (result is null)
         {
-            body = BindExpr(lambda.Body);
-        }
-        else if (result is not null)
-        {
-            body = BindExpected(lambda.Body, result);
-        }
-        else
-        {
-            body = resultMayBeNothing ? BindExpr(lambda.Body) : BindValue(lambda.Body);
             result = body.Type;
             if (result is NoneType)
             {
@@ -2987,7 +3036,10 @@ public sealed partial class Binder
         return bound;
     }
 
-    private BoundExpr BindExpr(Expr expr, TaipanType? expected = null) => expr switch
+    // Code an expression runs ends the narrowing of field paths (SPEC §3.9).
+    private BoundExpr BindExpr(Expr expr, TaipanType? expected = null) => EndPathsAfter(BindExprCore(expr, expected));
+
+    private BoundExpr BindExprCore(Expr expr, TaipanType? expected = null) => expr switch
     {
         IntLiteral literal => BindIntLiteral(literal.Value, literal.Span),
         FloatLiteral literal => new BoundLiteral(literal.Value, TaipanType.Float, literal.Span),
@@ -3211,16 +3263,16 @@ public sealed partial class Binder
     private BoundExpr BindLogical(BinaryExpr binary)
     {
         var left = BindValue(binary.Left);
-        var outer = _narrowing;
+        var (outer, mark) = (_narrowing, _endings.Count);
         _narrowing = _narrowing.With(Facts(left, whenTrue: binary.Op == BinaryOp.And));
         var right = BindValue(binary.Right);
-        _narrowing = outer;
+        _narrowing = Replay(outer, mark);
         return BindBinaryOperation(left, binary.Op, right, binary.Span);
     }
 
     private BoundIsNone BindIsNone(IsNoneExpr isNone)
     {
-        var operand = BindValue(isNone.Operand);
+        var operand = Declared(BindValue(isNone.Operand));
         RequireOptional(operand, isNone.Operand.Span, isNone.Negated ? "is not None" : "is None");
         return new BoundIsNone(operand, isNone.Negated, isNone.Span);
     }
@@ -3228,27 +3280,36 @@ public sealed partial class Binder
     // ---- Narrowing (SPEC §3.9) ----
 
     /// <summary>
-    /// Names narrowed to new types, and the vars and fields a condition would have narrowed if
-    /// they couldn't change (keyed by symbol, or by variable and field), for the help on TP0203 and TP0210.
+    /// What's known: names and field paths narrowed to new types (keyed by symbol or
+    /// <see cref="FieldPath"/>), and, for those that aren't, why, for the help on TP0203 and TP0210 (SPEC §3.9).
     /// </summary>
-    private sealed record Narrowing(ImmutableDictionary<VariableSymbol, TaipanType> Types, ImmutableHashSet<object> Unnarrowable)
+    private sealed record Narrowing(ImmutableDictionary<object, TaipanType> Types, ImmutableDictionary<object, string> Why)
     {
-        public static readonly Narrowing None = new(ImmutableDictionary<VariableSymbol, TaipanType>.Empty, []);
+        public static readonly Narrowing None = new(ImmutableDictionary<object, TaipanType>.Empty, ImmutableDictionary<object, string>.Empty);
 
         public Narrowing With(Narrowing other) =>
-            new(Types.SetItems(other.Types), Unnarrowable.Union(other.Unnarrowable));
+            new(Types.SetItems(other.Types), Why.RemoveRange(other.Types.Keys).SetItems(other.Why));
+
+        public Narrowing WithoutPaths() => this with { Types = Types.Where(pair => pair.Key is not FieldPath).ToImmutableDictionary() };
     }
 
-    /// <summary>What holds when <paramref name="condition"/> is true, or when it's false.</summary>
-    private static Narrowing Facts(BoundExpr condition, bool whenTrue) => condition switch
+    /// <summary>
+    /// What holds when <paramref name="condition"/> is true, or when it's false. In <c>a and b</c>,
+    /// code that <c>b</c> runs ends the paths <c>a</c> narrowed (SPEC §3.9).
+    /// </summary>
+    private Narrowing Facts(BoundExpr condition, bool whenTrue) => condition switch
     {
         BoundIsInstance isInstance when whenTrue => Narrow(isInstance.Operand, InstanceType(isInstance)),
         BoundIsNone isNone when isNone.Negated == whenTrue => Narrow(isNone.Operand, TypeChecker.Unwrap(isNone.Operand.Type)),
+        BoundIsSome isSome when whenTrue => Narrow(isSome.Operand, TypeChecker.Unwrap(isSome.Operand.Type)),
         BoundUnary { Op: UnaryOp.Not } negation => Facts(negation.Operand, !whenTrue),
-        BoundBinary { Op: BinaryOp.And } both when whenTrue => Facts(both.Left, true).With(Facts(both.Right, true)),
-        BoundBinary { Op: BinaryOp.Or } either when !whenTrue => Facts(either.Left, false).With(Facts(either.Right, false)),
+        BoundBinary { Op: BinaryOp.And } both when whenTrue => Sequence(Facts(both.Left, true), both.Right, Facts(both.Right, true)),
+        BoundBinary { Op: BinaryOp.Or } either when !whenTrue => Sequence(Facts(either.Left, false), either.Right, Facts(either.Right, false)),
         _ => Narrowing.None,
     };
+
+    private static Narrowing Sequence(Narrowing first, BoundExpr between, Narrowing then) =>
+        (ContainsCode(between) ? first.WithoutPaths() : first).With(then);
 
     /// <summary>The type <c>isinstance(x, C)</c> narrows <c>x</c> to: <c>C</c>, unless <c>x</c>'s own class already derives from it.</summary>
     private static TaipanType InstanceType(BoundIsInstance isInstance) =>
@@ -3256,30 +3317,28 @@ public sealed partial class Binder
             ? current
             : isInstance.Class;
 
-    private static Narrowing Narrow(BoundExpr operand, TaipanType type)
+    // A name or path narrowed to a type, or, for one that can't be, why (SPEC §3.9).
+    private Narrowing Narrow(BoundExpr operand, TaipanType type)
     {
         if (type.ContainsError)
             return Narrowing.None;
-        var variable = operand switch
+        var key = KeyOf(operand);
+        string? why = key switch
         {
-            BoundVariable v => v.Symbol,
-            BoundNarrowed n => n.Value.Symbol,
-            _ => null,
+            VariableSymbol { Kind: VariableKind.Let or VariableKind.Parameter or VariableKind.LoopVariable } or FieldPath { CanNarrow: true } => null,
+            VariableSymbol { Kind: VariableKind.Var } variable => _nestedAssigned.Contains(variable) ? "a nested function assigns it, so it isn't narrowed" : null,
+            FieldPath => CopyHelp,
+            _ => "",
         };
-        if (variable is { Kind: VariableKind.Let or VariableKind.Parameter or VariableKind.LoopVariable })
-            return Narrowing.None with { Types = Narrowing.None.Types.Add(variable, type) };
-        object? key = variable is not null ? variable
-            : operand is BoundFieldAccess { Target: BoundVariable target } field ? (target.Symbol, field.Field) : null;
-        return key is null ? Narrowing.None : Narrowing.None with { Unnarrowable = [key] };
+        return (key, why) switch
+        {
+            (null, _) or (_, "") => Narrowing.None,
+            (_, null) => Narrowing.None with { Types = Narrowing.None.Types.Add(key, type) },
+            _ => Narrowing.None with { Why = Narrowing.None.Why.Add(key, why) },
+        };
     }
 
-    /// <summary>Whether <paramref name="value"/> is a var or field that a condition here would have narrowed.</summary>
-    private bool IsUnnarrowable(BoundExpr value) => value switch
-    {
-        BoundVariable v => _narrowing.Unnarrowable.Contains(v.Symbol),
-        BoundFieldAccess { Target: BoundVariable target } field => _narrowing.Unnarrowable.Contains((target.Symbol, field.Field)),
-        _ => false,
-    };
+    private const string CopyHelp = "copy it to a 'let' first";
 
     // In `a == b` and `a != b`, a's type is b's expected type, so `m == Nothing` and `xs == []` work (SPEC §5.3).
     // A tuple's isn't: its elements need only be comparable, so `(1, 2) == (1.0, 2)` works (§3.8).
@@ -3293,7 +3352,7 @@ public sealed partial class Binder
     // `x ?? d` (SPEC §3.4): the default is checked against T; a T? default keeps the result optional.
     private BoundExpr BindCoalesce(BinaryExpr binary)
     {
-        var left = BindValue(binary.Left);
+        var left = Declared(BindValue(binary.Left));
         if (left.Type is not OptionalOf optional)
         {
             if (!left.Type.ContainsError)
@@ -3502,14 +3561,14 @@ public sealed partial class Binder
             if (classSymbol.FindField(name) is { } field)
             {
                 Index(member.Member.Span, field);
-                return new BoundFieldAccess(target, field, FieldType(target.Type, field), member.Span);
+                return NarrowedField(new BoundFieldAccess(target, field, FieldType(target.Type, field), member.Span));
             }
             if (name == "__init__")
                 _diagnostics.ReportInitCalled(member.Member.Span);
             else if (classSymbol.FindMethod(name) is not null)
                 _diagnostics.ReportMethodAsValue(member.Member.Span, name);
             else
-                _diagnostics.ReportNoField(member.Member.Span, target.Type, name, IsUnnarrowable(target));
+                _diagnostics.ReportNoField(member.Member.Span, target.Type, name, WhyNotNarrowed(target));
         }
         else if (BuiltinMethodOf(target.Type, name) is not null)
         {
@@ -4395,7 +4454,7 @@ public sealed partial class Binder
             if (classSymbol.FindField(name) is not null)
                 _diagnostics.ReportFieldNotMethod(member.Member.Span, name);
             else
-                _diagnostics.ReportNoMethod(member.Member.Span, target.Type, name, IsUnnarrowable(target));
+                _diagnostics.ReportNoMethod(member.Member.Span, target.Type, name, WhyNotNarrowed(target));
             return new BoundErrorExpr(call.Span);
         }
 
@@ -4659,7 +4718,7 @@ public sealed partial class Binder
             return;
         }
         if (value.Type is OptionalOf optional && TypeChecker.IsAssignable(optional.Inner, target))
-            _diagnostics.ReportOptionalNotNarrowed(span, expectedText ?? target.ToString(), value.Type);
+            _diagnostics.ReportOptionalNotNarrowed(span, expectedText ?? target.ToString(), value.Type, WhyNotNarrowed(value));
         else
             _diagnostics.ReportTypeMismatch(span, expectedText ?? target.ToString(), value.Type);
     }
@@ -4669,7 +4728,7 @@ public sealed partial class Binder
     {
         if (value.Type is not OptionalOf)
             return false;
-        _diagnostics.ReportOptionalUse(span, value.Type, IsUnnarrowable(value));
+        _diagnostics.ReportOptionalUse(span, value.Type, WhyNotNarrowed(value));
         return true;
     }
 }

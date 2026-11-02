@@ -1,0 +1,112 @@
+# Narrowing that follows the flow (SPEC §3.9): after early exits, through vars and field paths.
+@dataclass
+class Service:
+    name: str
+    port: int?
+
+class Config:
+    service: Service?
+    retries: int?
+
+    def __init__(self, service: Service?):
+        self.service = service
+        self.retries = None
+
+    def port_or_zero(self) -> int:
+        if self.service is None:
+            return 0
+        if self.service.port is None:
+            return 0
+        return self.service.port + 1
+
+def label(s: Service?) -> str:
+    if s is None:
+        return "none"
+    return s.name
+
+def require(port: int?) -> int:
+    if port is None:
+        raise ValueError("no port")
+    return port * 2
+
+def first_port(services: list[Service]) -> int:
+    for service in services:
+        if service.port is None:
+            continue
+        return service.port
+    return -1
+
+def total(xs: list[int?]) -> int:
+    var sum = 0
+    for x in xs:
+        if x is None:
+            break
+        sum += x
+    return sum
+
+def describe(s: Service?) -> str:
+    if s is some found:
+        print("found", found.name)
+    else:
+        return "missing"
+    return s.name.upper()
+
+print(label(None), label(Service("api", 80)))
+print(require(21))
+print(first_port([Service("a", None), Service("b", 8080)]))
+print(total([1, 2, None, 4]))
+print(describe(Service("db", None)))
+
+# A var narrowed by a condition, and by assigning it a value that isn't None.
+var current: int? = None
+if current is None:
+    current = 10
+print(current + 1)
+var maybe: str? = "x"
+print(maybe.upper())
+
+# Until a while loop's condition is false.
+var node: int? = 3
+while node is not None:
+    print("node", node)
+    node = _next(node)
+print("done")
+
+def _next(n: int) -> int?:
+    if n == 0:
+        return None
+    return n - 1
+
+let config = Config(Service("web", None))
+print(config.port_or_zero())
+config.service = Service("web", 443)
+print(config.port_or_zero())
+
+# A match statement's arms that finish normally.
+enum Mode:
+    Fast(limit: int?)
+    Slow
+
+def limit(m: Mode, fallback: int?) -> int:
+    match m:
+        Fast(l):
+            if fallback is None:
+                return l ?? 0
+        Slow:
+            if fallback is None:
+                return 1
+    return fallback
+
+print(limit(Fast(None), 5), limit(Slow, None))
+
+# Facts from before a try hold after it, unless something in it ends them.
+def guarded(x: int?) -> int:
+    if x is None:
+        return 0
+    try:
+        print("trying")
+    except Exception as e:
+        print(e)
+    return x + 1
+
+print(guarded(41))

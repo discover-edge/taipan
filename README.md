@@ -84,7 +84,7 @@ Exit codes: `0` success, `1` compile error, `2` usage error, `101` runtime panic
 
 - **Python's syntax:** indentation, `def`, `for`/`while`, f-strings (with format specs, `!r` and `{x=}`, checked at compile time), `match`, `del` and slice assignment, PEP 695 generics (`def first[T](xs: list[T]) -> T?`).
 - **Static types:** annotate function signatures, and locals are inferred. There's no truthiness: conditions must be `bool`.
-- **Optionals instead of null:** a `T?` must be narrowed with `is some`, or given a default with `??`, before use.
+- **Optionals instead of null:** a `T?` must be narrowed before use: with `is some`, `is not None`, or an early exit (`if s is None: return`), which narrows the rest of the block, or given a default with `??`. Narrowing follows `var`s and field paths (`self.config.port`) too, until something could change them, and the error says what did.
 - **Classes:** Python's classes, with single inheritance, `super().__init__(…)`, required `@override`, and fields that must be set before the object is used. `@dataclass` classes get a constructor, field-by-field equality and display. `isinstance(a, Dog)` and `x is not None` narrow a name in the code they guard.
 - **Enums:** enums carry payloads, and `match` must cover every variant.
 - **Default and keyword arguments:** `def connect(host: str, port: int = 8080)`, called as `connect("db", port=5432)`.

@@ -23,6 +23,9 @@ public sealed class DiagnosticBag
     public ImmutableArray<Diagnostic> ToImmutable() =>
         [.. _items.OrderBy(d => d.Source is { } source ? IndexOf(source) : -1).ThenBy(d => d.Span.Start)];
 
+    /// <summary>Adds the diagnostics another bag collected.</summary>
+    public void AddFrom(DiagnosticBag other) => _items.AddRange(other._items);
+
     private int IndexOf(SourceText source)
     {
         for (var i = 0; i < FileOrder.Count; i++)
@@ -195,14 +198,13 @@ public sealed class DiagnosticBag
     public void ReportCannotIterate(TextSpan span, object type) =>
         Add("TP0200", span, $"cannot iterate over {type}");
 
-    public void ReportOptionalNotNarrowed(TextSpan span, object expected, object found) =>
-        Add("TP0203", span, $"expected {expected}, found {found}", NarrowHelp);
+    public void ReportOptionalNotNarrowed(TextSpan span, object expected, object found, string? whyNotNarrowed = null) =>
+        Add("TP0203", span, $"expected {expected}, found {found}", whyNotNarrowed ?? NarrowHelp);
 
     /// <summary><paramref name="unnarrowable"/>: a var or field that a condition would have narrowed (SPEC §3.9).</summary>
-    public void ReportOptionalUse(TextSpan span, object type, bool unnarrowable = false) =>
-        Add("TP0203", span, $"{type} must be narrowed before use", unnarrowable ? CopyHelp : NarrowHelp);
-
-    private const string CopyHelp = "copy it to a 'let' first";
+    // A help saying why a name or path isn't narrowed replaces the usual one (SPEC §3.9).
+    public void ReportOptionalUse(TextSpan span, object type, string? whyNotNarrowed = null) =>
+        Add("TP0203", span, $"{type} must be narrowed before use", whyNotNarrowed ?? NarrowHelp);
 
     private const string NarrowHelp = "narrow it with 'is some', or give a default with '??'";
 
@@ -420,11 +422,11 @@ public sealed class DiagnosticBag
     public void ReportRepeatedField(TextSpan span, string field) =>
         Add("TP0209", span, $"field '{field}' is given more than once");
 
-    public void ReportNoField(TextSpan span, object type, string name, bool unnarrowable = false) =>
-        Add("TP0210", span, $"{type} has no field '{name}'", unnarrowable ? CopyHelp : null);
+    public void ReportNoField(TextSpan span, object type, string name, string? whyNotNarrowed = null) =>
+        Add("TP0210", span, $"{type} has no field '{name}'", whyNotNarrowed);
 
-    public void ReportNoMethod(TextSpan span, object type, string name, bool unnarrowable = false) =>
-        Add("TP0210", span, $"{type} has no method '{name}'", unnarrowable ? CopyHelp : null);
+    public void ReportNoMethod(TextSpan span, object type, string name, string? whyNotNarrowed = null) =>
+        Add("TP0210", span, $"{type} has no method '{name}'", whyNotNarrowed);
 
     public void ReportUndefinedName(TextSpan span, string name) =>
         Add("TP0201", span, $"undefined name '{name}'", NoneHelp(name));

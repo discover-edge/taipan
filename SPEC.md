@@ -380,11 +380,29 @@ There are no other implicit conversions. Explicit conversions use the built-ins 
 - **Display:** `(1, "a")`, with elements written as inside a list.
 - **Generics:** tuple types may be type arguments, and inference matches them element by element.
 
-### 3.9 Narrowing a name (M15)
-- Some conditions narrow a name's type in the code they guard, as mypy does:
+### 3.9 Narrowing (M15, M27)
+Some conditions narrow a name's type in the code they guard, as mypy does, and since M27 in the code that follows them when the other path can't continue:
+
+```python
+def label(s: Service?) -> str:
+    if s is None:
+        return "none"
+    return s.name                # s is a Service here
+
+def first_port(config: Config) -> int:
+    if config.port is None:
+        raise ValueError("no port")
+    return config.port + 1       # config.port is an int here
+```
+
+- **The conditions:**
   - `isinstance(x, C)` narrows `x` to the class `C` (§4.3). On an `x` of type `A?`, it also rules out `None`, since `isinstance(None, C)` is `False`.
   - `x is not None` narrows `x: T?` to `T`.
-- **Which names:** only a name that can't change: a `let`, a parameter (including `self`), a loop variable, or a `match` or `is some` binding. A `var` isn't narrowed, nor is a field (`self.x is not None`) or any other expression, since it could change in between. Using one as if it were narrowed reports the usual error (`TP0203`, `TP0210`), with help `copy it to a 'let' first`.
+  - `x is some v` (M27) narrows `x` as `x is not None` does, besides binding `v`.
+- **What can be narrowed:**
+  - A name: a `let`, a parameter (including `self`), a loop variable, a `match` or `is some` binding, and since M27 a `var` (below).
+  - Since M27, a *path* of fields, `p.x` or `self.config.port`, whose root is a name that can't change: a `let`, a parameter, `self`, a loop variable or a binding.
+  - Nothing else, such as an element (`xs[0]`) or a call's result. Copy it to a `let` first.
 - **When a condition is true**, these narrowings hold:
   - `isinstance(x, C)` and `x is not None` narrow as above.
   - `a and b` narrows by both `a` and `b`.
@@ -396,11 +414,29 @@ There are no other implicit conversions. Explicit conversions use the built-ins 
   - `not a` narrows by whatever holds when `a` is true.
 - **Where narrowing applies:**
   - In `if c:`, the `if` block sees what holds when `c` is true. Each later `elif` condition and block, and the `else` block, see what holds when `c` is false. So does everything after earlier `elif` conditions that were false.
-  - In `while c:`, the body sees what holds when `c` is true.
+  - **After an `if` statement (M27)**, the rest of the block sees what holds at the end of every branch that can finish normally (§4.5): a branch ending in `return`, `raise`, `break` or `continue` doesn't count. A missing `else` is a branch that finishes with every condition false. So after `if x is None: return`, `x` is narrowed. If no branch can finish, nothing after the `if` runs (and when every branch terminates, §4.5's `TP0300` applies).
+  - **After a `match` statement (M27)**, likewise: what holds at the end of every arm that can finish normally.
+  - In `while c:`, the body sees what holds when `c` is true. **After the loop (M27)**, if its body has no `break` for it, the rest sees what holds when `c` is false.
+  - **Loops (M27):** a loop's body, and a `while` condition, run more than once, so they see what held before the loop less whatever the body can end (below). After a `for` loop, which may not run at all, the same holds.
+  - **`try` (M27):** its `except`, `else` and `finally` blocks, and the code after it, see what held before the `try` less whatever any of its blocks can end. Narrowing found inside the `try` block doesn't reach them, since an exception could come from anywhere in it.
   - In `a and b`, `b` sees what holds when `a` is true. In `a or b`, `b` sees what holds when `a` is false. So `x is None or x > 0` is valid.
-  - Lambdas and nested functions written in a narrowed region see the narrowed type too, since the name can't change.
   - `match` class patterns narrow the scrutinee inside their arm (§5.1).
-- A narrowed name has the narrowed type for every use: member access, calls, arguments and assignments. It's still the same binding, so it follows the shadowing rules as before.
+- **Lambdas and nested functions** written in a narrowed region see narrowed `let`s, parameters and bindings, which can't change. They don't see narrowed `var`s or paths, since they run later, when those may have changed.
+- **What ends narrowing (M27):**
+  - **A `var`** stays narrowed until it's assigned. Assigning a value whose type is narrower than the `var`'s narrows it to that type: a non-optional value to a `T?` `var`, or an instance of a subclass. So `var x: int? = None`, then `x = 5`, then `x + 1` is valid, and so is `var name: str? = "x"` then `name.upper()`, since the declaration assigns too. Unpacking (§3.8) and compound assignments assign too.
+  - The optional tests, `is None`, `is not None`, `is some` and `??`, see a narrowed name or path as its declared type, so testing a `var` that's been assigned a value isn't an error.
+  - A `var` that a nested function assigns (§3.7) isn't narrowed from that function's `def` on, nor anywhere in a loop containing it, since any call could run the function.
+  - **A path** stays narrowed until something could change it:
+    - any call that could run Taipan or foreign code: a Taipan function, method, constructor or function value, `super()`, any operation on a `py` value, and any .NET member; and a built-in given a function (`map`, `filter`, and `sorted` or `sort` with a `key`). Other built-ins (`len`, `print`, `str`, list and dict methods) don't end it.
+    - any assignment to a field with the name of one of the path's fields, on any object, since another name could refer to the same object.
+  - Ending is ordered as the code runs: in `p.x is not None and check(p)`, the call ends the narrowing of `p.x`, so the `if` block doesn't see it.
+- **Errors:** using a name or path as if it were narrowed reports the usual error (`TP0203`, `TP0210`), with help saying why it isn't:
+  - `it can be None again after the assignment on line <n>` for a `var`, or `it was assigned again on line <n>` for one narrowed by `isinstance`;
+  - `a nested function assigns it, so it isn't narrowed` for a `var` a nested function assigns;
+  - `a lambda or nested function runs later, when it may have changed; copy it to a 'let' first` for a narrowed `var` or path used in one;
+  - `the call on line <n> could have changed it; copy it to a 'let' first`, or `the assignment to '.<f>' on line <n> could have changed it; copy it to a 'let' first`, for a path;
+  - `copy it to a 'let' first` for anything else that can't be narrowed, such as `xs[0]` or a path rooted at a `var`.
+- A narrowed name or path has the narrowed type for every use: member access, calls, arguments and assignments. A name is still the same binding, so it follows the shadowing rules as before.
 - `isinstance(x, C)` where `C` is `x`'s own class or a base of it doesn't narrow `x` further, apart from ruling out `None`.
 
 ### 3.10 Exceptions (M16)
@@ -1200,7 +1236,7 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0200 | `'super()' can only be used as 'super().<method>(…)'` / `'super()' can only be used in a method` / `'<C>' has no base class` / `'__init__' cannot be called directly` / `'__init__' cannot have a return type` (M15) |
 | TP0201 | `undefined name '<x>'` (with help `use 'None'` for `none`) / `undefined type '<T>'` / `module '<m>' has no definition '<x>'` / `.NET namespace '<ns>' has no type '<x>'` (M21) |
 | TP0202 | `cannot assign to '<x>': it is a <let binding\|parameter\|loop variable\|constant\|function\|method>`, with help `declare it with 'var'` for a `let` binding / `cannot assign to an element of str` / `cannot assign to an element of a tuple` / `cannot use '<op>' on a slice` / `cannot delete '<x>'`, with help `assign it a new value instead` / `cannot delete a field` / `cannot delete an element of <T>` (M26) |
-| TP0203 | `expected <T>, found <T>?` / `<T>? must be narrowed before use`, with help `narrow it with 'is some', or give a default with '??'` |
+| TP0203 | `expected <T>, found <T>?` / `<T>? must be narrowed before use`, with help `narrow it with 'is some', or give a default with '??'`, or one saying why a name or path isn't narrowed there (§3.9, M27) |
 | TP0204 | `non-exhaustive match (missing: <a>, <b>)` |
 | TP0205 | `condition must be bool, found <T>` (with help `convert it with 'as bool'` for `py`) |
 | TP0206 | `cannot infer the type of an empty list` / `... empty dict` / `cannot infer the type of None` / `cannot infer '<T>' for '<f>'` / `cannot infer the type of lambda parameter '<x>'`, with help `add a type annotation` |
@@ -1315,7 +1351,7 @@ Types are written as in source: `int`, `str?`, `list[int]`. The type of `None` i
 - `match` expressions inside other expressions (`f(match x: …)`, lambda bodies), and arms with indented blocks
 - type aliases inside functions and classes, recursive aliases, and showing an alias's name in diagnostics
 - keyword-only (`*`) and positional-only (`/`) parameters, `*args` and `**kwargs`, and defaults on lambda parameters (not planned, since loop variables are captured per iteration, §3.7)
-- flow-sensitive narrowing after early return, and narrowing `var`s and fields
+- narrowing elements (`xs[0]`) and paths rooted at a `var`, and narrowing that follows `==` comparisons with literals
 - `raise … from …`, exception chaining, `BaseException`, exception groups (`except*`), and printing tracebacks
 - dataclass exceptions (mixing dataclasses and plain classes), and `args` on exceptions
 - nested format specs in f-strings (`{x:{width}}`), the locale-dependent `n` format type, and format specs for other types (`__format__`)
