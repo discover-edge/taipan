@@ -476,7 +476,7 @@ finally:
 - `raise e` reports its own line, even when `e` was caught elsewhere. A bare `raise` keeps the line where the exception was first raised.
 
 **What isn't catchable**
-- Importing Python modules happens at startup (§10.1), before any `try` runs, so a failure to load Python or to import a module is always a panic.
+- Importing Python modules happens at startup (§10.1), before any `try` runs, so a failure to load Python or to import a module is always a panic. So is a failure to load Python at a program's first conversion to `py`, when it imports no Python module (§10.5).
 - Running out of stack ends the process, as in .NET; it isn't an exception. Internal compiler errors aren't exceptions either.
 
 ### 3.11 Protocols (M17)
@@ -1255,7 +1255,7 @@ Types are written as in source: `int`, `str?`, `list[int]`. The type of `None` i
 ### 10.5 Errors at run time
 - A failed `as T` raises a `TypeError` (M16) with the message `cannot convert Python <type> to <T>`, where `<type>` is the Python type's name (`str`, `NoneType`).
 - A Python exception during any `py` operation raises a `PythonError` (M16, §3.10), with the Python class's name, the message (Python's `str(e)`) and the exception object. `except json.JSONDecodeError` catches one by its Python class. Uncaught, it panics with `Python <ExceptionType>: <message>`.
-- If Python can't be loaded, the first Python import panics with `cannot load Python: <reason>`.
+- If Python can't be loaded, the first Python import panics with `cannot load Python: <reason>`. A program without Python imports starts Python at its first conversion to `py` (`let p: py = [1, 2]`), which panics the same way.
 - All of these exit with 101 and report the Taipan line, as other panics do (§7).
 
 ### 10.6 Locating and running Python
