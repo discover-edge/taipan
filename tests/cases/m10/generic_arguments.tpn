@@ -1,0 +1,12 @@
+# A generic call passed to Python infers its type arguments from py, its expected type, so its
+# arguments are converted to Python (SPEC §3.6, §10.3).
+from python import json
+
+def identity[T](value: T) -> T:
+    return value
+
+print(json.dumps(identity(3)) as str)
+print(json.dumps(identity([1, 2])) as str)
+print(json.dumps({"x": identity("y")}) as str)
+let v: py = identity(True)
+print(json.dumps(v) as str)
