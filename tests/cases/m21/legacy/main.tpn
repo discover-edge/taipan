@@ -1,0 +1,4 @@
+# Results from an assembly without nullable annotations are optional (SPEC §13.3).
+from dotnet.Acme.Geometry import Legacy
+
+let name: str = Legacy.Name()

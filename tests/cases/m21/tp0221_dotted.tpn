@@ -1,0 +1,2 @@
+# Taipan modules aren't dotted; only .NET namespaces are (SPEC §4.7).
+from shapes.geometry import Point

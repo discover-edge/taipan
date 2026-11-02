@@ -1,0 +1,39 @@
+from dotnet.System import Convert, FormatException, SystemException, OverflowException
+from dotnet.System.IO import IOException, FileNotFoundException
+
+def f(text: str) -> int:
+    try:
+        return Convert.ToInt32(text)
+    except SystemException:
+        return 0
+    except FormatException:
+        return 1
+
+def g(text: str) -> int:
+    try:
+        return Convert.ToInt32(text)
+    except DotNetError:
+        return 0
+    except OverflowException:
+        return 1
+    except IOException:
+        return 2
+
+def h(text: str) -> int:
+    try:
+        return Convert.ToInt32(text)
+    except Exception as e:
+        print(e)
+        return 0
+    except FileNotFoundException:
+        return 1
+
+def k(text: str) -> int:
+    try:
+        return Convert.ToInt32(text)
+    except ArithmeticError:
+        return 0
+    except OverflowException:
+        return 1
+
+print(f("1"), g("1"), h("1"), k("1"))

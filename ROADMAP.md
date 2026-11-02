@@ -2,7 +2,7 @@
 
 Each milestone is done when **all** of its acceptance criteria pass as golden tests (see CLAUDE.md). Milestones are sequential. Don't start the next one early.
 
-M0–M10 (with M8.1) make up v0.1 and are complete. M11 through M20 are complete; M21 onward are planned.
+M0–M10 (with M8.1) make up v0.1 and are complete. M11 through M21 are complete; M22 onward are planned.
 
 ## M0 — Scaffold
 - Create the solution layout from CLAUDE.md, the `taipan` CLI with `check | emit | build | run` stubs, and the golden-test harness.
@@ -159,7 +159,7 @@ M0–M10 (with M8.1) make up v0.1 and are complete. M11 through M20 are complete
   - `taipan --version` prints the package version.
 
 ## M21 — .NET libraries from Taipan
-- Reference .NET assemblies and NuGet packages, and use their APIs with static types read from metadata through Roslyn: `from dotnet import System.Text.Json`. Unlike `py`, calls are checked at compile time.
+- Reference .NET assemblies and NuGet packages, and use their APIs with static types read from metadata through Roslyn: `from dotnet.System.Text import StringBuilder`. Unlike `py`, calls are checked at compile time.
 - Static methods, constructors, instance methods and properties whose types map to Taipan's (`long`, `double`, `string`, `bool`; other integer and float widths through checked conversions), and .NET classes as opaque types. Nullable annotations give `T?`.
 - .NET exceptions are catchable in `except`.
 - Update SPEC first: how assemblies and packages are referenced, the type mapping and conversions, how members are named and looked up, treatment of assemblies without nullable annotations, and what is deferred (overloads beyond a defined resolution rule, generic methods, delegates, `async`, events, `ref`/`out`).

@@ -55,14 +55,14 @@ public static class Cli
     {
         if (args.Length != 1)
             return UsageError(stderr, "check takes exactly one file");
-        return Compile(args[0], stderr, out _);
+        return Compile(args[0], stderr, out _, out _);
     }
 
     private static int Emit(string[] args, TextWriter stdout, TextWriter stderr)
     {
         if (args.Length != 1)
             return UsageError(stderr, "emit takes exactly one file");
-        var exit = Compile(args[0], stderr, out var program);
+        var exit = Compile(args[0], stderr, out var program, out _);
         if (program is not null)
             stdout.Write(program.Code);
         return exit;
@@ -72,12 +72,12 @@ public static class Cli
     {
         if (args.Length != 3 || args[1] != "-o")
             return UsageError(stderr, "build takes a file and -o <dir>");
-        var exit = Compile(args[0], stderr, out var program);
+        var exit = Compile(args[0], stderr, out var program, out var project);
         if (program is null)
             return exit;
 
         var name = Path.GetFileNameWithoutExtension(args[0]);
-        var path = RoslynCompiler.Save(RoslynCompiler.Compile(program, name), name, args[2]);
+        var path = RoslynCompiler.Save(RoslynCompiler.Compile(program, name), name, args[2], project!.RuntimeAssemblies);
         stdout.WriteLine($"built {path}");
         return ExitSuccess;
     }
@@ -89,25 +89,32 @@ public static class Cli
             return UsageError(stderr, "run takes a file");
         if (args.Length > 1 && args[1] != "--")
             return UsageError(stderr, "program arguments must follow '--'");
-        var exit = Compile(args[0], stderr, out var program);
+        var exit = Compile(args[0], stderr, out var program, out var project);
         if (program is null)
             return exit;
 
         var image = RoslynCompiler.Compile(program, Path.GetFileNameWithoutExtension(args[0]));
-        return RoslynCompiler.Run(image, stdout, stderr);
+        return RoslynCompiler.Run(image, project!.RuntimeAssemblies, stdout, stderr);
     }
 
     /// <summary>
     /// Runs load (lex and parse every file) → bind → emit. Each stage runs only if the previous
     /// one reported no errors (SPEC §9). Features from later milestones stop compilation as "not implemented".
-    /// <paramref name="program"/> is set only on success.
+    /// <paramref name="program"/> and <paramref name="project"/> are set only on success. A wrong
+    /// <c>taipan.json</c> isn't an error in the source (SPEC §13.2).
     /// </summary>
-    private static int Compile(string path, TextWriter stderr, out EmittedProgram? program)
+    private static int Compile(string path, TextWriter stderr, out EmittedProgram? program, out ProjectFile? project)
     {
         program = null;
+        project = null;
         if (!File.Exists(path))
         {
             stderr.WriteLine($"taipan: file not found: {path}");
+            return ExitUsage;
+        }
+        if (ProjectFile.Load(path, out var error) is not { } loadedProject)
+        {
+            stderr.WriteLine($"taipan: {error}");
             return ExitUsage;
         }
 
@@ -115,7 +122,7 @@ public static class Cli
         if (Report(loaded.Diagnostics, stderr))
             return ExitCompileError;
 
-        var bound = Binder.Bind(loaded.Modules);
+        var bound = Binder.Bind(loaded.Modules, DotNetLibrary.For(loadedProject.CompileReferences));
         if (bound.Unsupported is not null)
             return NotImplemented(bound.Unsupported, stderr);
         if (Report(bound.Diagnostics, stderr))
@@ -126,6 +133,7 @@ public static class Cli
         if (Report(emitted.Diagnostics, stderr))
             return ExitCompileError;
         program = emitted;
+        project = loadedProject;
         return ExitSuccess;
     }
 

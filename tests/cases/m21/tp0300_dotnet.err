@@ -1,0 +1,8 @@
+tests/cases/m21/tp0300_dotnet.tpn:9:12: warning TP0300: unreachable except clause
+  help: 'SystemException' is already caught above
+tests/cases/m21/tp0300_dotnet.tpn:19:12: warning TP0300: unreachable except clause
+  help: 'DotNetError' is already caught above
+tests/cases/m21/tp0300_dotnet.tpn:28:12: warning TP0300: unreachable except clause
+  help: 'Exception' is already caught above
+tests/cases/m21/tp0300_dotnet.tpn:36:12: warning TP0300: unreachable except clause
+  help: 'ArithmeticError' is already caught above

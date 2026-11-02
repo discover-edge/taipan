@@ -1,0 +1,74 @@
+from dotnet.System import Convert, FormatException, OverflowException
+from dotnet.System.IO import File, FileNotFoundException, IOException
+
+def read(path: str) -> str:
+    try:
+        return File.ReadAllText(path)
+    except FileNotFoundException as e:
+        return f"missing: {e.FileName ?? path}"
+
+def parse(text: str) -> int:
+    try:
+        return Convert.ToInt32(text)
+    except (FormatException, OverflowException) as e:
+        print("bad number:", e.GetType().Name)
+        return -1
+
+def size(path: str) -> int:
+    try:
+        return len(File.ReadAllBytes(path))
+    except IOException:
+        return 0
+
+print(read("tests/cases/m21/no-such-file.txt").endswith("no-such-file.txt"))
+print(parse("42"))
+print(parse("forty-two"))
+print(parse("99999999999"))
+print(size("tests/cases/m21/no-such-dir/x"))
+
+# As Exception, a .NET exception is a DotNetError.
+try:
+    Convert.ToInt32("x")
+except Exception as e:
+    print(isinstance(e, DotNetError))
+    print(e.message)
+
+try:
+    Convert.ToInt64("x")
+except DotNetError as e:
+    print(e.type)
+finally:
+    print("finally")
+
+# .NET's OverflowException is Taipan's OverflowError.
+try:
+    Convert.ToInt16("70000")
+except OverflowError as e:
+    print("overflow:", e.message)
+
+# A Taipan exception isn't caught by a .NET class.
+try:
+    try:
+        raise ValueError("taipan")
+    except FormatException:
+        print("wrong")
+except ValueError as e:
+    print("right:", e.message)
+
+# A bare raise rethrows the .NET exception itself.
+try:
+    try:
+        Convert.ToInt32("y")
+    except FormatException:
+        raise
+except FormatException as e:
+    print("rethrown:", e.Message)
+
+# A DotNetError raised again is still its .NET exception to a .NET class's clause.
+try:
+    try:
+        Convert.ToInt32("z")
+    except Exception as e:
+        raise e
+except FormatException as e:
+    print("raised again:", e.Message)

@@ -1,0 +1,6 @@
+tests/cases/m21/tp0221_dotnet.tpn:2:8: error TP0221: 'dotnet' is not a module
+  help: use 'from dotnet.<namespace> import <type>'
+tests/cases/m21/tp0221_dotnet.tpn:3:6: error TP0221: 'dotnet' is not a module
+  help: use 'from dotnet.<namespace> import <type>'
+tests/cases/m21/tp0221_dotnet.tpn:4:6: error TP0221: .NET namespace 'System.Txt' not found
+tests/cases/m21/tp0221_dotnet.tpn:5:32: error TP0201: .NET namespace 'System.Text' has no type 'StringBilder'

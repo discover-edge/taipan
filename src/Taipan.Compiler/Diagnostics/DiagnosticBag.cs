@@ -577,8 +577,40 @@ public sealed class DiagnosticBag
     public void ReportNotExceptionClass(TextSpan span, string name) =>
         Add("TP0200", span, $"'{name}' is not an exception class");
 
+    public void ReportMixedExceptionBinding(TextSpan span) =>
+        Add("TP0200", span, "cannot bind both Taipan and .NET exceptions", "write separate clauses");
+
     public void ReportCannotConstruct(TextSpan span, string name) =>
         Add("TP0200", span, $"'{name}' cannot be constructed");
+
+    // ---- .NET interop (SPEC §13, M21) ----
+
+    public void ReportDotNetNotModule(TextSpan span) =>
+        Add("TP0221", span, "'dotnet' is not a module", "use 'from dotnet.<namespace> import <type>'");
+
+    public void ReportDotNetNamespaceNotFound(TextSpan span, string ns) =>
+        Add("TP0221", span, $".NET namespace '{ns}' not found");
+
+    public void ReportNoDotNetType(TextSpan span, string ns, string name) =>
+        Add("TP0201", span, $".NET namespace '{ns}' has no type '{name}'");
+
+    public void ReportGenericDotNetImport(TextSpan span, string name) =>
+        Add("TP0231", span, $"'{name}' can't be imported: generic .NET types aren't supported yet");
+
+    public void ReportDotNetUnsupported(TextSpan span, string member, string type) =>
+        Add("TP0231", span, $"'{member}' uses {type}, which Taipan can't use yet");
+
+    public void ReportAmbiguousDotNetCall(TextSpan span, string member, string first, string second) =>
+        Add("TP0232", span, $"ambiguous call to '{member}': it could be '{first}' or '{second}'");
+
+    public void ReportNoOverload(TextSpan span, string member, IEnumerable<object> arguments) =>
+        Add("TP0200", span, $"no overload of '{member}' takes ({string.Join(", ", arguments)})");
+
+    public void ReportStaticClass(TextSpan span, string name) =>
+        Add("TP0200", span, $"'{name}' is a static class");
+
+    public void ReportOutOfRangeFor(TextSpan span, string value, string type) =>
+        Add("TP0200", span, $"{value} is out of range for {type}");
 
     public void AddRange(IEnumerable<Diagnostic> diagnostics) => _items.AddRange(diagnostics);
 

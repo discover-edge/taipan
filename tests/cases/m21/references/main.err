@@ -1,0 +1,2 @@
+panic: .NET Acme.Geometry.GeometryException: negative size 2 x -1
+  at tests/cases/m21/references/main.tpn:17

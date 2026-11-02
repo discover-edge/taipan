@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    A library for the M21 golden cases to reference through taipan.json (SPEC §13.2). Each build
+    copies it to tests/cases/m21/lib, which git ignores.
+  -->
+  <PropertyGroup>
+    <ImplicitUsings>disable</ImplicitUsings>
+  </PropertyGroup>
+
+  <Target Name="CopyToCases" AfterTargets="Build">
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(MSBuildThisFileDirectory)../../cases/m21/lib/" SkipUnchangedFiles="true" />
+  </Target>
+
+</Project>

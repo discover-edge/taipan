@@ -20,6 +20,10 @@ public static class TypeChecker
         || (to is OptionalOf optional && (from is NoneType || (from is not OptionalOf && IsSubtype(from, optional.Inner))))
         || (from is OptionalOf { Inner: ClassType fromClass } && to is OptionalOf { Inner: ClassType toClass } && Derives(fromClass, toClass))
         || (from is ClassType fromType && to is ClassType toType && Derives(fromType, toType))
+        // A .NET object parameter takes int, float, bool, str and .NET values (SPEC §13.3).
+        || (to is DotNetType { IsObject: true } && from is PrimitiveType { Name: not "py" } or DotNetType)
+        || (from is DotNetType fromNet && to is DotNetType toNet && DotNetTypes.Derives(fromNet.Symbol, toNet.Symbol))
+        || (from is OptionalOf { Inner: DotNetType fromInner } && to is OptionalOf { Inner: DotNetType toInner } && DotNetTypes.Derives(fromInner.Symbol, toInner.Symbol))
         || (from is FunctionType f && to is FunctionType t && f.Parameters.Length == t.Parameters.Length
             && t.Parameters.Zip(f.Parameters).All(pair => IsSubtype(pair.First, pair.Second))
             && (f.Result == t.Result || (f.Result is not NothingType && t.Result is not NothingType && IsSubtype(f.Result, t.Result))));
@@ -44,6 +48,8 @@ public static class TypeChecker
         // A class and a base of it, or function types one of which converts to the other (SPEC §4.3, §3.7).
         if (left is ClassType lc && right is ClassType rc)
             return lc.Symbol != rc.Symbol && AreRelated(lc.Symbol, rc.Symbol);
+        if (left is DotNetType ln && right is DotNetType rn)
+            return DotNetTypes.Derives(ln.Symbol, rn.Symbol) || DotNetTypes.Derives(rn.Symbol, ln.Symbol);
         if (left is FunctionType && right is FunctionType)
             return IsSubtype(left, right) || IsSubtype(right, left);
         // Element by element (SPEC §3.8).

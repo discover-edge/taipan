@@ -1,0 +1,5 @@
+tests/cases/m21/tp0210_dotnet.tpn:6:4: error TP0210: StringBuilder has no method 'Apend'
+tests/cases/m21/tp0210_dotnet.tpn:7:12: error TP0210: File has no field 'Nope'
+tests/cases/m21/tp0210_dotnet.tpn:8:21: error TP0210: StringBuilder has no field 'Length'
+tests/cases/m21/tp0210_dotnet.tpn:9:18: error TP0210: StringBuilder has no field 'Lenght'
+tests/cases/m21/tp0210_dotnet.tpn:11:9: error TP0210: str has no method 'Substring'

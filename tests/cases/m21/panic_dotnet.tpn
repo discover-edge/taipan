@@ -1,0 +1,7 @@
+from dotnet.System import Convert
+
+def parse(text: str) -> int:
+    return Convert.ToInt32(text)
+
+print("before")
+print(parse("abc"))

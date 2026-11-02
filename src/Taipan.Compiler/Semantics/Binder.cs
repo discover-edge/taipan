@@ -19,7 +19,7 @@ public sealed record BindResult(BoundProgram Program, ImmutableArray<Diagnostic>
 /// signatures); inheritance checks; value imports; defaults; then function and method bodies, and
 /// the main file's top-level statements.
 /// </summary>
-public sealed class Binder
+public sealed partial class Binder
 {
     private static readonly BigInteger MaxInt = long.MaxValue;
     private static readonly HashSet<string> BuiltinTypeNames = ["int", "float", "bool", "str", "list", "dict", "py", "Callable", "tuple", "Protocol", "Self"];
@@ -101,18 +101,22 @@ public sealed class Binder
     private int? _finallyLoopDepth;
     private string? _unsupported;
 
-    private Binder()
+    private Binder(DotNetLibrary library)
     {
         _scope = _builtins;
+        _library = library;
     }
 
     public static BindResult Bind(SourceText source, CompilationUnit unit) =>
         Bind([new SourceModule(Path.GetFileNameWithoutExtension(source.Path), source, unit)]);
 
-    /// <summary>Binds a program: the main file first, then its modules (SPEC §4.7).</summary>
-    public static BindResult Bind(ImmutableArray<SourceModule> files)
+    /// <summary>
+    /// Binds a program: the main file first, then its modules (SPEC §4.7). Its .NET types come
+    /// from <paramref name="library"/>, the runtime's own assemblies by default (SPEC §13.2).
+    /// </summary>
+    public static BindResult Bind(ImmutableArray<SourceModule> files, DotNetLibrary? library = null)
     {
-        var binder = new Binder();
+        var binder = new Binder(library ?? DotNetLibrary.Framework);
         var program = binder.BindProgram(files);
         return new BindResult(program, binder._diagnostics.ToImmutable(), binder._unsupported);
     }
@@ -255,7 +259,10 @@ public sealed class Binder
             [.. classes],
             [.. order.SelectMany(m => m.Constants)],
             [.. functions],
-            new BoundBlock(topLevel, unit.Span));
+            new BoundBlock(topLevel, unit.Span))
+        {
+            References = _dotnet?.References ?? [],
+        };
     }
 
     /// <summary>Constants, function signatures, class members and variant fields, in source order.</summary>
@@ -294,6 +301,12 @@ public sealed class Binder
             {
                 case ImportStmt import when import.Module.Text == ModuleLoader.PythonModule:
                     _diagnostics.ReportPythonNotModule(import.Module.Span);
+                    break;
+                case ImportStmt import when import.Module.Text == ModuleLoader.DotNetModule:
+                    _diagnostics.ReportDotNetNotModule(import.Module.Span);
+                    break;
+                case FromImportStmt from when ModuleLoader.IsDotNet(from.Module.Text):
+                    ImportDotNet(from);
                     break;
                 case FromImportStmt { Module.Text: ModuleLoader.PythonModule } fromPython:
                     // Each name holds a Python module, imported at startup (SPEC §10.1).
@@ -378,7 +391,7 @@ public sealed class Binder
             var name = parameter.Name;
             if (!seen.Add(name.Text))
                 _diagnostics.ReportDuplicateDefinition(name.Span, name.Text);
-            else if (BuiltinTypeNames.Contains(name.Text) || ResolveTypeName(name.Text) is not null || _global.Lookup(name.Text) is TypeAliasSymbol)
+            else if (BuiltinTypeNames.Contains(name.Text) || ResolveTypeName(name.Text) is not null || _global.Lookup(name.Text) is TypeAliasSymbol or DotNetTypeSymbol)
                 _diagnostics.ReportShadowing(name.Span, name.Text);
             if (!allowConstraints && !parameter.Constraints.IsEmpty)
                 _diagnostics.ReportConstraintNotOnFunction(parameter.Constraints[0].Span);
@@ -663,8 +676,8 @@ public sealed class Binder
             case ClassType { Symbol.TypeParameters.IsEmpty: false }:
                 _diagnostics.ReportGenericBase(syntax.Span);
                 return;
-            // Only the runtime makes a PythonError (SPEC §3.10).
-            case ClassType { Symbol: var baseClass } when baseClass == BuiltinClasses.PythonError:
+            // Only the runtime makes a PythonError or a DotNetError (SPEC §3.10).
+            case ClassType { Symbol: var baseClass } when BuiltinClasses.IsRuntimeOnly(baseClass):
                 _diagnostics.ReportInvalidBase(syntax.Span, type);
                 return;
             case ClassType { Symbol: var baseClass } when baseClass.IsDataclass != symbol.IsDataclass:
@@ -1415,6 +1428,8 @@ public sealed class Binder
                 return typeParameter;
             case NamedType named when _global.Lookup(named.Name.Text) is TypeAliasSymbol alias:
                 return ExpandAlias(alias, named.Name, [], named.Span);
+            case NamedType named when _global.Lookup(named.Name.Text) is DotNetTypeSymbol dotnet:
+                return DotNetTypeOf(dotnet.Type, named.Span);
             case GenericType generic when _global.Lookup(generic.Name.Text) is TypeAliasSymbol alias:
                 return ExpandAlias(alias, generic.Name, generic.Arguments, generic.Span);
             case NamedType named when ResolveTypeName(named.Name.Text) is { } typeSymbol:
@@ -1461,6 +1476,14 @@ public sealed class Binder
             GenericType generic => (generic.Name, generic.Arguments),
             _ => throw new InvalidOperationException($"unexpected qualified type {qualified.Type.GetType().Name}"),
         };
+        // A .NET type nested in an imported one: Environment.SpecialFolder (SPEC §13.1).
+        if (_scope.Lookup(qualified.Module.Text) is DotNetTypeSymbol outer && arguments.IsEmpty)
+        {
+            if (NestedType(outer.Type, name.Text) is { } nested)
+                return DotNetTypeOf(nested, qualified.Span);
+            _diagnostics.ReportUndefinedType(name.Span, name.Text);
+            return TaipanType.Error;
+        }
         if (_scope.Lookup(qualified.Module.Text) is not ModuleSymbol module)
         {
             _diagnostics.ReportUndefinedName(qualified.Module.Span, qualified.Module.Text);
@@ -2116,9 +2139,13 @@ public sealed class Binder
 
     private BoundStmt BindFieldAssign(AssignStmt assign, MemberExpr member, BoundExpr? preset)
     {
+        if (DotNetTypeNamed(member.Target) is { } owner)
+            return BindDotNetAssign(assign, null, owner, member, preset);
         var target = BindValue(member.Target);
         if (target.Type.ContainsError || ReportIfOptional(target, member.Target.Span))
             return OrphanAssign(assign, preset);
+        if (target.Type is DotNetType net)
+            return BindDotNetAssign(assign, target, net.Symbol, member, preset);
         if (target.Type == TaipanType.Py)
         {
             var current = new BoundPyGetAttr(target, member.Member.Text, member.Span);
@@ -2283,7 +2310,8 @@ public sealed class Binder
 
         // The classes earlier clauses catch, for clauses that can never match (TP0300).
         var caught = new List<ClassSymbol>();
-        var handlers = tryStmt.Handlers.Select(clause => BindHandler(clause, caught)).ToImmutableArray();
+        var caughtDotNet = new List<Microsoft.CodeAnalysis.INamedTypeSymbol>();
+        var handlers = tryStmt.Handlers.Select(clause => BindHandler(clause, caught, caughtDotNet)).ToImmutableArray();
         var elseBlock = tryStmt.Else is null ? null : BindBlock(tryStmt.Else);
 
         BoundBlock? finallyBlock = null;
@@ -2297,9 +2325,10 @@ public sealed class Binder
         return new BoundTry(body, handlers, elseBlock, finallyBlock, tryStmt.Span);
     }
 
-    private BoundHandler BindHandler(ExceptClause clause, List<ClassSymbol> caught)
+    private BoundHandler BindHandler(ExceptClause clause, List<ClassSymbol> caught, List<Microsoft.CodeAnalysis.INamedTypeSymbol> caughtDotNet)
     {
         var classes = new List<ClassSymbol>();
+        var dotnetClasses = new List<Microsoft.CodeAnalysis.INamedTypeSymbol>();
         var pythonClasses = new List<BoundExpr>();
         var valid = true;
         foreach (var type in clause.Types)
@@ -2312,6 +2341,9 @@ public sealed class Binder
                 case BoundExpr pythonClass:
                     pythonClasses.Add(pythonClass);
                     break;
+                case DotNetType dotnetClass:
+                    dotnetClasses.Add(dotnetClass.Symbol);
+                    break;
                 default:
                     valid = false;
                     break;
@@ -2322,18 +2354,38 @@ public sealed class Binder
 
         // A clause whose classes earlier clauses all catch can never match.
         var reachable = true;
-        if (valid && pythonClasses.Count == 0 && classes.All(c => caught.Any(c.DerivesFrom)))
+        if (valid && pythonClasses.Count == 0 && classes.All(c => caught.Any(c.DerivesFrom))
+            && dotnetClasses.All(c => CaughtBy(c, caught, caughtDotNet) is not null))
         {
             reachable = false;
-            _diagnostics.ReportUnreachableHandler(clause.TypesSpan, caught.First(classes[0].DerivesFrom).Name);
+            var caughtBy = classes.Count > 0 ? caught.First(classes[0].DerivesFrom).Name : CaughtBy(dotnetClasses[0], caught, caughtDotNet)!;
+            _diagnostics.ReportUnreachableHandler(clause.TypesSpan, caughtBy);
         }
         caught.AddRange(classes);
+        caughtDotNet.AddRange(dotnetClasses);
 
         // A Python class matches a PythonError; several classes bind their nearest common base.
+        // .NET classes bind theirs, and can't be bound with Taipan classes (SPEC §13.6).
         IEnumerable<ClassSymbol> bound = pythonClasses.Count > 0 ? [.. classes, BuiltinClasses.PythonError] : classes;
-        var bindingType = valid
-            ? bound.Aggregate((a, b) => a.CommonBase(b) ?? BuiltinClasses.Exception).Type
-            : TaipanType.Error;
+        TaipanType bindingType;
+        if (!valid)
+        {
+            bindingType = TaipanType.Error;
+        }
+        else if (dotnetClasses.Count == 0)
+        {
+            bindingType = bound.Aggregate((a, b) => a.CommonBase(b) ?? BuiltinClasses.Exception).Type;
+        }
+        else if (!bound.Any())
+        {
+            bindingType = new DotNetType(dotnetClasses.Aggregate(DotNetCommonBase));
+        }
+        else
+        {
+            if (clause.Binding is not null)
+                _diagnostics.ReportMixedExceptionBinding(clause.TypesSpan);
+            bindingType = TaipanType.Error;
+        }
 
         var outer = _scope;
         _scope = new Scope(outer);
@@ -2353,7 +2405,7 @@ public sealed class Binder
         if (broad && !Raises(body) && !(binding is not null && Uses(body, binding)))
             _diagnostics.ReportBroadHandler(new TextSpan(clause.Span.Start, "except".Length));
 
-        return new BoundHandler([.. classes], [.. pythonClasses], binding, body, reachable);
+        return new BoundHandler([.. classes], [.. dotnetClasses.Select(c => new DotNetType(c))], [.. pythonClasses], binding, body, reachable);
     }
 
     /// <summary>
@@ -2376,6 +2428,13 @@ public sealed class Binder
         if (NamedAlias(type) is { } alias)
         {
             _diagnostics.ReportAliasAsValue(type.Span, display, alias.TargetName);
+            return null;
+        }
+        if (DotNetTypeNamed(type) is { } dotnetClass)
+        {
+            if (IsDotNetException(dotnetClass))
+                return new DotNetType(dotnetClass);
+            _diagnostics.ReportNotExceptionClass(type.Span, display);
             return null;
         }
         if (NamedClass(type) is { } symbol)
@@ -2946,6 +3005,9 @@ public sealed class Binder
             case TypeAliasSymbol alias:
                 _diagnostics.ReportAliasAsValue(span, name, alias.TargetName);
                 return new BoundErrorExpr(span);
+            case DotNetTypeSymbol:
+                _diagnostics.ReportTypeAsValue(span, name);
+                return new BoundErrorExpr(span);
             case ModuleSymbol:
                 _diagnostics.ReportModuleAsValue(span, name);
                 return new BoundErrorExpr(span);
@@ -3301,6 +3363,8 @@ public sealed class Binder
             return qualified is null ? new BoundErrorExpr(member.Span) : BindVariantValue(qualified, member.Span, expected);
         if (TryModuleMember(member, out var definition))
             return BindSymbolValue(definition, member.Member.Text, member.Span, expected);
+        if (DotNetTypeNamed(member.Target) is { } owner)
+            return BindDotNetMember(null, owner, member);
 
         var target = BindValue(member.Target);
         var name = member.Member.Text;
@@ -3308,6 +3372,8 @@ public sealed class Binder
             return new BoundErrorExpr(member.Span);
         if (target.Type == TaipanType.Py)
             return new BoundPyGetAttr(target, name, member.Span);
+        if (target.Type is DotNetType net)
+            return BindDotNetMember(target, net.Symbol, member);
 
         if (target.Type is ClassType { Symbol: var classSymbol })
         {
@@ -3420,6 +3486,8 @@ public sealed class Binder
                 BindArguments(call);
                 _diagnostics.ReportAliasAsValue(nameSpan, name, alias.TargetName);
                 return new BoundErrorExpr(call.Span);
+            case DotNetTypeSymbol dotnet:
+                return BindDotNetConstruct(call, dotnet.Type, nameSpan);
             case FunctionSymbol { Builtin: { } builtin } function:
                 ReportKeywordArguments(call, function.Name);
                 return BindBuiltinCall(call, function, builtin, expected);
@@ -3833,7 +3901,7 @@ public sealed class Binder
                 : new BoundErrorExpr(call.Span);
         }
 
-        if (classSymbol == BuiltinClasses.PythonError)
+        if (BuiltinClasses.IsRuntimeOnly(classSymbol))
         {
             _diagnostics.ReportCannotConstruct(nameSpan, classSymbol.Name);
             BindArguments(call);
@@ -4113,6 +4181,9 @@ public sealed class Binder
             && _scope.Lookup("super") is FunctionSymbol { Builtin: BuiltinFunction.Super })
             return BindSuperCall(call, member, superCall);
 
+        if (DotNetTypeNamed(member.Target) is { } owner)
+            return BindDotNetCall(call, null, owner, member.Member);
+
         var target = BindValue(member.Target);
         var name = member.Member.Text;
         if (target.Type == TaipanType.Py)
@@ -4124,6 +4195,9 @@ public sealed class Binder
             BindArguments(call);
             return new BoundErrorExpr(call.Span);
         }
+
+        if (target.Type is DotNetType net)
+            return BindDotNetCall(call, target, net.Symbol, member.Member);
 
         // __lt__ is reached through '<' and '>' (SPEC §3.11).
         if (name == "__lt__" && target.Type is ClassType or TypeParameterType)

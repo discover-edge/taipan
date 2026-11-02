@@ -1,0 +1,3 @@
+tests/cases/m21/tp0231_dotnet.tpn:2:47: error TP0231: 'List' can't be imported: generic .NET types aren't supported yet
+tests/cases/m21/tp0231_dotnet.tpn:6:17: error TP0231: 'File.ReadAllTextAsync' uses Task<string>, which Taipan can't use yet
+tests/cases/m21/tp0231_dotnet.tpn:7:13: error TP0231: 'Array.Empty' uses T, which Taipan can't use yet

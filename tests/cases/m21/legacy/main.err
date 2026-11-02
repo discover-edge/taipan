@@ -1,0 +1,2 @@
+tests/cases/m21/legacy/main.tpn:4:17: error TP0203: expected str, found str?
+  help: narrow it with 'is some', or give a default with '??'

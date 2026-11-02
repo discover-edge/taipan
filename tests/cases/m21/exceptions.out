@@ -1,0 +1,15 @@
+True
+42
+bad number: FormatException
+-1
+bad number: OverflowException
+-1
+0
+True
+The input string 'x' was not in a correct format.
+System.FormatException
+finally
+overflow: integer overflow
+right: taipan
+rethrown: The input string 'y' was not in a correct format.
+raised again: The input string 'z' was not in a correct format.

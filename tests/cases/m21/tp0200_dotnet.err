@@ -1,0 +1,7 @@
+tests/cases/m21/tp0200_dotnet.tpn:7:31: error TP0200: expected str, found int
+tests/cases/m21/tp0200_dotnet.tpn:8:4: error TP0200: no overload of 'StringBuilder.Append' takes (list[int])
+tests/cases/m21/tp0200_dotnet.tpn:9:12: error TP0200: no overload of 'Math.Max' takes (int, str)
+tests/cases/m21/tp0200_dotnet.tpn:10:9: error TP0200: 'File' is a static class
+tests/cases/m21/tp0200_dotnet.tpn:11:8: error TP0200: 'File' is a static class
+tests/cases/m21/tp0200_dotnet.tpn:12:15: error TP0200: expected int, found str
+tests/cases/m21/tp0200_dotnet.tpn:13:20: error TP0200: 99999999999 is out of range for Int32

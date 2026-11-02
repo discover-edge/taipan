@@ -1,0 +1,1 @@
+tests/cases/m21/tp0225_dotneterror.tpn:1:12: error TP0225: 'DotNetError' cannot be a base class

@@ -133,6 +133,23 @@ public sealed class PythonError : TaipanException
     public PyObject @value { get; set; }
 }
 
+/// <summary>
+/// A .NET exception, seen by a Taipan class's <c>except</c> clause (SPEC §13.6). Only the runtime
+/// makes one; <see cref="Exception.InnerException"/> is the .NET exception.
+/// </summary>
+public sealed class DotNetError : TaipanException
+{
+    internal DotNetError(Exception exception) : base(exception.Message)
+    {
+        type = exception.GetType().FullName ?? exception.GetType().Name;
+        Exception = exception;
+    }
+
+    public string @type { get; set; }
+
+    internal Exception Exception { get; }
+}
+
 /// <summary>What compiled <c>try</c> statements and <c>raise</c> use (SPEC §8).</summary>
 public static class Exceptions
 {
@@ -142,16 +159,26 @@ public static class Exceptions
         return self;
     }
 
-    /// <summary>Whether an <c>except</c> clause may see the exception: anything but a compiler bug or a failure at startup.</summary>
-    public static bool IsCatchable(Exception exception) => exception is TaipanException or OverflowException;
+    /// <summary>
+    /// Whether an <c>except</c> clause may see the exception: anything but a failure at startup.
+    /// Any exception that isn't Taipan's comes from .NET code (SPEC §13.6).
+    /// </summary>
+    public static bool IsCatchable(Exception exception) => exception is not TaipanPanic;
 
-    /// <summary>The Taipan exception a caught one stands for. Checked arithmetic throws C#'s own overflow.</summary>
+    /// <summary>
+    /// The Taipan exception a caught one stands for. Checked arithmetic, and .NET code, throw
+    /// .NET's own overflow; any other .NET exception is a <see cref="DotNetError"/>.
+    /// </summary>
     public static TaipanException From(Exception exception) => exception switch
     {
         TaipanException taipan => taipan,
         OverflowException => new OverflowError("integer overflow"),
-        _ => throw new ArgumentException($"{exception.GetType()} is not catchable", nameof(exception)),
+        TaipanPanic => throw new ArgumentException("a panic is not catchable", nameof(exception)),
+        _ => new DotNetError(exception),
     };
+
+    /// <summary>A caught exception as a .NET <c>except</c> clause tests it: a <see cref="DotNetError"/> is its .NET exception.</summary>
+    public static Exception DotNet(Exception exception) => exception is DotNetError error ? error.Exception : exception;
 
     /// <summary>
     /// A bare <c>raise</c>: rethrows <paramref name="exception"/> with its stack trace, so an uncaught

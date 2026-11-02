@@ -9,6 +9,8 @@ public static class BoundTree
         BoundVariableDecl decl => [decl.Value],
         BoundAssign assign => [assign.Value],
         BoundFieldAssign assign => [assign.Target, assign.Value],
+        BoundDotNetAssign { Target: { } target } assign => [target, assign.Value],
+        BoundDotNetAssign assign => [assign.Value],
         BoundIndexAssign assign => [assign.Target, assign.Index, assign.Value],
         BoundPySetAttr assign => [assign.Target, assign.Value],
         BoundPySetItem assign => [assign.Target, assign.Index, assign.Value],
@@ -63,6 +65,9 @@ public static class BoundTree
         BoundTupleElement element => [element.Tuple],
         BoundSlice slice => ((BoundExpr?[])[slice.Target, slice.Start, slice.Stop, slice.Step]).OfType<BoundExpr>(),
         BoundMatchExpr match => [match.Scrutinee, .. match.Arms.Select(a => a.Value ?? a.Raise!.Value).OfType<BoundExpr>()],
+        BoundDotNetCall call => [.. ((BoundExpr?[])[call.Target]).OfType<BoundExpr>(), .. call.Arguments.Select(a => a.Value)],
+        BoundDotNetNew created => created.Arguments.Select(a => a.Value),
+        BoundDotNetMember { Target: { } target } => [target],
         _ => [],
     };
 
