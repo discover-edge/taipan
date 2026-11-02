@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    M22 acceptance (SPEC §14): C# tests that reference a Taipan library. Each build first runs the
+    freshly built taipan on library/geometry.tpn with build -library, and references the result.
+  -->
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <TaipanLibraryDirectory>$(BaseIntermediateOutputPath)taipan/</TaipanLibraryDirectory>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- As a .NET project referencing a Taipan library would, through TaipanLang.Runtime (SPEC §14.4). -->
+    <ProjectReference Include="..\..\src\Taipan.Runtime\Taipan.Runtime.csproj" />
+    <ProjectReference Include="..\..\src\Taipan.Cli\Taipan.Cli.csproj" ReferenceOutputAssembly="false" />
+    <TaipanSource Include="library\*.tpn" />
+    <Reference Include="geometry" HintPath="$(TaipanLibraryDirectory)geometry.dll" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <Target Name="FindTaipan">
+    <MSBuild Projects="..\..\src\Taipan.Cli\Taipan.Cli.csproj" Targets="GetTargetPath">
+      <Output TaskParameter="TargetOutputs" PropertyName="TaipanCli" />
+    </MSBuild>
+  </Target>
+
+  <Target Name="BuildTaipanLibrary" BeforeTargets="ResolveAssemblyReferences" DependsOnTargets="FindTaipan"
+          Inputs="@(TaipanSource);$(TaipanCli)" Outputs="$(TaipanLibraryDirectory)geometry.dll">
+    <Exec Command="dotnet &quot;$(TaipanCli)&quot; build library/geometry.tpn --library -o &quot;$(TaipanLibraryDirectory)&quot;" />
+  </Target>
+
+</Project>

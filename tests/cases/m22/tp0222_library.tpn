@@ -1,0 +1,6 @@
+# A library's main file has declarations only (SPEC §14.3).
+def greet(name: str) -> str:
+    return f"hello, {name}"
+
+print(greet("world"))
+let x = 1

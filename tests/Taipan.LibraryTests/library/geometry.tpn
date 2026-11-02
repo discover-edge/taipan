@@ -1,0 +1,9 @@
+import shapes
+
+const VERSION = "1.0"
+
+def total_area(items: list[shapes.Shape]) -> float:
+    var total = 0.0
+    for item in items:
+        total += shapes.area(item)
+    return total

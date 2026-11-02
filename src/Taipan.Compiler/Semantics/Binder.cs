@@ -101,10 +101,11 @@ public sealed partial class Binder
     private int? _finallyLoopDepth;
     private string? _unsupported;
 
-    private Binder(DotNetLibrary library)
+    private Binder(DotNetLibrary library, bool asLibrary)
     {
         _scope = _builtins;
         _library = library;
+        _asLibrary = asLibrary;
     }
 
     public static BindResult Bind(SourceText source, CompilationUnit unit) =>
@@ -112,11 +113,12 @@ public sealed partial class Binder
 
     /// <summary>
     /// Binds a program: the main file first, then its modules (SPEC §4.7). Its .NET types come
-    /// from <paramref name="library"/>, the runtime's own assemblies by default (SPEC §13.2).
+    /// from <paramref name="library"/>, the runtime's own assemblies by default (SPEC §13.2). With
+    /// <paramref name="asLibrary"/>, it's bound as a .NET library (SPEC §14).
     /// </summary>
-    public static BindResult Bind(ImmutableArray<SourceModule> files, DotNetLibrary? library = null)
+    public static BindResult Bind(ImmutableArray<SourceModule> files, DotNetLibrary? library = null, bool asLibrary = false)
     {
-        var binder = new Binder(library ?? DotNetLibrary.Framework);
+        var binder = new Binder(library ?? DotNetLibrary.Framework, asLibrary);
         var program = binder.BindProgram(files);
         return new BindResult(program, binder._diagnostics.ToImmutable(), binder._unsupported);
     }
@@ -221,7 +223,12 @@ public sealed partial class Binder
 
         Enter(main);
         foreach (var stmt in main.File.Unit.Items.OfType<Stmt>())
+        {
+            // A library has no top level (SPEC §14.3).
+            if (_asLibrary)
+                _diagnostics.ReportStatementInLibrary(stmt.Span);
             CollectScriptNames(stmt);
+        }
 
         // Defaults before any body, since a call anywhere may leave them out (SPEC §4.2).
         foreach (var module in modules)
@@ -253,6 +260,7 @@ public sealed partial class Binder
         var unit = main.File.Unit;
         var topLevel = BindStatements([.. unit.Items.OfType<Stmt>()]);
         var order = InitializationOrder(main, byName);
+        var library = _asLibrary ? BindLibrary(modules, byName, functions, classes) : null;
         return new BoundProgram(
             [.. order.SelectMany(m => m.PythonImports)],
             [.. modules.SelectMany(m => m.EnumDefs.Select(e => e.Symbol))],
@@ -261,7 +269,9 @@ public sealed partial class Binder
             [.. functions],
             new BoundBlock(topLevel, unit.Span))
         {
-            References = _dotnet?.References ?? [],
+            // A library always compiles against its framework's reference assemblies (SPEC §14.4).
+            References = _asLibrary ? _library.References : _dotnet?.References ?? [],
+            Library = library,
         };
     }
 

@@ -276,6 +276,14 @@ public sealed class DiagnosticBag
     public void ReportStatementInModule(TextSpan span) =>
         Add("TP0222", span, "only the main file can have top-level statements");
 
+    // ---- Libraries (SPEC §14, M22) ----
+
+    public void ReportStatementInLibrary(TextSpan span) =>
+        Add("TP0222", span, "a library can't have top-level statements");
+
+    public void ReportNotExported(TextSpan span, string name, string reason) =>
+        Warn("TP0302", span, $"'{name}' is not exported: {reason}", $"rename it '_{name}' to keep it private");
+
     public void ReportNoDefinition(TextSpan span, string module, string name) =>
         Add("TP0201", span, $"module '{module}' has no definition '{name}'");
 
