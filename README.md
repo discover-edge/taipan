@@ -136,6 +136,8 @@ try { shapes.parse("hexagon"); }
 catch (shapes.UnknownShape e) { Console.WriteLine(e.message); }
 ```
 
+- **Native executables:** `taipan build health.tpn --native -o out` compiles a program ahead of time with .NET's NativeAOT into one self-contained executable that runs without .NET installed, with the same output, exit codes and panic locations as `taipan run`. It needs the .NET SDK and a C toolchain (clang or gcc on Linux) to build. Python interop can't be compiled natively, and is rejected at compile time.
+
 [SPEC.md](SPEC.md) is the full language definition, and `examples/` and `tests/cases/` have many more programs.
 
 ## How it works

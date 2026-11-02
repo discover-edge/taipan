@@ -276,6 +276,14 @@ public sealed class DiagnosticBag
     public void ReportStatementInModule(TextSpan span) =>
         Add("TP0222", span, "only the main file can have top-level statements");
 
+    // ---- Native executables (SPEC §15, M23) ----
+
+    public void ReportNativePython(TextSpan span) =>
+        Add("TP0233", span, "a native program can't use Python", "build it without '--native'");
+
+    public void ReportNativeDotNet(TextSpan span, string member, string reason) =>
+        Add("TP0233", span, $"'{member}' can't be used in a native program: {reason}");
+
     // ---- Libraries (SPEC §14, M22) ----
 
     public void ReportStatementInLibrary(TextSpan span) =>

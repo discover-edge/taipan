@@ -89,6 +89,9 @@ public sealed partial class CSharpEmitter
         public int SwitchDepth { get; set; }
 
         public string? BreakLabel { get; set; }
+
+        /// <summary>A for loop's line, which a native program's line is set back to before the next element (SPEC §15.3).</summary>
+        public int? Line { get; init; }
     }
 
     private CSharpEmitter(SourceText source, BoundProgram program)
@@ -135,9 +138,13 @@ public sealed partial class CSharpEmitter
             SetUpLibrary(_library);
     }
 
-    public static EmittedProgram Emit(SourceText source, BoundProgram program)
+    /// <summary>
+    /// Emits a program, or with <paramref name="native"/> one for a native build, which records its
+    /// own panic locations (SPEC §15.3).
+    /// </summary>
+    public static EmittedProgram Emit(SourceText source, BoundProgram program, bool native = false)
     {
-        var emitter = new CSharpEmitter(source, program);
+        var emitter = new CSharpEmitter(source, program) { _native = native };
         var code = program.Library is null ? emitter.EmitProgram() : emitter.EmitLibrary();
         return new EmittedProgram(code, program.Library is null ? emitter._entryClass : null, emitter._diagnostics.ToImmutable(), program.References);
     }
@@ -333,22 +340,25 @@ public sealed partial class CSharpEmitter
         Line($"public static void {_topLevelMethod}()");
         Line("{");
         _indent++;
-        // Python modules are imported first, then constants are initialized (SPEC §10.1).
-        foreach (var import in _program.PythonImports)
+        EmitTracked(_program.TopLevel.Span, () =>
         {
-            _lineSource = import.Source;
-            LineDirective(import.Span);
-            Line($"@{_names[import.Symbol]} = {Interop}.Import(\"{import.Module}\");");
-        }
-        foreach (var constant in _program.Constants)
-        {
-            _lineSource = constant.Source ?? _source;
-            LineDirective(constant.Span);
-            Line($"@{_names[constant.Symbol]} = {Expr(constant.Value)};");
-        }
-        _lineSource = _source;
-        EmitStatements(_program.TopLevel.Statements);
-        HiddenDirective();
+            // Python modules are imported first, then constants are initialized (SPEC §10.1).
+            foreach (var import in _program.PythonImports)
+            {
+                _lineSource = import.Source;
+                LineDirective(import.Span);
+                Line($"@{_names[import.Symbol]} = {Interop}.Import(\"{import.Module}\");");
+            }
+            foreach (var constant in _program.Constants)
+            {
+                _lineSource = constant.Source ?? _source;
+                LineDirective(constant.Span);
+                Line($"@{_names[constant.Symbol]} = {Expr(constant.Value)};");
+            }
+            _lineSource = _source;
+            EmitStatements(_program.TopLevel.Statements);
+            HiddenDirective();
+        });
         _indent--;
         Line("}");
     }
@@ -371,10 +381,13 @@ public sealed partial class CSharpEmitter
         Line($"{MemberAccess(symbol.Name)} {modifier}{TypeName(symbol.ReturnType)} @{name ?? symbol.Name}{typeParameters}({parameters})");
         Line("{");
         _indent++;
-        if (isInit)
-            EmitFieldDefaults(owner!);
-        EmitStatements(function.Body.Statements);
-        HiddenDirective();
+        EmitTracked(function.Span, () =>
+        {
+            if (isInit)
+                EmitFieldDefaults(owner!);
+            EmitStatements(function.Body.Statements);
+            HiddenDirective();
+        });
         _indent--;
         Line("}");
 
@@ -426,9 +439,12 @@ public sealed partial class CSharpEmitter
         // A library's helpers can run first in a module, in a constructor's arguments (SPEC §14.3).
         if (_library is not null)
             Line($"{InitCall(_currentModule!)};");
-        LineDirective(value.Span);
-        Line($"return {Expr(value)};");
-        HiddenDirective();
+        EmitTracked(value.Span, () =>
+        {
+            LineDirective(value.Span);
+            Line($"return {Expr(value)};");
+            HiddenDirective();
+        });
         _indent--;
         Line("}");
     }
@@ -627,13 +643,15 @@ public sealed partial class CSharpEmitter
             EmitStmt(stmt);
     }
 
-    private void EmitBody(BoundBlock block, string? prologue = null)
+    private void EmitBody(BoundBlock block, string? prologue = null, string? epilogue = null)
     {
         Line("{");
         _indent++;
         if (prologue is not null)
             Line(prologue);
         EmitStatements(block.Statements);
+        if (epilogue is not null)
+            Line(epilogue);
         _indent--;
         Line("}");
     }
@@ -697,6 +715,9 @@ public sealed partial class CSharpEmitter
                 break;
             case BoundContinue cont:
                 LineDirective(cont.Span);
+                // A for loop's next element is fetched on the loop's line (SPEC §15.3).
+                if (_lineVariable is not null && _loops.Peek().Line is { } loopLine)
+                    Line($"@{_lineVariable} = {loopLine};");
                 Line("continue;");
                 break;
             case BoundExprStmt { Expr: BoundCall or BoundMethodCall or BoundBuiltinMethodCall or BoundPyCall or BoundInvoke or BoundSort or BoundSuperCall or BoundDotNetCall { Method.ReturnsVoid: true } } exprStmt:
@@ -712,7 +733,7 @@ public sealed partial class CSharpEmitter
                 break;
             case BoundWhile whileStmt:
                 LineDirective(whileStmt.Span);
-                Line($"while ({Expr(whileStmt.Condition)})");
+                Line($"while ({Condition(whileStmt.Span, Expr(whileStmt.Condition))})");
                 EmitLoopBody(whileStmt.Body);
                 break;
             case BoundForRange forStmt:
@@ -722,7 +743,7 @@ public sealed partial class CSharpEmitter
                 LineDirective(forEach.Span);
                 var iterate = Concrete(forEach.Iterable.Type) == TaipanType.Py ? $"{Interop}.Iterate" : $"{Runtime}.Iter.Over";
                 Line($"foreach ({TypeName(forEach.Variable.Type)} @{_locals[forEach.Variable]} in {iterate}({Expr(forEach.Iterable)}))");
-                EmitLoopBody(forEach.Body);
+                EmitLoopBody(forEach.Body, line: LineOf(forEach.Span));
                 break;
             case BoundMatch match:
                 EmitMatch(match);
@@ -792,8 +813,8 @@ public sealed partial class CSharpEmitter
         for (var i = 0; i < ifStmt.Clauses.Length; i++)
         {
             var clause = ifStmt.Clauses[i];
-            LineDirective(clause.Condition.Span);
-            Line($"{(i == 0 ? "if" : "else if")} ({Expr(clause.Condition)})");
+            LineDirective(clause.Condition.Span, statement: i == 0);
+            Line($"{(i == 0 ? "if" : "else if")} ({(i == 0 ? Expr(clause.Condition) : Condition(clause.Condition.Span, Expr(clause.Condition)))})");
             EmitBody(clause.Body);
         }
         if (ifStmt.Else is not null)
@@ -844,7 +865,7 @@ public sealed partial class CSharpEmitter
 
             var caught = $"@{_locals.Fresh("caught")}";
             var exception = $"@{_locals.Fresh("exception")}";
-            LineDirective(tryStmt.Span);
+            LineDirective(tryStmt.Span, statement: false);
             Line($"catch (global::System.Exception {caught}) when ({Runtime}.Exceptions.IsCatchable({caught}))");
             Line("{");
             _indent++;
@@ -908,11 +929,11 @@ public sealed partial class CSharpEmitter
         EmitLoopBody(forStmt.Body, counter == variable ? null : $"long {variable} = {counter};");
     }
 
-    private void EmitLoopBody(BoundBlock body, string? prologue = null)
+    private void EmitLoopBody(BoundBlock body, string? prologue = null, int? line = null)
     {
-        var loop = new LoopContext();
+        var loop = new LoopContext { Line = line };
         _loops.Push(loop);
-        EmitBody(body, prologue);
+        EmitBody(body, prologue, _lineVariable is not null && line is not null ? $"@{_lineVariable} = {line};" : null);
         _loops.Pop();
         if (loop.BreakLabel is { } label)
             Line($"{label}: ;");
@@ -931,7 +952,7 @@ public sealed partial class CSharpEmitter
         _loops = new Stack<LoopContext>();
         Line("{");
         _indent++;
-        EmitStatements(function.Body.Statements);
+        EmitTracked(function.Span, () => EmitStatements(function.Body.Statements));
         _indent--;
         Line("});");
         _loops = outerLoops;
@@ -944,9 +965,13 @@ public sealed partial class CSharpEmitter
     private string Lambda(BoundLambda lambda)
     {
         var type = TypeName(lambda.Type);
-        var body = lambda.FunctionType.Result is not NothingType ? Expr(lambda.Body)
-            : lambda.Body is BoundCall or BoundMethodCall or BoundBuiltinMethodCall or BoundPyCall or BoundInvoke or BoundSort or BoundSuperCall or BoundDotNetCall { Method.ReturnsVoid: true } ? $"{{ {Expr(lambda.Body)}; }}"
-            : $"{{ _ = {Expr(lambda.Body)}; }}";
+        var returns = lambda.FunctionType.Result is not NothingType;
+        var statement = returns ? $"return {Expr(lambda.Body)};"
+            : lambda.Body is BoundCall or BoundMethodCall or BoundBuiltinMethodCall or BoundPyCall or BoundInvoke or BoundSort or BoundSuperCall or BoundDotNetCall { Method.ReturnsVoid: true } ? $"{Expr(lambda.Body)};"
+            : $"_ = {Expr(lambda.Body)};";
+        var body = _native ? $"{{ {TrackedStatement(lambda.Span, statement)} }}"
+            : returns ? Expr(lambda.Body)
+            : $"{{ {statement} }}";
         return $"new {type}(\"<lambda>\", ({LambdaParameters(lambda.Parameters)}) => {body})";
     }
 
@@ -1070,7 +1095,9 @@ public sealed partial class CSharpEmitter
     }
 
     private string Throw(BoundRaise raise) =>
-        raise.Value is null ? $"throw {Runtime}.Exceptions.Rethrow({_caught.Peek()})" : $"throw {Expr(raise.Value)}";
+        raise.Value is null ? $"throw {Runtime}.Exceptions.Rethrow({_caught.Peek()})"
+        : _native ? $"throw {Runtime}.Exceptions.Raise({Expr(raise.Value)})"
+        : $"throw {Expr(raise.Value)}";
 
     /// <summary>A variant's nested record, inside its enum's class (or the enum instance's, if generic).</summary>
     private string VariantTypeName(VariantSymbol variant, TaipanType enumType) => $"{TypeName(enumType)}.@{variant.Name}";
@@ -1589,11 +1616,24 @@ public sealed partial class CSharpEmitter
 
     // ---- Output ----
 
-    private void LineDirective(TextSpan span)
+    /// <summary>
+    /// Maps the next lines to <paramref name="span"/>'s <c>.tpn</c> line. In a native program, a
+    /// <paramref name="statement"/> also sets the method's line (SPEC §15.3).
+    /// </summary>
+    private void LineDirective(TextSpan span, bool statement = true)
     {
         _statementSpan = span;
         var line = _lineSource.GetLinePosition(span.Start).Line;
         _out.Append($"#line {line} \"{_lineSource.Path}\"\n");
+        if (statement && _lineVariable is not null)
+        {
+            if (_lineFile != _lineSource.Path)
+            {
+                Line($"@{_fileVariable} = \"{Escape(_lineSource.Path)}\";");
+                _lineFile = _lineSource.Path;
+            }
+            Line($"@{_lineVariable} = {line};");
+        }
     }
 
     private void HiddenDirective() => _out.Append("#line hidden\n");

@@ -1,5 +1,3 @@
-using System.ComponentModel;
-using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -50,14 +48,14 @@ public static class PackageRestore
             $"-p:RestoreRootConfigDirectory={Path.GetFullPath(mainDirectory == "" ? "." : mainDirectory)}",
             "-p:ImportDirectoryBuildProps=false", "-p:ImportDirectoryBuildTargets=false", "-p:ImportDirectoryPackagesProps=false",
         ];
-        if (RunDotNet(arguments, directory, out var output) is { } failure)
+        if (DotNetSdk.Run(arguments, directory, out var output) is { } failure)
         {
             error = $"cannot restore packages: {failure}";
             return null;
         }
         if (!output.Success)
         {
-            error = $"cannot restore packages: {FirstError(output.Text)}";
+            error = $"cannot restore packages: {DotNetSdk.FirstError(output.Text)}";
             return null;
         }
 
@@ -111,53 +109,6 @@ public static class PackageRestore
                 Thread.Sleep(500);
             }
         }
-    }
-
-    private sealed record Output(bool Success, string Text);
-
-    // Runs the SDK's dotnet; the message if it can't be started.
-    private static string? RunDotNet(string[] arguments, string directory, out Output output)
-    {
-        output = new(false, "");
-        var start = new ProcessStartInfo("dotnet", arguments)
-        {
-            WorkingDirectory = directory,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-        };
-        start.Environment["DOTNET_CLI_TELEMETRY_OPTOUT"] = "1";
-        start.Environment["DOTNET_NOLOGO"] = "1";
-        // No build servers or reused nodes, which would outlive the restore.
-        start.Environment["MSBUILDDISABLENODEREUSE"] = "1";
-        start.Environment["DOTNET_CLI_USE_MSBUILD_SERVER"] = "0";
-        try
-        {
-            using var process = Process.Start(start)!;
-            var stderr = process.StandardError.ReadToEndAsync();
-            var stdout = process.StandardOutput.ReadToEnd();
-            process.WaitForExit();
-            output = new(process.ExitCode == 0, stdout + stderr.Result);
-            return null;
-        }
-        catch (Win32Exception)
-        {
-            return "the .NET SDK was not found";
-        }
-    }
-
-    // `…/restore.csproj : error NU1101: Unable to find package X. … [/…/restore.csproj]` → `NU1101: Unable to find package X. …`
-    private static string FirstError(string output)
-    {
-        foreach (var line in output.Split('\n'))
-        {
-            var at = line.IndexOf(": error ", StringComparison.Ordinal);
-            if (at < 0)
-                continue;
-            var message = line[(at + ": error ".Length)..].Trim();
-            var project = message.LastIndexOf(" [", StringComparison.Ordinal);
-            return project > 0 && message.EndsWith(']') ? message[..project] : message;
-        }
-        return output.Trim() is { Length: > 0 } text ? text.Split('\n')[0].Trim() : "dotnet restore failed";
     }
 
     /// <summary>

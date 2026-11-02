@@ -177,6 +177,13 @@ public static class Exceptions
         _ => new DotNetError(exception),
     };
 
+    /// <summary><c>raise e</c> in a native program (SPEC §15.3): <c>e</c>, with any location it recorded cleared.</summary>
+    public static Exception Raise(Exception exception)
+    {
+        Panic.Forget(exception);
+        return exception;
+    }
+
     /// <summary>A caught exception as a .NET <c>except</c> clause tests it: a <see cref="DotNetError"/> is its .NET exception.</summary>
     public static Exception DotNet(Exception exception) => exception is DotNetError error ? error.Exception : exception;
 

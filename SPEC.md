@@ -6,7 +6,7 @@ Taipan is a statically typed, compiled language with Python's surface syntax. Th
 1. Reads like Python. A Python developer should understand any Taipan program on sight.
 2. Sound static typing. No `null` surprises, exhaustive `match`, no runtime type errors outside the Python boundary.
 3. Annotate function boundaries only. Locals are inferred.
-4. Compiled. The output is a .NET assembly, with NativeAOT as a later option.
+4. Compiled. The output is a .NET assembly, or a native executable through NativeAOT (M23, §15).
 5. Python ecosystem access through an explicit, checked boundary (M10).
 
 **Non-goals:** source compatibility with Python, dynamic features (`eval`, monkey-patching, `setattr`), and truthiness.
@@ -1043,6 +1043,7 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 | `tuple[A, B]` | a C# value tuple `(A, B)` (M12), with elements read as `Item1`, `Item2`, …. Unpacking stores the value in a temporary first. `==` uses `Taipan.Runtime.Equality.Equal`, and ordering uses a runtime comparison that orders strings by ordinal. In generic instance names, a tuple type is written `tuple_` followed by its element types: `first_tuple_int_str`. |
 | slices | `Taipan.Runtime.Ops.Slice(target, start, stop, step)`, with `null` for an omitted part (M12) |
 | type aliases (M18) | Nothing: each use is its expanded type. |
+| native builds (M23) | `--native` (§15.3): each method declares `int __line`, assigns it before each statement, and wraps its body in `try { … } catch (System.Exception e) when (Taipan.Runtime.Panic.Locate(e, "<file>", __line)) { throw; }`, whose filter records the location and returns false. `raise e` is `throw Taipan.Runtime.Exceptions.Raise(e)`, which clears it. |
 | libraries (M22) | `--library` (§14): one public static class per module in the library's namespace, with its classes and enums nested inside, instead of `TaipanProgram`, and no `TaipanEntry`. Exported definitions are public and everything else internal. Each module has an internal initializer, called at the start of each exported member, that runs once (§14.3). |
 | .NET types and members (M21) | Used directly, by their full names (`global::System.Text.StringBuilder`). Arguments and results convert as §13.3 says: `checked` casts for narrower integers, copies for arrays and enumerables, and a runtime null check on a result that's not annotated as nullable. |
 | generics | Monomorphized. Each distinct instantiation the program uses becomes its own C# method or type, named after its type arguments: `first_int`, `Box_str`, `Box_list_int`, `Maybe_int_opt` (for `Maybe[int?]`). A clash with another name gets a numeric suffix. Generic definitions that are never instantiated are type-checked but not emitted. |
@@ -1128,6 +1129,7 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 | TP0230 | recursive type alias |
 | TP0231 | .NET member or type that Taipan can't use |
 | TP0232 | ambiguous .NET overload |
+| TP0233 | can't be used in a native program (M23) |
 | TP0300 | warning: unreachable code (a statement, `match` arm or `except` clause) |
 | TP0301 | warning: broad `except` clause discards the exception |
 | TP0302 | warning: a library definition can't be exported (M22) |
@@ -1197,6 +1199,7 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0229 | `'<P>' is a protocol, so it can only be a type parameter bound`, with help `use a bounded type parameter, e.g. 'def f[T: <P>](x: T)'` (M17) |
 | TP0231 | `'<T>.<m>' uses <N>, which Taipan can't use yet` (`<N>` the .NET type, e.g. `Dictionary<string, int>` or `Func<int, bool>`) / `'<N>' can't be imported: generic .NET types aren't supported yet` (M21) |
 | TP0232 | `ambiguous call to '<T>.<m>': it could be '<m>(<P1>)' or '<m>(<P2>)'` (M21) |
+| TP0233 | `a native program can't use Python`, with help `build it without '--native'` / `'<T>.<m>' can't be used in a native program: <message>` (M23) |
 | TP0230 | `type alias '<A>' refers to itself` / `type alias '<A>' refers to itself through '<B>'` (`'<B>' and '<C>'` for longer cycles), with help `use a class for a recursive type` (M18) |
 | TP0300 | `unreachable match arm` / `unreachable except clause`, with help `'<B>' is already caught above` / `unreachable code` (M16) |
 | TP0301 | `this clause catches every exception and discards it`, with help `catch a specific class, re-raise with 'raise', or bind it with 'as e' and use it` (M16) |
@@ -1287,10 +1290,10 @@ Types are written as in source: `int`, `str?`, `list[int]`. The type of `None` i
 - dataclass exceptions (mixing dataclasses and plain classes), and `args` on exceptions
 - format specs in f-strings
 - an LSP server
-- NativeAOT publish
 - emitting CPython extension modules (interop level 3)
 - .NET interop beyond §13: generic methods and generic .NET types (other than the collections of §13.3), delegates and passing Taipan functions to .NET, `async` and `Task`, events, `ref`/`out`/`in` parameters, `params` arrays, indexers, operators, extension methods (LINQ), `object` and `decimal` results, dictionaries, deriving from .NET classes or implementing .NET interfaces, raising .NET exceptions, `isinstance`/`as`/`match` on .NET types, flags enums, namespace imports (`import dotnet.System.IO as io`), and packages with native assets
 - an MSBuild project SDK (`TaipanLang.Sdk`), for building `.tpn` files with `dotnet build` as part of a .NET solution
+- native builds beyond §15: another architecture (`--runtime <rid>`), Python in native programs, native libraries, and size options such as invariant globalization
 - Taipan libraries beyond §14: a configurable namespace, assembly name and version (in `taipan.json`), PascalCase names, XML documentation, value `Equals` and `GetHashCode` for dataclasses, deriving from Taipan classes in other .NET languages, plain delegates for function types, and packing a library as a NuGet package
 
 ---
@@ -1299,12 +1302,13 @@ Types are written as in source: `int`, `str?`, `list[int]`. The type of `None` i
 
 ### 12.1 Commands
 ```
-taipan check <file> [--library]           type-check only, printing diagnostics
-taipan emit  <file> [--library]           print the generated C# (§8)
-taipan build <file> [--library] -o <dir>  write a runnable program, or a library (M22, §14), to <dir>
-taipan run   <file> [-- args]             compile and run
-taipan --version                          print "taipan <version>", e.g. "taipan 0.2.0"
-taipan --help                             print the usage text
+taipan check <file> [--library | --native]           type-check only, printing diagnostics
+taipan emit  <file> [--library | --native]           print the generated C# (§8)
+taipan build <file> [--library | --native] -o <dir>  write a runnable program, a library (M22, §14),
+                                                     or a native executable (M23, §15) to <dir>
+taipan run   <file> [-- args]                        compile and run
+taipan --version                                     print "taipan <version>", e.g. "taipan 0.2.0"
+taipan --help                                        print the usage text
 ```
 - `--version` and `--help` print to stdout and exit `0`. Each takes no other arguments.
 - No arguments, an unknown command or option, or wrong arguments to a command print a one-line error (if there is one) and the usage text to stderr, and exit `2` (§9).
@@ -1520,3 +1524,44 @@ catch (shapes.UnknownShape e) { Console.WriteLine(e.message); }
 
 ### 14.5 Deferred
 §11 lists what's deferred: a configurable namespace, assembly name and version, PascalCase names, XML documentation from docstrings, `Equals` and `GetHashCode` on dataclasses, deriving from Taipan classes in other .NET languages, delegates for function types, and publishing a library as a NuGet package.
+
+---
+
+## 15. Native executables (M23)
+`taipan build <file> --native -o <dir>` compiles a program ahead of time, through .NET's NativeAOT, into one self-contained native executable. It runs without a .NET runtime installed, and starts faster than `taipan run`.
+
+```
+$ taipan build examples/health.tpn --native -o out
+built out/health
+$ out/health
+```
+
+### 15.1 Building
+- **The executable** is `<dir>/<name>` (`<name>.exe` on Windows), where `<name>` is the main file's name without `.tpn`. Nothing else is needed beside it to run.
+- **The platform** is the operating system and architecture `taipan` runs on, by its portable runtime identifier, such as `linux-x64`, even where a distribution's own build of .NET reports its own (`ubuntu.24.04-x64`). NativeAOT can't build for another operating system; choosing another architecture is deferred.
+- **Behavior:** a native program prints the same output and exits with the same codes as under `taipan run`, panics included (§7), with the same `.tpn` locations (§15.3).
+- **Requirements:** building natively uses the .NET SDK's `dotnet publish`, with the native toolchain NativeAOT needs on the platform (a C compiler and linker: clang or gcc on Linux, Xcode's command-line tools on macOS, Visual Studio's C++ tools on Windows). The ILCompiler package comes with the SDK or is restored from the configured NuGet sources (§13.2) the first time. Running the result needs none of these.
+- **References:** the assemblies and packages of `taipan.json` (§13.2) are compiled into the executable.
+- **Errors** in the build environment are reported as `taipan: <message>` and exit with `2` (§9), as for `taipan.json`:
+  - `building natively needs the .NET SDK` when `dotnet publish` can't be run
+  - `native build failed: <the first error dotnet publish reports>`, for instance when the toolchain is missing
+- **Warnings** the AOT compiler reports about referenced assemblies are printed as `taipan: warning: <message>`, and don't stop the build. A program that uses only Taipan and the .NET runtime's own assemblies produces none.
+- `--native` can't be combined with `--library` (a usage error). `taipan check <file> --native` and `taipan emit <file> --native` check and emit the program as for a native build, with its diagnostics (`TP0233`) and line tracking (§15.3).
+
+### 15.2 What a native program can't use (`TP0233`)
+A program that can't work natively is rejected at compile time, with `TP0233` where it uses what can't work, rather than failing in `dotnet publish` or at run time:
+- **Python interop (§10).** pythonnet relies on reflection and on generating code at run time, which NativeAOT doesn't support. Each `from python import …`, and each `py` written as a type, is `TP0233`: `a native program can't use Python`, with help `build it without '--native'`.
+- **.NET members that need run-time code generation or reflection.** A .NET method, constructor, property or field that .NET marks `[RequiresDynamicCode]` or `[RequiresUnreferencedCode]`, on itself or on its type, is `TP0233` where it's used: `'<T>.<m>' can't be used in a native program: <the attribute's message>`. These are the members .NET's own AOT analysis warns about.
+- Everything else in Taipan works natively.
+
+### 15.3 Panic locations
+A native executable has no debug information to map its stack to `.tpn` lines, so for `--native` the compiler records lines itself (§8):
+- Each emitted method (functions, methods, nested `def`s, lambdas, default helpers and the top level) keeps the `.tpn` line of the statement it's running in a local variable.
+- An exception filter around each method's body records that line, and the method's file, on an exception the first time one passes through, so the innermost Taipan frame is the one recorded. The filter never catches the exception.
+- `raise e` clears what `e` recorded, so it reports its own line, and a bare `raise` keeps it (§3.10).
+- A panic prints the recorded location, as `taipan run` prints the one from the stack trace.
+
+This adds a local store per statement and a filter per method; it's emitted only for `--native`.
+
+### 15.4 Deferred
+§11 lists what's deferred: building for another architecture (`--runtime <rid>`), Python in native programs, native libraries (`--library --native`), and size options such as invariant globalization.
