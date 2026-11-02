@@ -189,6 +189,7 @@ public sealed partial class Binder
             return new BoundErrorExpr(member.Span);
         }
         CheckNative(found, (found as IPropertySymbol)?.GetMethod, member.Member.Span, MemberName(owner, name));
+        Index(member.Member.Span, found);
         return new BoundDotNetMember(target, found, type, member.Span);
     }
 
@@ -221,6 +222,7 @@ public sealed partial class Binder
             return OrphanAssign(assign, preset);
         }
         CheckNative(found, (found as IPropertySymbol)?.SetMethod, member.Member.Span, MemberName(owner, name));
+        Index(member.Member.Span, found);
         var current = new BoundDotNetMember(target, found, DotNetTypes.Map(netType, result: true, out _) ?? type, member.Span);
         var value = BindAssignedValue(assign, current, type, preset);
         CheckLiteralFits(value, netType);
@@ -247,6 +249,7 @@ public sealed partial class Binder
         if (ResolveOverload(call, methods, MemberName(owner, name.Text), name.Span) is not var (method, arguments))
             return new BoundErrorExpr(call.Span);
         CheckNative(method, null, name.Span, MemberName(owner, name.Text));
+        Index(name.Span, method);
         var result = DotNetTypes.Map(DotNetTypes.ResultOf(method), result: true, out _)!;
         return new BoundDotNetCall(target, method, arguments, result, call.Span);
     }

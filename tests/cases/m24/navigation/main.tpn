@@ -1,0 +1,13 @@
+# Hover and go to definition, across modules (SPEC §16.3).
+import shapes
+from shapes import area, Point, Circle
+
+def total(items: list[shapes.Shape]) -> float:
+    var sum = 0.0
+    for item in items:
+        sum += area(item)
+    return sum
+
+let found = total([Circle(1.0), shapes.Shape.Square(2.0)])
+let origin = Point(0.0)
+print(found, origin.moved().x, shapes.SIDES)
