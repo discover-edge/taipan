@@ -40,7 +40,8 @@ public static class Interop
         }
         catch (Exception e) when (e is not TaipanPanic)
         {
-            throw Panic.Create($"cannot load Python: {e.Message}");
+            // pythonnet wraps the reason, such as a library that won't load, in a type initializer's exception.
+            throw Panic.Create($"cannot load Python: {e.GetBaseException().Message}");
         }
         Display.ExternalFormat = (value, nested) => value is PyObject python ? Run(() => Show(python, nested)) : null;
     }
@@ -363,8 +364,11 @@ public static class Interop
         return 0;
     });
 
+    // Every Python operation starts Python first, so a program that converts to py without
+    // importing a Python module gets §10.5's panic if Python can't be loaded.
     private static T Run<T>(Func<T> operation)
     {
+        EnsureStarted();
         using (Py.GIL())
         {
             try

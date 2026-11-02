@@ -1,0 +1,3 @@
+# A conversion to py starts Python itself, without a Python import (SPEC §10.5).
+let p: py = [1, 2]
+print(p)
