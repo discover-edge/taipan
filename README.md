@@ -82,7 +82,7 @@ Exit codes: `0` success, `1` compile error, `2` usage error, `101` runtime panic
 
 ## The language at a glance
 
-- **Python's syntax:** indentation, `def`, `for`/`while`, f-strings, `match`, PEP 695 generics (`def first[T](xs: list[T]) -> T?`).
+- **Python's syntax:** indentation, `def`, `for`/`while`, f-strings (with format specs, `!r` and `{x=}`, checked at compile time), `match`, `del` and slice assignment, PEP 695 generics (`def first[T](xs: list[T]) -> T?`).
 - **Static types:** annotate function signatures, and locals are inferred. There's no truthiness: conditions must be `bool`.
 - **Optionals instead of null:** a `T?` must be narrowed with `is some`, or given a default with `??`, before use.
 - **Classes:** Python's classes, with single inheritance, `super().__init__(…)`, required `@override`, and fields that must be set before the object is used. `@dataclass` classes get a constructor, field-by-field equality and display. `isinstance(a, Dog)` and `x is not None` narrow a name in the code they guard.

@@ -2,7 +2,7 @@
 
 Each milestone is done when **all** of its acceptance criteria pass as golden tests (see CLAUDE.md). Milestones are sequential. Don't start the next one early.
 
-M0–M10 (with M8.1) make up v0.1 and are complete. M11 through M25 are complete; M26 onward are planned.
+M0–M10 (with M8.1) make up v0.1 and are complete. M11 through M26 are complete; M27 onward are planned.
 
 ## M0 — Scaffold
 - Create the solution layout from CLAUDE.md, the `taipan` CLI with `check | emit | build | run` stubs, and the golden-test harness.
@@ -200,7 +200,7 @@ M0–M10 (with M8.1) make up v0.1 and are complete. M11 through M25 are complete
 
 ## M26 — Everyday gaps
 - Format specs in f-strings (`f"{x:.2f}"`, `f"{n:>5}"`, `f"{n:,}"`), as Python's format mini-language for `int`, `float` and `str`.
-- `-> None` as an explicit "returns nothing" annotation, `zip` of more than two lists, `isinstance(x, (A, B))` with a tuple of classes, defaults on lambda parameters, and slice assignment and `del` on lists and dicts.
+- `-> None` as an explicit "returns nothing" annotation, `zip` of more than two lists, `isinstance(x, (A, B))` with a tuple of classes, and slice assignment and `del` on lists and dicts. (Defaults on lambda parameters were dropped: per-iteration capture makes Python's `lambda i=i:` idiom unnecessary.)
 - Update SPEC first: which format specs are supported and the error for one that isn't, and how `del` and slice assignment behave on out-of-range indices.
 - **Accept:**
   - Golden cases print the same text as Python for a table of format specs, and an unsupported spec is a compile-time error at the spec.

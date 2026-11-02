@@ -314,7 +314,11 @@ public sealed class Parser
         if (At(TokenKind.Arrow))
         {
             Next();
-            returnType = ParseType();
+            // `-> None` says it returns nothing, as no return type does (SPEC §3.2, M26).
+            if (At(TokenKind.NoneKeyword))
+                Next();
+            else
+                returnType = ParseType();
         }
 
         Expect(TokenKind.Colon);
@@ -464,7 +468,11 @@ public sealed class Parser
         if (At(TokenKind.Arrow))
         {
             Next();
-            returnType = ParseType();
+            // `-> None` says it returns nothing, as no return type does (SPEC §3.2, M26).
+            if (At(TokenKind.NoneKeyword))
+                Next();
+            else
+                returnType = ParseType();
         }
 
         Expect(TokenKind.Colon);
@@ -618,7 +626,7 @@ public sealed class Parser
     private Expr ParseValue(bool list = true) =>
         At(TokenKind.MatchKeyword) ? ParseMatchExpr() : list ? ParseExprList() : ParseExpr();
 
-    // simple_stmt = let_stmt | var_stmt | assign_stmt | return_stmt | raise_stmt | "pass" | "break" | "continue" | expr
+    // simple_stmt = let_stmt | var_stmt | assign_stmt | return_stmt | raise_stmt | del_stmt | "pass" | "break" | "continue" | expr
     private Stmt ParseSimpleStmt()
     {
         switch (Current.Kind)
@@ -631,6 +639,8 @@ public sealed class Parser
                 return ParseReturnStmt();
             case TokenKind.RaiseKeyword:
                 return ParseRaiseStmt();
+            case TokenKind.DelKeyword:
+                return ParseDelStmt();
             case TokenKind.PassKeyword:
                 return new PassStmt(Next().Span);
             case TokenKind.BreakKeyword:
@@ -728,7 +738,8 @@ public sealed class Parser
         if (op is null)
             return new ExprStmt(target, SpanFrom(start));
 
-        if (!IsTarget(target))
+        // A slice is a target since M26 (SPEC §5.5).
+        if (!IsTarget(target) && target is not SliceExpr)
             ReportSyntaxError(bag => bag.ReportInvalidAssignmentTarget(target.Span));
         Next();
         var value = ParseValue(list: op == AssignOp.Assign);
@@ -757,8 +768,26 @@ public sealed class Parser
         return new TupleAssignStmt(targets.ToImmutable(), value, SpanFrom(start));
     }
 
-    // target = NAME | postfix "." NAME | postfix "[" expr "]"
+    // target = NAME | postfix "." NAME | postfix "[" subscript "]"; a slice isn't a target in a tuple assignment.
     private static bool IsTarget(Expr expr) => expr is NameExpr or MemberExpr or IndexExpr;
+
+    // del_stmt = "del" target { "," target }
+    private DelStmt ParseDelStmt()
+    {
+        var start = Next().Span.Start;
+        var targets = ImmutableArray.CreateBuilder<Expr>();
+        do
+        {
+            if (targets.Count > 0)
+                Next();
+            var target = ParseExpr();
+            if (!IsTarget(target) && target is not SliceExpr && !_recovering)
+                ReportSyntaxError(bag => bag.ReportInvalidDeleteTarget(target.Span));
+            targets.Add(target);
+        }
+        while (At(TokenKind.Comma) && !_recovering);
+        return new DelStmt(targets.ToImmutable(), SpanFrom(start));
+    }
 
     // return_stmt = "return" [ expr_list | match_expr ]
     private ReturnStmt ParseReturnStmt()
@@ -1190,6 +1219,13 @@ public sealed class Parser
         while (At(TokenKind.Name))
         {
             parameters.Add(ExpectIdentifier());
+            // Python's `lambda i=i:` captures a loop variable, which Taipan does anyway (SPEC §3.7, M26).
+            if (At(TokenKind.Equals))
+            {
+                var equals = Next().Span;
+                ReportSyntaxError(bag => bag.ReportLambdaDefault(equals));
+                return new ErrorExpr(SpanFrom(start));
+            }
             if (!At(TokenKind.Comma))
                 break;
             Next();
@@ -1544,7 +1580,13 @@ public sealed class Parser
             segments.Add(part switch
             {
                 FStringText text => new FStringTextSegment(text.Value, text.Span),
-                FStringHole hole => new FStringHoleSegment(ParseHole(hole.Span), hole.Span),
+                FStringHole hole => new FStringHoleSegment(ParseHole(hole.Span), hole.Span)
+                {
+                    DebugText = hole.DebugText,
+                    Conversion = hole.Conversion,
+                    Spec = hole.Spec,
+                    SpecSpan = hole.SpecSpan,
+                },
                 _ => throw new InvalidOperationException($"unexpected f-string part {part}"),
             });
         }

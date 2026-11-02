@@ -327,7 +327,7 @@ public class ParserTests
     [InlineData("a, b\n", "1:5 TP0100: expected '=', found newline")]
     [InlineData("a, b += 1\n", "1:6 TP0100: expected '=', found '+='")]
     [InlineData("a, f() = 1, 2\n", "1:4 TP0100: cannot assign to this expression")]
-    [InlineData("xs[1:] = ys\n", "1:1 TP0100: cannot assign to this expression")]
+    [InlineData("xs[1:], y = ys, 1\n", "1:1 TP0100: cannot assign to this expression")]
     [InlineData("let t = ()\n", "1:10 TP0100: expected expression, found ')'")]
     [InlineData("for a, in xs:\n    pass\n", "1:8 TP0100: expected name, found 'in'")]
     public void TupleSyntaxErrors(string text, string expected) =>
@@ -558,15 +558,15 @@ public class ParserTests
     [Fact]
     public void FStringHolesAreParsed() =>
         Assert.Equal(
-            "FStringExpr([FStringTextSegment(\"degraded (\"), FStringHoleSegment(NameExpr(h)), FStringTextSegment(\"/\"), " +
-            "FStringHoleSegment(BinaryExpr(CallExpr(NameExpr(len), [Argument(null, NameExpr(xs))]), Add, IntLiteral(1))), " +
+            "FStringExpr([FStringTextSegment(\"degraded (\"), FStringHoleSegment(NameExpr(h), null, null, null), FStringTextSegment(\"/\"), " +
+            "FStringHoleSegment(BinaryExpr(CallExpr(NameExpr(len), [Argument(null, NameExpr(xs))]), Add, IntLiteral(1)), null, null, null), " +
             "FStringTextSegment(\")\")])",
             Expr("f\"degraded ({h}/{len(xs) + 1})\""));
 
     [Fact]
     public void FStringHoleWithNestedString() =>
         Assert.Equal(
-            "FStringExpr([FStringHoleSegment(IndexExpr(NameExpr(d), StringLiteral(\"k\")))])",
+            "FStringExpr([FStringHoleSegment(IndexExpr(NameExpr(d), StringLiteral(\"k\")), null, null, null)])",
             Expr("f\"{d[\"k\"]}\""));
 
     [Fact]
@@ -867,6 +867,17 @@ public class ParserTests
     [InlineData("raise ValueError(\"x\")\n", "RaiseStmt(CallExpr(NameExpr(ValueError), [Argument(null, StringLiteral(\"x\"))]))")]
     public void Raise(string text, string expected) =>
         Assert.Equal(expected, Snapshot(text));
+
+    [Theory]
+    [InlineData("del xs[0]\n", "DelStmt([IndexExpr(NameExpr(xs), IntLiteral(0))])")]
+    [InlineData("del xs[1:], d[\"k\"]\n", "DelStmt([SliceExpr(NameExpr(xs), IntLiteral(1), null, null), IndexExpr(NameExpr(d), StringLiteral(\"k\"))])")]
+    [InlineData("xs[1:3] = ys\n", "AssignStmt(SliceExpr(NameExpr(xs), IntLiteral(1), IntLiteral(3), null), Assign, NameExpr(ys))")]
+    public void DeleteAndSliceAssignment(string text, string expected) =>
+        Assert.Equal(expected, Snapshot(text));
+
+    [Fact]
+    public void ReturnsNoneIsNoReturnType() =>
+        Assert.Equal(Snapshot("def f():\n    pass\n"), Snapshot("def f() -> None:\n    pass\n"));
 
     [Theory]
     [InlineData("try:\n    pass\nx = 1\n", "3:1 TP0100: expected 'except' or 'finally', found name 'x'")]

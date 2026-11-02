@@ -118,6 +118,56 @@ public static class Ops
         dict[key] = value;
     }
 
+    // ---- Slice assignment and del (SPEC §5.5, M26) ----
+
+    /// <summary>
+    /// <c>xs[a:b:c] = ys</c>: with no step (or 1) the slice is replaced and the list may change
+    /// length; with another step, the value must have as many elements as the slice.
+    /// </summary>
+    public static void SetSlice<T>(List<T> list, long? start, long? stop, long? step, List<T> value)
+    {
+        var replacement = value.ToList();
+        if ((step ?? 1) == 1)
+        {
+            // Python's start and stop for a step of 1, with stop no earlier than start.
+            var indices = SliceBounds(list.Count, start, stop);
+            list.RemoveRange(indices.First, indices.End - indices.First);
+            list.InsertRange(indices.First, replacement);
+            return;
+        }
+        var slots = SliceIndices(list.Count, start, stop, step).ToList();
+        if (slots.Count != replacement.Count)
+            throw new ValueError($"attempt to assign sequence of size {replacement.Count} to extended slice of size {slots.Count}");
+        for (var i = 0; i < slots.Count; i++)
+            list[slots[i]] = replacement[i];
+    }
+
+    /// <summary><c>del xs[i]</c>.</summary>
+    public static void DelItem<T>(List<T> list, long index) => list.RemoveAt((int)Normalize(index, list.Count));
+
+    /// <summary><c>del d[k]</c>, keeping the other entries in order.</summary>
+    public static void DelItem<TKey, TValue>(OrderedDictionary<TKey, TValue> dict, TKey key) where TKey : notnull
+    {
+        if (!dict.Remove(key))
+            throw new KeyError($"missing key {Display.Repr(key)}");
+    }
+
+    /// <summary><c>del xs[a:b:c]</c>: out-of-range bounds clamp, so only a step of 0 raises.</summary>
+    public static void DelSlice<T>(List<T> list, long? start, long? stop, long? step)
+    {
+        foreach (var index in SliceIndices(list.Count, start, stop, step).OrderDescending())
+            list.RemoveAt(index);
+    }
+
+    // A step-1 slice's bounds, clamped, with the end no earlier than the start.
+    private static (int First, int End) SliceBounds(int length, long? start, long? stop)
+    {
+        long Clamp(long? bound, long whenOmitted) => bound is not { } b ? whenOmitted : b < 0 ? Math.Max(b + length, 0) : Math.Min(b, length);
+        var first = (int)Clamp(start, 0);
+        var end = (int)Clamp(stop, length);
+        return (first, Math.Max(first, end));
+    }
+
     // A negative index counts from the end.
     private static long Normalize(long index, int count)
     {
@@ -232,6 +282,19 @@ public static class Ops
         foreach (var item in Iter.Over(value))
             result.Add((start + result.Count, item));
         return result;
+    }
+
+    /// <summary>
+    /// <c>zip(xs, ys, zs, …)</c> of three or more lists (SPEC §6, M26): each row's elements up to the
+    /// shortest list's length, which the caller makes into a tuple.
+    /// </summary>
+    public static List<object?[]> Zip(params System.Collections.IList[] lists)
+    {
+        var count = lists.Min(list => list.Count);
+        var rows = new List<object?[]>(count);
+        for (var i = 0; i < count; i++)
+            rows.Add([.. lists.Select(list => list[i])]);
+        return rows;
     }
 
     /// <summary><c>zip(xs, ys)</c>: pairs up to the shorter list's length.</summary>

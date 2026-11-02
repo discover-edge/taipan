@@ -1,0 +1,15 @@
+[0, 10, 20, 30, 3, 4, 5]
+[-1, 0, 10, 20, 30, 3, 4, 5, 99]
+[7, 0, 7, 20, 7, 3, 7, 5, 7]
+[7, 0, 3, 7, 5, 7]
+[7, 7, 0, 3, 7, 5, 7]
+[7, 0, 3, 7, 5]
+[0, 7]
+[0, 7]
+[1.0, 1.0, 1.5, 2.0]
+{"a": 1, "c": 3, "b": 4}
+[[1], [4]]
+attempt to assign sequence of size 1 to extended slice of size 2
+missing key "z"
+index 5 out of range for length 3
+slice step cannot be zero

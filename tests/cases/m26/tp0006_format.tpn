@@ -1,0 +1,8 @@
+# Holes whose conversion or format spec isn't valid (SPEC §1).
+let n = 3
+let width = 8
+print(f"{n!x}")
+print(f"{n:{width}}")
+print(f"{n:10.2q}")
+print(f"{n:n}")
+print(f"{!r}")

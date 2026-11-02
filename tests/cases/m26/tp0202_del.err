@@ -1,0 +1,8 @@
+tests/cases/m26/tp0202_del.tpn:11:5: error TP0202: cannot delete 'n'
+  help: assign it a new value instead
+tests/cases/m26/tp0202_del.tpn:12:5: error TP0202: cannot delete a field
+tests/cases/m26/tp0202_del.tpn:13:5: error TP0202: cannot delete an element of str
+tests/cases/m26/tp0202_del.tpn:14:5: error TP0202: cannot delete an element of str
+tests/cases/m26/tp0202_del.tpn:15:5: error TP0202: cannot delete an element of tuple[int, int]
+tests/cases/m26/tp0202_del.tpn:16:1: error TP0202: cannot use '+=' on a slice
+tests/cases/m26/tp0202_del.tpn:17:1: error TP0202: cannot assign to an element of str

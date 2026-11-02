@@ -33,7 +33,7 @@ Taipan is a statically typed, compiled language with Python's surface syntax. Th
 - **Comments:** `#` to end of line.
 - **Identifiers:** `[A-Za-z_][A-Za-z0-9_]*`. A lone `_` is the wildcard pattern only.
 - **Keywords:**
-  `def class enum let var const if elif else while for in match return pass break continue and or not is some None True False as from import lambda try except finally raise`
+  `def class enum let var const if elif else while for in match return pass break continue and or not is some None True False as from import lambda try except finally raise del`
   - `struct` was a keyword before M15. It's now an ordinary name, and records are declared with `@dataclass class` (§4.3).
   - `type` is a *soft keyword* (M18), as in Python 3.12: it starts a type alias (§3.12) only at the start of a line, followed by a name and then `=` or `[`. Anywhere else it's an ordinary name, so `type = "json"` and `e.type` still work.
   - `isinstance` and `super` are built-in functions (§6), not keywords. `Protocol`, `Self` and `Comparable` are built-in names (M17, §3.11), not keywords.
@@ -44,6 +44,8 @@ Taipan is a statically typed, compiled language with Python's surface syntax. Th
 - **F-strings:** `f"...{expr}..."` or `f'...'`, with a lowercase `f` immediately before the quote. A hole holds any expression except an f-string. `{{` and `}}` are literal braces, and literal text uses the string escapes. The lexer emits the f-string as a single token holding the raw text plus hole spans, and the parser re-lexes the holes.
   - A hole runs from `{` to its matching `}`. Inside a hole the lexer tracks nested brackets and skips over string literals of either quote, so `f"{d["k"]}"` is valid.
   - `TP0006`: a lone `}` in literal text, an empty or whitespace-only hole, or an f-string inside a hole.
+  - **A hole's parts (M26)** are, in order: the expression; an optional `=`, which shows the expression's text before its value; an optional conversion, `!r` or `!s`; and an optional format spec, `:` followed by the spec up to the hole's closing `}`. So `{x}`, `{x=}`, `{x!r}`, `{x:>8.2f}` and `{x=!r:>10}`. The lexer finds them at the hole's top level only: a `:` or `!` inside brackets or a string, or one that's part of `!=`, `==`, `<=`, `>=`, belongs to the expression. A `lambda` in a hole must be parenthesized, as in Python, since its `:` would start a spec.
+  - `TP0006` (M26): a conversion other than `!r` or `!s`, a format spec containing `{` or `}` (nested specs, `{x:{width}}`, aren't supported), and an `=` or conversion with nothing before it.
   - An f-string, or a hole, still open at end of line is `TP0003`.
 - **Operators and punctuation:**
   `+ - * / // % == != < <= > >= = += -= *= /= -> ?? ? . ... , : ( ) [ ] { } @`
@@ -69,7 +71,7 @@ Taipan is a statically typed, compiled language with Python's surface syntax. Th
 | TP0003 | `unterminated string` |
 | TP0004 | `invalid character '<c>'`, or `invalid character U+XXXX` for control and whitespace characters |
 | TP0005 | `invalid escape sequence '\<c>'` |
-| TP0006 | `single '}' is not allowed in an f-string` / `empty f-string hole` / `f-strings cannot be nested` |
+| TP0006 | `single '}' is not allowed in an f-string` / `empty f-string hole` / `f-strings cannot be nested` / `invalid conversion '!<c>'`, with help `use '!r' or '!s'` / `format specs can't be nested` / `invalid format spec '<spec>'` (M26) |
 | TP0007 | `invalid number literal` |
 
 ---
@@ -112,14 +114,15 @@ named_fields  = NAME ":" type { "," NAME ":" type } [ "," ] ;
 block         = NEWLINE INDENT stmt { stmt } DEDENT ;
 
 stmt          = simple_stmt NEWLINE | compound_stmt ;
-simple_stmt   = let_stmt | var_stmt | assign_stmt | return_stmt | raise_stmt
+simple_stmt   = let_stmt | var_stmt | assign_stmt | return_stmt | raise_stmt | del_stmt
               | "pass" | "break" | "continue" | expr ;
+del_stmt      = "del" target { "," target } ;                       (* M26, §5.5 *)
 let_stmt      = "let" ( NAME [ ":" type ] | names ) "=" ( expr_list | match_expr ) ;
 var_stmt      = "var" ( NAME [ ":" type ] | names ) "=" ( expr_list | match_expr ) ;
 names         = NAME "," NAME { "," NAME } ;                         (* unpacking: M12, §3.8 *)
 assign_stmt   = target ( "=" | "+=" | "-=" | "*=" | "/=" ) ( expr | match_expr )
               | target "," target { "," target } "=" ( expr_list | match_expr ) ;   (* M12 *)
-target        = NAME | postfix "." NAME | postfix "[" expr "]" ;
+target        = NAME | postfix "." NAME | postfix "[" subscript "]" ;   (* a slice: M26, §5.5 *)
 return_stmt   = "return" [ expr_list | match_expr ] ;
 match_expr    = "match" expr ":" NEWLINE INDENT value_arm { value_arm } DEDENT ;   (* M19, §5.1.1 *)
 value_arm     = pattern ":" ( expr | raise_stmt ) NEWLINE ;
@@ -227,7 +230,7 @@ atom          = INT | FLOAT | STRING | FSTRING | "True" | "False" | "None"
 | `Callable[[A, B], R]` | function value (M11, §3.7) | `Taipan.Runtime.Function<D>` (§8) |
 | `Comparable`, user protocols | structural interface, only as a type parameter bound (M17, §3.11) | none: bounded generics are monomorphized |
 
-- A function without `-> type` returns nothing (C# `void`). Using its result as a value is `TP0200`.
+- A function without `-> type` returns nothing (C# `void`). Using its result as a value is `TP0200`. Since M26, `-> None` says the same explicitly, as in Python's type hints, for functions, methods (including `__init__`) and nested `def`s; a function declared `-> None` is the same as one without a return type in every way, its display and function type (`Callable[[…], None]`) included.
 - `T??` is `TP0213`. Optionals don't nest.
 
 ### 3.2 Inference
@@ -325,6 +328,7 @@ There are no other implicit conversions. Explicit conversions use the built-ins 
   - Generic functions, built-in functions, methods, class constructors and enum variants aren't values (`TP0200`, §9.1). Wrap them in a lambda instead: `lambda s: s.total()`.
 - **Calls:** any expression of function type can be called: `f(x)`, `handlers[0](req)`, or `s.on_done()` for a field. Arguments are positional only (`TP0218`), since a function type has no parameter names or defaults, as in Python's typing. They're checked against the parameter types. A wrong count is `TP0209`. Calling a `T?` is `TP0203`.
 - **Lambdas:** `lambda x, y: x + y`. The body is a single expression, whose value is the result.
+  - A lambda parameter can't have a default: `TP0100`, `lambda parameters can't have defaults` (M26). Python's `lambda i=i: i`, which captures a loop variable's current value, isn't needed, since each iteration has its own variable (below), so the help says `each loop iteration has its own variable, so 'lambda: i' already sees this iteration's value`.
   - Parameters take no annotations. Their types come from the expected type (§4.6), which must be a function type with as many parameters as the lambda has (`TP0209` otherwise).
   - The body is checked against the expected result type. When the result is `None`, the body is checked as an expression statement, and its value is discarded.
   - Without an expected type, a lambda with no parameters takes its body's type (`let f = lambda: 0` is `Callable[[], int]`). One with parameters is `TP0206`.
@@ -690,7 +694,7 @@ class Point:
 - A class's name, called, constructs an instance: `Dog("rex", "lab")`, `Point(1.0, y=2.0)`. Arguments are matched as for functions (§4.2).
 - **Plain class:** the arguments are matched to `__init__`'s parameters, after `self`.
   - A plain class without `__init__` uses its base class's `__init__`, as in Python. With no base class, it takes no arguments.
-  - `__init__` has no return type (`TP0200`), and may use a bare `return`.
+  - `__init__` has no return type (`TP0200`), other than `-> None` (M26), and may use a bare `return`.
   - `__init__` can't be called directly (`x.__init__()` is `TP0200`), except as `super().__init__(…)` (below).
 - **Dataclass:** the parameters are the fields, in declaration order, with inherited fields first, and with the fields' defaults as their defaults.
   - A field without a default after one with a default is `TP0225`, as Python's `dataclass` reports it. That includes a field after an inherited field with a default.
@@ -800,7 +804,7 @@ class Point:
 - **Assignment targets:**
   - `xs[i] = v` and `d[k] = v` are allowed (a `d[k]` assignment inserts or updates).
   - `s[i] = v` on a `str` is `TP0202`, and so is `t[i] = v` on a tuple (M12).
-  - A slice isn't a target (`TP0100`). Slice assignment is post-M12.
+  - A slice is a target for a list since M26 (§5.5). Before M26 it was `TP0100`.
   - Compound forms (`xs[f()] += 1`, `make().count += 1`) evaluate the target's sub-expressions once.
 - **Indexing** applies to `list[T]` (`int` index, gives `T`), `dict[K, V]` (`K` key, gives `V`), `str` (`int` index, gives `str`), and tuples (§3.8). Anything else is `TP0200`.
 - **Built-in methods** follow §6, with argument counts checked by `TP0209`. `d.get` arrives with optionals in M6.
@@ -939,6 +943,21 @@ In `a == b` and `a != b`, `a`'s type is `b`'s expected type (§4.6), so `m == No
   - Slicing a `py` value slices it in Python and gives `py`.
   - Anything else, including a tuple or a dict, is `TP0200`.
 
+### 5.5 Slice assignment and `del` (M26)
+- **Slice assignment** replaces part of a list, as in Python: `xs[1:3] = [7, 8, 9]`.
+  - The target is a `list[T]`, or `py`, sliced as §5.4 says, and the value is a `list[T]`, checked with `list[T]` as its expected type, so `xs[1:1] = [0.5]` works on a `list[float]` and `xs[:0] = []` on any list.
+  - With no step, or a step of 1, the slice may be replaced by a list of any length, so the list grows or shrinks.
+  - With another step (`xs[::2] = [0, 0]`), the value must have exactly as many elements as the slice. Otherwise it's `ValueError`, with Python's message: `attempt to assign sequence of size 3 to extended slice of size 2`. A step of 0 is `ValueError` (`slice step cannot be zero`), as for slicing.
+  - The value is copied first, so `xs[1:] = xs` works.
+  - Compound assignment to a slice (`xs[1:3] += [1]`) is `TP0202`, `cannot use '+=' on a slice`. A slice of a `str` or a tuple is `TP0202`, as an element of one is (§4.6).
+- **`del`** removes list elements and dict entries: `del xs[0]`, `del xs[1:3]`, `del xs[::2]`, `del d["k"]`, and `del xs[0], d["k"]`, which deletes left to right.
+  - `del xs[i]` follows indexing's rules (§5.4): a negative index counts from the end, and one out of range is `IndexError` (`index 5 out of range for length 3`).
+  - `del xs[a:b:c]` removes the slice's elements. Out-of-range bounds clamp, so it never raises, except for a step of 0.
+  - `del d[k]` removes the entry, keeping the others in order. A missing key is `KeyError` (`missing key "k"`), as for reading one.
+  - `del x[k]` and `del x[a:b]` on a `py` value delete in Python.
+  - Deleting anything else is `TP0202`: a name (`cannot delete 'x'`, with help `assign it a new value instead`), a field, or an element or slice of a `str` or tuple. An expression that isn't a target at all (`del f()`) is `TP0100`, `cannot delete this expression`, as for assignment.
+  - Deleting from a list or dict while iterating over it is `RuntimeError`, as any change is (§5.2).
+
 ---
 
 ## 6. Built-ins (v0.1)
@@ -959,12 +978,12 @@ In `a == b` and `a != b`, `a`'s type is `b`'s expected type (§4.6), so `m == No
   - `key` and `reverse` are optional and keyword-only.
 - `map(f: Callable[[T], U], xs: list[T]) -> list[U]` and `filter(f: Callable[[T], bool], xs: list[T]) -> list[T]` (M11) call `f` once per element, in order, and return new lists. Python's versions return iterators, which Taipan doesn't have.
 - `enumerate(xs)` and `enumerate(xs, start)` (M12) give a new list of `(index, element)` tuples: `list[tuple[int, T]]` for a `list[T]`, or `list[tuple[int, str]]` for a `str`'s characters. `start` is an `int` that defaults to 0. It may be given by position, or as the keyword argument `start=`, as in Python.
-- `isinstance(x, C) -> bool` (M15) is `True` when `x`'s runtime class is `C` or derives from it, as in Python, and `False` for `None`.
+- `isinstance(x, C) -> bool` (M15) is `True` when `x`'s runtime class is `C` or derives from it, as in Python, and `False` for `None`. Since M26, `isinstance(x, (A, B, …))` is `True` when `x` is any of the listed classes. It narrows `x` to the nearest class all of them derive from (§3.9), as `except (A, B) as e` binds (§3.10), and each listed class follows the rules for one (`TP0200` for a class `x` can never be).
   - `x` must be a class or an optional class, and `C` the name of a class (qualified for another module: `zoo.Dog`) that isn't generic. Anything else is `TP0200`. A tuple of classes (`isinstance(x, (A, B))`) is deferred.
   - `C` must derive from `x`'s class, or be it or one of its bases. An unrelated class is `TP0200`, since the test could never be `True`.
   - It narrows `x` (§3.9).
 - `super()` (M15) is valid only as `super().m(…)` in a method (§4.3).
-- `zip(xs: list[A], ys: list[B]) -> list[tuple[A, B]]` (M12) pairs the elements up, stopping at the shorter list, as in Python. It takes exactly two lists.
+- `zip(xs: list[A], ys: list[B], …) -> list[tuple[A, B, …]]` (M12) groups the elements of two or more lists, stopping at the shortest, as in Python: `zip(names, ages, cities)` is a `list[tuple[str, int, str]]`. Before M26 it took exactly two lists. One list, which would need a one-element tuple, is `TP0209`.
 - `sorted`, `sort`, `map`, `filter`, `enumerate` and `zip` iterate their lists (§5.2), so a function argument that changes a list panics with `list mutated during iteration`.
 
 **Methods**
@@ -990,6 +1009,19 @@ In `a == b` and `a != b`, `a`'s type is `b`'s expected type (§4.6), so `m == No
 | enum | `Ok`, `Degraded(healthy=1, total=4)` |
 | function | `<function name>`, `<function <lambda>>` (M11) |
 | exception | its message, as Python's `str(e)` (M16). Inside a container, its class and message: `[KeyError("missing key \"a\"")]` |
+
+**F-string holes (M26)** take the parts §1 lists, applied in this order:
+- **`=`** writes the expression's text exactly as written, spaces included, then its value: `f"{x = }"` is `x = 5`. The value is written as `!r` would write it, unless the hole has a conversion or a format spec of its own, as in Python.
+- **`!s`** writes the display form, as a hole does without one. **`!r`** writes the form the value has inside a list (above), so `f"{name!r}"` is `"api"`. Unlike Python, the quotes are `"`, as Taipan always writes a string literal. After a conversion, the value is a `str`, so a format spec applies to it as to a `str`.
+- **A format spec** is Python's format mini-language, `[[fill]align][sign]["z"]["#"]["0"][width][grouping]["." precision][type]`, for `int`, `float` and `str` values, giving the same text as Python's `format(value, spec)`:
+  - *align* is `<`, `>`, `^` or `=`, after an optional *fill* character; *sign* is `+`, `-` or a space; `z` turns `-0.0` into `0.0`; `#` adds `0b`, `0o` or `0x`, or keeps a float's decimal point; `0` pads with zeros after the sign; *grouping* is `,` or `_`.
+  - For an `int`, *type* is `d` (the default), `b`, `o`, `x`, `X` or `c` (the character with that code point), or one of the float types, which format it as a `float`.
+  - For a `float`, *type* is `e`, `E`, `f`, `F`, `g`, `G` or `%`, or none, which is like `g` but always shows at least one digit after the decimal point, as Python's `repr` does (`f"{2.0:>6}"` is `   2.0`). The default precision is 6 for `e`, `f`, `g` and `%`.
+  - For a `str`, *type* is `s` or none. A precision truncates (`f"{name:.3}"`), and `=` alignment, a sign, `z`, `#` and grouping don't apply.
+- **Checked at compile time:** a spec is checked against the hole's type, so a mistake is an error at the spec rather than Python's `ValueError` when the line runs:
+  - a spec that isn't in the mini-language, or one with an `n` type (locale-dependent), is `TP0006`, `invalid format spec '<spec>'`;
+  - a spec whose parts don't apply to the type (`f"{name:.2f}"`, `f"{n:.3d}"`, `f"{name:+}"`) is `TP0200`, `format spec '<spec>' isn't valid for <T>`, with help naming the part, as Python's message does (`'f' formats a number, not str`, `precision isn't allowed for an int formatted with 'd'`, `a sign isn't allowed for str`);
+  - a spec on any other type (a `bool`, an optional, a list, a class) is `TP0200`, `format specs apply to int, float and str, found <T>`, with help `convert it with str() first, or narrow the optional` as fits. A `bool` is an `int` in Python, so `f"{True:>5}"` there is `    1`, which is rarely what's meant.
 
 ---
 
@@ -1161,12 +1193,13 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0200 | `isinstance needs a class, found <T>` / `'<C>' is not a class` / `'<C>' is generic` / `<T> can never be a <C>` (`isinstance`, `as` and class patterns on unrelated classes) / `'<C>' is a class; write '<C>()'` (a class pattern without parentheses) (M15) |
 | TP0200 | `no overload of '<T>.<m>' takes (<A1>, <A2>)` / `'<T>' is a static class` (constructing it, or using it as a type) / `'<T>' cannot be constructed` (an interface, abstract class or enum) / `<v> is out of range for <N>` (a literal argument, `<N>` the .NET type's name, such as `Int32`) / `'<T>.<m>' returned null` (`TypeError`, at run time) / `'<C>' is not an exception class` (a .NET class not deriving from `System.Exception`) / `cannot bind both Taipan and .NET exceptions`, with help `write separate clauses` (M21) |
 | TP0200 | `every arm of this 'match' raises`, with help `use a 'match' statement` (M19) |
+| TP0200 | `format spec '<spec>' isn't valid for <T>`, with help naming the part that isn't / `format specs apply to int, float and str, found <T>` (M26) |
 | TP0200 | `'<A>' is a type alias, not a value`, with help `use '<N>'` when it names a class or enum (M18) |
 | TP0200 | `cannot raise <T>` (with help `write '<C>(…)'` for a class name) / `'<C>' is not an exception class` / `'PythonError' cannot be constructed` (and `'DotNetError'`, M21) (M16) |
 | TP0200 | `'<T>' does not satisfy '<P>': it has no method '<m>'` / `'<T>' does not satisfy '<P>': '<m>' must be 'def <m>(self, …) -> <R>'` (the protocol's signature with `Self` replaced; `-> <R>` left out when it returns nothing), at a call's callee or a declared protocol, with ` (declared by '<B>')` after `'<P>'` for an inherited declaration / `'...' can only be the body of a protocol method` / `'<m>' cannot be called directly`, with help `use '<'` (M17) |
 | TP0200 | `'super()' can only be used as 'super().<method>(…)'` / `'super()' can only be used in a method` / `'<C>' has no base class` / `'__init__' cannot be called directly` / `'__init__' cannot have a return type` (M15) |
 | TP0201 | `undefined name '<x>'` (with help `use 'None'` for `none`) / `undefined type '<T>'` / `module '<m>' has no definition '<x>'` / `.NET namespace '<ns>' has no type '<x>'` (M21) |
-| TP0202 | `cannot assign to '<x>': it is a <let binding\|parameter\|loop variable\|constant\|function\|method>`, with help `declare it with 'var'` for a `let` binding / `cannot assign to an element of str` / `cannot assign to an element of a tuple` |
+| TP0202 | `cannot assign to '<x>': it is a <let binding\|parameter\|loop variable\|constant\|function\|method>`, with help `declare it with 'var'` for a `let` binding / `cannot assign to an element of str` / `cannot assign to an element of a tuple` / `cannot use '<op>' on a slice` / `cannot delete '<x>'`, with help `assign it a new value instead` / `cannot delete a field` / `cannot delete an element of <T>` (M26) |
 | TP0203 | `expected <T>, found <T>?` / `<T>? must be narrowed before use`, with help `narrow it with 'is some', or give a default with '??'` |
 | TP0204 | `non-exhaustive match (missing: <a>, <b>)` |
 | TP0205 | `condition must be bool, found <T>` (with help `convert it with 'as bool'` for `py`) |
@@ -1176,7 +1209,7 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0209 | `'<S>' takes <n> type arguments, found <m>` (`type argument` when n is 1) |
 | TP0209 | `'<v>' has <n> fields, found <m> bindings` (variant and dataclass patterns; `field` / `binding` when the count is 1) / `'<C>' is not a dataclass, so its fields can only be bound by name` / `field '<f>' is given more than once` (class patterns, M15) |
 | TP0209 | `<T> has <n> elements, found <m> names` (unpacking) / `a tuple needs at least two elements` (M12) |
-| TP0209 | `'<f>' takes <n> arguments, found <m>` (`argument` when n is 1; `1 or 2 arguments` for `range`; `<a> to <b> arguments` for a function with defaults, M14; `function takes …` when the callee isn't a name) / `missing argument '<x>'` (M14) / `missing field '<f>' in '<S>'` / `field '<f>' is given more than once` / `argument '<k>' is given more than once` |
+| TP0209 | `'<f>' takes <n> arguments, found <m>` (`argument` when n is 1; `1 or 2 arguments` for `range`; `<a> to <b> arguments` for a function with defaults, M14; `2 or more arguments` for `zip`, M26; `function takes …` when the callee isn't a name) / `missing argument '<x>'` (M14) / `missing field '<f>' in '<S>'` / `field '<f>' is given more than once` / `argument '<k>' is given more than once` |
 | TP0209 | `expected a lambda with <n> parameters, found <m>` (`parameter` when n is 1) / `'Callable' takes a parameter list and a result type` |
 | TP0210 | `<T> has no field '<x>'` / `<T> has no method '<x>'` / `<E> has no variant '<x>'` |
 | TP0211 | `'<f>' cannot use top-level variable '<x>'`, with help `pass it as a parameter, or make it a const` |
@@ -1273,22 +1306,19 @@ Types are written as in source: `int`, `str?`, `list[int]`. The type of `None` i
 - multiple inheritance, mixing dataclasses and plain classes in one hierarchy, and inheritance involving generic classes
 - `@dataclass` options (`frozen`, `order`), `__post_init__`, and an `__init__` written in a dataclass
 - class attributes, `@staticmethod`, `@classmethod`, `@property`, abstract classes, `@final`, and `Self` outside protocols
-- `isinstance` with a tuple of classes or on `py` values, and `is` between two expressions (identity)
+- `isinstance` on `py` values, and `is` between two expressions (identity)
 - sub-patterns inside class patterns
-- `-> None` as an explicit "returns nothing" annotation
 - generic functions, built-ins, methods and constructors as values (wrap them in a lambda)
 - iterators and generators (`map` and `filter` return lists)
 - tuple patterns in `match`
 - nested unpacking (`let (a, b), c = …`) and unpacking lists
-- slice assignment and `del`
-- `zip` of more than two lists
 - `match` expressions inside other expressions (`f(match x: …)`, lambda bodies), and arms with indented blocks
 - type aliases inside functions and classes, recursive aliases, and showing an alias's name in diagnostics
-- keyword-only (`*`) and positional-only (`/`) parameters, `*args` and `**kwargs`, and defaults on lambda parameters
+- keyword-only (`*`) and positional-only (`/`) parameters, `*args` and `**kwargs`, and defaults on lambda parameters (not planned, since loop variables are captured per iteration, §3.7)
 - flow-sensitive narrowing after early return, and narrowing `var`s and fields
 - `raise … from …`, exception chaining, `BaseException`, exception groups (`except*`), and printing tracebacks
 - dataclass exceptions (mixing dataclasses and plain classes), and `args` on exceptions
-- format specs in f-strings
+- nested format specs in f-strings (`{x:{width}}`), the locale-dependent `n` format type, and format specs for other types (`__format__`)
 - language server features beyond §16: completion, signature help, find references, rename, semantic tokens, formatting, code actions, incremental sync, workspace-wide diagnostics, and editor extensions
 - CPython extension modules beyond §17: classes and enums as Python types, Python functions and objects as arguments, Python interop inside an extension, generic functions, free-threaded CPython, and builds for one exact Python version
 - .NET interop beyond §13: generic methods and generic .NET types (other than the collections of §13.3), delegates and passing Taipan functions to .NET, `async` and `Task`, events, `ref`/`out`/`in` parameters, `params` arrays, indexers, operators, extension methods (LINQ), `object` and `decimal` results, dictionaries, deriving from .NET classes or implementing .NET interfaces, raising .NET exceptions, `isinstance`/`as`/`match` on .NET types, flags enums, namespace imports (`import dotnet.System.IO as io`), and packages with native assets

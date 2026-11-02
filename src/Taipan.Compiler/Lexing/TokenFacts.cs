@@ -37,6 +37,7 @@ public static class TokenFacts
         ["except"] = TokenKind.ExceptKeyword,
         ["finally"] = TokenKind.FinallyKeyword,
         ["raise"] = TokenKind.RaiseKeyword,
+        ["del"] = TokenKind.DelKeyword,
     };
 
     private static readonly Dictionary<TokenKind, string> KeywordText =
