@@ -42,6 +42,27 @@ public sealed class SourceText
         return new LinePosition(line + 1, column);
     }
 
+    /// <summary>
+    /// The 0-based line and UTF-16 column of a position, as the Language Server Protocol counts
+    /// them (SPEC §16.1). The text is UTF-16, so the column is the distance from the line's start.
+    /// </summary>
+    public (int Line, int Character) GetUtf16Position(int position)
+    {
+        var index = _lineStarts.BinarySearch(Math.Clamp(position, 0, Text.Length));
+        var line = index >= 0 ? index : ~index - 1;
+        return (line, Math.Clamp(position, 0, Text.Length) - _lineStarts[line]);
+    }
+
+    /// <summary>The position at a 0-based line and UTF-16 column, clamped to the text and to the line.</summary>
+    public int GetPosition(int line, int character)
+    {
+        if (line >= _lineStarts.Length)
+            return Text.Length;
+        var start = _lineStarts[Math.Max(line, 0)];
+        var end = line + 1 < _lineStarts.Length ? _lineStarts[line + 1] - 1 : Text.Length;
+        return Math.Min(start + Math.Max(character, 0), end);
+    }
+
     private static ImmutableArray<int> ComputeLineStarts(string text)
     {
         var starts = ImmutableArray.CreateBuilder<int>();

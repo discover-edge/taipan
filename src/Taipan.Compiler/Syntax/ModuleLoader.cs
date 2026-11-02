@@ -26,14 +26,20 @@ public static class ModuleLoader
     /// <summary>Whether an import names .NET rather than a Taipan module: <c>dotnet</c> or <c>dotnet.&lt;namespace&gt;</c>.</summary>
     public static bool IsDotNet(string module) => module == DotNetModule || module.StartsWith(DotNetModule + ".", StringComparison.Ordinal);
 
-    public static LoadResult Load(string mainPath)
+    /// <summary>
+    /// Loads a program from its main file. <paramref name="openText"/> gives an editor's unsaved
+    /// text for a path, or null to read the file (SPEC §16.1).
+    /// </summary>
+    public static LoadResult Load(string mainPath, Func<string, string?>? openText = null)
     {
+        string? Read(string path) => openText?.Invoke(path) ?? (File.Exists(path) ? File.ReadAllText(path) : null);
+
         var modules = new List<SourceModule>();
         var loaded = new HashSet<string>();
         var lexical = new List<Diagnostic>();
         var syntax = new List<Diagnostic>();
 
-        var main = Parse(Path.GetFileNameWithoutExtension(mainPath), mainPath, lexical, syntax);
+        var main = Parse(Path.GetFileNameWithoutExtension(mainPath), mainPath, Read(mainPath) ?? "", lexical, syntax);
         if (main is not null)
         {
             modules.Add(main);
@@ -54,7 +60,7 @@ public static class ModuleLoader
                     continue;
                 }
                 var path = ModulePath(mainPath, import.Text);
-                if (!File.Exists(path))
+                if (Read(path) is not { } text)
                 {
                     syntax.Add(new Diagnostic("TP0221", import.Span, $"module '{import.Text}' not found", $"looked for {path}")
                     {
@@ -62,7 +68,7 @@ public static class ModuleLoader
                     });
                     continue;
                 }
-                if (Parse(import.Text, path, lexical, syntax) is { } module)
+                if (Parse(import.Text, path, text, lexical, syntax) is { } module)
                     modules.Add(module);
             }
         }
@@ -87,9 +93,9 @@ public static class ModuleLoader
         return string.IsNullOrEmpty(directory) ? $"{module}.tpn" : $"{directory}{separator}{module}.tpn";
     }
 
-    private static SourceModule? Parse(string name, string path, List<Diagnostic> lexical, List<Diagnostic> syntax)
+    private static SourceModule? Parse(string name, string path, string text, List<Diagnostic> lexical, List<Diagnostic> syntax)
     {
-        var source = SourceText.From(File.ReadAllText(path), path);
+        var source = SourceText.From(text, path);
         var lexed = Lexer.Lex(source);
         lexical.AddRange(lexed.Diagnostics.Select(d => d with { Source = source }));
         if (lexed.Diagnostics.Length > 0)

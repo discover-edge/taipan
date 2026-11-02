@@ -10,7 +10,11 @@ namespace Taipan.Compiler.Semantics;
 /// Set when the program uses a feature from a later milestone. The program and diagnostics are
 /// then incomplete and shouldn't be reported.
 /// </param>
-public sealed record BindResult(BoundProgram Program, ImmutableArray<Diagnostic> Diagnostics, string? Unsupported);
+public sealed record BindResult(BoundProgram Program, ImmutableArray<Diagnostic> Diagnostics, string? Unsupported)
+{
+    /// <summary>The names the binder resolved, for the language server (SPEC §16.3).</summary>
+    public SemanticIndex Index { get; init; } = new();
+}
 
 /// <summary>
 /// Resolves names and checks types (SPEC §3–§6), producing the bound tree for a whole program
@@ -125,7 +129,7 @@ public sealed partial class Binder
     {
         var binder = new Binder(library ?? DotNetLibrary.Framework, asLibrary, asNative);
         var program = binder.BindProgram(files);
-        return new BindResult(program, binder._diagnostics.ToImmutable(), binder._unsupported);
+        return new BindResult(program, binder._diagnostics.ToImmutable(), binder._unsupported) { Index = binder._index };
     }
 
     // ---- Program ----
@@ -338,9 +342,16 @@ public sealed partial class Binder
                     break;
                 case ImportStmt import when byName.TryGetValue(import.Module.Text, out var target):
                     var alias = import.Alias ?? import.Module;
-                    DeclareGlobal(alias, target.Symbol(alias.Text), isDefinition: false);
+                    var moduleSymbol = target.Symbol(alias.Text);
+                    // A module's definition is the start of its file (SPEC §16.3).
+                    _index.Locate(moduleSymbol, target.File.Source, default);
+                    Index(import.Module.Span, moduleSymbol);
+                    DeclareGlobal(alias, moduleSymbol, isDefinition: false);
                     break;
                 case FromImportStmt from when byName.TryGetValue(from.Module.Text, out var source):
+                    var fromModule = source.Symbol(from.Module.Text);
+                    _index.Locate(fromModule, source.File.Source, default);
+                    Index(from.Module.Span, fromModule);
                     foreach (var name in from.Names)
                     {
                         if (source.Classes.TryGetValue(name.Name.Text, out var classSymbol))
@@ -771,6 +782,8 @@ public sealed partial class Binder
     /// </summary>
     private void DeclareVariant(VariantSymbol variant, TextSpan span, bool isDefinition)
     {
+        if (isDefinition)
+            Index(span, variant, isDefinition: true);
         Symbol declared;
         switch (_global.Lookup(variant.Name))
         {
@@ -911,7 +924,10 @@ public sealed partial class Binder
         {
             var fieldSymbol = new FieldSymbol(field.Name.Text, BindType(field.Type)) { Owner = symbol, HasDefault = field.Default is not null };
             if (names.Add(field.Name.Text))
+            {
                 fields.Add(fieldSymbol);
+                Index(field.Name.Span, fieldSymbol, isDefinition: true);
+            }
             else
                 _diagnostics.ReportDuplicateDefinition(field.Name.Span, field.Name.Text);
         }
@@ -935,6 +951,7 @@ public sealed partial class Binder
                 IsMarkedOverride = isOverride,
             };
             methods.Add((method, methodSymbol));
+            Index(method.Name.Span, methodSymbol, isDefinition: true);
             if (!names.Add(name))
             {
                 _diagnostics.ReportDuplicateDefinition(method.Name.Span, name);
@@ -1392,6 +1409,7 @@ public sealed partial class Binder
         _global.Declare(name.Text, symbol);
         if (isDefinition)
             _definitions[name.Text] = symbol;
+        Index(name.Span, symbol, isDefinition);
         return true;
     }
 
@@ -1402,13 +1420,17 @@ public sealed partial class Binder
         else if (_scope.Parent?.Lookup(name.Text) is not null)
             _diagnostics.ReportShadowing(name.Span, name.Text);
         _scope.Declare(symbol);
+        Index(name.Span, symbol, isDefinition: true);
     }
 
     /// <summary>Looks up a value name, reporting TP0201 or TP0211 if it isn't visible.</summary>
     private Symbol? LookupName(string name, TextSpan span)
     {
         if (_scope.Lookup(name) is { } symbol)
+        {
+            Index(span, symbol);
             return symbol;
+        }
         if (_outerFunction is not null && _scriptNames.Contains(name))
             _diagnostics.ReportTopLevelVariableInFunction(span, _function!.Name, name);
         else
@@ -1447,12 +1469,16 @@ public sealed partial class Binder
             case NamedType named when _typeParameters.TryGetValue(named.Name.Text, out var typeParameter):
                 return typeParameter;
             case NamedType named when _global.Lookup(named.Name.Text) is TypeAliasSymbol alias:
+                Index(named.Name.Span, alias);
                 return ExpandAlias(alias, named.Name, [], named.Span);
             case NamedType named when _global.Lookup(named.Name.Text) is DotNetTypeSymbol dotnet:
+                Index(named.Name.Span, dotnet);
                 return DotNetTypeOf(dotnet.Type, named.Span);
             case GenericType generic when _global.Lookup(generic.Name.Text) is TypeAliasSymbol alias:
+                Index(generic.Name.Span, alias);
                 return ExpandAlias(alias, generic.Name, generic.Arguments, generic.Span);
             case NamedType named when ResolveTypeName(named.Name.Text) is { } typeSymbol:
+                Index(named.Name.Span, typeSymbol);
                 return BindGenericType(named.Name, [], named.Span, typeSymbol);
             case GenericType generic:
                 return BindGenericType(generic.Name, generic.Arguments, generic.Span, ResolveTypeName(generic.Name.Text));
@@ -1509,10 +1535,16 @@ public sealed partial class Binder
             _diagnostics.ReportUndefinedName(qualified.Module.Span, qualified.Module.Text);
             return TaipanType.Error;
         }
+        Index(qualified.Module.Span, module);
         if (module.Definitions.GetValueOrDefault(name.Text) is TypeAliasSymbol alias)
+        {
+            Index(name.Span, alias);
             return ExpandAlias(alias, name, arguments, qualified.Span);
+        }
         Symbol? symbol = module.Classes.TryGetValue(name.Text, out var classSymbol) ? classSymbol
             : module.Enums.TryGetValue(name.Text, out var enumSymbol) ? enumSymbol : null;
+        if (symbol is not null)
+            Index(name.Span, symbol);
         if (symbol is null)
         {
             _diagnostics.ReportNoDefinition(name.Span, module.Name, name.Text);
@@ -2177,6 +2209,7 @@ public sealed partial class Binder
         {
             if (classSymbol.FindField(member.Member.Text) is { } field)
             {
+                Index(member.Member.Span, field);
                 var fieldType = FieldType(target.Type, field);
                 var value = BindAssignedValue(assign, new BoundFieldAccess(target, field, fieldType, member.Span), fieldType, preset);
                 return new BoundFieldAssign(target, field, value, assign.Op != AssignOp.Assign, assign.Span);
@@ -3398,7 +3431,10 @@ public sealed partial class Binder
         if (target.Type is ClassType { Symbol: var classSymbol })
         {
             if (classSymbol.FindField(name) is { } field)
+            {
+                Index(member.Member.Span, field);
                 return new BoundFieldAccess(target, field, FieldType(target.Type, field), member.Span);
+            }
             if (name == "__init__")
                 _diagnostics.ReportInitCalled(member.Member.Span);
             else if (classSymbol.FindMethod(name) is not null)
@@ -4132,8 +4168,11 @@ public sealed partial class Binder
         symbol = null;
         if (member.Target is not NameExpr moduleName || _scope.Lookup(moduleName.Name) is not ModuleSymbol module)
             return false;
+        Index(moduleName.Span, module);
         if (!module.Definitions.TryGetValue(member.Member.Text, out symbol))
             _diagnostics.ReportNoDefinition(member.Member.Span, module.Name, member.Member.Text);
+        else
+            Index(member.Member.Span, symbol);
         return true;
     }
 
@@ -4152,9 +4191,13 @@ public sealed partial class Binder
         };
         if (enumSymbol is null)
             return false;
+        if (member.Target is NameExpr enumReference)
+            Index(enumReference.Span, enumSymbol);
         variant = enumSymbol.FindVariant(member.Member.Text);
         if (variant is null)
             _diagnostics.ReportNoVariant(member.Member.Span, enumSymbol.Type, member.Member.Text);
+        else
+            Index(member.Member.Span, variant);
         return true;
     }
 
@@ -4246,6 +4289,7 @@ public sealed partial class Binder
             if (classSymbol.FindField(name) is { } field && TypeChecker.Unwrap(FieldType(target.Type, field)) is FunctionType)
             {
                 ReportKeywordArguments(call, function: null);
+                Index(member.Member.Span, field);
                 return BindInvoke(call, new BoundFieldAccess(target, field, FieldType(target.Type, field), member.Span), name, member.Member.Span);
             }
             if (name == "__init__")
@@ -4256,6 +4300,7 @@ public sealed partial class Binder
             }
             if (classSymbol.FindMethod(name) is { } method)
             {
+                Index(member.Member.Span, method);
                 var map = TypeChecker.MapOf(target.Type);
                 var returnType = TypeChecker.Substitute(method.ReturnType, map);
                 if (MatchArguments(call, method, name, member.Member.Span) is not { } shape)

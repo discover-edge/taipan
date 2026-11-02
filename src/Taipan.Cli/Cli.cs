@@ -26,6 +26,7 @@ public static class Cli
           taipan emit  <file> [--library | --native]
           taipan build <file> [--library | --native] -o <dir>
           taipan run   <file> [-- args]
+          taipan lsp [--stdio]
           taipan --version
           taipan --help
         """;
@@ -45,6 +46,9 @@ public static class Cli
             "emit" => Emit(rest, target!.Value, stdout, stderr),
             "build" => Build(rest, target!.Value, stdout, stderr),
             "run" => RunFile(rest, stdout, stderr),
+            // Clients such as VS Code's pass --stdio, the only transport (SPEC §16.1).
+            "lsp" when rest.Any(a => a != "--stdio") => UsageError(stderr, "lsp takes no arguments but '--stdio'"),
+            "lsp" => new LanguageServer(Console.OpenStandardInput(), Console.OpenStandardOutput()).Run(),
             "--version" or "--help" when rest.Length > 0 => UsageError(stderr, $"{command} takes no arguments"),
             "--version" => Print(stdout, $"taipan {Version}"),
             "--help" => Print(stdout, Usage),
@@ -131,65 +135,18 @@ public static class Cli
     }
 
     /// <summary>
-    /// Runs load (lex and parse every file) → bind → emit. Each stage runs only if the previous
-    /// one reported no errors (SPEC §9). Features from later milestones stop compilation as "not implemented".
-    /// <paramref name="program"/> and <paramref name="project"/> are set only on success. A wrong
-    /// <c>taipan.json</c> isn't an error in the source (SPEC §13.2).
+    /// Checks a program (<see cref="Checker"/>) and prints what it found. <paramref name="program"/>
+    /// and <paramref name="project"/> are set only on success.
     /// </summary>
     private static int Compile(string path, Target target, TextWriter stderr, out EmittedProgram? program, out ProjectFile? project)
     {
-        program = null;
-        project = null;
-        if (!File.Exists(path))
-        {
-            stderr.WriteLine($"taipan: file not found: {path}");
-            return ExitUsage;
-        }
-        if (ProjectFile.Load(path, out var error) is not { } loadedProject)
-        {
-            stderr.WriteLine($"taipan: {error}");
-            return ExitUsage;
-        }
-
-        var loaded = ModuleLoader.Load(path);
-        if (Report(loaded.Diagnostics, stderr))
-            return ExitCompileError;
-
-        // A library compiles against the SDK's reference assemblies, so other projects can reference it (SPEC §14.4).
-        string? framework = null;
-        if (target == Target.Library && (framework = DotNetLibrary.ReferencePackDirectory()) is null)
-        {
-            stderr.WriteLine("taipan: building a library needs the .NET SDK's reference assemblies (Microsoft.NETCore.App.Ref)");
-            return ExitUsage;
-        }
-        var bound = Binder.Bind(
-            loaded.Modules, DotNetLibrary.For(loadedProject.CompileReferences, framework), target == Target.Library, target == Target.Native);
-        if (bound.Unsupported is not null)
-            return NotImplemented(bound.Unsupported, stderr);
-        if (Report(bound.Diagnostics, stderr))
-            return ExitCompileError;
-
-        var source = loaded.Modules[0].Source;
-        var emitted = CSharpEmitter.Emit(source, bound.Program, native: target == Target.Native);
-        if (Report(emitted.Diagnostics, stderr))
-            return ExitCompileError;
-        program = emitted;
-        project = loadedProject;
-        return ExitSuccess;
-    }
-
-    /// <summary>Prints diagnostics, each in its own file; true if any is an error. Warnings don't fail compilation (SPEC §9).</summary>
-    private static bool Report(ImmutableArray<Diagnostic> diagnostics, TextWriter stderr)
-    {
-        foreach (var diagnostic in diagnostics)
+        var result = Checker.Check(path, target);
+        foreach (var diagnostic in result.Diagnostics)
             stderr.WriteLine(diagnostic.Format(diagnostic.Source!));
-        return diagnostics.Any(d => !d.IsWarning);
-    }
-
-    private static int NotImplemented(string feature, TextWriter stderr)
-    {
-        stderr.WriteLine($"taipan: {feature} is not implemented yet");
-        return ExitUsage;
+        if (result.Failure is not null)
+            stderr.WriteLine($"taipan: {result.Failure}");
+        (program, project) = (result.Program, result.Project);
+        return result.ExitCode;
     }
 
     /// <summary>The package version, which the build sets once for every package (SPEC §12.2).</summary>

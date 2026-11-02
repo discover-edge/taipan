@@ -138,6 +138,30 @@ catch (shapes.UnknownShape e) { Console.WriteLine(e.message); }
 
 - **Native executables:** `taipan build health.tpn --native -o out` compiles a program ahead of time with .NET's NativeAOT into one self-contained executable that runs without .NET installed, with the same output, exit codes and panic locations as `taipan run`. It needs the .NET SDK and a C toolchain (clang or gcc on Linux) to build. Python interop can't be compiled natively, and is rejected at compile time.
 
+- **Language server:** `taipan lsp` speaks the Language Server Protocol over stdin and stdout, for diagnostics as you type, the type of a name on hover, and go to definition across modules. Point any LSP client at it for `.tpn` files. In Neovim:
+
+```lua
+vim.filetype.add({ extension = { tpn = "taipan" } })
+vim.api.nvim_create_autocmd("FileType", {
+  pattern = "taipan",
+  callback = function() vim.lsp.start({ name = "taipan", cmd = { "taipan", "lsp" } }) end,
+})
+```
+
+In Helix's `languages.toml`:
+
+```toml
+[language-server.taipan]
+command = "taipan"
+args = ["lsp"]
+
+[[language]]
+name = "taipan"
+scope = "source.taipan"
+file-types = ["tpn"]
+language-servers = ["taipan"]
+```
+
 [SPEC.md](SPEC.md) is the full language definition, and `examples/` and `tests/cases/` have many more programs.
 
 ## How it works

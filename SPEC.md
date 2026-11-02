@@ -1289,7 +1289,7 @@ Types are written as in source: `int`, `str?`, `list[int]`. The type of `None` i
 - `raise … from …`, exception chaining, `BaseException`, exception groups (`except*`), and printing tracebacks
 - dataclass exceptions (mixing dataclasses and plain classes), and `args` on exceptions
 - format specs in f-strings
-- an LSP server
+- language server features beyond §16: completion, signature help, find references, rename, semantic tokens, formatting, code actions, incremental sync, workspace-wide diagnostics, and editor extensions
 - emitting CPython extension modules (interop level 3)
 - .NET interop beyond §13: generic methods and generic .NET types (other than the collections of §13.3), delegates and passing Taipan functions to .NET, `async` and `Task`, events, `ref`/`out`/`in` parameters, `params` arrays, indexers, operators, extension methods (LINQ), `object` and `decimal` results, dictionaries, deriving from .NET classes or implementing .NET interfaces, raising .NET exceptions, `isinstance`/`as`/`match` on .NET types, flags enums, namespace imports (`import dotnet.System.IO as io`), and packages with native assets
 - an MSBuild project SDK (`TaipanLang.Sdk`), for building `.tpn` files with `dotnet build` as part of a .NET solution
@@ -1307,6 +1307,7 @@ taipan emit  <file> [--library | --native]           print the generated C# (§8
 taipan build <file> [--library | --native] -o <dir>  write a runnable program, a library (M22, §14),
                                                      or a native executable (M23, §15) to <dir>
 taipan run   <file> [-- args]                        compile and run
+taipan lsp [--stdio]                                 run the language server on stdin and stdout (M24, §16)
 taipan --version                                     print "taipan <version>", e.g. "taipan 0.2.0"
 taipan --help                                        print the usage text
 ```
@@ -1565,3 +1566,49 @@ This adds a local store per statement and a filter per method; it's emitted only
 
 ### 15.4 Deferred
 §11 lists what's deferred: building for another architecture (`--runtime <rid>`), Python in native programs, native libraries (`--library --native`), and size options such as invariant globalization.
+
+---
+
+## 16. Language server (M24)
+`taipan lsp` is a Language Server Protocol (LSP 3.17) server for editors. It reports the compiler's diagnostics as you type, shows a name's type on hover, and goes to a name's definition, across modules too.
+
+### 16.1 Protocol
+- **Transport:** JSON-RPC 2.0 over stdin and stdout, each message framed by a `Content-Length` header, as the LSP specifies. `taipan lsp` takes no arguments but `--stdio`, which clients such as VS Code's pass and which names the only transport. It writes nothing else to stdout.
+- **Lifecycle:** `initialize`, `initialized`, `shutdown` and `exit`. `exit` ends the server with code `0` after `shutdown`, and `1` without it, as the LSP specifies.
+- **Capabilities** the server declares: full document sync with open and close notifications (`textDocumentSync: 1`), `hoverProvider` and `definitionProvider`. Positions are in UTF-16 code units, the LSP's default; Taipan's own columns count code points (§9), and the server converts.
+- **Documents** are `file://` URIs; others are ignored. Open documents' text comes from the client (`didOpen`, `didChange`), unsaved changes included, and any other file the server reads from disk.
+- A request the server doesn't support is answered with JSON-RPC's `MethodNotFound` error (`-32601`); an unsupported notification is ignored. A request for a document that isn't open, or that can't be analyzed, gets a null result.
+
+### 16.2 Diagnostics
+- **Each open document is checked as the main file of a program** (§4.7), as `taipan check <file>` checks it: its imports are loaded from its directory, with `taipan.json` read there (§13.2). It's checked when it's opened and after every change, and when another open document it imports changes.
+- **The diagnostics published** for a document (`textDocument/publishDiagnostics`) are those `taipan check` would report in that file, in its order:
+  - `range` runs from the diagnostic's start to its end; its start is the line and column `taipan check` prints.
+  - `severity` is `1` (error) or `2` (warning), `code` is the diagnostic's code (`TP0200`), and `source` is `taipan`.
+  - `message` is the message, followed by `help: <hint>` on its own line when there's help.
+- Paths in messages, such as TP0221's `looked for <path>`, are absolute, since the server checks a document by its absolute path.
+- Diagnostics in an imported module are published for that module when it's open itself, since each document is checked as its own main file. A module checked as a main file isn't held to §4.7's declarations-only rule (`TP0222`).
+- A problem `taipan check` reports as `taipan: <message>` with exit code `2`, such as a malformed `taipan.json`, is one error at the document's start, with that message and no code.
+- Closing a document publishes an empty list for it.
+
+### 16.3 Hover and definition
+- **Hover** (`textDocument/hover`) on a name, where it's defined or used, shows what it names as a `taipan` code block, with types as diagnostics write them (§9):
+
+  | Name | Hover |
+  |---|---|
+  | variable | `let total: float`, `var count: int`, or `items: list[Shape]` for a parameter |
+  | constant | `const LIMIT: int` |
+  | function | `def scale(p: Point, by: float = …) -> Point`, with type parameters (`def first[T](xs: list[T]) -> T?`) |
+  | method | `def Point.moved(self, by: float = …) -> Point` |
+  | field | `Point.x: float` |
+  | class, enum | `class Point`, `@dataclass class Point`, `class Box[T]`, `enum Shape` |
+  | variant | `Shape.Circle(r: float)` |
+  | module | `module shapes` |
+  | type alias | `type Grid = list[list[int]]` |
+  | .NET type or member | its C# signature, after `.NET`: `.NET System.Text.StringBuilder.Append(string?)` |
+
+  A variable whose type was inferred shows the inferred type, so `let n = len(xs)` shows `let n: int`. Elsewhere hover gives a null result.
+- **Go to definition** (`textDocument/definition`) on a name gives the location of the name where it's defined: a local's or parameter's declaration, or a function, class, enum, variant, field, method, constant or type alias in its file. A name imported from another module (`from shapes import area`, or `shapes.area`) goes to `shapes.tpn`, and a module's name in `import shapes` goes to the start of its file. Built-in names, and Python and .NET names, have no definition here, so the result is null.
+- Both need the document to parse (§9's stage gating). With type errors, they work wherever names resolved.
+
+### 16.4 Deferred
+§11 lists what's deferred: completion, signature help, find references, rename, semantic tokens, formatting, code actions, incremental document sync, workspace-wide diagnostics, and editor extensions (a VS Code extension, a TextMate grammar).

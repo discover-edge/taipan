@@ -50,6 +50,15 @@ public class CliTests
     }
 
     [Fact]
+    public void LspTakesOnlyStdio()
+    {
+        var (exit, stdout, stderr) = Run("lsp", "--tcp");
+        Assert.Equal(2, exit);
+        Assert.Equal("", stdout);
+        Assert.StartsWith("taipan: lsp takes no arguments but '--stdio'\nusage:\n", stderr);
+    }
+
+    [Fact]
     public void LibraryAndNativeDontCombine()
     {
         var (exit, stdout, stderr) = Run("build", "examples/health.tpn", "--library", "--native", "-o", "out");

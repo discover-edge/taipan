@@ -1,0 +1,19 @@
+# A module for the language server tests to navigate into (SPEC §16.3).
+const SIDES = 4
+
+@dataclass
+class Point:
+    x: float
+    y: float = 0.0
+
+    def moved(self, by: float = 1.0) -> Point:
+        return Point(self.x + by, self.y + by)
+
+enum Shape:
+    Circle(r: float)
+    Square(side: float)
+
+def area(shape: Shape) -> float:
+    return match shape:
+        Circle(r): 3.0 * r * r
+        Square(side): side * side
