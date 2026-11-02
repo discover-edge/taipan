@@ -1,0 +1,16 @@
+1 x 2.5
+10 [20, 30, 40]
+a c
+[10, 20, 30] 40
+1 2
+1 [2, 3]
+5 6 [99, 30, 40]
+0 k 1
+1 j 2
+3
+7
+1 [2, 3]
+4 []
+too many values to unpack (expected 2)
+not enough values to unpack (expected 2, got 1)
+not enough values to unpack (expected at least 2, got 1)

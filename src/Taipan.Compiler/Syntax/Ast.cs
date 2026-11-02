@@ -84,11 +84,23 @@ public sealed record LetStmt(Identifier Name, TypeSyntax? Type, Expr Value, Text
 
 public sealed record VarStmt(Identifier Name, TypeSyntax? Type, Expr Value, TextSpan Span) : Stmt(Span);
 
-/// <summary><c>let a, b = e</c> or <c>var a, b = e</c>: unpacks a tuple (SPEC §3.8).</summary>
-public sealed record UnpackStmt(bool IsVar, ImmutableArray<Identifier> Names, Expr Value, TextSpan Span) : Stmt(Span);
+/// <summary><c>let a, b = e</c> or <c>var a, b = e</c>: unpacks a tuple or a list (SPEC §3.8).</summary>
+public sealed record UnpackStmt(bool IsVar, ImmutableArray<Unpacked> Names, Expr Value, TextSpan Span) : Stmt(Span);
 
-/// <summary><c>a, b = e</c>: assigns a tuple's elements to the targets, left to right (SPEC §3.8).</summary>
-public sealed record TupleAssignStmt(ImmutableArray<Expr> Targets, Expr Value, TextSpan Span) : Stmt(Span);
+/// <summary><c>a, b = e</c>: assigns a tuple's or list's elements to the targets, left to right (SPEC §3.8).</summary>
+public sealed record TupleAssignStmt(ImmutableArray<Unpacked> Targets, Expr Value, TextSpan Span) : Stmt(Span);
+
+/// <summary>One place an element is unpacked to (SPEC §3.8): a name, a target, or a nested group (M29).</summary>
+public abstract record Unpacked(TextSpan Span) : Node(Span);
+
+/// <summary>A name a <c>let</c>, <c>var</c> or <c>for</c> declares; <c>*name</c> takes the rest (M29).</summary>
+public sealed record UnpackedName(Identifier Name, bool Starred, TextSpan Span) : Unpacked(Span);
+
+/// <summary>A target an assignment stores to; <c>*target</c> takes the rest (M29).</summary>
+public sealed record UnpackedTarget(Expr Target, bool Starred, TextSpan Span) : Unpacked(Span);
+
+/// <summary><c>(a, b)</c> inside an unpacking: unpacks that element in turn (M29).</summary>
+public sealed record UnpackedGroup(ImmutableArray<Unpacked> Items, TextSpan Span) : Unpacked(Span);
 
 public enum AssignOp { Assign, Add, Subtract, Multiply, Divide }
 
@@ -121,8 +133,8 @@ public sealed record IfClause(Condition Condition, Block Body, TextSpan Span) : 
 
 public sealed record WhileStmt(Condition Condition, Block Body, TextSpan Span) : Stmt(Span);
 
-/// <summary>More than one variable unpacks each element (SPEC §5.2).</summary>
-public sealed record ForStmt(ImmutableArray<Identifier> Variables, Expr Iterable, Block Body, TextSpan Span) : Stmt(Span);
+/// <summary>One plain name is the loop variable; anything else unpacks each element (SPEC §5.2).</summary>
+public sealed record ForStmt(ImmutableArray<Unpacked> Variables, Expr Iterable, Block Body, TextSpan Span) : Stmt(Span);
 
 public sealed record MatchStmt(Expr Scrutinee, ImmutableArray<MatchArm> Arms, TextSpan Span) : Stmt(Span);
 
@@ -168,8 +180,17 @@ public sealed record BoolPattern(bool Value, TextSpan Span) : Pattern(Span);
 public sealed record VariantPattern(Identifier? Module, Identifier? Enum, Identifier Variant, ImmutableArray<PatternBinding>? Bindings, TextSpan Span)
     : Pattern(Span);
 
-/// <summary>A binding in a pattern: positional, or <c>field=name</c> when <see cref="Field"/> is set (M15).</summary>
-public sealed record PatternBinding(Identifier? Field, Identifier Name, TextSpan Span) : Node(Span);
+/// <summary>An argument of a variant or class pattern: positional, or <c>field=pattern</c> when <see cref="Field"/> is set (M15; a sub-pattern since M29).</summary>
+public sealed record PatternBinding(Identifier? Field, Pattern Pattern, TextSpan Span) : Node(Span);
+
+/// <summary><c>(p, q)</c>: one sub-pattern per element of a tuple (SPEC §5.1, M29).</summary>
+public sealed record TuplePattern(ImmutableArray<Pattern> Elements, TextSpan Span) : Pattern(Span);
+
+/// <summary><c>[p, *rest, q]</c>: a list's elements, with at most one <see cref="StarPattern"/> (SPEC §5.1, M29).</summary>
+public sealed record ListPattern(ImmutableArray<Pattern> Elements, TextSpan Span) : Pattern(Span);
+
+/// <summary><c>*name</c> or <c>*_</c> in a list pattern: the rest of the list.</summary>
+public sealed record StarPattern(Identifier Name, TextSpan Span) : Pattern(Span);
 
 public sealed record ErrorPattern(TextSpan Span) : Pattern(Span);
 
@@ -282,10 +303,16 @@ public sealed record IsNoneExpr(Expr Operand, bool Negated, TextSpan Span) : Exp
 /// <summary><c>x as T</c>: converts a py value to a Taipan type, or between classes (SPEC §10.4, §4.3).</summary>
 public sealed record CastExpr(Expr Value, TypeSyntax Type, TextSpan Span) : Expr(Span);
 
-/// <summary>A <c>match</c> producing a value: the whole value of a <c>let</c>, <c>var</c>, assignment or <c>return</c> (SPEC §5.1.1, M19).</summary>
+/// <summary>A <c>match</c> producing a value (SPEC §5.1.1, M19): an atom since M29.</summary>
 public sealed record MatchExpr(Expr Scrutinee, ImmutableArray<ValueArm> Arms, TextSpan Span) : Expr(Span);
 
-/// <summary>An arm of a <see cref="MatchExpr"/>: exactly one of <see cref="Value"/> and <see cref="Raise"/> is set.</summary>
-public sealed record ValueArm(Pattern Pattern, Expr? Value, RaiseStmt? Raise, TextSpan Span) : Node(Span);
+/// <summary>An arm of a <see cref="MatchExpr"/>: exactly one of <see cref="Value"/>, <see cref="Raise"/> and <see cref="Block"/> (M29) is set.</summary>
+public sealed record ValueArm(Pattern Pattern, Expr? Value, RaiseStmt? Raise, TextSpan Span) : Node(Span)
+{
+    public Block? Block { get; init; }
+}
+
+/// <summary><c>*x</c>: only an unpacking target that takes the rest (SPEC §3.8, M29).</summary>
+public sealed record StarredExpr(Expr Value, TextSpan Span) : Expr(Span);
 
 public sealed record ErrorExpr(TextSpan Span) : Expr(Span);

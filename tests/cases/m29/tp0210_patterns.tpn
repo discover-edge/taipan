@@ -1,0 +1,22 @@
+# A capitalized name in an enum position must be a variant, so a typo isn't a binding (SPEC §5.1).
+enum Health:
+    Ok
+    Down
+
+enum Maybe[T]:
+    Some(value: T)
+    Nothing
+
+def check(h: Health, m: Maybe[Health]):
+    match h:
+        Okk:
+            pass
+        _:
+            pass
+    match m:
+        Some(Dwn):
+            pass
+        Some(lower):
+            pass
+        Nothing:
+            pass

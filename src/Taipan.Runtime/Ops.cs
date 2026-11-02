@@ -331,6 +331,29 @@ public static class Ops
     /// <summary><c>a op b</c> through the right operand's reflected method, after evaluating both (SPEC §3.11, §4.8).</summary>
     public static TResult Reversed<TLeft, TRight, TResult>(TLeft left, TRight right, Func<TRight, TLeft, TResult> method) => method(right, left);
 
+    // ---- Unpacking (SPEC §3.8, M29) ----
+
+    /// <summary>Checks a list's length against the names it's unpacked into, as Python 3.12 reports it.</summary>
+    public static void CheckUnpack(int count, int expected, bool starred)
+    {
+        if (starred && count < expected)
+            throw new ValueError($"not enough values to unpack (expected at least {expected}, got {count})");
+        if (!starred && count < expected)
+            throw new ValueError($"not enough values to unpack (expected {expected}, got {count})");
+        if (!starred && count > expected)
+            throw new ValueError($"too many values to unpack (expected {expected})");
+    }
+
+    /// <summary>A starred name's new list: the elements after the first <paramref name="start"/>, leaving <paramref name="after"/>.</summary>
+    public static List<T> UnpackRest<T>(List<T> list, int start, int after) => list.GetRange(start, list.Count - start - after);
+
+    /// <summary>A list pattern's starred name (SPEC §5.1): binds the rest, and always matches.</summary>
+    public static bool Rest<T>(List<T> list, int before, int after, out List<T> rest)
+    {
+        rest = UnpackRest(list, before, after);
+        return true;
+    }
+
     // ---- Special methods (SPEC §4.8) ----
 
     /// <summary>

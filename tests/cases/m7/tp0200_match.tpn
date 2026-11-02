@@ -12,7 +12,7 @@ match l:
     _: pass
 match 1.5:
     _: pass
-match [1]:
+match {1: 2}:
     _: pass
 match 3:
     "x": pass

@@ -30,9 +30,11 @@ public static class TaipanProgram
         foreach ((long, string) @_4 in global::Taipan.Runtime.Iter.Over(global::Taipan.Runtime.Ops.Enumerate("ab")))
         {
 #line 12 "tests/cases/m12/emit.tpn"
-            long @i = @_4.Item1;
+            (long, string) @_5 = @_4;
 #line 12 "tests/cases/m12/emit.tpn"
-            string @c = @_4.Item2;
+            long @i = @_5.Item1;
+#line 12 "tests/cases/m12/emit.tpn"
+            string @c = @_5.Item2;
 #line 13 "tests/cases/m12/emit.tpn"
             global::Taipan.Runtime.Builtins.Print(@i, @c);
         }

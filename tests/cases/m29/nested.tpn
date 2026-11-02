@@ -1,0 +1,73 @@
+# M29 acceptance: nested patterns over an enum of tuples, classes and lists (SPEC §5.1).
+enum Command:
+    Move(delta: tuple[int, int])
+    Jump(to: tuple[int, int], fast: bool)
+    Stop
+
+enum Maybe[T]:
+    Some(value: T)
+    Nothing
+
+@dataclass
+class Dog:
+    name: str
+    age: int
+
+def describe(c: Command) -> str:
+    match c:
+        Move((0, 0)):
+            return "stay"
+        Move((0, dy)):
+            return f"vertical {dy}"
+        Move((dx, _)):
+            return f"horizontal {dx}"
+        Jump((x, y), True):
+            return f"fast jump to {x},{y}"
+        Jump(_, False):
+            return "slow jump"
+        Stop:
+            return "stop"
+
+for c in [Move((0, 0)), Move((0, 3)), Move((2, 5)), Jump((1, 2), True), Jump((0, 0), False), Stop]:
+    print(describe(c))
+
+def greet(d: Maybe[Dog]) -> str:
+    return match d:
+        Some(Dog(name="rex")): "hello rex"
+        Some(Dog(n, 0)): f"a puppy named {n}"
+        Some(Dog(name=n, age=a)): f"{n}, {a}"
+        Nothing: "nobody"
+
+print(greet(Some(Dog("rex", 3))), greet(Some(Dog("fido", 0))), greet(Some(Dog("max", 7))), greet(Nothing))
+
+def shape(xs: list[int]) -> str:
+    match xs:
+        []:
+            return "empty"
+        [x]:
+            return f"one: {x}"
+        [0, *rest]:
+            return f"zero then {rest}"
+        [first, *_, last]:
+            return f"{first}..{last}"
+
+print(shape([]), shape([7]), shape([0, 1, 2]), shape([1, 2, 3, 4]))
+
+let pair = (3, "c")
+match pair:
+    (0, s):
+        print("zero", s)
+    (n, "c"):
+        print("c with", n)
+    _:
+        print("other")
+
+# A bare name binds, unless it's a variant of the position's enum.
+let found: Maybe[Command] = Some(Stop)
+match found:
+    Some(Stop):
+        print("found stop")
+    Some(other):
+        print("found", other)
+    Nothing:
+        print("none")

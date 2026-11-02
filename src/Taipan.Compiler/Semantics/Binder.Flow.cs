@@ -268,6 +268,8 @@ public sealed partial class Binder
                 foreach (var store in unpack.Stores)
                     Visit(store);
             }
+            foreach (var arm in BoundTree.ArmBlocks(stmt))
+                Visit(arm);
             foreach (var inner in BoundTree.Statements(stmt))
                 Visit(inner);
         }

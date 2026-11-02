@@ -2,8 +2,8 @@ let t = (1, "a")
 let i = 0
 print(t[i])
 print(t[2])
-let a, b = [1, 2]
-match t:
+let a, b = 5
+match {1: t}:
     _: pass
 print(t[1:])
 let d = {"a": 1}

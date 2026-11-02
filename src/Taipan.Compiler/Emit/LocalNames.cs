@@ -112,8 +112,11 @@ public sealed class LocalNames
 
     private static IEnumerable<VariableSymbol> PatternBindings(BoundPattern pattern) => pattern switch
     {
-        BoundVariantPattern p => p.Bindings.OfType<VariableSymbol>(),
-        BoundClassPattern p => p.Bindings.Select(b => b.Binding),
+        BoundBindingPattern p => [p.Symbol],
+        BoundVariantPattern p => p.Fields.SelectMany(PatternBindings),
+        BoundClassPattern p => p.Fields.SelectMany(f => PatternBindings(f.Pattern)),
+        BoundTuplePattern p => p.Elements.SelectMany(PatternBindings),
+        BoundListPattern p => [.. p.Before.SelectMany(PatternBindings), .. ((VariableSymbol?[])[p.Rest]).OfType<VariableSymbol>(), .. p.After.SelectMany(PatternBindings)],
         _ => [],
     };
 
@@ -166,5 +169,8 @@ public sealed class LocalNames
                 yield return (function.Body.Statements, function.Parameters);
                 break;
         }
+        // A match expression's block arms (M29), emitted as a lambda's body.
+        foreach (var arm in BoundTree.ArmBlocks(stmt))
+            yield return (arm.Statements, []);
     }
 }

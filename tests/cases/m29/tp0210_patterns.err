@@ -1,0 +1,2 @@
+tests/cases/m29/tp0210_patterns.tpn:12:9: error TP0210: Health has no variant 'Okk'
+tests/cases/m29/tp0210_patterns.tpn:17:14: error TP0210: Health has no variant 'Dwn'

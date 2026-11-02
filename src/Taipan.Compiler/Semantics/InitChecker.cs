@@ -205,6 +205,16 @@ public sealed class InitChecker
                     _diagnostics.ReportSelfUsedEarly(call.Span, FirstUnset(state)?.Name);
                 Expressions(call.Arguments, state);
                 return;
+            case BoundMatchExpr match:
+                // A block arm's statements run before its value, and what they set counts only there (M29).
+                Expression(match.Scrutinee, state);
+                foreach (var arm in match.Arms)
+                {
+                    var armState = arm.Body is { } body ? Block(body.Statements, state.Copy(), topLevel: false) : state;
+                    if ((arm.Value ?? arm.Raise?.Value) is { } value)
+                        Expression(value, armState);
+                }
+                return;
             default:
                 Expressions(BoundTree.Children(expr), state);
                 return;

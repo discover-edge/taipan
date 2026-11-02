@@ -34,6 +34,20 @@ public static class BoundTree
         _ => [],
     };
 
+    /// <summary>
+    /// The block arms of the match expressions in an expression (SPEC §5.1.1, M29): nested blocks
+    /// inside it, not counting those inside lambdas or inside the blocks themselves.
+    /// </summary>
+    public static IEnumerable<BoundBlock> ArmBlocks(BoundExpr expr) => expr switch
+    {
+        BoundLambda => [],
+        BoundMatchExpr match => match.Arms.Select(a => a.Body).OfType<BoundBlock>().Concat(Children(match).SelectMany(ArmBlocks)),
+        _ => Children(expr).SelectMany(ArmBlocks),
+    };
+
+    /// <summary>The block arms in a statement's own expressions.</summary>
+    public static IEnumerable<BoundBlock> ArmBlocks(BoundStmt stmt) => Expressions(stmt).SelectMany(ArmBlocks);
+
     /// <summary>An expression's direct sub-expressions, including a lambda's body.</summary>
     public static IEnumerable<BoundExpr> Children(BoundExpr expr) => expr switch
     {
@@ -72,8 +86,12 @@ public static class BoundTree
         BoundSort sort => [sort.List, .. sort.Keywords.Select(k => k.Value)],
         BoundTupleLiteral tuple => tuple.Elements,
         BoundTupleElement element => [element.Tuple],
+        BoundListElement element => [element.List],
+        BoundListRest rest => [rest.List],
+        BoundTupleRest rest => [rest.Tuple],
         BoundSlice slice => ((BoundExpr?[])[slice.Target, slice.Start, slice.Stop, slice.Step]).OfType<BoundExpr>(),
-        BoundMatchExpr match => [match.Scrutinee, .. match.Arms.Select(a => a.Value ?? a.Raise!.Value).OfType<BoundExpr>()],
+        // A block arm's statements are a nested block, reached through ArmBlocks (M29).
+        BoundMatchExpr match => [match.Scrutinee, .. match.Arms.Select(a => a.Value ?? a.Raise?.Value).OfType<BoundExpr>()],
         BoundDotNetCall call => [.. ((BoundExpr?[])[call.Target]).OfType<BoundExpr>(), .. call.Arguments.Select(a => a.Value)],
         BoundDotNetNew created => created.Arguments.Select(a => a.Value),
         BoundDotNetMember { Target: { } target } => [target],

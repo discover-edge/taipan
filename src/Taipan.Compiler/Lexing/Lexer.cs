@@ -20,6 +20,12 @@ public sealed class Lexer
     private int _bracketDepth;
     private bool _atLineStart;
 
+    // A match expression's arms inside brackets are an indented block (SPEC §1.2, M29). Each
+    // `match` seen inside brackets waits for its colon, with the bracket depth and the indentation
+    // of its line; each block entered keeps what to restore when a line ends it.
+    private readonly Stack<(int Depth, int LineIndent)> _pendingMatches = new();
+    private readonly Stack<(int Depth, int BaseIndent, int IndentCount)> _armBlocks = new();
+
     private Lexer(SourceText source, TextSpan span, bool isHole)
     {
         _text = source.Text;
@@ -110,6 +116,19 @@ public sealed class Lexer
         }
 
         var indent = _pos - lineStart;
+        // A line indented no more than the match's line ends its arms: back to the enclosing brackets.
+        if (_armBlocks.TryPeek(out var block) && indent <= block.BaseIndent)
+        {
+            _armBlocks.Pop();
+            while (_indents.Count > block.IndentCount)
+            {
+                _indents.Pop();
+                Emit(TokenKind.Dedent, _pos, 0);
+            }
+            _bracketDepth = block.Depth;
+            return;
+        }
+        var floor = _armBlocks.TryPeek(out var inner) ? inner.IndentCount : 1;
         if (indent > _indents.Peek())
         {
             _indents.Push(indent);
@@ -117,7 +136,7 @@ public sealed class Lexer
             return;
         }
 
-        while (indent < _indents.Peek())
+        while (indent < _indents.Peek() && _indents.Count > floor)
         {
             _indents.Pop();
             Emit(TokenKind.Dedent, _pos, 0);
@@ -175,7 +194,10 @@ public sealed class Lexer
         while (IsIdentifierChar(Current) && !AtEnd)
             _pos++;
         var text = _text[start.._pos];
-        Emit(TokenFacts.Keywords.GetValueOrDefault(text, TokenKind.Name), start, _pos - start);
+        var kind = TokenFacts.Keywords.GetValueOrDefault(text, TokenKind.Name);
+        if (kind == TokenKind.MatchKeyword && _bracketDepth > 0 && !_isHole)
+            _pendingMatches.Push((_bracketDepth, LineIndent(start)));
+        Emit(kind, start, _pos - start);
     }
 
     private void ScanNumber()
@@ -545,6 +567,40 @@ public sealed class Lexer
 
         Emit(kind, _pos, length);
         _pos += length;
+        if (kind == TokenKind.Colon && _pendingMatches.TryPeek(out var pending) && pending.Depth == _bracketDepth)
+        {
+            _pendingMatches.Pop();
+            if (AtLineEnd())
+            {
+                _armBlocks.Push((_bracketDepth, pending.LineIndent, _indents.Count));
+                _bracketDepth = 0;
+            }
+        }
+        else if (kind is TokenKind.CloseParen or TokenKind.CloseBracket or TokenKind.CloseBrace)
+        {
+            // A match whose colon never came, inside brackets now closed, waits no longer.
+            while (_pendingMatches.TryPeek(out var unfinished) && unfinished.Depth > _bracketDepth)
+                _pendingMatches.Pop();
+        }
+    }
+
+    /// <summary>Whether only spaces or a comment are left on the line.</summary>
+    private bool AtLineEnd()
+    {
+        var i = _pos;
+        while (i < _end && _text[i] == ' ')
+            i++;
+        return i >= _end || _text[i] is '\n' or '#';
+    }
+
+    /// <summary>The indentation of the line holding <paramref name="index"/>.</summary>
+    private int LineIndent(int index)
+    {
+        var start = _text.LastIndexOf('\n', Math.Max(0, index - 1)) + 1;
+        var i = start;
+        while (i < index && _text[i] == ' ')
+            i++;
+        return i - start;
     }
 
     /// <summary>The code point at <paramref name="index"/>; a lone surrogate is reported as itself.</summary>

@@ -1,0 +1,11 @@
+tests/cases/m29/tp0200_patterns.tpn:8:18: error TP0200: expected str, found int
+tests/cases/m29/tp0200_patterns.tpn:10:14: error TP0209: tuple[int, str] has 2 elements, found 3 patterns
+tests/cases/m29/tp0200_patterns.tpn:12:14: error TP0200: tuple[int, str] cannot match a list pattern
+tests/cases/m29/tp0200_patterns.tpn:14:14: error TP0200: expected tuple[int, str], found Box
+tests/cases/m29/tp0200_patterns.tpn:19:9: error TP0200: list[int] cannot match a tuple pattern
+tests/cases/m29/tp0200_patterns.tpn:21:10: error TP0200: expected int, found str
+tests/cases/m29/tp0200_patterns.tpn:26:13: error TP0203: int? can only be matched by '_' or a binding
+  help: 'None' patterns aren't supported yet; bind it and test it with 'is some'
+tests/cases/m29/tp0200_patterns.tpn:28:13: error TP0214: duplicate definition of 'p'
+tests/cases/m29/tp0200_patterns.tpn:30:9: warning TP0300: unreachable match arm
+tests/cases/m29/tp0200_patterns.tpn:33:9: error TP0210: Box has no variant 'Fulll'
