@@ -105,12 +105,14 @@ public sealed partial class Binder
     private int? _finallyLoopDepth;
     private string? _unsupported;
 
-    private Binder(DotNetLibrary library, bool asLibrary, bool asNative)
+    private Binder(DotNetLibrary library, bool asLibrary, bool asNative, bool asExtension)
     {
         _scope = _builtins;
         _library = library;
         _asLibrary = asLibrary;
-        _asNative = asNative;
+        // An extension module runs natively (SPEC §17.1).
+        _asNative = asNative || asExtension;
+        _asExtension = asExtension;
     }
 
     // A program checked for a native build (SPEC §15.2).
@@ -123,11 +125,13 @@ public sealed partial class Binder
     /// Binds a program: the main file first, then its modules (SPEC §4.7). Its .NET types come
     /// from <paramref name="library"/>, the runtime's own assemblies by default (SPEC §13.2). With
     /// <paramref name="asLibrary"/>, it's bound as a .NET library (SPEC §14), and with
-    /// <paramref name="asNative"/> for a native executable (SPEC §15).
+    /// <paramref name="asNative"/> for a native executable (SPEC §15), and with
+    /// <paramref name="asExtension"/> as a CPython extension module (SPEC §17).
     /// </summary>
-    public static BindResult Bind(ImmutableArray<SourceModule> files, DotNetLibrary? library = null, bool asLibrary = false, bool asNative = false)
+    public static BindResult Bind(
+        ImmutableArray<SourceModule> files, DotNetLibrary? library = null, bool asLibrary = false, bool asNative = false, bool asExtension = false)
     {
-        var binder = new Binder(library ?? DotNetLibrary.Framework, asLibrary, asNative);
+        var binder = new Binder(library ?? DotNetLibrary.Framework, asLibrary, asNative, asExtension);
         var program = binder.BindProgram(files);
         return new BindResult(program, binder._diagnostics.ToImmutable(), binder._unsupported) { Index = binder._index };
     }
@@ -233,9 +237,11 @@ public sealed partial class Binder
         Enter(main);
         foreach (var stmt in main.File.Unit.Items.OfType<Stmt>())
         {
-            // A library has no top level (SPEC §14.3).
+            // A library has no top level (SPEC §14.3), nor does an extension module (SPEC §17.1).
             if (_asLibrary)
                 _diagnostics.ReportStatementInLibrary(stmt.Span);
+            else if (_asExtension)
+                _diagnostics.ReportStatementInExtension(stmt.Span);
             CollectScriptNames(stmt);
         }
 
@@ -270,6 +276,7 @@ public sealed partial class Binder
         var topLevel = BindStatements([.. unit.Items.OfType<Stmt>()]);
         var order = InitializationOrder(main, byName);
         var library = _asLibrary ? BindLibrary(modules, byName, functions, classes) : null;
+        var extension = _asExtension ? BindExtension(main) : null;
         return new BoundProgram(
             [.. order.SelectMany(m => m.PythonImports)],
             [.. modules.SelectMany(m => m.EnumDefs.Select(e => e.Symbol))],
@@ -281,6 +288,7 @@ public sealed partial class Binder
             // A library always compiles against its framework's reference assemblies (SPEC §14.4).
             References = _asLibrary ? _library.References : _dotnet?.References ?? [],
             Library = library,
+            Extension = extension,
         };
     }
 
@@ -330,7 +338,7 @@ public sealed partial class Binder
                 case FromImportStmt { Module.Text: ModuleLoader.PythonModule } fromPython:
                     // A native program can't use Python (SPEC §15.2).
                     if (_asNative)
-                        _diagnostics.ReportNativePython(fromPython.Span);
+                        _diagnostics.ReportNativePython(fromPython.Span, _asExtension);
                     // Each name holds a Python module, imported at startup (SPEC §10.1).
                     foreach (var name in fromPython.Names)
                     {
@@ -1452,7 +1460,7 @@ public sealed partial class Binder
                 return TaipanType.Str;
             case NamedType { Name.Text: "py" } py:
                 if (_asNative)
-                    _diagnostics.ReportNativePython(py.Span);
+                    _diagnostics.ReportNativePython(py.Span, _asExtension);
                 return TaipanType.Py;
             case NamedType { Name.Text: "Callable" } bare:
                 _diagnostics.ReportBareCallable(bare.Span);

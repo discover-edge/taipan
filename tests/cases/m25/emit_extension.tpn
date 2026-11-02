@@ -1,0 +1,12 @@
+# An extension module's C# (SPEC §8, §17): PyInit_<name> builds the module, and each exported
+# function's entry point binds, converts and calls.
+const LIMIT = 10
+
+class TooBig(ValueError):
+    pass
+
+def clamp(xs: list[int], high: int = LIMIT) -> tuple[int, str?]:
+    for x in xs:
+        if x > high:
+            raise TooBig(f"{x} is over {high}")
+    return len(xs), None

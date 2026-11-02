@@ -278,8 +278,13 @@ public sealed class DiagnosticBag
 
     // ---- Native executables (SPEC §15, M23) ----
 
-    public void ReportNativePython(TextSpan span) =>
-        Add("TP0233", span, "a native program can't use Python", "build it without '--native'");
+    public void ReportNativePython(TextSpan span, bool extension = false)
+    {
+        if (extension)
+            Add("TP0233", span, "a Python extension can't use Python interop itself");
+        else
+            Add("TP0233", span, "a native program can't use Python", "build it without '--native'");
+    }
 
     public void ReportNativeDotNet(TextSpan span, string member, string reason) =>
         Add("TP0233", span, $"'{member}' can't be used in a native program: {reason}");
@@ -288,6 +293,9 @@ public sealed class DiagnosticBag
 
     public void ReportStatementInLibrary(TextSpan span) =>
         Add("TP0222", span, "a library can't have top-level statements");
+
+    public void ReportStatementInExtension(TextSpan span) =>
+        Add("TP0222", span, "a Python extension can't have top-level statements");
 
     public void ReportNotExported(TextSpan span, string name, string reason) =>
         Warn("TP0302", span, $"'{name}' is not exported: {reason}", $"rename it '_{name}' to keep it private");

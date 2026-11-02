@@ -138,6 +138,13 @@ catch (shapes.UnknownShape e) { Console.WriteLine(e.message); }
 
 - **Native executables:** `taipan build health.tpn --native -o out` compiles a program ahead of time with .NET's NativeAOT into one self-contained executable that runs without .NET installed, with the same output, exit codes and panic locations as `taipan run`. It needs the .NET SDK and a C toolchain (clang or gcc on Linux) to build. Python interop can't be compiled natively, and is rejected at compile time.
 
+- **CPython extension modules:** `taipan build geometry.tpn --python-extension -o out` compiles a module ahead of time into `geometry.abi3.so`, which any CPython from 3.10 on can import, with no .NET installed. Functions taking and returning `int`, `float`, `bool`, `str`, `None` and lists, dicts, tuples and optionals of those become Python functions (keyword arguments and defaults included), constants become attributes, and exception classes become Python exception classes. A Taipan exception arrives in Python with the same message:
+
+```
+$ cd out && python3 -c "import geometry; print(geometry.area(2.0))"
+12.56636
+```
+
 - **Language server:** `taipan lsp` speaks the Language Server Protocol over stdin and stdout, for diagnostics as you type, the type of a name on hover, and go to definition across modules. Point any LSP client at it for `.tpn` files. In Neovim:
 
 ```lua

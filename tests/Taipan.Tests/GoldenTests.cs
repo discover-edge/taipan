@@ -7,8 +7,8 @@ namespace Taipan.Tests;
 /// <c>.out</c> (stdout; its presence selects <c>run</c> over <c>check</c>),
 /// <c>.err</c> (stderr, exact), <c>.exit</c> (default 0, or 1 when <c>.err</c> exists), and
 /// <c>.cs</c> (the exact output of <c>taipan emit</c>), <c>.requires</c> (naming <c>python</c>
-/// for a case that needs CPython), and <c>.library</c> or <c>.native</c> (empty, for a case checked
-/// and emitted with <c>--library</c> or <c>--native</c>, SPEC §14, §15).
+/// for a case that needs CPython), and <c>.library</c>, <c>.native</c> or <c>.python-extension</c>
+/// (empty, for a case checked and emitted with that option, SPEC §14, §15, §17).
 /// </summary>
 [Collection(RunningPrograms.Name)]
 public class GoldenTests
@@ -49,7 +49,7 @@ public class GoldenTests
         var exitText = ReadSidecar(casePath, ".exit");
         var expectedExit = exitText is not null ? int.Parse(exitText.Trim()) : expectedErr is not null ? 1 : 0;
 
-        string[] flags = [.. ((string[])["library", "native"]).Where(f => File.Exists(Path.ChangeExtension(casePath, $".{f}"))).Select(f => $"--{f}")];
+        string[] flags = [.. ((string[])["library", "native", "python-extension"]).Where(f => File.Exists(Path.ChangeExtension(casePath, $".{f}"))).Select(f => $"--{f}")];
         var (exit, stdout, stderr) = RunCli([expectedOut is not null ? "run" : "check", casePath, .. flags]);
         Assert.Equal(expectedErr ?? "", stderr);
         Assert.Equal(expectedOut ?? "", stdout);

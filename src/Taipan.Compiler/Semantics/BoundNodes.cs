@@ -20,7 +20,17 @@ public sealed record BoundProgram(
 
     /// <summary>How a program bound as a library is exported (SPEC §14); null for a program.</summary>
     public BoundLibrary? Library { get; init; }
+
+    /// <summary>What a program bound as a CPython extension module exports (SPEC §17); null otherwise.</summary>
+    public BoundExtension? Extension { get; init; }
 }
+
+/// <summary>
+/// A CPython extension module (SPEC §17.2): its name, and the module file's exported functions,
+/// constants, and exception classes, each class after its bases.
+/// </summary>
+public sealed record BoundExtension(
+    string Name, ImmutableArray<FunctionSymbol> Functions, ImmutableArray<BoundConstant> Constants, ImmutableArray<ClassSymbol> Exceptions);
 
 /// <summary>
 /// A library's namespace and modules, main file first; the definitions it exports; and the generic

@@ -22,9 +22,9 @@ public static class Cli
 
     private const string Usage = """
         usage:
-          taipan check <file> [--library | --native]
-          taipan emit  <file> [--library | --native]
-          taipan build <file> [--library | --native] -o <dir>
+          taipan check <file> [--library | --native | --python-extension]
+          taipan emit  <file> [--library | --native | --python-extension]
+          taipan build <file> [--library | --native | --python-extension] -o <dir>
           taipan run   <file> [-- args]
           taipan lsp [--stdio]
           taipan --version
@@ -41,7 +41,7 @@ public static class Cli
         var target = command is "check" or "emit" or "build" ? TargetOf(ref rest) : Target.Program;
         return command switch
         {
-            "check" or "emit" or "build" when target is null => UsageError(stderr, "--library and --native can't be combined"),
+            "check" or "emit" or "build" when target is null => UsageError(stderr, "--library, --native and --python-extension can't be combined"),
             "check" => Check(rest, target!.Value, stderr),
             "emit" => Emit(rest, target!.Value, stdout, stderr),
             "build" => Build(rest, target!.Value, stdout, stderr),
@@ -57,21 +57,27 @@ public static class Cli
         };
     }
 
+    private static readonly Dictionary<string, Target> Kinds = new()
+    {
+        ["--library"] = Target.Library,
+        ["--native"] = Target.Native,
+        ["--python-extension"] = Target.PythonExtension,
+    };
+
     /// <summary>
-    /// What a command compiles for: <c>--library</c> (SPEC §14) or <c>--native</c> (SPEC §15), which
-    /// may come anywhere among its arguments and are removed from them; null if both are given.
+    /// What a command compiles for: <c>--library</c> (SPEC §14), <c>--native</c> (SPEC §15) or
+    /// <c>--python-extension</c> (SPEC §17), which may come anywhere among its arguments and are
+    /// removed from them; null if more than one is given.
     /// </summary>
     private static Target? TargetOf(ref string[] args)
     {
-        var library = args.Contains("--library");
-        var native = args.Contains("--native");
-        args = [.. args.Where(a => a is not ("--library" or "--native"))];
-        return (library, native) switch
+        var kinds = args.Where(Kinds.ContainsKey).Distinct().ToList();
+        args = [.. args.Where(a => !Kinds.ContainsKey(a))];
+        return kinds.Count switch
         {
-            (true, true) => null,
-            (true, false) => Target.Library,
-            (false, true) => Target.Native,
-            _ => Target.Program,
+            0 => Target.Program,
+            1 => Kinds[kinds[0]],
+            _ => null,
         };
     }
 
@@ -102,9 +108,9 @@ public static class Cli
 
         var name = Path.GetFileNameWithoutExtension(args[0]);
         string path;
-        if (target == Target.Native)
+        if (target is Target.Native or Target.PythonExtension)
         {
-            if (NativeBuild.Publish(program, name, Path.GetDirectoryName(args[0]) ?? "", args[2], project!.RuntimeAssemblies, stderr, out var error) is not { } executable)
+            if (NativeBuild.Publish(program, name, Path.GetDirectoryName(args[0]) ?? "", args[2], project!.RuntimeAssemblies, target == Target.PythonExtension, stderr, out var error) is not { } executable)
             {
                 stderr.WriteLine($"taipan: {error}");
                 return ExitUsage;
@@ -174,4 +180,5 @@ public enum Target
     Program,
     Library,
     Native,
+    PythonExtension,
 }

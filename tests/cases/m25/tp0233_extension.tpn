@@ -1,0 +1,5 @@
+# An extension module runs natively, so it can't use Python interop itself (SPEC §17.1).
+from python import json
+
+def dump(n: int) -> str:
+    return json.dumps(n) as str
