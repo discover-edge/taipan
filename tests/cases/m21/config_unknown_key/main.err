@@ -1,0 +1,1 @@
+taipan: tests/cases/m21/config_unknown_key/taipan.json: unknown key 'dependencies'

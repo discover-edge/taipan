@@ -5,6 +5,7 @@
     <Project Path="src/Taipan.Runtime/Taipan.Runtime.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/Fixtures/Acme.Geometry/Acme.Geometry.csproj" />
     <Project Path="tests/Taipan.Tests/Taipan.Tests.csproj" />
   </Folder>
 </Solution>

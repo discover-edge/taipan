@@ -17,7 +17,7 @@ public static class Panic
     /// <summary>
     /// Runs a program's top level. A panic, an exception nothing caught, prints <c>panic: message</c>
     /// and the <c>.tpn</c> location of the innermost Taipan frame where it was raised to
-    /// <see cref="Io.Error"/>, and returns 101. Any other exception is a compiler bug and propagates.
+    /// <see cref="Io.Error"/>, and returns 101.
     /// </summary>
     public static int Run(Action topLevel)
     {
@@ -27,8 +27,9 @@ public static class Panic
             Io.Out.Flush();
             return 0;
         }
-        catch (Exception e) when (MessageFor(e) is { } message)
+        catch (Exception e)
         {
+            var message = MessageFor(e);
             Io.Out.Flush();
             Io.Error.WriteLine($"panic: {message}");
             if (FindLocation(e) is { } location)
@@ -37,14 +38,18 @@ public static class Panic
         }
     }
 
-    private static string? MessageFor(Exception e) => e switch
+    private static string MessageFor(Exception e) => e switch
     {
         TaipanPanic panic => panic.Message,
         OverflowException => "integer overflow",
         PythonError python => $"Python {python.type}: {python.message}",
+        DotNetError dotnet => DotNetMessage(dotnet.Exception),
         TaipanException exception => MessageFor(exception),
-        _ => null,
+        _ => DotNetMessage(e),
     };
+
+    // SPEC §13.6: an uncaught .NET exception, by its full class name.
+    private static string DotNetMessage(Exception e) => $".NET {e.GetType().FullName}: {e.Message}";
 
     /// <summary>
     /// SPEC §3.10: the runtime's own exceptions are written to stand alone, so they print just the

@@ -1,0 +1,18 @@
+# M21 acceptance: StringBuilder and File from the .NET runtime, checked at compile time (SPEC §13).
+from dotnet.System.Text import StringBuilder
+from dotnet.System.IO import File, Path
+
+let path = Path.Combine(Path.GetTempPath(), "taipan-m21-strings.txt")
+File.WriteAllLines(path, ["alpha", "beta", "gamma"])
+let lines = File.ReadAllLines(path)
+print(len(lines), lines)
+
+let sb = StringBuilder()
+for line in lines:
+    sb.Append(line.upper()).Append(", ")
+sb.Length = sb.Length - 2
+sb.Append(" (").Append(len(lines)).Append(")")
+print(sb.ToString())
+print(sb.Length, File.Exists(path))
+File.Delete(path)
+print(File.Exists(path))

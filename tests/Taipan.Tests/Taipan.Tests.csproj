@@ -12,6 +12,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Taipan.Cli\Taipan.Cli.csproj" />
+    <!-- Built for the golden cases that reference it (SPEC §13.2), not used by the tests' own code. -->
+    <ProjectReference Include="..\Fixtures\Acme.Geometry\Acme.Geometry.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <ItemGroup>

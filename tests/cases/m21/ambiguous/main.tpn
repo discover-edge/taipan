@@ -1,0 +1,3 @@
+from dotnet.Acme.Geometry import Shapes
+
+print(Shapes.Describe(1, 2))

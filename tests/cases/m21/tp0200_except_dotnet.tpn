@@ -1,0 +1,19 @@
+from dotnet.System import Convert, FormatException
+from dotnet.System.Text import StringBuilder
+
+try:
+    Convert.ToInt32("x")
+except StringBuilder:
+    print("no")
+
+try:
+    Convert.ToInt32("x")
+except (ValueError, FormatException) as e:
+    print(e)
+
+try:
+    Convert.ToInt32("x")
+except (ValueError, FormatException):
+    print("mixed without a binding is fine")
+
+let e = DotNetError("made up")

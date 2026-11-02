@@ -1,0 +1,13 @@
+# M21 acceptance: .NET calls are checked at compile time (SPEC §13.4, §13.5).
+from dotnet.System.Text import StringBuilder
+from dotnet.System.IO import File
+from dotnet.System import Math, Version
+
+let sb = StringBuilder()
+let lines = File.ReadAllLines(42)
+sb.Append([1, 2])
+print(Math.Max(1, "x"))
+let f = File()
+let g: File? = None
+sb.Capacity = "big"
+let v = Version(1, 99999999999)

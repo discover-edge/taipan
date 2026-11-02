@@ -13,7 +13,11 @@ public sealed record BoundProgram(
     ImmutableArray<BoundClass> Classes,
     ImmutableArray<BoundConstant> Constants,
     ImmutableArray<BoundFunction> Functions,
-    BoundBlock TopLevel);
+    BoundBlock TopLevel)
+{
+    /// <summary>The .NET assemblies the program compiles and runs against, if it uses .NET (SPEC §13.2); else empty.</summary>
+    public ImmutableArray<string> References { get; init; } = [];
+}
 
 /// <summary>A class; <see cref="Methods"/> includes its own <c>__init__</c>, if it writes one (SPEC §4.3).</summary>
 public sealed record BoundClass(ClassSymbol Symbol, ImmutableArray<BoundFunction> Methods, TextSpan Span);
@@ -62,6 +66,10 @@ public sealed record BoundAssign(VariableSymbol Target, BoundExpr Value, TextSpa
 public sealed record BoundFieldAssign(BoundExpr Target, FieldSymbol Field, BoundExpr Value, bool IsCompound, TextSpan Span)
     : BoundStmt(Span);
 
+/// <summary><c>x.P = v</c> on a .NET property or field (SPEC §13.4), <see cref="Target"/> null for a static one.</summary>
+public sealed record BoundDotNetAssign(BoundExpr? Target, Microsoft.CodeAnalysis.ISymbol Member, BoundExpr Value, bool IsCompound, TextSpan Span)
+    : BoundStmt(Span);
+
 /// <summary><c>target[index] = value</c>; compound forms share instances as for <see cref="BoundFieldAssign"/>.</summary>
 public sealed record BoundIndexAssign(BoundExpr Target, BoundExpr Index, BoundExpr Value, bool IsCompound, TextSpan Span)
     : BoundStmt(Span);
@@ -85,10 +93,11 @@ public sealed record BoundTry(BoundBlock Body, ImmutableArray<BoundHandler> Hand
 
 /// <summary>
 /// An <c>except</c> clause: the classes it matches (just <c>Exception</c> for a bare one), the
-/// Python classes it matches, and the <c>as</c> binding, if any.
+/// .NET and Python classes it matches, and the <c>as</c> binding, if any.
 /// </summary>
 public sealed record BoundHandler(
-    ImmutableArray<ClassSymbol> Classes, ImmutableArray<BoundExpr> PythonClasses, VariableSymbol? Binding, BoundBlock Body, bool IsReachable);
+    ImmutableArray<ClassSymbol> Classes, ImmutableArray<DotNetType> DotNetClasses, ImmutableArray<BoundExpr> PythonClasses,
+    VariableSymbol? Binding, BoundBlock Body, bool IsReachable);
 
 public sealed record BoundContinue(TextSpan Span) : BoundStmt(Span);
 
@@ -125,6 +134,22 @@ public sealed record BoundForEach(VariableSymbol Variable, BoundExpr Iterable, B
 public sealed record BoundMatch(BoundExpr Scrutinee, ImmutableArray<BoundArm> Arms, TextSpan Span) : BoundStmt(Span);
 
 public sealed record BoundArm(BoundPattern Pattern, BoundBlock Body, bool IsReachable);
+
+/// <summary>
+/// A call to a .NET method (SPEC §13.4), with <see cref="Target"/> null for a static one. Each
+/// argument is paired with its parameter, in source order.
+/// </summary>
+public sealed record BoundDotNetCall(BoundExpr? Target, Microsoft.CodeAnalysis.IMethodSymbol Method,
+    ImmutableArray<BoundDotNetArgument> Arguments, TaipanType Type, TextSpan Span) : BoundExpr(Type, Span);
+
+/// <summary>A .NET constructor call; <see cref="Constructor"/> is null for a struct's default value (SPEC §13.4).</summary>
+public sealed record BoundDotNetNew(DotNetType Created, Microsoft.CodeAnalysis.IMethodSymbol? Constructor,
+    ImmutableArray<BoundDotNetArgument> Arguments, TextSpan Span) : BoundExpr(Created, Span);
+
+public sealed record BoundDotNetArgument(Microsoft.CodeAnalysis.IParameterSymbol Parameter, BoundExpr Value);
+
+/// <summary>Reading a .NET property or field, or an enum member (SPEC §13.4); <see cref="Target"/> is null for a static one.</summary>
+public sealed record BoundDotNetMember(BoundExpr? Target, Microsoft.CodeAnalysis.ISymbol Member, TaipanType Type, TextSpan Span) : BoundExpr(Type, Span);
 
 /// <summary>A <c>match</c> expression (SPEC §5.1.1); arms marked unreachable are checked but not emitted.</summary>
 public sealed record BoundMatchExpr(BoundExpr Scrutinee, ImmutableArray<BoundValueArm> Arms, TaipanType Type, TextSpan Span) : BoundExpr(Type, Span);

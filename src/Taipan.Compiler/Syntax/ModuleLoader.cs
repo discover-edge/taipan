@@ -20,6 +20,12 @@ public static class ModuleLoader
     /// <summary>Reserved for Python interop (SPEC §10); the binder reports it as not implemented.</summary>
     public const string PythonModule = "python";
 
+    /// <summary>Reserved for .NET interop: the root of .NET namespaces, which the binder resolves (SPEC §13.1).</summary>
+    public const string DotNetModule = "dotnet";
+
+    /// <summary>Whether an import names .NET rather than a Taipan module: <c>dotnet</c> or <c>dotnet.&lt;namespace&gt;</c>.</summary>
+    public static bool IsDotNet(string module) => module == DotNetModule || module.StartsWith(DotNetModule + ".", StringComparison.Ordinal);
+
     public static LoadResult Load(string mainPath)
     {
         var modules = new List<SourceModule>();
@@ -39,8 +45,14 @@ public static class ModuleLoader
             var importer = modules[i];
             foreach (var import in Imports(importer.Unit))
             {
-                if (import.Text == PythonModule || !loaded.Add(import.Text))
+                if (import.Text == PythonModule || IsDotNet(import.Text) || !loaded.Add(import.Text))
                     continue;
+                // Modules aren't dotted; only .NET namespaces are (SPEC §4.7).
+                if (import.Text.Contains('.'))
+                {
+                    syntax.Add(new Diagnostic("TP0221", import.Span, $"module '{import.Text}' not found") { Source = importer.Source });
+                    continue;
+                }
                 var path = ModulePath(mainPath, import.Text);
                 if (!File.Exists(path))
                 {

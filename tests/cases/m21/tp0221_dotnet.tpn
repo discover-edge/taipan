@@ -1,0 +1,5 @@
+# .NET namespaces are imported under 'dotnet' (SPEC §13.1).
+import dotnet
+from dotnet import System
+from dotnet.System.Txt import StringBuilder
+from dotnet.System.Text import StringBilder

@@ -28,7 +28,8 @@ public static class Display
         IObject o => $"<{o.TypeName} object>",
         IDictionary d => "{" + string.Join(", ", d.Keys.Cast<object>().Select(k => $"{Repr(k)}: {Repr(d[k])}")) + "}",
         IList l => "[" + string.Join(", ", l.Cast<object?>().Select(Repr)) + "]",
-        _ => ExternalFormat?.Invoke(value, false) ?? throw new ArgumentException($"no display form for {value.GetType()}"),
+        // Python objects (SPEC §10.2), else a .NET value's own ToString (SPEC §13.3).
+        _ => ExternalFormat?.Invoke(value, false) ?? value.ToString() ?? "",
     };
 
     /// <summary>

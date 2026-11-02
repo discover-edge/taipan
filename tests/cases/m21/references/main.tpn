@@ -1,0 +1,17 @@
+# A local assembly, referenced in taipan.json (SPEC §13.2).
+from dotnet.Acme.Geometry import Point, Shapes, GeometryException, Legacy
+
+let a = Point(0, 0)
+let b = Point(3, 4)
+print(a.DistanceTo(b), b.X, b)
+print(Shapes.Area(2, 3.5))
+
+# Without nullable annotations, results are optional.
+print(Legacy.Name() ?? "none", Legacy.Missing() ?? "none")
+
+try:
+    Shapes.Area(-1, 2)
+except GeometryException as e:
+    print("caught:", e.Message)
+
+Shapes.Area(2, -1)

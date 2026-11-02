@@ -807,6 +807,16 @@ public class ParserTests
             "FromImportStmt(shapes, [ImportName(area, null), ImportName(Point, P)])",
             Snapshot("import geometry\nimport geometry as g\nfrom shapes import area, Point as P\n"));
 
+    // A dotted path is one module name, which the binder resolves as a .NET namespace (M21).
+    [Fact]
+    public void DottedFromImport()
+    {
+        var unit = ParseText("from dotnet.System.Text import StringBuilder as Builder\n").Unit;
+        var from = Assert.IsType<FromImportStmt>(Assert.Single(unit.Items));
+        Assert.Equal("FromImportStmt(dotnet.System.Text, [ImportName(StringBuilder, Builder)])", AstPrinter.Print(from));
+        Assert.Equal(new TextSpan(5, "dotnet.System.Text".Length), from.Module.Span);
+    }
+
     [Theory]
     [InlineData("m.Point", "QualifiedType(m, NamedType(Point))")]
     [InlineData("m.Box[int]?", "OptionalType(QualifiedType(m, GenericType(Box, [NamedType(int)])))")]

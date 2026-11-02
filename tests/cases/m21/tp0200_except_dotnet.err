@@ -1,0 +1,4 @@
+tests/cases/m21/tp0200_except_dotnet.tpn:6:8: error TP0200: 'StringBuilder' is not an exception class
+tests/cases/m21/tp0200_except_dotnet.tpn:11:8: error TP0200: cannot bind both Taipan and .NET exceptions
+  help: write separate clauses
+tests/cases/m21/tp0200_except_dotnet.tpn:19:9: error TP0200: 'DotNetError' cannot be constructed

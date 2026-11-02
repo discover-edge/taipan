@@ -10,13 +10,14 @@ namespace Taipan.Compiler.Emit;
 
 /// <param name="EntryClass">The class holding <c>Main</c>, to pass to the C# compiler.</param>
 /// <param name="Diagnostics">Errors found while instantiating generics (TP0219); the code is unusable if there are any.</param>
-public sealed record EmittedProgram(string Code, string EntryClass, ImmutableArray<Diagnostic> Diagnostics);
+/// <param name="References">The .NET assemblies it compiles and runs against beyond the defaults (SPEC §13.2).</param>
+public sealed record EmittedProgram(string Code, string EntryClass, ImmutableArray<Diagnostic> Diagnostics, ImmutableArray<string> References);
 
 /// <summary>
 /// Emits one C# compilation unit for a bound program (SPEC §8). Every statement is preceded by a
 /// <c>#line</c> directive so stack traces, and therefore panics, report <c>.tpn</c> lines.
 /// </summary>
-public sealed class CSharpEmitter
+public sealed partial class CSharpEmitter
 {
     private const string Runtime = "global::Taipan.Runtime";
     private const string Collections = "global::System.Collections.Generic";
@@ -128,7 +129,7 @@ public sealed class CSharpEmitter
     {
         var emitter = new CSharpEmitter(source, program);
         var code = emitter.EmitProgram();
-        return new EmittedProgram(code, emitter._entryClass, emitter._diagnostics.ToImmutable());
+        return new EmittedProgram(code, emitter._entryClass, emitter._diagnostics.ToImmutable(), program.References);
     }
 
     private string UniqueGlobal(string name)
@@ -298,6 +299,7 @@ public sealed class CSharpEmitter
         DictOfType dict => $"dict_{Mangle(dict.Key)}_{Mangle(dict.Value)}",
         OptionalOf optional => $"{Mangle(optional.Inner)}_opt",
         ClassType classType => string.Join("_", [classType.Symbol.Name, .. classType.TypeArguments.Select(Mangle)]),
+        DotNetType net => net.Symbol.Name,
         EnumType enumType => string.Join("_", [enumType.Symbol.Name, .. enumType.TypeArguments.Select(Mangle)]),
         FunctionType function => string.Join("_", ["fn", .. function.Parameters.Select(Mangle), function.Result is NothingType ? "none" : Mangle(function.Result)]),
         TupleOfType tuple => string.Join("_", ["tuple", .. tuple.Elements.Select(Mangle)]),
@@ -620,6 +622,10 @@ public sealed class CSharpEmitter
                 EmitCompound(assign.IsCompound, [assign.Target],
                     () => Line($"{Operand(assign.Target)}.@{Member(assign.Field, assign.Target.Type)} = {Expr(assign.Value)};"));
                 break;
+            case BoundDotNetAssign assign:
+                LineDirective(assign.Span);
+                EmitCompound(assign.IsCompound, assign.Target is null ? [] : [assign.Target], () => Line($"{DotNetAssignment(assign)};"));
+                break;
             case BoundIndexAssign assign:
                 LineDirective(assign.Span);
                 EmitCompound(assign.IsCompound, [assign.Target, assign.Index],
@@ -655,7 +661,7 @@ public sealed class CSharpEmitter
                 LineDirective(cont.Span);
                 Line("continue;");
                 break;
-            case BoundExprStmt { Expr: BoundCall or BoundMethodCall or BoundBuiltinMethodCall or BoundPyCall or BoundInvoke or BoundSort or BoundSuperCall } exprStmt:
+            case BoundExprStmt { Expr: BoundCall or BoundMethodCall or BoundBuiltinMethodCall or BoundPyCall or BoundInvoke or BoundSort or BoundSuperCall or BoundDotNetCall { Method.ReturnsVoid: true } } exprStmt:
                 LineDirective(exprStmt.Span);
                 Line($"{Expr(exprStmt.Expr)};");
                 break;
@@ -809,9 +815,9 @@ public sealed class CSharpEmitter
             for (var i = 0; i < handlers.Count; i++)
             {
                 var handler = handlers[i];
-                Line($"{(i == 0 ? "" : "else ")}if ({HandlerTest(handler, exception)})");
+                Line($"{(i == 0 ? "" : "else ")}if ({HandlerTest(handler, exception, caught)})");
                 var binding = handler.Binding is { } symbol
-                    ? $"{TypeName(symbol.Type)} @{_locals[symbol]} = ({TypeName(symbol.Type)}){exception};"
+                    ? $"{TypeName(symbol.Type)} @{_locals[symbol]} = ({TypeName(symbol.Type)}){(symbol.Type is DotNetType ? DotNetException(caught) : exception)};"
                     : null;
                 EmitBody(handler.Body, binding);
             }
@@ -838,12 +844,15 @@ public sealed class CSharpEmitter
         }
     }
 
-    // An except clause's test: its classes, then its Python classes, tested with Python's isinstance.
-    private string HandlerTest(BoundHandler handler, string exception)
+    // An except clause's test: its classes, its .NET classes, then its Python classes, tested with
+    // Python's isinstance.
+    private string HandlerTest(BoundHandler handler, string exception, string caught)
     {
         var tests = new List<string>();
         if (!handler.Classes.IsEmpty)
             tests.Add($"{exception} is {string.Join(" or ", handler.Classes.Select(c => TypeName(c.Type)))}");
+        if (!handler.DotNetClasses.IsEmpty)
+            tests.Add($"{DotNetException(caught)} is {string.Join(" or ", handler.DotNetClasses.Select(TypeName))}");
         var python = $"{Runtime}.PythonError";
         foreach (var pythonClass in handler.PythonClasses)
             tests.Add($"({exception} is {python} && {Interop}.IsInstance((({python}){exception}).@value, {Expr(pythonClass)}))");
@@ -898,7 +907,7 @@ public sealed class CSharpEmitter
     {
         var type = TypeName(lambda.Type);
         var body = lambda.FunctionType.Result is not NothingType ? Expr(lambda.Body)
-            : lambda.Body is BoundCall or BoundMethodCall or BoundBuiltinMethodCall or BoundPyCall or BoundInvoke or BoundSort or BoundSuperCall ? $"{{ {Expr(lambda.Body)}; }}"
+            : lambda.Body is BoundCall or BoundMethodCall or BoundBuiltinMethodCall or BoundPyCall or BoundInvoke or BoundSort or BoundSuperCall or BoundDotNetCall { Method.ReturnsVoid: true } ? $"{{ {Expr(lambda.Body)}; }}"
             : $"{{ _ = {Expr(lambda.Body)}; }}";
         return $"new {type}(\"<lambda>\", ({LambdaParameters(lambda.Parameters)}) => {body})";
     }
@@ -1079,6 +1088,9 @@ public sealed class CSharpEmitter
             BoundTupleElement element => $"{Operand(element.Tuple)}.Item{element.Index + 1}",
             BoundSlice slice => Slice(slice),
             BoundMatchExpr match => MatchExpr(match),
+            BoundDotNetCall call => DotNetCall(call),
+            BoundDotNetNew created => DotNetNew(created),
+            BoundDotNetMember member => DotNetMember(member),
             _ => throw new InvalidOperationException($"unexpected bound expression {expr.GetType().Name}"),
         };
     }
@@ -1269,6 +1281,9 @@ public sealed class CSharpEmitter
             BinaryOp.Divide => $"{Runtime}.Ops.Div({l}, {r})",
             BinaryOp.FloorDivide => $"{Runtime}.Ops.FloorDiv({l}, {r})",
             BinaryOp.Modulo => $"{Runtime}.Ops.Mod({l}, {r})",
+            // .NET values compare with .NET's Equals (SPEC §13.3).
+            BinaryOp.Equal when TypeChecker.Unwrap(leftType) is DotNetType => $"global::System.Object.Equals({l}, {r})",
+            BinaryOp.NotEqual when TypeChecker.Unwrap(leftType) is DotNetType => $"!global::System.Object.Equals({l}, {r})",
             BinaryOp.Equal when structural => $"{Runtime}.Equality.Equal({l}, {r})",
             BinaryOp.NotEqual when structural => $"!{Runtime}.Equality.Equal({l}, {r})",
             BinaryOp.Equal => $"{left} == {right}",
@@ -1510,6 +1525,7 @@ public sealed class CSharpEmitter
         OptionalOf optional => $"{TypeName(optional.Inner)}?",
         FunctionType function => $"{Runtime}.Function<{DelegateName(function)}>",
         TupleOfType tuple => $"({string.Join(", ", tuple.Elements.Select(TypeName))})",
+        DotNetType net => net.Symbol.ToDisplayString(Microsoft.CodeAnalysis.SymbolDisplayFormat.FullyQualifiedFormat),
         var other => throw new InvalidOperationException($"no C# type for {other}"),
     };
 
@@ -1523,7 +1539,7 @@ public sealed class CSharpEmitter
 
     /// <summary>Whether the C# type is a value type, whose optional is <c>Nullable&lt;T&gt;</c>.</summary>
     private static bool IsValueType(TaipanType type) =>
-        type == TaipanType.Int || type == TaipanType.Float || type == TaipanType.Bool || type is TupleOfType;
+        type == TaipanType.Int || type == TaipanType.Float || type == TaipanType.Bool || type is TupleOfType or DotNetType { Symbol.IsValueType: true };
 
     // ---- Output ----
 

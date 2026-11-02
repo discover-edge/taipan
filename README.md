@@ -107,6 +107,25 @@ print(replicas * 2)
 
 Python interop needs a CPython 3 installation. Taipan finds it through the `PYTHONNET_PYDLL` environment variable (the path to the shared library, such as `libpython3.12.so`), or else by asking `python3` or `python` on your `PATH`.
 
+- **.NET libraries:** `from dotnet.System.Text import StringBuilder` imports .NET types, whose members are checked at compile time from the assemblies' metadata. Overloads are resolved as C# would, nullable annotations give optionals, and .NET exceptions can be caught by their class. Local assemblies and NuGet packages are listed in a `taipan.json` beside the main file:
+
+```python
+from dotnet.System.IO import File, FileNotFoundException
+from dotnet.System.Text import StringBuilder
+
+let sb = StringBuilder()
+try:
+    for line in File.ReadAllLines("notes.txt"):
+        sb.Append(line.upper()).Append("\n")
+except FileNotFoundException as e:
+    sb.Append("missing: ").Append(e.FileName ?? "notes.txt")
+print(sb.ToString())
+```
+
+```json
+{ "references": ["lib/Acme.Geometry.dll"], "packages": { "Humanizer.Core": "2.14.1" } }
+```
+
 [SPEC.md](SPEC.md) is the full language definition, and `examples/` and `tests/cases/` have many more programs.
 
 ## How it works

@@ -1,0 +1,1 @@
+taipan: tests/cases/m21/config_version_range/taipan.json: package 'Humanizer.Core' needs an exact version, found '[2.14,3)'

@@ -1,0 +1,1 @@
+tests/cases/m21/ambiguous/main.tpn:3:14: error TP0232: ambiguous call to 'Shapes.Describe': it could be 'Describe(long, int)' or 'Describe(int, long)'

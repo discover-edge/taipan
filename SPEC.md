@@ -85,7 +85,8 @@ top_item      = import_stmt | func_def | class_def | enum_def | const_def | type
 type_alias    = "type" NAME [ type_params ] "=" type NEWLINE ;           (* M18, §3.12; "type" is a soft keyword *)
 
 import_stmt   = "import" NAME [ "as" NAME ] NEWLINE                                  (* M9, §4.7 *)
-              | "from" NAME "import" import_name { "," import_name } NEWLINE ;
+              | "from" module_path "import" import_name { "," import_name } NEWLINE ;
+module_path   = NAME { "." NAME } ;                                  (* dotted: .NET namespaces, M21, §13.1 *)
 import_name   = NAME [ "as" NAME ] ;
 
 const_def     = "const" NAME [ ":" type ] "=" expr NEWLINE ;
@@ -439,9 +440,10 @@ finally:
   | `TypeError` | `Exception` | a failed `as` (§4.3, §10.4) |
   | `RuntimeError` | `Exception` | changing a list or dict while iterating over it |
   | `PythonError` | `Exception` | a Python exception from a `py` operation (§10.5) |
+  | `DotNetError` | `Exception` | a .NET exception from a .NET call, caught as `Exception` (M21, §13.6) |
 
 - `Exception` has one field, `message: str`, and an `__init__(self, message: str = "")`. Every built-in class except `PythonError` takes the same arguments: `raise ValueError("bad port")`. Python has no `message` field; it keeps the arguments in `args`, and `str(e)` gives the message. In Taipan, `str(e)` gives the message too (§6).
-- `PythonError` has two more fields: `type: str`, the Python exception's class name, and `value: py`, the Python exception object. Its `message` is Python's `str(e)`. Only the runtime creates one: constructing it is `TP0200`, and deriving from it is `TP0225`.
+- `PythonError` has two more fields: `type: str`, the Python exception's class name, and `value: py`, the Python exception object. Its `message` is Python's `str(e)`. Only the runtime creates one: constructing it is `TP0200`, and deriving from it is `TP0225`. The same holds for `DotNetError` (M21), whose one more field is `type: str`, the .NET exception's full class name (§13.6).
 - The built-in exception classes' names are global, like other classes', so a definition with one of their names is `TP0214`.
 - **User exceptions** are plain classes deriving, directly or not, from `Exception`. They follow every rule of §4.3: a subclass with its own fields sets them and then calls `super().__init__(message)`, and one without `__init__` takes `Exception`'s `message` argument. Since a dataclass can only derive from a dataclass (§4.3), `@dataclass class NotFound(Exception)` is `TP0225`.
 - Exceptions compare by identity, like other plain classes, and may be stored, passed and returned like any value.
@@ -807,7 +809,7 @@ class Point:
 - **A program is a main file plus the modules it imports, directly or indirectly.**
   - `import geometry` loads `geometry.tpn` from the main file's directory. Every module of a program lives in that one directory, so there are no packages or dotted module names in v0.1.
   - A missing file is `TP0221`, reported at the import.
-  - The module name `python` is reserved for Python interop (§10).
+  - The module name `python` is reserved for Python interop (§10), and `dotnet` for .NET interop (M21, §13). A dotted `from` path is a .NET namespace under `dotnet` (§13.1); any other dotted path is `TP0221`, since modules aren't dotted.
 - **Module files contain declarations only:** `import`, `def`, `class`, `enum` and `const`. A top-level statement (including `let` and `var`) in a module other than the main file is `TP0222`. Only the main file has a top level that runs.
 - **Exports:** a module exports every name it defines, meaning its functions, classes, enums, their variants, constants, protocols (M17) and type aliases (M18). There's no privacy, no re-export (a name a module itself imported can't be imported from it), and no `from m import *` (`TP0100`).
 - **Imports:**
@@ -1041,6 +1043,7 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 | `tuple[A, B]` | a C# value tuple `(A, B)` (M12), with elements read as `Item1`, `Item2`, …. Unpacking stores the value in a temporary first. `==` uses `Taipan.Runtime.Equality.Equal`, and ordering uses a runtime comparison that orders strings by ordinal. In generic instance names, a tuple type is written `tuple_` followed by its element types: `first_tuple_int_str`. |
 | slices | `Taipan.Runtime.Ops.Slice(target, start, stop, step)`, with `null` for an omitted part (M12) |
 | type aliases (M18) | Nothing: each use is its expanded type. |
+| .NET types and members (M21) | Used directly, by their full names (`global::System.Text.StringBuilder`). Arguments and results convert as §13.3 says: `checked` casts for narrower integers, copies for arrays and enumerables, and a runtime null check on a result that's not annotated as nullable. |
 | generics | Monomorphized. Each distinct instantiation the program uses becomes its own C# method or type, named after its type arguments: `first_int`, `Box_str`, `Box_list_int`, `Maybe_int_opt` (for `Maybe[int?]`). A clash with another name gets a numeric suffix. Generic definitions that are never instantiated are type-checked but not emitted. |
 | function types | `Taipan.Runtime.Function<D>` (M11), with `D` a `Func<…>` or `Action<…>`. It wraps the delegate and the display name, and calls go through the delegate. A top-level function used as a value is one cached object per function, and each evaluation of a lambda or nested `def` creates a new object, so `==` is reference equality. In generic instance names, a function type is written `fn_` followed by its parameter and result types: `apply_fn_int_str`, `Box_fn_none`. |
 | lambdas, nested `def` | C# lambdas, which capture locals by reference. A `for x in range(…)` loop copies its variable into a fresh local each iteration, so captures see that iteration's value. |
@@ -1122,6 +1125,8 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 | TP0228 | incompatible override |
 | TP0229 | protocol used as a type |
 | TP0230 | recursive type alias |
+| TP0231 | .NET member or type that Taipan can't use |
+| TP0232 | ambiguous .NET overload |
 | TP0300 | warning: unreachable code (a statement, `match` arm or `except` clause) |
 | TP0301 | warning: broad `except` clause discards the exception |
 
@@ -1150,12 +1155,13 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0200 | `'is some' needs an optional, found <T>` / `'is None' needs an optional, found <T>` / `'is not None' needs an optional, found <T>` / `'??' needs an optional on the left, found <T>` |
 | TP0200 | `'<m>' is a method; call it` / `'<f>' is a field, not a method` / `cannot index <T>` / `dict keys must be int, str, bool, tuples of those, or plain class instances, found <T>` (for a dataclass, with help `a dataclass compares by value, so it cannot be a key`) |
 | TP0200 | `isinstance needs a class, found <T>` / `'<C>' is not a class` / `'<C>' is generic` / `<T> can never be a <C>` (`isinstance`, `as` and class patterns on unrelated classes) / `'<C>' is a class; write '<C>()'` (a class pattern without parentheses) (M15) |
+| TP0200 | `no overload of '<T>.<m>' takes (<A1>, <A2>)` / `'<T>' is a static class` (constructing it, or using it as a type) / `'<T>' cannot be constructed` (an interface, abstract class or enum) / `<v> is out of range for <N>` (a literal argument, `<N>` the .NET type's name, such as `Int32`) / `'<T>.<m>' returned null` (`TypeError`, at run time) / `'<C>' is not an exception class` (a .NET class not deriving from `System.Exception`) / `cannot bind both Taipan and .NET exceptions`, with help `write separate clauses` (M21) |
 | TP0200 | `every arm of this 'match' raises`, with help `use a 'match' statement` (M19) |
 | TP0200 | `'<A>' is a type alias, not a value`, with help `use '<N>'` when it names a class or enum (M18) |
-| TP0200 | `cannot raise <T>` (with help `write '<C>(…)'` for a class name) / `'<C>' is not an exception class` / `'PythonError' cannot be constructed` (M16) |
+| TP0200 | `cannot raise <T>` (with help `write '<C>(…)'` for a class name) / `'<C>' is not an exception class` / `'PythonError' cannot be constructed` (and `'DotNetError'`, M21) (M16) |
 | TP0200 | `'<T>' does not satisfy '<P>': it has no method '<m>'` / `'<T>' does not satisfy '<P>': '<m>' must be 'def <m>(self, …) -> <R>'` (the protocol's signature with `Self` replaced; `-> <R>` left out when it returns nothing), at a call's callee or a declared protocol, with ` (declared by '<B>')` after `'<P>'` for an inherited declaration / `'...' can only be the body of a protocol method` / `'<m>' cannot be called directly`, with help `use '<'` (M17) |
 | TP0200 | `'super()' can only be used as 'super().<method>(…)'` / `'super()' can only be used in a method` / `'<C>' has no base class` / `'__init__' cannot be called directly` / `'__init__' cannot have a return type` (M15) |
-| TP0201 | `undefined name '<x>'` (with help `use 'None'` for `none`) / `undefined type '<T>'` / `module '<m>' has no definition '<x>'` |
+| TP0201 | `undefined name '<x>'` (with help `use 'None'` for `none`) / `undefined type '<T>'` / `module '<m>' has no definition '<x>'` / `.NET namespace '<ns>' has no type '<x>'` (M21) |
 | TP0202 | `cannot assign to '<x>': it is a <let binding\|parameter\|loop variable\|constant\|function\|method>`, with help `declare it with 'var'` for a `let` binding / `cannot assign to an element of str` / `cannot assign to an element of a tuple` |
 | TP0203 | `expected <T>, found <T>?` / `<T>? must be narrowed before use`, with help `narrow it with 'is some', or give a default with '??'` |
 | TP0204 | `non-exhaustive match (missing: <a>, <b>)` |
@@ -1177,7 +1183,7 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0217 | `const initializer must be a constant expression` |
 | TP0218 | `'<f>' takes no keyword arguments` (a built-in) / `a function value takes no keyword arguments` / `'<f>' has no parameter '<k>'` (M14; also for `sorted`, `sort` and `enumerate`) |
 | TP0219 | `instantiating '<f>' needs '<f>[<T>]', which is too deep`, at the call that starts the chain |
-| TP0221 | `module '<m>' not found`, with help `looked for <path>` / `'python' is not a module`, with help `use 'from python import <module>'` |
+| TP0221 | `module '<m>' not found`, with help `looked for <path>` / `'python' is not a module`, with help `use 'from python import <module>'` / `'dotnet' is not a module`, with help `use 'from dotnet.<namespace> import <type>'` / `.NET namespace '<ns>' not found` (M21) |
 | TP0222 | `only the main file can have top-level statements` |
 | TP0223 | `nested functions cannot have type parameters` |
 | TP0224 | `unknown decorator '@<d>'` / `'@<d>' cannot be used here` (with help `'@dataclass' goes on a class, '@override' on a method`) / `duplicate decorator '@<d>'` |
@@ -1187,6 +1193,8 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0228 | `'<m>' must take the same parameters as '<B>.<m>'` / `parameter '<p>' of '<m>' must have type <T>, as in '<B>.<m>'` / `parameter '<p>' of '<m>' needs a default, as in '<B>.<m>'` / `'<m>' must return <T>, as '<B>.<m>' does` (or `return nothing`) |
 | TP0220 | `a constraint needs at least two types` / `'<T>' is listed twice in the constraint` / `a constraint cannot be optional or generic` / `constraints are only supported on functions` / `'<T>' is not a protocol` (with help `class bounds are not supported`, for a class) / `bounds are only supported on functions` (M17) |
 | TP0229 | `'<P>' is a protocol, so it can only be a type parameter bound`, with help `use a bounded type parameter, e.g. 'def f[T: <P>](x: T)'` (M17) |
+| TP0231 | `'<T>.<m>' uses <N>, which Taipan can't use yet` (`<N>` the .NET type, e.g. `Dictionary<string, int>` or `Func<int, bool>`) / `'<N>' can't be imported: generic .NET types aren't supported yet` (M21) |
+| TP0232 | `ambiguous call to '<T>.<m>': it could be '<m>(<P1>)' or '<m>(<P2>)'` (M21) |
 | TP0230 | `type alias '<A>' refers to itself` / `type alias '<A>' refers to itself through '<B>'` (`'<B>' and '<C>'` for longer cycles), with help `use a class for a recursive type` (M18) |
 | TP0300 | `unreachable match arm` / `unreachable except clause`, with help `'<B>' is already caught above` / `unreachable code` (M16) |
 | TP0301 | `this clause catches every exception and discards it`, with help `catch a specific class, re-raise with 'raise', or bind it with 'as e' and use it` (M16) |
@@ -1278,6 +1286,7 @@ Types are written as in source: `int`, `str?`, `list[int]`. The type of `None` i
 - an LSP server
 - NativeAOT publish
 - emitting CPython extension modules (interop level 3)
+- .NET interop beyond §13: generic methods and generic .NET types (other than the collections of §13.3), delegates and passing Taipan functions to .NET, `async` and `Task`, events, `ref`/`out`/`in` parameters, `params` arrays, indexers, operators, extension methods (LINQ), `object` and `decimal` results, dictionaries, deriving from .NET classes or implementing .NET interfaces, raising .NET exceptions, `isinstance`/`as`/`match` on .NET types, flags enums, namespace imports (`import dotnet.System.IO as io`), and packages with native assets
 - an MSBuild project SDK (`TaipanLang.Sdk`), for building `.tpn` files with `dotnet build` as part of a .NET solution
 
 ---
@@ -1312,3 +1321,119 @@ Taipan is distributed as two NuGet packages, with the same version:
 - `dotnet pack -c Release -o <dir>` at the repository root builds both packages.
 - An installed tool behaves exactly as a source build, Python interop included: CPython is found as §10.6 says, at run time.
 - Publishing to nuget.org is done by hand and isn't part of the build.
+
+---
+
+## 13. .NET interop (M21)
+Taipan programs can use .NET libraries: the .NET runtime's own, local assemblies, and NuGet packages. Unlike Python interop (§10), .NET APIs have static types, which Taipan reads from the assemblies' metadata, so a .NET call is checked at compile time like a Taipan call.
+
+```python
+from dotnet.System.Text import StringBuilder
+from dotnet.System.IO import File, FileNotFoundException
+
+def report(path: str) -> str:
+    let sb = StringBuilder()
+    try:
+        for line in File.ReadAllLines(path):
+            sb.Append(line.upper()).Append("\n")
+    except FileNotFoundException as e:
+        sb.Append("missing: ").Append(e.FileName ?? path)
+    return sb.ToString()
+```
+
+### 13.1 Importing .NET types
+- `from dotnet.<namespace> import <Type>, …` binds .NET types by name, with `as` to rename: `from dotnet.System.IO import File, Path as FilePath`. The namespace is written as in C#, after the reserved root `dotnet` (§4.7).
+- A type may be a class, a static class, a struct, an interface or an enum. It must be public, non-generic and not nested. Nested types are reached through the type containing them: `Environment.SpecialFolder.Desktop`.
+- Imported names share the file's global scope, like classes (§4.7): a clash is `TP0214`. They live in the type namespace, as classes do, so `let sb: StringBuilder = StringBuilder()` names the type twice: once as a type and once as its constructor.
+- `import dotnet`, and `from dotnet import X`, are `TP0221`, with help `use 'from dotnet.<namespace> import <type>'`. A namespace no referenced assembly defines is `TP0221`. A type the namespace lacks is `TP0201`. A generic type is `TP0231`.
+- Only types are imported. A namespace can't be imported or used as a value.
+
+### 13.2 Assemblies and packages
+- The .NET runtime's own assemblies (`System.*` in `Microsoft.NETCore.App`) are always available.
+- Other assemblies and NuGet packages are listed in `taipan.json`, in the main file's directory:
+
+  ```json
+  {
+    "references": ["lib/Acme.Geometry.dll"],
+    "packages": { "Humanizer.Core": "2.14.1" }
+  }
+  ```
+
+  - `references` are paths to assemblies, relative to `taipan.json`.
+  - `packages` maps NuGet package IDs to exact versions. Ranges aren't allowed. A package's own dependencies come with it.
+  - Both are optional, and so is the file. Any other key is an error.
+- **Restoring packages** uses the .NET SDK's `dotnet restore`, from the configured NuGet sources. The result is cached per user, keyed by the package list, so the SDK and the network are only needed the first time a list is used. A program without packages needs neither.
+  - NuGet's settings (sources, credentials, the global packages folder) come from the `NuGet.config` files that apply to the main file's directory, as they would for a project there.
+  - The cache is the directory `$TAIPAN_CACHE` names, if it's set, and otherwise `taipan` in the user's cache directory (`$XDG_CACHE_HOME`, or `~/.cache`; `%LOCALAPPDATA%` on Windows).
+  - An assembly that both a package and the .NET runtime provide (such as `System.Text.Json`) is the runtime's.
+- A missing or malformed `taipan.json` entry, a missing assembly, and a failed restore are reported as `taipan: <message>` and exit with `2` (§9), since they aren't errors in the source:
+  - `<path>: invalid JSON (line <n>)`, `<path>: unknown key '<k>'`, `<path>: 'references' must be a list of paths`, `<path>: 'packages' must map package IDs to versions`, `<path>: package '<id>' needs an exact version, found '<v>'`, where `<path>` is `taipan.json`'s path
+  - `assembly not found: <path>` / `not a .NET assembly: <path>`
+  - `cannot restore packages: <the first error dotnet restore reports>`, or `cannot restore packages: the .NET SDK was not found`
+  - `package '<id>' has native or runtime-specific assets, which aren't supported yet`
+- `taipan run` loads the referenced assemblies, and `taipan build -o <dir>` copies them next to the program. Packages with native or runtime-specific assets are deferred.
+
+### 13.3 Types
+.NET types map to Taipan's at the boundary. An argument converts from Taipan to .NET, and a result (a method's, property's or field's value) from .NET to Taipan:
+
+| .NET type | Taipan type | As an argument | As a result |
+|---|---|---|---|
+| `long` | `int` | as is | as is |
+| `int`, `short`, `sbyte`, `byte`, `ushort`, `uint`, `ulong` | `int` | checked: out of range raises `OverflowError`, and a literal out of range is `TP0200` (`99999999999 is out of range for Int32`) | widened; a `ulong` above the `int` range raises `OverflowError` |
+| `double` | `float` | as is (an `int` widens, as anywhere) | as is |
+| `float` | `float` | rounded to the nearest `float` | widened |
+| `bool`, `string` | `bool`, `str` | as is | as is |
+| `char` | `str` | a one-character `str`: a literal is checked at compile time (`TP0200`, `"ab" is out of range for Char`), any other raises `ValueError` if it isn't one character | a one-character `str` |
+| `void` | no value, as a function without a return type (§4.2) | | |
+| `T?`, `Nullable<T>` | `T?` | | |
+| `T[]` | `list[T]` | copied into a new array | copied into a new list |
+| `List<T>` | `list[T]` | passed as is, so changes are shared | as is |
+| `IEnumerable<T>`, `ICollection<T>`, `IList<T>`, `IReadOnlyCollection<T>`, `IReadOnlyList<T>` | `list[T]` | the list itself, or a copy if its elements convert | enumerated at once into a new list |
+| `object` | any value | an `int`, `float`, `bool`, `str` or .NET value (not a Taipan list, dict, tuple, class, function, `py` or `None`, whose .NET forms are internal) | `TP0231` |
+| other public, non-generic classes, structs, interfaces and enums | the same type, opaque | | |
+
+- `T` in a row stands for any type in the table, so `string[]` is `list[str]` and `List<int?>` is `list[int?]`. `List<T>` is passed as is only when `T` maps without conversion (`long`, `double`, `bool`, `string` or an opaque type); any other `List<T>` is copied, both ways.
+- **Anything else is `TP0231`**, reported where a member using it is called, read or assigned: other generic types (`Dictionary<K, V>`, `Task<T>`, `Span<T>`), delegates (`Func<…>`, `Action<…>`), `decimal`, `Int128`, `BigInteger`, `nint`, pointers, `ref`, `out` or `in` parameters, and generic methods (named by their type parameter: `'Array.Empty' uses T`). Members that use such types can be present, as long as they aren't used.
+- **Nullability.** A reference type annotated as nullable (`string?`) is `T?`, and one annotated as not null is `T`. A result of a not-null type that is null anyway, since annotations aren't checked by .NET, raises `TypeError` (`'<T>.<m>' returned null`) at the boundary, rather than surfacing later as a null in Taipan. Elements of a not-null element type (`string[]`) are checked the same way when the list is copied. In an assembly without nullable annotations, reference-type results are `T?` and reference-type parameters take `T`.
+- **Opaque types** are written by their imported name in annotations and type arguments: `list[FileInfo]`, `Uri?`. A value of a .NET type that wasn't imported (such as a method's result) can still be used. Its type is displayed by its C# name without the namespace (`FileInfo`, `Environment.SpecialFolder`).
+- `==` and `!=` on two values of the same .NET type use .NET's `Equals`. Ordering, arithmetic, `in`, iteration, indexing, `match`, `isinstance` and dict keys don't apply (`TP0200`). `print`, `str()` and f-string holes use .NET's `ToString()`.
+- A .NET value can't be passed to Python (`TP0200`, §10.3).
+
+### 13.4 Members
+- .NET names are used as they're written in .NET, case-sensitively: `sb.Append(x)`, `File.ReadAllLines(path)`, `sb.Length`, `Math.PI`. There's no renaming to snake_case.
+- **Static members** are reached through the type: `File.Exists(p)`, `DateTime.Now`, `Int32.MaxValue`. **Instance members** are reached through a value, and include those inherited from base classes and `object` (`ToString()`). Reaching a static member through a value, or an instance member through the type, is `TP0210`.
+- **Methods** are called with positional and keyword arguments, as Taipan functions are (§4.2). Keywords are the .NET parameter names, and a parameter with a default value may be left out.
+- **Properties and fields** are read as `x.P`, and assigned as `x.P = v` when they have a public setter or aren't read-only. Assigning one that can't be set is `TP0202`.
+- **Constructors** are called through the type: `StringBuilder()`, `StringBuilder(capacity=64)`, `Uri("https://example.com")`. A struct's parameterless constructor gives its default value. Constructing a static class is `TP0200` (`'File' is a static class`), as is constructing an interface, abstract class or enum (`'<T>' cannot be constructed`).
+- **Enums:** an enum's members are values of the enum type, reached through it: `StringComparison.Ordinal`.
+- An unknown member is `TP0210`, as for Taipan types: `StringBuilder has no method 'Apend'`. Members are public only; non-public members are unknown.
+- A member of an optional .NET value needs narrowing first (`TP0203`), as for any optional.
+- Taipan's own types keep their own members only. `str` is a .NET `string`, but `s.Substring(1)` is `TP0210`; use `s[1:]`.
+
+### 13.5 Overloads
+.NET methods and constructors are often overloaded. A call picks one overload, by this rule:
+1. **Candidates** are the public overloads with that name, static or instance as the call requires, skipping any that use a type `TP0231` covers.
+2. A candidate is **applicable** if the arguments match its parameters by position and keyword (§4.2), and each argument converts to its parameter (§13.3).
+3. **Each argument's fit** is, best first:
+   - *exact*: its Taipan type is the parameter's mapped type with no conversion (`int` to `long`, `float` to `double`, `str` to `string`, a value to its own .NET type, a list to `List<T>` or an interface of it, `None` or a `T` to a nullable `T`)
+   - *conversion*: `int` to a narrower integer, `str` to `char`, a .NET value to a base class or interface, a list copied to an array or with its elements converted
+   - *float conversion*: `int` to `double` or `float`, and `float` to `float`
+   - *object*: any value to `object`
+4. A candidate is **better** than another if each of its arguments fits at least as well and one fits better, or if they fit the same and it leaves out fewer parameters with defaults.
+5. **The overload chosen** is the applicable candidate no other is better than. If there are several such, the call is `TP0232`, naming two of them.
+
+So `sb.Append(5)` calls `Append(long)`, `sb.Append("x")` calls `Append(string)` (not `Append(object)`), `Math.Max(1, 2)` calls `Max(long, long)`, and `TimeSpan.FromDays(2)` calls `FromDays(int)`, not `FromDays(double)` or `FromDays(int, int = 0, …)`. These are the overloads C# picks, too.
+
+- If no candidate has the right number and names of arguments and there's only one candidate, its errors are reported as for a Taipan function (`TP0209`, `TP0218`). If exactly one candidate has them, each argument is checked against its parameter (`TP0200` at the argument). Otherwise, with no applicable candidate, it's `TP0200`, `no overload of 'StringBuilder.Append' takes (list[int])`.
+- If the only candidates with that name use types `TP0231` covers, the call is `TP0231`, naming a type that keeps the first one out.
+
+### 13.6 Exceptions
+- **Catching by .NET class:** `except C`, where `C` is an imported .NET class deriving from `System.Exception`, matches a .NET exception of that class or a class deriving from it, as for Taipan classes. `except C as e` binds `e` with type `C`, so its .NET members can be used (`e.Message`, `e.FileName`). Listing several .NET classes binds their nearest common .NET base. A clause can't list both Taipan and .NET classes with `as` (`TP0200`): write separate clauses.
+- **Catching as `Exception`:** a .NET exception reaching `except Exception`, a bare `except:` or any other Taipan class's clause is a `DotNetError` (§3.10), with `type` the .NET class's full name and `message` the .NET exception's `Message`. So `except Exception` still catches everything.
+- .NET's `OverflowException` is Taipan's `OverflowError`, as for checked arithmetic (§8), whichever code throws it.
+- Unreachable clauses (`TP0300`) are checked for .NET classes too.
+- **Uncaught**, a .NET exception panics with `.NET <full class name>: <message>`, as a Python exception does (§10.5), and exits with 101.
+- Raising .NET exceptions is deferred.
+
+### 13.7 Deferred
+§11 lists what's deferred: generic methods and most generic types, delegates and passing Taipan functions to .NET, `async`, events, `ref`/`out`/`in`, `params` arrays, indexers, operators, extension methods, dictionaries, deriving from .NET types, raising .NET exceptions, and type tests on .NET types.

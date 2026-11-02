@@ -1,0 +1,39 @@
+# Static and instance members, constructors, structs, enums, nested types and nullability (SPEC §13.3, §13.4).
+from dotnet.System import Math, Environment, Uri, DateTime, TimeSpan, Int32, Version, Convert
+from dotnet.System.Threading import Thread
+from dotnet.System.Text import StringBuilder
+
+print(Math.Max(3, 7), Math.Abs(-2.5), Math.Round(2.5))
+print(Math.PI > 3.14, Int32.MaxValue)
+
+let u = Uri("https://example.com/a/b?q=1")
+print(u.Host, u.AbsolutePath, u.Query)
+
+let sb: StringBuilder = StringBuilder(capacity=64)
+print(sb.Capacity >= 64)
+
+# An int argument prefers FromDays(int) to FromDays(double), and fewer defaults.
+let span = TimeSpan.FromMinutes(90)
+print(span.TotalHours, span, TimeSpan.FromDays(2).TotalHours)
+
+let v1 = Version(1, 2)
+let v2 = Version("1.2")
+print(v1 == v2, v1 != Version(2, 0), v1, f"v{v1}")
+
+let home = Environment.SpecialFolder.UserProfile
+print(home, home == Environment.SpecialFolder.UserProfile)
+
+let empty = DateTime()
+print(empty.Year)
+
+# A nullable result is optional.
+let missing = Environment.GetEnvironmentVariable("TAIPAN_M21_UNSET_VARIABLE")
+print(missing ?? "unset")
+let versions: list[Version] = [v1, Version(3, 1)]
+print(len(versions), versions[1].Major)
+
+# Calls as statements and lambda bodies: a void call, and one whose Int32 result is dropped.
+let pause = lambda: Thread.Sleep(0)
+pause()
+Convert.ToInt32("7")
+print("called")

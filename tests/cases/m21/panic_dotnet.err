@@ -1,0 +1,2 @@
+panic: .NET System.FormatException: The input string 'abc' was not in a correct format.
+  at tests/cases/m21/panic_dotnet.tpn:4

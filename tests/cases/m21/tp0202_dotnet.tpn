@@ -1,0 +1,6 @@
+# Read-only .NET properties and fields can't be assigned (SPEC §13.4).
+from dotnet.System import Math, Uri
+
+let u = Uri("https://example.com")
+u.Host = "other.com"
+Math.PI = 3.0

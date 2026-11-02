@@ -202,7 +202,14 @@ public static class BuiltinClasses
 
     public static ClassSymbol PythonError { get; } = CreatePythonError();
 
+    public static ClassSymbol DotNetError { get; } = CreateDotNetError();
+
+    public static ClassSymbol OverflowError => All.First(c => c.Name == "OverflowError");
+
     public static ImmutableArray<ClassSymbol> All { get; } = CreateAll();
+
+    /// <summary>Whether only the runtime makes exceptions of this class, so it can't be constructed or derived from.</summary>
+    public static bool IsRuntimeOnly(ClassSymbol symbol) => symbol == PythonError || symbol == DotNetError;
 
     private static ClassSymbol CreateException()
     {
@@ -228,6 +235,13 @@ public static class BuiltinClasses
         return error;
     }
 
+    private static ClassSymbol CreateDotNetError()
+    {
+        var error = Builtin("DotNetError", "DotNetError", Exception);
+        error.Fields = [new FieldSymbol("type", TaipanType.Str) { Owner = error }];
+        return error;
+    }
+
     private static ImmutableArray<ClassSymbol> CreateAll()
     {
         var arithmetic = Builtin("ArithmeticError", Exception);
@@ -245,6 +259,7 @@ public static class BuiltinClasses
             Builtin("TypeError", Exception),
             Builtin("RuntimeError", Exception),
             PythonError,
+            DotNetError,
         ];
     }
 
@@ -336,6 +351,12 @@ public sealed class TypeAliasSymbol(string name, ImmutableArray<TypeParameterSym
         EnumType enumType => enumType.Symbol.Name,
         _ => null,
     };
+}
+
+/// <summary>A .NET type imported with <c>from dotnet.&lt;namespace&gt; import</c> (SPEC §13.1), under the name it's bound to.</summary>
+public sealed class DotNetTypeSymbol(string name, Microsoft.CodeAnalysis.INamedTypeSymbol type) : Symbol(name)
+{
+    public Microsoft.CodeAnalysis.INamedTypeSymbol Type { get; } = type;
 }
 
 /// <summary>

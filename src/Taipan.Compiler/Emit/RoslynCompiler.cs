@@ -34,7 +34,7 @@ public static class RoslynCompiler
             checkOverflow: true,
             nullableContextOptions: NullableContextOptions.Enable);
 
-        var compilation = CSharpCompilation.Create(assemblyName, [tree], References.Value, options);
+        var compilation = CSharpCompilation.Create(assemblyName, [tree], ReferencesFor(program), options);
         using var image = new MemoryStream();
         var result = compilation.Emit(image, options: new EmitOptions(debugInformationFormat: DebugInformationFormat.Embedded));
         if (!result.Success)
@@ -47,12 +47,16 @@ public static class RoslynCompiler
     }
 
     /// <summary>
-    /// Runs a compiled program in a collectible load context, with its output redirected.
-    /// Returns its exit code: 0, or 101 after a panic.
+    /// Runs a compiled program in a collectible load context, with its output redirected and the
+    /// assemblies it references (SPEC §13.2) loaded from their paths. Returns its exit code: 0,
+    /// or 101 after a panic.
     /// </summary>
-    public static int Run(byte[] image, TextWriter stdout, TextWriter stderr)
+    public static int Run(byte[] image, ImmutableArray<string> assemblies, TextWriter stdout, TextWriter stderr)
     {
         var context = new AssemblyLoadContext("taipan-program", isCollectible: true);
+        var byName = assemblies.ToLookup(path => Path.GetFileNameWithoutExtension(path), StringComparer.OrdinalIgnoreCase);
+        context.Resolving += (loader, name) =>
+            byName[name.Name ?? ""].FirstOrDefault() is { } path ? loader.LoadFromAssemblyPath(path) : null;
         var (savedOut, savedError) = (Io.Out, Io.Error);
         try
         {
@@ -75,16 +79,16 @@ public static class RoslynCompiler
     }
 
     /// <summary>
-    /// Writes a runnable program to <paramref name="directory"/>: the assembly, the runtime it
-    /// references, and a runtimeconfig so <c>dotnet &lt;name&gt;.dll</c> runs it.
+    /// Writes a runnable program to <paramref name="directory"/>: the assembly, the runtime and
+    /// other assemblies it references, and a runtimeconfig so <c>dotnet &lt;name&gt;.dll</c> runs it.
     /// </summary>
-    public static string Save(byte[] image, string assemblyName, string directory)
+    public static string Save(byte[] image, string assemblyName, string directory, ImmutableArray<string> assemblies)
     {
         Directory.CreateDirectory(directory);
         var path = Path.Combine(directory, assemblyName + ".dll");
         File.WriteAllBytes(path, image);
 
-        foreach (var dependency in (string[])[typeof(Panic).Assembly.Location, Interop.PythonRuntimeAssembly])
+        foreach (var dependency in (string[])[typeof(Panic).Assembly.Location, Interop.PythonRuntimeAssembly, .. assemblies])
             File.Copy(dependency, Path.Combine(directory, Path.GetFileName(dependency)), overwrite: true);
 
         var version = Environment.Version;
@@ -98,6 +102,20 @@ public static class RoslynCompiler
             """);
         return path;
     }
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, MetadataReference> ByPath = new();
+
+    /// <summary>
+    /// A program using .NET compiles against every assembly it may use (SPEC §13.2), which include
+    /// the defaults' framework assemblies; any other against the defaults.
+    /// </summary>
+    private static ImmutableArray<MetadataReference> ReferencesFor(EmittedProgram program) => program.References.IsEmpty
+        ? References.Value
+        : [
+            .. program.References.Select(path => ByPath.GetOrAdd(path, p => MetadataReference.CreateFromFile(p))),
+            MetadataReference.CreateFromFile(typeof(Panic).Assembly.Location),
+            MetadataReference.CreateFromFile(Interop.PythonRuntimeAssembly),
+        ];
 
     // Compiles against the running framework's assemblies plus Taipan.Runtime.
     private static ImmutableArray<MetadataReference> LoadReferences()

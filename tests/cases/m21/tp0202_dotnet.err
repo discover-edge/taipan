@@ -1,0 +1,2 @@
+tests/cases/m21/tp0202_dotnet.tpn:5:3: error TP0202: cannot assign to 'Host': it is a read-only property
+tests/cases/m21/tp0202_dotnet.tpn:6:6: error TP0202: cannot assign to 'PI': it is a constant

@@ -1,0 +1,11 @@
+# M21 acceptance: an unknown .NET member is TP0210 (SPEC §13.4).
+from dotnet.System.Text import StringBuilder
+from dotnet.System.IO import File
+
+let sb = StringBuilder()
+sb.Apend("x")
+print(File.Nope)
+print(StringBuilder.Length)
+print(sb.Clear().Lenght)
+let s = "text"
+print(s.Substring(1))

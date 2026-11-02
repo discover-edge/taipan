@@ -1,0 +1,8 @@
+# .NET members using types Taipan can't use yet (SPEC §13.3).
+from dotnet.System.Collections.Generic import List
+from dotnet.System.IO import File
+from dotnet.System import Array, AppDomain
+
+let text = File.ReadAllTextAsync("a.txt")
+print(Array.Empty())
+print(len(AppDomain.CurrentDomain.GetAssemblies()) > 0)

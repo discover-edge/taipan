@@ -187,11 +187,11 @@ public sealed class Parser
         return new ImportStmt(module, alias, span);
     }
 
-    // import_stmt = "from" NAME "import" import_name { "," import_name } NEWLINE
+    // import_stmt = "from" module_path "import" import_name { "," import_name } NEWLINE
     private FromImportStmt ParseFromImportStmt()
     {
         var start = Next().Span.Start;
-        var module = ExpectIdentifier();
+        var module = ParseModulePath();
         Expect(TokenKind.ImportKeyword);
         var names = ImmutableArray.CreateBuilder<ImportName>();
         names.Add(ParseImportName());
@@ -203,6 +203,19 @@ public sealed class Parser
         var span = SpanFrom(start);
         Expect(TokenKind.Newline);
         return new FromImportStmt(module, names.ToImmutable(), span);
+    }
+
+    // module_path = NAME { "." NAME }, as one identifier spanning the path (SPEC §13.1)
+    private Identifier ParseModulePath()
+    {
+        var first = ExpectIdentifier();
+        var parts = new List<string> { first.Text };
+        while (At(TokenKind.Dot))
+        {
+            Next();
+            parts.Add(ExpectIdentifier().Text);
+        }
+        return new Identifier(string.Join(".", parts), SpanFrom(first.Span.Start));
     }
 
     // import_name = NAME [ "as" NAME ]
