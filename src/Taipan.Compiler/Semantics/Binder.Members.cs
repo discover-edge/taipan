@@ -113,6 +113,7 @@ public sealed partial class Binder
             self: kind is MemberKind.Instance or MemberKind.Property ? new VariableSymbol("self", owner.Type, VariableKind.Parameter) : null)
         {
             Defaults = PendingDefaults(method.Params),
+            Kinds = KindsOf(method.Params),
             IsMarkedOverride = marks.Written.Contains("override"),
             DeclaredIn = owner,
             Kind = kind,

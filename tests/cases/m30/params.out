@@ -1,0 +1,14 @@
+users limit=10 columns=[] order=name filters={}
+users limit=5 columns=["id", "email"] order=id filters={"age": 30, "active": 1}
+users limit=3 columns=[] order=x filters={"table": 7}
+0.0 3.0 6.5 116.5
+p(3, 4) q(3, 4) p(1, 2)
+{} {"a": "1", "mode": "fast", "level": "2", "z": "9"}
+APP a b APP-c APP
+eval x
+eval a
+eval y
+eval b
+2
+TypeError: config() got multiple values for keyword argument 'mode'
+TypeError: mixed() got multiple values for argument 'a'

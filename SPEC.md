@@ -96,7 +96,8 @@ const_def     = "const" NAME [ ":" type ] "=" expr NEWLINE ;
 
 func_def      = { decorator } "def" NAME [ type_params ] "(" [ params ] ")" [ "->" type ] ":" block ;
 decorator     = "@" NAME [ "." NAME ] NEWLINE ;                      (* M15: @dataclass, @override; §4.3. M28: §4.8 *)
-params        = param { "," param } [ "," ] ;
+params        = param_item { "," param_item } [ "," ] ;
+param_item    = param | "/" | "*" [ NAME ":" type ] | "**" NAME ":" type ;   (* M30, §4.2 *)
 param         = NAME ":" type [ "=" expr ] ;                         (* default: M14, §4.2 *)
 type_params   = "[" type_param { "," type_param } "]" ;             (* M8, §3.6 *)
 type_param    = NAME [ ":" ( "(" type { "," type } [ "," ] ")"     (* constraints: M8.1; fewer than two types is TP0220 *)
@@ -178,7 +179,7 @@ cast          = postfix [ "as" type ] ;                            (* M10 *)
 postfix       = atom { call | "." NAME | "[" subscript "]" } ;
 subscript     = expr | [ expr ] ":" [ expr ] [ ":" [ expr ] ] ;      (* a slice: M12, §5.4 *)
 call          = "(" [ arg { "," arg } [ "," ] ] ")" ;
-arg           = expr | NAME "=" expr ;
+arg           = expr | NAME "=" expr | "*" expr | "**" expr ;        (* "*" and "**": M30, §4.2 *)
 atom          = INT | FLOAT | STRING | FSTRING | "True" | "False" | "None"
               | NAME | "self" | "(" expr ")" | "..."                 (* "...": M17, a protocol method's body *)
               | "(" expr "," [ expr { "," expr } [ "," ] ] ")"         (* a tuple: M12; one element is TP0209 *)
@@ -194,7 +195,7 @@ atom          = INT | FLOAT | STRING | FSTRING | "True" | "False" | "None"
 - A `value_arm` is an expression or a `raise` on the same line as its pattern, `Ok: "up"`, `_: raise ValueError("bad status")`, or since M29 an indented block (§5.1.1). Before M29 a block was `TP0100`, `expected expression, found newline`.
 - **Unpacking (M29):** a parenthesized group in `names` or `targets` nests, and `*` marks the name or target that takes the rest. In `for`, `names` may also be parenthesized as a whole: `for (a, b) in pairs`. Two starred names at one level are `TP0100`, `an unpacking can have only one '*' at each level`; a starred name alone is `TP0100`, `a starred name can't be unpacked to alone`; and `*x` anywhere else is `TP0100`, `'*' can only mark a name or target being unpacked`. A trailing comma needs two names before it, so `let a, = t` is still `TP0100`.
 - Keyword arguments are allowed in calls to functions and methods (M14, §4.2), class and enum-variant constructors (§4.3), `py` values (§10.2), and the keyword parameters of built-ins (`key` and `reverse` of `sorted` and `list.sort`, `start` of `enumerate`; §6). Keyword arguments may follow positional ones, as in Python. A positional argument after a keyword argument is `TP0100`.
-- In a parameter list, a parameter without a default after one with a default is `TP0100`, as in Python.
+- In a parameter list, a parameter without a default after one with a default is `TP0100`, as in Python. Since M30 that applies only before `*`, and the order of `/`, `*`, `*args` and `**kwargs` is checked as §4.2 says (`TP0100`).
 - **Decorators (M15)** are only `@dataclass` on a `class` and `@override` on a method (§4.3), and since M28 `@property`, `@<name>.setter`, `@staticmethod`, `@classmethod` and `@abstractmethod` on a method (§4.8). A decorator takes no arguments: `@dataclass(frozen=True)` is `TP0100`. Any other decorator name, a decorator in any other place, a repeated one, or one that can't be combined with another (§4.8) is `TP0224`. A dotted decorator other than `@<property>.setter` is `TP0224`.
 - **Receivers (M28):** an instance method, property or setter must take `self` first, a `@classmethod` must take `cls` first, and a `@staticmethod` takes neither. Otherwise it's `TP0225`, `'<m>' must take 'self' first` (or `'cls'`, or `a static method takes neither 'self' nor 'cls'`). As before M28, `self` and `cls` are written without a type.
 - **`is`:** `x is None` and `x is not None` are comparisons that give `bool`, usable in any expression (M15). `x is some v` binds a name, so it's only a whole `if`/`elif`/`while` condition. Any other right operand of `is`, including another expression (`x is y`), is `TP0100`, `expected 'some', 'not' or 'None'`.
@@ -698,6 +699,28 @@ There's no run-time form: aliases are expanded during type checking, and nothing
   - A keyword that isn't a parameter name is `TP0218` (`'<f>' has no parameter '<k>'`).
   - Arguments are evaluated in source order, then the missing defaults in parameter order.
   - The same rules apply to functions, nested `def`s and methods. A function used as a value (§3.7) loses its parameter names and defaults: its type lists every parameter, and calls through it pass them all, positionally.
+- **Parameter kinds (M30)**, as in Python:
+
+  ```python
+  def query(table: str, /, limit: int = 10, *columns: str, order: str, **filters: int) -> str:
+  ```
+
+  - **Positional-only:** parameters before a `/` can only be passed by position. In a method, `/` comes after `self` or `cls` at the earliest.
+  - **Keyword-only:** parameters after a `*`, or after `*args`, can only be passed by keyword. They may have defaults or not, in any order, as in Python.
+  - **`*args: T`** collects the positional arguments left over after the positional parameters are filled, in order, into a new `list[T]`, empty if there are none. It's annotated with the element type, as in Python's type hints.
+  - **`**kwargs: T`** collects the keyword arguments that name no parameter it could fill, in source order, into a new `dict[str, T]`, empty if there are none. As in Python, a keyword naming a positional-only parameter goes into it too.
+  - **Order:** positional-only parameters and `/`, then the others, then `*` or `*args` and the keyword-only parameters, then `**kwargs`, last. Anything else is `TP0100`: `/` first or twice, `/` after `*`, two stars, a bare `*` with no keyword-only parameter after it (`named arguments must follow bare '*'`), anything after `**kwargs`, or a default on `*args` or `**kwargs`. Among the parameters before `*`, one without a default still can't follow one with a default (M14).
+  - `args` and `kwargs` are only Python's conventional names: any name will do. Inside the function each is an immutable parameter, holding a list or dict the call made, which the body may change.
+- **Binding arguments (M30)** follows Python's rules, in this order:
+  1. Positional arguments fill the positional-only parameters and then the ordinary ones, left to right. The rest go to `*args`, or without one are `TP0209`, as in M14: `'<f>' takes <n> arguments, found <m>`, or `<n> positional arguments` when it has keyword-only parameters.
+  2. Each keyword argument fills the ordinary or keyword-only parameter of its name. One naming a positional-only parameter is `TP0218`, `'<p>' is positional-only, so it can't be passed by keyword`, unless the function has `**kwargs`, which takes it. Any other name goes to `**kwargs`, or without one is `TP0218` as in M14.
+  3. Parameters still unfilled take their defaults. One without a default is `TP0209`, `missing argument '<x>'`, or for a keyword-only one `missing keyword-only argument '<x>'`. One filled twice is `TP0209` as in M14.
+  - Every one of these is reported at compile time. Arguments are evaluated in source order, including those collected into `*args` and `**kwargs`, and then the missing defaults in parameter order.
+- **Unpacking at a call (M30):** `f(*xs)` and `f(**opts)`, in any order with other arguments, as in Python.
+  - **`*e`** with a tuple supplies its elements as positional arguments, one by one, so `point(*pair)` is valid wherever two positional arguments are. With a list, whose length isn't known when compiling, every element must go to `*args`: each positional parameter must already be filled by the positional arguments before it, and the elements must fit `*args`'s type. Otherwise it's `TP0209`, `'*<e>' can only fill '*<args>'`, or without `*args` `'<f>' has no '*args' for '*<e>'`. Positional arguments after a list `*e` go to `*args` too. Anything else after `*` is `TP0200`, `cannot unpack <T> into arguments`.
+  - **`**e`** needs a `dict[str, V]`, a callee with `**kwargs`, and `V` fitting its type (`TP0200`, or `TP0209`, `'<f>' has no '**kwargs' for '**<e>'`). Every entry goes to `**kwargs`, since the keys aren't known when compiling, so every parameter a keyword could fill must already be filled or have a default, which it then takes (`TP0209`, `'**<e>' can't fill '<x>'`). At run time a key naming one of those parameters raises `TypeError`, `<f>() got multiple values for argument '<k>'`, and one given twice across arguments `<f>() got multiple values for keyword argument '<k>'`, as Python does. (Python would let a key fill a named parameter; that's deferred.)
+- **Function values (M30):** a function with `*args` or `**kwargs` can't be used as a value (`TP0200`, `'<f>' has '*args' or '**kwargs', so it cannot be used as a value`, with help `wrap it in a lambda`), since a function type passes a fixed list of positional arguments (§3.7). Positional-only and keyword-only parameters are positional in its function type, as every parameter is.
+- **Overrides and protocols (M30)** compare parameter kinds too: an override must have the base method's `/`, `*`, `*args` and `**kwargs` (§4.3, `TP0228`), and a method satisfies a protocol's only with the same kinds (§3.11).
 
 ### 4.3 Classes (M15)
 Classes are Python's, with the checks a static type system needs. Before M15, records were declared with `struct`. A `@dataclass class` replaces it, with the same behavior.
@@ -784,6 +807,7 @@ class Point:
 - **An override must be compatible (`TP0228`)**, so that every call valid on the base is valid on the subclass:
   - the same number of parameters, with the same names, in the same order, and the same types
   - a default wherever the base method has one. The override may add defaults. A call evaluates the defaults of the method that runs, as in Python.
+  - since M30, the same kinds: the same `/` and `*`, and `*args` and `**kwargs` of the same types, if the base has them (`TP0228`, `'<m>' must take the same parameters as '<B>.<m>'`).
   - a return type that's the same as the base's, or, when both are classes or optional classes, one assignable to the base's (`Dog` for `Animal`). If the base returns nothing, the override must too.
 
 **Narrowing and conversion**
@@ -1246,6 +1270,7 @@ In `a == b` and `a != b`, `a`'s type is `b`'s expected type (§4.6), so `m == No
   - mutation during iteration: `list mutated during iteration` / `dict mutated during iteration`. Any change to the list or dict being iterated counts, including assigning to an existing element. (`RuntimeError`)
   - `split("")` / `replace("", …)`: `empty separator` (`ValueError`)
   - a slice step of 0: `slice step cannot be zero` (M12) (`ValueError`)
+  - `**e` at a call with a key naming a parameter, or one the call already gives (M30, §4.2): `<f>() got multiple values for argument '<k>'` / `… for keyword argument '<k>'` (`TypeError`)
   - unpacking a list of the wrong length (M29, §3.8): `not enough values to unpack (expected <n>, got <m>)`, `not enough values to unpack (expected at least <n>, got <m>)` with a starred name, or `too many values to unpack (expected <n>)` (`ValueError`)
   - Python interop (§10.5): `cannot convert Python <type> to <T>` (`TypeError`), `Python <ExceptionType>: <message>` (`PythonError`), `cannot load Python: <reason>` (at startup, so never caught)
   - failed non-optional `as` (M10), and `as` to a class the value isn't an instance of: `cannot convert <runtime class> to <C>` (M15) (`TypeError`)
@@ -1396,6 +1421,7 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0200 | `'<f>' has no return type, so 'return' cannot have a value` / `missing return value; '<f>' returns <T>` |
 | TP0200 | `'<x>' is not a function` / `cannot call <T>` (a callee that isn't a name) |
 | TP0200 | `'<f>' is generic, so it cannot be used as a value` / `built-in '<f>' cannot be used as a value`, with help `wrap it in a lambda` (M11) |
+| TP0200 | `'<f>' has '*args' or '**kwargs', so it cannot be used as a value`, with help `wrap it in a lambda` / `cannot unpack <T> into arguments` (M30) |
 | TP0200 | `expected <T>, found lambda` / `cannot sort <T>`, with help `pass a key, e.g. 'key=lambda x: ...'` / `cannot sort by <K>` (M11) |
 | TP0200 | `tuple index must be an integer literal` / `index <i> out of range for <T>` (a tuple) / `cannot unpack <T>` / `cannot slice <T>` (M12) |
 | TP0200 | `integer literal is out of range` |
@@ -1427,6 +1453,7 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0209 | `'<v>' has <n> fields, found <m> bindings` (variant and dataclass patterns; `field` / `binding` when the count is 1) / `'<C>' is not a dataclass, so its fields can only be bound by name` / `field '<f>' is given more than once` (class patterns, M15) |
 | TP0209 | `<T> has <n> elements, found <m> names` (unpacking) / `a tuple needs at least two elements` (M12) / `<T> has <n> elements, found <m> patterns` (a tuple pattern, M29) |
 | TP0209 | `'<f>' takes <n> arguments, found <m>` (`argument` when n is 1; `1 or 2 arguments` for `range`; `<a> to <b> arguments` for a function with defaults, M14; `2 or more arguments` for `zip`, M26; `function takes …` when the callee isn't a name) / `missing argument '<x>'` (M14) / `missing field '<f>' in '<S>'` / `field '<f>' is given more than once` / `argument '<k>' is given more than once` |
+| TP0209 | `'<f>' takes <n> positional arguments, found <m>` / `missing keyword-only argument '<x>'` / `'*<e>' can only fill '*<args>'` / `'<f>' has no '*args' for '*<e>'` / `'<f>' has no '**kwargs' for '**<e>'` / `'**<e>' can't fill '<x>'` (M30) |
 | TP0209 | `expected a lambda with <n> parameters, found <m>` (`parameter` when n is 1) / `'Callable' takes a parameter list and a result type` |
 | TP0210 | `<T> has no field '<x>'` / `<T> has no method '<x>'` / `<E> has no variant '<x>'` |
 | TP0211 | `'<f>' cannot use top-level variable '<x>'`, with help `pass it as a parameter, or make it a const` |
@@ -1435,7 +1462,7 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0215 | `'<k>' can't leave a 'match' expression`, with help `use a 'match' statement` (M29) / `'break' outside a loop` / `'continue' outside a loop` / `'return' outside a function` / `'raise' without an exception outside an except block` / `'return' cannot be used in a finally block` (and `'break'`, `'continue'`) (M16) |
 | TP0216 | `'<v>' is ambiguous: it is a variant of <E1> and <E2>`, with help `qualify it, e.g. '<E1>.<v>'` |
 | TP0217 | `const initializer must be a constant expression` / `class attribute value must be a constant expression` (M28) |
-| TP0218 | `'<f>' takes no keyword arguments` (a built-in) / `a function value takes no keyword arguments` / `'<f>' has no parameter '<k>'` (M14; also for `sorted`, `sort` and `enumerate`) |
+| TP0218 | `'<p>' is positional-only, so it can't be passed by keyword` (M30) / `'<f>' takes no keyword arguments` (a built-in) / `a function value takes no keyword arguments` / `'<f>' has no parameter '<k>'` (M14; also for `sorted`, `sort` and `enumerate`) |
 | TP0219 | `instantiating '<f>' needs '<f>[<T>]', which is too deep`, at the call that starts the chain |
 | TP0221 | `module '<m>' not found`, with help `looked for <path>` / `'python' is not a module`, with help `use 'from python import <module>'` / `'dotnet' is not a module`, with help `use 'from dotnet.<namespace> import <type>'` / `.NET namespace '<ns>' not found` (M21) |
 | TP0222 | `only the main file can have top-level statements` / `a library can't have top-level statements` (M22) / `a Python extension can't have top-level statements` (M25) |
@@ -1529,7 +1556,7 @@ Types are written as in source: `int`, `str?`, `list[int]`. The type of `None` i
 - iterators and generators (`map` and `filter` return lists)
 - or-patterns (`A | B`), guards (`case x if …`), `as` patterns, `None` and float literal patterns, mapping patterns, and `*` in tuple patterns (M29 has them in list patterns only)
 - type aliases inside functions and classes, recursive aliases, and showing an alias's name in diagnostics
-- keyword-only (`*`) and positional-only (`/`) parameters, `*args` and `**kwargs`, and defaults on lambda parameters (not planned, since loop variables are captured per iteration, §3.7)
+- defaults on lambda parameters (not planned, since loop variables are captured per iteration, §3.7), typed `**kwargs` (`Unpack[TypedDict]`), `*args` and `**kwargs` in function types, and `**e` filling named parameters
 - narrowing elements (`xs[0]`) and paths rooted at a `var`, and narrowing that follows `==` comparisons with literals
 - `raise … from …`, exception chaining, `BaseException`, exception groups (`except*`), and printing tracebacks
 - dataclass exceptions (mixing dataclasses and plain classes), and `args` on exceptions
@@ -1733,6 +1760,7 @@ catch (shapes.UnknownShape e) { Console.WriteLine(e.message); }
 | Taipan | Public .NET form |
 |---|---|
 | `def f(a: int, b: str = "x") -> float` | `public static double f(long a, string b)`, plus an overload for each trailing parameter with a default, `f(long a)`, that evaluates the default as a Taipan call would (§4.2) |
+| parameter kinds (M30) | Every parameter keeps its place. Positional-only and keyword-only parameters are ordinary C# parameters, which C# callers may pass by position or by name. `*args: T` is a `List<T>` parameter, `params` when it's last, so `def total(*xs: float)` is `total(params List<double> xs)`; `def g(a: int, *rest: str, sep: str)` is `g(long a, List<string> rest, string sep)`. `**kwargs: T` is an `OrderedDictionary<string, T>?` parameter, where `null` means none. |
 | `const LIMIT = 10` | `public static long LIMIT { get; }` |
 | `@dataclass class P` | a public class with a public constructor over every field (and overloads for trailing defaults), a `{ get; set; }` property per field, its methods as public instance methods (with overloads for trailing defaults, as for functions), and `ToString` giving Taipan's display form |
 | `class C` (plain) | a public class with a public constructor taking `__init__`'s parameters (and overloads for trailing defaults), which runs `__init__`; its fields and methods as for a dataclass |
@@ -1899,7 +1927,7 @@ The module file's own definitions whose names don't start with `_` (§14.1), as 
 - **Not exported (`TP0302`):** a function or constant that uses a type that isn't convertible, such as a class, an enum or a function type, is warning `TP0302`, with `'<T>' can't be passed to Python` as the reason, as is a generic function (`it's generic`). Other classes and enums aren't exported, and aren't warned about.
 
 ### 17.3 Calls and conversions
-- **Arguments** are passed by position or by keyword, using the Taipan parameter names, and a parameter with a default may be left out; its default is evaluated at each call, as in Taipan (§4.2). Python's own errors for a wrong call are `TypeError`s with Python's messages: `area() takes 1 positional argument but 2 were given`, `area() got an unexpected keyword argument 'radius'`, `area() missing required argument 'r'`, `area() got multiple values for argument 'r'`.
+- **Arguments** are passed by position or by keyword, using the Taipan parameter names, and a parameter with a default may be left out; its default is evaluated at each call, as in Taipan (§4.2). Since M30, positional-only and keyword-only parameters, `*args` and `**kwargs` are Python's, so Python callers bind arguments as Taipan does (§4.2), and each collected argument converts to the element type, as a list's or dict's would. Python's own errors for a wrong call are `TypeError`s with Python's messages: `area() takes 1 positional argument but 2 were given`, `area() got an unexpected keyword argument 'radius'`, `area() missing required argument 'r'`, `area() got multiple values for argument 'r'`, and since M30 `area() got some positional-only arguments passed as keyword arguments: 'r'` and `area() missing required keyword-only argument 'k'`. A keyword-only parameter passed by position is one too many positional arguments: `scale() takes 1 positional argument but 2 were given`.
 - **Each argument converts** from Python to its parameter's Taipan type:
 
   | Taipan | Python argument |

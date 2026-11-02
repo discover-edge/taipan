@@ -229,10 +229,10 @@ public sealed partial class CSharpEmitter
             for (var count = function.Parameters.Length; count >= FirstTrailingDefault(function); count--)
             {
                 var parameters = function.Parameters.Take(count);
-                var arguments = parameters.Select(p => $"@{p.Name}")
+                var arguments = parameters.Select((p, i) => LibraryArgument(function, i))
                     .Concat(Enumerable.Range(count, function.Parameters.Length - count).Select(i => $"{_programPath}.@{DefaultName(_names[function], function, i)}{typeParameters}()"));
                 Line();
-                Line($"public static {TypeName(function.ReturnType)} @{function.Name}{typeParameters}({string.Join(", ", parameters.Select(p => $"{TypeName(p.Type)} @{p.Name}"))})");
+                Line($"public static {TypeName(function.ReturnType)} @{function.Name}{typeParameters}({LibraryParameters(function, count)})");
                 Line("{");
                 Line($"    {init};");
                 Line($"    {(function.ReturnType is NothingType ? "" : "return ")}{name}{typeParameters}({string.Join(", ", arguments)});");
@@ -243,6 +243,18 @@ public sealed partial class CSharpEmitter
         (_out, _indent) = saved;
         return code;
     }
+
+    /// <summary>
+    /// A function's first <paramref name="count"/> parameters in a library's signature (SPEC §14.2):
+    /// <c>*args</c> is a <c>List&lt;T&gt;</c>, <c>params</c> when it's last; <c>**kwargs</c> a dict, where null means none.
+    /// </summary>
+    private string LibraryParameters(FunctionSymbol function, int count) =>
+        string.Join(", ", function.Parameters.Take(count).Select((p, i) =>
+            $"{(i == count - 1 && function.Kinds[i] == Syntax.ParamKind.VarArgs ? "params " : "")}{TypeName(p.Type)}{(function.Kinds[i] == Syntax.ParamKind.VarKeywords ? "?" : "")} @{p.Name}"));
+
+    // A library caller's argument as Taipan passes it: a null **kwargs is an empty dict.
+    private static string LibraryArgument(FunctionSymbol function, int parameter) =>
+        function.Kinds[parameter] == Syntax.ParamKind.VarKeywords ? $"(@{function.Parameters[parameter].Name} ?? new())" : $"@{function.Parameters[parameter].Name}";
 
     // A public method's overloads for its trailing defaults, which an override inherits (SPEC §14.2).
     private void EmitMethodOverloads(FunctionSymbol method)

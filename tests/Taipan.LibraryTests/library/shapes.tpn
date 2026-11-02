@@ -107,3 +107,16 @@ class Money:
 class Polygon(ABC):
     @abstractmethod
     def sides(self) -> int: ...
+
+# Parameter kinds (SPEC §4.2, §14.2).
+def total(*xs: float) -> float:
+    var sum = 0.0
+    for x in xs:
+        sum += x
+    return sum
+
+def tagged(name: str, /, *, upper: bool = False, **tags: int) -> str:
+    var shown = name
+    if upper:
+        shown = name.upper()
+    return f"{shown} {len(tags)}"

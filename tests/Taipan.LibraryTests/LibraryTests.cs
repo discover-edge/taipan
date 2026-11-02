@@ -52,6 +52,16 @@ public class LibraryTests
     }
 
     [Fact]
+    public void ParameterKindsAreDotNetParameters()
+    {
+        // *args is params when it's last, keyword-only parameters are ordinary, and **kwargs may be null (SPEC §14.2).
+        Assert.Equal(6.0, shapes.total(1.0, 2.0, 3.0));
+        Assert.Equal(0.0, shapes.total());
+        Assert.Equal("BOX 0", shapes.tagged("box", upper: true, tags: null));
+        Assert.Equal("box 2", shapes.tagged("box", false, new OrderedDictionary<string, long> { ["a"] = 1, ["b"] = 2 }));
+    }
+
+    [Fact]
     public void DefaultsAreOverloads()
     {
         Assert.Equal(0.0, new shapes.Point(1.0).y);

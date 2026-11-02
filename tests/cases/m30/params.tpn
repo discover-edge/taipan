@@ -1,0 +1,63 @@
+# M30 acceptance: positional-only and keyword-only parameters, *args and **kwargs (SPEC §4.2).
+def query(table: str, /, limit: int = 10, *columns: str, order: str, **filters: int) -> str:
+    return f"{table} limit={limit} columns={columns} order={order} filters={filters}"
+
+print(query("users", order="name"))
+print(query("users", 5, "id", "email", order="id", age=30, active=1))
+print(query("users", limit=3, order="x", table=7))
+
+def total(*numbers: float) -> float:
+    var sum = 0.0
+    for n in numbers:
+        sum += n
+    return sum
+
+let xs = [1.0, 2.0, 3.5]
+print(total(), total(1, 2), total(*xs), total(10, *xs, 100))
+
+def point(x: int, y: int, *, label: str = "p") -> str:
+    return f"{label}({x}, {y})"
+
+let pair = (3, 4)
+print(point(*pair), point(*pair, label="q"), point(y=2, x=1))
+
+def config(**options: str) -> str:
+    return str(options)
+
+let extra = {"mode": "fast", "level": "2"}
+print(config(), config(a="1", **extra, z="9"))
+
+class Logger:
+    prefix: str
+
+    def __init__(self, prefix: str, /, *, upper: bool = False):
+        self.prefix = prefix
+        if upper:
+            self.prefix = prefix.upper()
+
+    def log(self, *parts: str, sep: str = " ") -> str:
+        var line = self.prefix
+        for p in parts:
+            line = line + sep + p
+        return line
+
+let log = Logger("app", upper=True)
+print(log.log("a", "b"), log.log("c", sep="-"), log.log())
+
+# Arguments are evaluated in source order, even when **kwargs collects them out of place.
+def trace(label: str) -> int:
+    print("eval", label)
+    return 0
+
+def mixed(a: int = 0, b: int = 0, **rest: int) -> int:
+    return a + b + len(rest)
+
+print(mixed(x=trace("x"), a=trace("a"), y=trace("y"), b=trace("b")))
+try:
+    print(config(**{"mode": "a"}, mode="b"))
+except TypeError as e:
+    print("TypeError:", e)
+try:
+    print(mixed(**{"a": 1}))
+except TypeError as e:
+    print("TypeError:", e)

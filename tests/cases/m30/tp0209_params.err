@@ -1,0 +1,9 @@
+tests/cases/m30/tp0209_params.tpn:5:7: error TP0209: 'f' takes 2 positional arguments, found 3
+tests/cases/m30/tp0209_params.tpn:6:7: error TP0209: missing keyword-only argument 'c'
+tests/cases/m30/tp0209_params.tpn:7:7: error TP0209: missing keyword-only argument 'c'
+tests/cases/m30/tp0209_params.tpn:8:20: error TP0209: argument 'b' is given more than once
+tests/cases/m30/tp0209_params.tpn:14:9: error TP0209: 'g' has no '*args' for '*xs'
+tests/cases/m30/tp0209_params.tpn:15:12: error TP0209: 'g' has no '*args' for '*xs'
+tests/cases/m30/tp0209_params.tpn:16:9: error TP0209: 'g' has no '**kwargs' for '**{"x": 1}'
+tests/cases/m30/tp0209_params.tpn:17:7: error TP0209: 'g' takes 1 to 2 arguments, found 3
+tests/cases/m30/tp0209_params.tpn:22:9: error TP0209: '**{"a": 1}' can't fill 'a'

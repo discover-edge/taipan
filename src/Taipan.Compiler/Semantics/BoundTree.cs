@@ -86,6 +86,8 @@ public static class BoundTree
         BoundSort sort => [sort.List, .. sort.Keywords.Select(k => k.Value)],
         BoundTupleLiteral tuple => tuple.Elements,
         BoundTupleElement element => [element.Tuple],
+        BoundCollectedArguments collected => collected.Items.Select(i => i.Value),
+        BoundCollectedKeywords collected => collected.Items.Select(i => i.Value),
         BoundListElement element => [element.List],
         BoundListRest rest => [rest.List],
         BoundTupleRest rest => [rest.Tuple],

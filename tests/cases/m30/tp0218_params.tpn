@@ -1,0 +1,10 @@
+# A positional-only parameter can't be passed by keyword (SPEC §4.2).
+def f(a: int, /, b: int) -> int:
+    return a + b
+
+def k(a: int, /, **rest: int) -> int:
+    return len(rest)
+
+print(f(a=1, b=2))
+print(k(1, a=2))
+print(f(1, c=2))

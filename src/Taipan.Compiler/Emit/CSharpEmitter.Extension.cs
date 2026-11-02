@@ -37,14 +37,25 @@ public sealed partial class CSharpEmitter
     private string EntryPointFor(FunctionSymbol function)
     {
         var parameters = function.Parameters;
-        var required = 0;
-        while (required < parameters.Length && function.DefaultFor(required) is null)
-            required++;
         var names = string.Join(", ", parameters.Select(p => $"\"{p.Name}\""));
-        var arguments = parameters.Select((p, i) =>
+        var kinds = string.Join(", ", function.Kinds.Select(k => k switch
         {
-            var converted = $"{PythonExtension}.Argument(\"{function.Name}\", \"{p.Name}\", \"{Escape(p.Type.ToString())}\", @arguments[{i}], static @v => {ToTaipan(p.Type, "@v", 1)})";
-            return function.DefaultFor(i) is null ? converted : $"@arguments[{i}] == 0 ? {_programPath}.@{DefaultName(_names[function], function, i)}() : {converted}";
+            Syntax.ParamKind.PositionalOnly => "1",
+            Syntax.ParamKind.KeywordOnly => "2",
+            Syntax.ParamKind.VarArgs => "3",
+            Syntax.ParamKind.VarKeywords => "4",
+            _ => "0",
+        }));
+        var defaults = string.Join(", ", parameters.Select((_, i) => function.DefaultFor(i) is null ? "false" : "true"));
+        string Convert(TaipanType type, string name, string value) =>
+            $"{PythonExtension}.Argument(\"{function.Name}\", \"{name}\", \"{Escape(type.ToString())}\", {value}, static @v => {ToTaipan(type, "@v", 1)})";
+        var arguments = parameters.Select((p, i) => function.Kinds[i] switch
+        {
+            // Each collected argument converts to the element type (SPEC §17.3, M30).
+            Syntax.ParamKind.VarArgs => $"global::System.Linq.Enumerable.ToList(global::System.Linq.Enumerable.Select(@extra, @x => {Convert(((ListOfType)p.Type).Element, p.Name, "@x")}))",
+            Syntax.ParamKind.VarKeywords => $"{PythonExtension}.Keywords(@extraKeywords, @x => {Convert(((DictOfType)p.Type).Value, p.Name, "@x")})",
+            _ when function.DefaultFor(i) is null => Convert(p.Type, p.Name, $"@arguments[{i}]"),
+            _ => $"@arguments[{i}] == 0 ? {_programPath}.@{DefaultName(_names[function], function, i)}() : {Convert(p.Type, p.Name, $"@arguments[{i}]")}",
         });
         // Each argument in its own local, named after its parameter, in parameter order.
         var locals = parameters.Select(p => $"@p_{p.Name}").ToList();
@@ -52,7 +63,7 @@ public sealed partial class CSharpEmitter
         var code = new StringBuilder();
         code.Append("\n    [global::System.Runtime.InteropServices.UnmanagedCallersOnly]\n");
         code.Append($"    public static nint @{function.Name}(nint @self, nint @args, nint @kwargs)\n    {{\n        try\n        {{\n");
-        code.Append($"            var @arguments = {PythonExtension}.Arguments(@args, @kwargs, \"{function.Name}\", [{names}], {required});\n");
+        code.Append($"            var @arguments = {PythonExtension}.Arguments(@args, @kwargs, \"{function.Name}\", [{names}], [{kinds}], [{defaults}], out var @extra, out var @extraKeywords);\n");
         foreach (var (local, argument) in locals.Zip(arguments))
             code.Append($"            var {local} = {argument};\n");
         if (function.ReturnType is NothingType)

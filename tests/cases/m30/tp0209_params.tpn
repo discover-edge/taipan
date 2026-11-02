@@ -1,0 +1,22 @@
+# Python's errors for a wrong call, reported at compile time (SPEC §4.2).
+def f(a: int, /, b: int, *, c: int) -> int:
+    return a + b + c
+
+print(f(1, 2, 3))
+print(f(1, 2))
+print(f(1, b=2))
+print(f(1, 2, c=3, b=4))
+
+def g(x: int, y: int = 0) -> int:
+    return x + y
+
+let xs = [1, 2]
+print(g(*xs))
+print(g(1, *xs))
+print(g(**{"x": 1}))
+print(g(*(1, 2, 3)))
+
+def h(a: int, **rest: int) -> int:
+    return a
+
+print(h(**{"a": 1}))

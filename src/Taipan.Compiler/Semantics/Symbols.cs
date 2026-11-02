@@ -94,6 +94,21 @@ public sealed class FunctionSymbol(
     /// <summary>Whether the method is marked <c>@abstractmethod</c> (SPEC §4.8).</summary>
     public bool IsAbstract { get; init; }
 
+    /// <summary>How each parameter takes its argument (SPEC §4.2, M30): all ordinary unless the signature says otherwise.</summary>
+    public ImmutableArray<Syntax.ParamKind> Kinds
+    {
+        get => _kinds.IsDefault || _kinds.Length != Parameters.Length ? [.. Parameters.Select(_ => Syntax.ParamKind.Normal)] : _kinds;
+        init => _kinds = value;
+    }
+
+    private readonly ImmutableArray<Syntax.ParamKind> _kinds;
+
+    /// <summary>The index of the parameter of a kind, or -1.</summary>
+    public int IndexOf(Syntax.ParamKind kind) => Kinds.IndexOf(kind);
+
+    /// <summary>Whether a call can give the function a varying number of arguments, or keywords it doesn't name.</summary>
+    public bool IsVariadic => Kinds.Contains(Syntax.ParamKind.VarArgs) || Kinds.Contains(Syntax.ParamKind.VarKeywords);
+
     /// <summary>Whether a class method's body calls <c>cls(…)</c>, so every subclass must be constructed alike (SPEC §4.8).</summary>
     public bool CallsCls { get; set; }
 
@@ -246,7 +261,7 @@ public sealed class ClassSymbol(string name, ImmutableArray<TypeParameterSymbol>
         if (Base?.Constructor is not { } baseInit)
             return new FunctionSymbol("__init__", [], TaipanType.Nothing, self: self);
         var parameters = baseInit.Parameters.Select(p => new VariableSymbol(p.Name, p.Type, VariableKind.Parameter)).ToImmutableArray();
-        return new FunctionSymbol("__init__", parameters, TaipanType.Nothing, self: self) { DefaultsFrom = baseInit };
+        return new FunctionSymbol("__init__", parameters, TaipanType.Nothing, self: self) { DefaultsFrom = baseInit, Kinds = baseInit.Kinds };
     }
 
     /// <summary>The class applied to its own type parameters: the type of <c>self</c>.</summary>

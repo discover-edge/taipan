@@ -375,16 +375,79 @@ public sealed class Parser
         return new TypeParam(name, constraints, bound, SpanFrom(name.Span.Start));
     }
 
-    // params = param { "," param } [ "," ]
-    private ImmutableArray<Param> ParseParams()
+    // params     = param_item { "," param_item } [ "," ]
+    // param_item = param | "/" | "*" [ NAME ":" type ] | "**" NAME ":" type   (M30)
+    // Each parameter gets its kind from the markers around it (SPEC §4.2).
+    private ImmutableArray<Param> ParseParams(bool afterReceiver = false)
     {
-        var parameters = ParseCommaList(TokenKind.CloseParen, ParseParam);
+        var parameters = ImmutableArray.CreateBuilder<Param>();
+        var (slash, star, starStar) = ((TextSpan?)null, (TextSpan?)null, (Param?)null);
+        var bareStar = false;
+        while (!_recovering && !At(TokenKind.CloseParen))
+        {
+            var start = Current.Span.Start;
+            if (starStar is not null)
+                ReportSyntaxError(bag => bag.ReportParameterOrder(Current.Span, "nothing can follow '**' parameters"));
+            if (At(TokenKind.Slash))
+            {
+                var span = Next().Span;
+                // In a method, self or cls counts as the parameter before it.
+                if (slash is not null || star is not null || parameters.Count == 0 && !afterReceiver)
+                    ReportSyntaxError(bag => bag.ReportParameterOrder(span, parameters.Count == 0 && !afterReceiver ? "'/' must follow a parameter"
+                        : slash is not null ? "'/' may appear only once" : "'/' must come before '*'"));
+                slash = span;
+                // Every parameter so far is positional-only.
+                for (var i = 0; i < parameters.Count; i++)
+                    parameters[i] = parameters[i] with { Kind = ParamKind.PositionalOnly };
+            }
+            else if (At(TokenKind.Star) && Peek(1).Kind == TokenKind.Star && Peek(1).Span.Start == Current.Span.End)
+            {
+                Next();
+                Next();
+                var parameter = ParseParam() with { Kind = ParamKind.VarKeywords };
+                parameter = parameter with { Span = SpanFrom(start) };
+                if (parameter.Default is { } value)
+                    ReportSyntaxError(bag => bag.ReportParameterOrder(value.Span, "'**' parameters can't have a default"));
+                starStar = parameter;
+                parameters.Add(parameter);
+            }
+            else if (At(TokenKind.Star))
+            {
+                var span = Next().Span;
+                if (star is not null)
+                    ReportSyntaxError(bag => bag.ReportParameterOrder(span, "'*' may appear only once"));
+                star = span;
+                if (At(TokenKind.Name))
+                {
+                    var parameter = ParseParam() with { Kind = ParamKind.VarArgs };
+                    if (parameter.Default is { } value)
+                        ReportSyntaxError(bag => bag.ReportParameterOrder(value.Span, "'*' parameters can't have a default"));
+                    parameters.Add(parameter with { Span = SpanFrom(start) });
+                }
+                else
+                {
+                    bareStar = true;
+                }
+            }
+            else
+            {
+                var parameter = ParseParam();
+                parameters.Add(star is null ? parameter : parameter with { Kind = ParamKind.KeywordOnly });
+                bareStar = false;
+            }
+            if (!At(TokenKind.Comma))
+                break;
+            Next();
+        }
+        if (bareStar && star is { } bare)
+            ReportSyntaxError(bag => bag.ReportParameterOrder(bare, "named arguments must follow bare '*'"));
 
-        // As in Python, a parameter without a default can't follow one with a default (SPEC §2).
-        var firstDefault = parameters.IndexOf(parameters.FirstOrDefault(p => p.Default is not null)!);
-        if (firstDefault >= 0 && parameters.Skip(firstDefault).FirstOrDefault(p => p.Default is null) is { } required)
+        // As in Python, a parameter without a default can't follow one with a default, before any '*' (SPEC §2).
+        var positional = parameters.Where(p => p.Kind is ParamKind.Normal or ParamKind.PositionalOnly).ToList();
+        var firstDefault = positional.FindIndex(p => p.Default is not null);
+        if (firstDefault >= 0 && positional.Skip(firstDefault).FirstOrDefault(p => p.Default is null) is { } required)
             ReportSyntaxError(bag => bag.ReportRequiredAfterDefault(required.Span));
-        return parameters;
+        return parameters.ToImmutable();
     }
 
     // param = NAME ":" type [ "=" expr ]
@@ -470,7 +533,7 @@ public sealed class Parser
             if (At(TokenKind.Comma))
             {
                 Next();
-                parameters = ParseParams();
+                parameters = ParseParams(afterReceiver: true);
             }
         }
         else
@@ -1586,9 +1649,11 @@ public sealed class Parser
         var arguments = ParseCommaList(TokenKind.CloseParen, ParseArg);
         Expect(TokenKind.CloseParen);
 
-        // A positional argument after a keyword argument is never valid (SPEC §2).
-        var firstKeyword = arguments.IndexOf(arguments.FirstOrDefault(a => a.Name is not null)!);
-        if (firstKeyword >= 0 && arguments.Skip(firstKeyword).FirstOrDefault(a => a.Name is null) is { } positional)
+        // A positional argument after a keyword argument is never valid (SPEC §2); `*e` counts as
+        // positional, and `**e` as a keyword (M30).
+        static bool IsKeyword(Argument a) => a.Name is not null || a.Unpack == ArgumentUnpack.Keyword;
+        var firstKeyword = arguments.IndexOf(arguments.FirstOrDefault(IsKeyword)!);
+        if (firstKeyword >= 0 && arguments.Skip(firstKeyword).FirstOrDefault(a => !IsKeyword(a)) is { } positional)
             ReportSyntaxError(bag => bag.ReportMixedArguments(positional.Span));
         return arguments;
     }
@@ -1597,6 +1662,19 @@ public sealed class Parser
     private Argument ParseArg()
     {
         var start = Current.Span.Start;
+        // `*e` and `**e` unpack into arguments (M30); `**` is two adjacent '*' tokens.
+        if (At(TokenKind.Star))
+        {
+            var unpack = ArgumentUnpack.Positional;
+            Next();
+            if (At(TokenKind.Star) && Current.Span.Start == start + 1)
+            {
+                Next();
+                unpack = ArgumentUnpack.Keyword;
+            }
+            var unpacked = ParseExpr();
+            return new Argument(null, unpacked, SpanFrom(start)) { Unpack = unpack };
+        }
         Identifier? name = null;
         if (At(TokenKind.Name) && Peek(1).Kind == TokenKind.Equals)
         {

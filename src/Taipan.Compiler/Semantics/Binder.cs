@@ -938,14 +938,23 @@ public sealed partial class Binder
             funcDef.Name.Text, BindParams(funcDef.Params), BindReturnType(funcDef.ReturnType), typeParameters: typeParameters)
         {
             Defaults = PendingDefaults(funcDef.Params),
+            Kinds = KindsOf(funcDef.Params),
         };
         _typeParameters = outer;
         DeclareGlobal(funcDef.Name, symbol);
         return symbol;
     }
 
+    // `*args: T` is a list[T], and `**kwargs: T` a dict[str, T] (SPEC §4.2, M30).
     private ImmutableArray<VariableSymbol> BindParams(ImmutableArray<Param> parameters) =>
-        [.. parameters.Select(p => new VariableSymbol(p.Name.Text, BindType(p.Type), VariableKind.Parameter))];
+        [.. parameters.Select(p => new VariableSymbol(p.Name.Text, p.Kind switch
+        {
+            ParamKind.VarArgs => new ListOfType(BindType(p.Type)),
+            ParamKind.VarKeywords => new DictOfType(TaipanType.Str, BindType(p.Type)),
+            _ => BindType(p.Type),
+        }, VariableKind.Parameter))];
+
+    private static ImmutableArray<ParamKind> KindsOf(ImmutableArray<Param> parameters) => [.. parameters.Select(p => p.Kind)];
 
     /// <summary>
     /// Placeholders for a top-level function's or method's defaults, so calls know which parameters
@@ -1049,7 +1058,7 @@ public sealed partial class Binder
             if (method.Body.Statements is not [ExprStmt { Expr: EllipsisExpr }])
                 _diagnostics.ReportProtocolBody(method.Body.Statements.FirstOrDefault()?.Span ?? method.Name.Span);
             var self = new VariableSymbol("self", symbol.Type, VariableKind.Parameter);
-            var methodSymbol = new FunctionSymbol(name, BindParams(method.Params), BindReturnType(method.ReturnType), self: self);
+            var methodSymbol = new FunctionSymbol(name, BindParams(method.Params), BindReturnType(method.ReturnType), self: self) { Kinds = KindsOf(method.Params) };
             if (symbol.Methods.ContainsKey(name))
                 _diagnostics.ReportDuplicateDefinition(method.Name.Span, name);
             else if (name == "__lt__" && !IsLessThan(methodSymbol, other => other == symbol.SelfParameter!.Type))
@@ -1144,7 +1153,7 @@ public sealed partial class Binder
         FunctionSymbol method, Dictionary<TypeParameterSymbol, TaipanType> map)
     {
         static bool IsClass(TaipanType type) => TypeChecker.Unwrap(type) is ClassType;
-        if (method.Parameters.Length != required.Parameters.Length)
+        if (method.Parameters.Length != required.Parameters.Length || !method.Kinds.SequenceEqual(required.Kinds))
             return false;
         for (var i = 0; i < method.Parameters.Length; i++)
         {
@@ -1235,7 +1244,8 @@ public sealed partial class Binder
     private void CheckOverride(MethodDef syntax, FunctionSymbol method, FunctionSymbol overridden)
     {
         var (name, owner) = (method.Name, overridden.Owner!.Name);
-        if (method.Parameters.Length != overridden.Parameters.Length)
+        // The same kinds too: '/', '*', '*args' and '**kwargs' (SPEC §4.3, M30).
+        if (method.Parameters.Length != overridden.Parameters.Length || !method.Kinds.SequenceEqual(overridden.Kinds))
         {
             _diagnostics.ReportOverrideParameters(syntax.Name.Span, name, owner);
             return;
@@ -1774,7 +1784,7 @@ public sealed partial class Binder
         var parameters = BindParams(def.Params);
         var returnType = BindReturnType(def.ReturnType);
         // Its defaults see what's visible here, so they may use the bindings it captures (SPEC §4.2).
-        var function = new FunctionSymbol(def.Name.Text, parameters, returnType) { Defaults = BindDefaultValues(def.Params, parameters) };
+        var function = new FunctionSymbol(def.Name.Text, parameters, returnType) { Defaults = BindDefaultValues(def.Params, parameters), Kinds = KindsOf(def.Params) };
         var symbol = new VariableSymbol(def.Name.Text, new FunctionType([.. parameters.Select(p => p.Type)], returnType), VariableKind.Function);
         DeclareLocal(def.Name, symbol);
         _localFunctions[symbol] = function;
@@ -2723,6 +2733,7 @@ public sealed partial class Binder
         SliceExpr slice => BindSlice(slice),
         ErrorExpr => new BoundErrorExpr(expr.Span),
         EllipsisExpr => MisplacedEllipsis(expr.Span),
+        PreboundExpr prebound => prebound.Bound,
         StarredExpr starred => MisplacedStar(starred),
         _ => throw new InvalidOperationException($"unexpected expression {expr.GetType().Name}"),
     };
@@ -2838,6 +2849,10 @@ public sealed partial class Binder
                 return new BoundErrorExpr(span);
             case FunctionSymbol { TypeParameters.IsEmpty: false }:
                 _diagnostics.ReportGenericAsValue(span, name);
+                return new BoundErrorExpr(span);
+            // A function type passes a fixed list of positional arguments (SPEC §4.2, M30).
+            case FunctionSymbol { IsVariadic: true }:
+                _diagnostics.ReportVariadicAsValue(span, name);
                 return new BoundErrorExpr(span);
             case FunctionSymbol function:
                 return new BoundFunctionValue(function, new FunctionType([.. function.Parameters.Select(p => p.Type)], function.ReturnType), span);
@@ -3408,24 +3423,21 @@ public sealed partial class Binder
     /// <summary>A nested <c>def</c> called by name, which takes keywords and defaults like any function (SPEC §4.2).</summary>
     private BoundExpr BindLocalCall(CallExpr call, BoundVariable callee, FunctionSymbol function, TextSpan nameSpan)
     {
-        if (MatchArguments(call, function, function.Name, nameSpan) is not { } shape)
-            return new BoundInvoke(callee, BindArguments(call), function.ReturnType, call.Span);
-        var arguments = call.Arguments.Select((a, i) => BindExpected(a.Value, function.Parameters[shape.Parameters[i]].Type)).ToImmutableArray();
-        return new BoundInvoke(callee, arguments, function.ReturnType, call.Span) { Shape = Simplify(shape), Function = function };
+        var (arguments, shape, _, valid) = BindCallArguments(call, function, function.Name, nameSpan, [], t => t, function.ReturnType, null);
+        if (!valid)
+            return new BoundInvoke(callee, arguments, function.ReturnType, call.Span);
+        return new BoundInvoke(callee, arguments, function.ReturnType, call.Span) { Shape = shape, Function = function };
     }
 
     private BoundExpr BindUserCall(CallExpr call, FunctionSymbol function, TaipanType? expected, TextSpan nameSpan)
     {
-        if (MatchArguments(call, function, function.Name, nameSpan) is not { } shape)
-            return new BoundCall(function, BindArguments(call), function.TypeParameters.IsEmpty ? function.ReturnType : TaipanType.Error, call.Span);
-
-        var (bound, map) = InferAndBind(
-            function.Name, call.Callee.Span, function.TypeParameters, [.. shape.Parameters.Select(i => function.Parameters[i].Type)],
-            function.ReturnType, [.. call.Arguments.Select(a => a.Value)], expected);
+        var (bound, shape, map, valid) = BindCallArguments(call, function, function.Name, nameSpan, function.TypeParameters, t => t, function.ReturnType, expected);
+        if (!valid)
+            return new BoundCall(function, bound, function.TypeParameters.IsEmpty ? function.ReturnType : TaipanType.Error, call.Span);
         return new BoundCall(function, bound, TypeChecker.Substitute(function.ReturnType, map), call.Span)
         {
             TypeArguments = [.. function.TypeParameters.Select(p => map[p])],
-            Shape = Simplify(shape),
+            Shape = shape,
         };
     }
 
@@ -3705,59 +3717,9 @@ public sealed partial class Binder
             _diagnostics.ReportKeywordArguments(keyword.Span, function);
     }
 
-    /// <summary>
-    /// Matches a call's arguments to a function's parameters as in Python (SPEC §4.2): positional
-    /// ones from the left, then keywords by name, and the rest take their defaults. Reports TP0209
-    /// and TP0218, and returns null if the arguments don't fit.
-    /// </summary>
-    private ArgumentShape? MatchArguments(CallExpr call, FunctionSymbol function, string name, TextSpan nameSpan)
-    {
-        var count = function.Parameters.Length;
-        var required = Enumerable.Range(0, count).Count(i => function.DefaultFor(i) is null);
-        var positional = call.Arguments.TakeWhile(a => a.Name is null).Count();
-        // Only positional arguments: a wrong count is reported as a count.
-        if (positional > count || (positional == call.Arguments.Length && positional < required))
-        {
-            var expected = required == count ? Arguments(count) : $"{required} to {count} arguments";
-            _diagnostics.ReportWrongArgumentCount(nameSpan, name, expected, positional);
-            return null;
-        }
-
-        var parameters = ImmutableArray.CreateBuilder<int>();
-        parameters.AddRange(Enumerable.Range(0, positional));
-        var valid = true;
-        var unknown = false;
-        foreach (var argument in call.Arguments.Skip(positional))
-        {
-            var keyword = argument.Name!;
-            var index = function.Parameters.Select(p => p.Name).ToList().IndexOf(keyword.Text);
-            if (index < 0)
-            {
-                _diagnostics.ReportNoKeywordArgument(keyword.Span, name, keyword.Text);
-                (valid, unknown) = (false, true);
-            }
-            else if (parameters.Contains(index))
-            {
-                _diagnostics.ReportRepeatedArgument(keyword.Span, keyword.Text);
-                valid = false;
-            }
-            parameters.Add(index);
-        }
-        // After an unknown keyword, a missing argument is probably the one it misspells.
-        if (!unknown)
-        {
-            foreach (var missing in Enumerable.Range(0, count).Where(i => function.DefaultFor(i) is null && !parameters.Contains(i)))
-            {
-                _diagnostics.ReportMissingArgument(nameSpan, function.Parameters[missing].Name);
-                valid = false;
-            }
-        }
-        return valid ? new ArgumentShape(parameters.ToImmutable(), count) : null;
-    }
-
     /// <summary>Null for the common shape: every parameter given, positionally.</summary>
     private static ArgumentShape? Simplify(ArgumentShape shape) =>
-        shape.InOrder && shape.Parameters.Length == shape.ParameterCount ? null : shape;
+        shape.InOrder && shape.Parameters.Length == shape.ParameterCount && shape.Sources.IsEmpty ? null : shape;
 
     /// <summary>
     /// A dataclass's constructor takes its fields; a plain class's takes its <c>__init__</c>'s
@@ -3790,15 +3752,11 @@ public sealed partial class Binder
             return new BoundErrorExpr(call.Span);
         }
         var constructor = classSymbol.Constructor;
-        if (MatchArguments(call, constructor, classSymbol.Name, nameSpan) is not { } shape)
-        {
-            BindArguments(call);
+        var (bound, shape, typeArguments, matched) = BindCallArguments(
+            call, constructor, classSymbol.Name, nameSpan, classSymbol.TypeParameters, t => t, classSymbol.Type, expected);
+        if (!matched)
             return new BoundErrorExpr(call.Span);
-        }
-        var (bound, typeArguments) = InferAndBind(
-            classSymbol.Name, call.Callee.Span, classSymbol.TypeParameters, [.. shape.Parameters.Select(i => constructor.Parameters[i].Type)],
-            classSymbol.Type, [.. call.Arguments.Select(a => a.Value)], expected);
-        return new BoundNew((ClassType)TypeChecker.Substitute(classSymbol.Type, typeArguments), constructor, bound, call.Span) { Shape = Simplify(shape) };
+        return new BoundNew((ClassType)TypeChecker.Substitute(classSymbol.Type, typeArguments), constructor, bound, call.Span) { Shape = shape };
     }
 
     /// <summary><c>isinstance(x, C)</c> (SPEC §6): x a class or optional class, and C a class that could be its runtime class.</summary>
@@ -3918,10 +3876,8 @@ public sealed partial class Binder
         }
         if (method.IsAbstract)
             _diagnostics.ReportAbstractSuper(member.Member.Span, method.Owner!.Name, name);
-        if (MatchArguments(call, method, name, member.Member.Span) is not { } shape)
-            return new BoundSuperCall(method, self, BindArguments(call), method.ReturnType, call.Span);
-        var arguments = call.Arguments.Select((a, i) => BindExpected(a.Value, method.Parameters[shape.Parameters[i]].Type)).ToImmutableArray();
-        return new BoundSuperCall(method, self, arguments, method.ReturnType, call.Span) { Shape = Simplify(shape) };
+        var (arguments, shape, _, valid) = BindCallArguments(call, method, name, member.Member.Span, [], t => t, method.ReturnType, null);
+        return new BoundSuperCall(method, self, arguments, method.ReturnType, call.Span) { Shape = valid ? shape : null };
     }
 
     private BoundExpr BindConstructVariant(CallExpr call, VariantSymbol variant, TaipanType? expected)
@@ -4119,12 +4075,9 @@ public sealed partial class Binder
         {
             var self = new Dictionary<TypeParameterSymbol, TaipanType> { [bound.SelfParameter!] = target.Type };
             var resultType = TypeChecker.Substitute(required.ReturnType, self);
-            if (MatchArguments(call, required, name, member.Member.Span) is not { } requiredShape)
-                return new BoundMethodCall(target, required, BindArguments(call), resultType, call.Span);
-            var requiredArguments = call.Arguments
-                .Select((a, i) => BindExpected(a.Value, TypeChecker.Substitute(required.Parameters[requiredShape.Parameters[i]].Type, self)))
-                .ToImmutableArray();
-            return new BoundMethodCall(target, required, requiredArguments, resultType, call.Span) { Shape = Simplify(requiredShape) };
+            var (requiredArguments, requiredShape, _, requiredValid) = BindCallArguments(
+                call, required, name, member.Member.Span, [], t => TypeChecker.Substitute(t, self), resultType, null);
+            return new BoundMethodCall(target, required, requiredArguments, resultType, call.Span) { Shape = requiredValid ? requiredShape : null };
         }
 
         if (target.Type is ClassType { Symbol: var classSymbol })
@@ -4160,12 +4113,9 @@ public sealed partial class Binder
                 Index(member.Member.Span, method);
                 var map = TypeChecker.MapOf(target.Type);
                 var returnType = TypeChecker.Substitute(method.ReturnType, map);
-                if (MatchArguments(call, method, name, member.Member.Span) is not { } shape)
-                    return new BoundMethodCall(target, method, BindArguments(call), returnType, call.Span);
-                var arguments = call.Arguments
-                    .Select((a, i) => BindExpected(a.Value, TypeChecker.Substitute(method.Parameters[shape.Parameters[i]].Type, map)))
-                    .ToImmutableArray();
-                return new BoundMethodCall(target, method, arguments, returnType, call.Span) { Shape = Simplify(shape) };
+                var (arguments, shape, _, valid) = BindCallArguments(
+                    call, method, name, member.Member.Span, [], t => TypeChecker.Substitute(t, map), returnType, null);
+                return new BoundMethodCall(target, method, arguments, returnType, call.Span) { Shape = valid ? shape : null };
             }
             BindArguments(call);
             if (classSymbol.FindField(name) is not null)

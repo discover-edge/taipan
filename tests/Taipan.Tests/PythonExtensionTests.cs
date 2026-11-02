@@ -21,6 +21,7 @@ public class PythonExtensionTests
         print(geometry.describe("circle", None), geometry.describe(sides=3, name="square"))
         print(geometry.bounds([3, -1, 7]), geometry.first([]), geometry.first(["a", "b"]), geometry.lookup({"a": 1}, "a"))
         print(geometry.report("hi"))
+        print(geometry.resize(2.0, by=3.0, round=False), geometry.stack(), geometry.stack(1, 2, top="a"))
         for call in [
             lambda: geometry.area(-1.0),
             lambda: geometry.area("x"),
@@ -34,6 +35,11 @@ public class PythonExtensionTests
             lambda: geometry.square(2**62),
             lambda: geometry.square(2**70),
             lambda: geometry.bounds([]),
+            lambda: geometry.resize(2.0, 3.0, round=True),
+            lambda: geometry.resize(w=2.0, round=True),
+            lambda: geometry.resize(2.0),
+            lambda: geometry.stack(1, "x"),
+            lambda: geometry.stack(top=1),
         ]:
             try:
                 call()
@@ -54,6 +60,7 @@ public class PythonExtensionTests
         (-1, 7) None a 1
         report: hi
         None
+        6.0 [] {} [1, 2] {"top": "a"}
         geometry.NegativeRadius: radius -1.0 is negative
         builtins.TypeError: area() argument 'r' must be float, not str
         builtins.TypeError: area() missing required argument 'r'
@@ -66,6 +73,11 @@ public class PythonExtensionTests
         builtins.OverflowError: integer overflow
         builtins.OverflowError: int too big to convert
         builtins.IndexError: index 0 out of range for length 0
+        builtins.TypeError: resize() takes 1 positional argument but 2 were given
+        builtins.TypeError: resize() got some positional-only arguments passed as keyword arguments: 'w'
+        builtins.TypeError: resize() missing required keyword-only argument 'round'
+        builtins.TypeError: stack() argument 'heights' must be int, not str
+        builtins.TypeError: stack() argument 'labels' must be str, not int
         True True
         caught by its base: radius -2.0 is negative
 

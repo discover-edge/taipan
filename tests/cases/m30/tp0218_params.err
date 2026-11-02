@@ -1,0 +1,2 @@
+tests/cases/m30/tp0218_params.tpn:8:9: error TP0218: 'a' is positional-only, so it can't be passed by keyword
+tests/cases/m30/tp0218_params.tpn:10:12: error TP0218: 'f' has no parameter 'c'

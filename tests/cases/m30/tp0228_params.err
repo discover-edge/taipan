@@ -1,0 +1,2 @@
+tests/cases/m30/tp0228_params.tpn:11:9: error TP0228: 'run' must take the same parameters as 'Base.run'
+tests/cases/m30/tp0228_params.tpn:15:9: error TP0228: 'log' must take the same parameters as 'Base.log'

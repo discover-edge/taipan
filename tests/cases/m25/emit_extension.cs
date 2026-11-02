@@ -82,7 +82,7 @@ public static unsafe class TaipanExtension
     {
         try
         {
-            var @arguments = global::Taipan.Runtime.PythonExtension.Arguments(@args, @kwargs, "clamp", ["xs", "high"], 1);
+            var @arguments = global::Taipan.Runtime.PythonExtension.Arguments(@args, @kwargs, "clamp", ["xs", "high"], [0, 0], [false, true], out var @extra, out var @extraKeywords);
             var @p_xs = global::Taipan.Runtime.PythonExtension.Argument("clamp", "xs", "list[int]", @arguments[0], static @v => global::Taipan.Runtime.PythonExtension.List(@v, static @e1 => global::Taipan.Runtime.PythonExtension.Int(@e1)));
             var @p_high = @arguments[1] == 0 ? global::TaipanProgram.@clamp_high() : global::Taipan.Runtime.PythonExtension.Argument("clamp", "high", "int", @arguments[1], static @v => global::Taipan.Runtime.PythonExtension.Int(@v));
             return global::Taipan.Runtime.PythonExtension.Return(((global::System.Func<(long, string?), nint>)(static @e0 => global::Taipan.Runtime.PythonExtension.FromTuple(global::Taipan.Runtime.PythonExtension.FromInt(@e0.Item1), global::Taipan.Runtime.PythonExtension.FromOptional(@e0.Item2, static @e1 => global::Taipan.Runtime.PythonExtension.FromStr(@e1)))))(global::TaipanProgram.@clamp(@p_xs, @p_high)));
