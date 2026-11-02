@@ -1,0 +1,55 @@
+# A CPython extension module (SPEC §17): functions, constants and exception classes.
+const PI = 3.14159
+const SIDES = 4
+
+class GeometryError(Exception):
+    pass
+
+class NegativeRadius(GeometryError):
+    pass
+
+class BadShape(ValueError):
+    pass
+
+def area(r: float) -> float:
+    if r < 0.0:
+        raise NegativeRadius(f"radius {r} is negative")
+    return PI * r * r
+
+def scale(xs: list[float], by: float = 2.0) -> list[float]:
+    return _scaled(xs, by)
+
+def _scaled(xs: list[float], by: float) -> list[float]:
+    var out: list[float] = []
+    for x in xs:
+        out.append(x * by)
+    return out
+
+def describe(name: str, sides: int?) -> str:
+    if name not in ["circle", "square"]:
+        raise BadShape(f"unknown shape {name}")
+    return f"{name} with {sides ?? 0} sides"
+
+def lookup(table: dict[str, int], key: str) -> int:
+    return table[key]
+
+def bounds(xs: list[int]) -> tuple[int, int]:
+    var lo = xs[0]
+    var hi = xs[0]
+    for x in xs:
+        if x < lo:
+            lo = x
+        if x > hi:
+            hi = x
+    return lo, hi
+
+def first(xs: list[str]) -> str?:
+    if len(xs) == 0:
+        return None
+    return xs[0]
+
+def square(n: int) -> int:
+    return n * n
+
+def report(message: str):
+    print(f"report: {message}")

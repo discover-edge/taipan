@@ -4,6 +4,8 @@
     <IsPackable>true</IsPackable>
     <PackageId>TaipanLang.Runtime</PackageId>
     <Description>The runtime library that programs compiled by Taipan reference.</Description>
+    <!-- CPython's C API, for extension modules (SPEC §17). -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="pythonnet" Version="3.0.5" />

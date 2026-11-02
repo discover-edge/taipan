@@ -18,7 +18,7 @@ public class LanguageServerTests
         var data = new TheoryData<string>();
         foreach (string path in GoldenTests.Cases())
         {
-            string[] other = [".out", ".library", ".native"];
+            string[] other = [".out", ".library", ".native", ".python-extension"];
             if (File.Exists(Path.Combine(Root, Path.ChangeExtension(path, ".err"))) && !other.Any(s => File.Exists(Path.Combine(Root, Path.ChangeExtension(path, s)))))
                 data.Add(path);
         }

@@ -43,7 +43,8 @@ public static class Checker
         if (target == Target.Library && (framework = DotNetLibrary.ReferencePackDirectory()) is null)
             return Fail(diagnostics, "building a library needs the .NET SDK's reference assemblies (Microsoft.NETCore.App.Ref)");
         var bound = Binder.Bind(
-            loaded.Modules, DotNetLibrary.For(project.CompileReferences, framework), target == Target.Library, target == Target.Native);
+            loaded.Modules, DotNetLibrary.For(project.CompileReferences, framework),
+            asLibrary: target == Target.Library, asNative: target == Target.Native, asExtension: target == Target.PythonExtension);
         if (bound.Unsupported is not null)
             return Fail(diagnostics, $"{bound.Unsupported} is not implemented yet") with { Index = bound.Index };
         diagnostics = [.. diagnostics, .. bound.Diagnostics];

@@ -1118,7 +1118,7 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 | TP0219 | generic instantiation too deep (polymorphic recursion) |
 | TP0220 | invalid type parameter constraint or bound |
 | TP0221 | module not found |
-| TP0222 | top-level statement in an imported module, or in a library's main file (M22) |
+| TP0222 | top-level statement in an imported module, or in a library's main file (M22) or an extension module (M25) |
 | TP0223 | nested function with type parameters |
 | TP0224 | invalid decorator |
 | TP0225 | invalid class definition |
@@ -1132,7 +1132,7 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 | TP0233 | can't be used in a native program (M23) |
 | TP0300 | warning: unreachable code (a statement, `match` arm or `except` clause) |
 | TP0301 | warning: broad `except` clause discards the exception |
-| TP0302 | warning: a library definition can't be exported (M22) |
+| TP0302 | warning: a library's or extension module's definition can't be exported (M22, M25) |
 
 New codes go into this table before they're implemented.
 
@@ -1188,7 +1188,7 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0218 | `'<f>' takes no keyword arguments` (a built-in) / `a function value takes no keyword arguments` / `'<f>' has no parameter '<k>'` (M14; also for `sorted`, `sort` and `enumerate`) |
 | TP0219 | `instantiating '<f>' needs '<f>[<T>]', which is too deep`, at the call that starts the chain |
 | TP0221 | `module '<m>' not found`, with help `looked for <path>` / `'python' is not a module`, with help `use 'from python import <module>'` / `'dotnet' is not a module`, with help `use 'from dotnet.<namespace> import <type>'` / `.NET namespace '<ns>' not found` (M21) |
-| TP0222 | `only the main file can have top-level statements` / `a library can't have top-level statements` (M22) |
+| TP0222 | `only the main file can have top-level statements` / `a library can't have top-level statements` (M22) / `a Python extension can't have top-level statements` (M25) |
 | TP0223 | `nested functions cannot have type parameters` |
 | TP0224 | `unknown decorator '@<d>'` / `'@<d>' cannot be used here` (with help `'@dataclass' goes on a class, '@override' on a method`) / `duplicate decorator '@<d>'` |
 | TP0225 | `a class can have only one base class` (protocols aside, M17) / `'<T>' cannot be a base class` / `a dataclass can only derive from a dataclass` (with help `exceptions are plain classes; give it an '__init__'` for an exception base, M16) / `a plain class can only derive from a plain class` / `generic classes cannot be derived from` / `generic classes cannot have a base class` / `'<C>' derives from itself` / `special method '<m>' is not supported` / `a dataclass cannot define '__init__'` / `field without a default follows field with a default` / `'__lt__' must take one parameter of type '<C>' (or a base class) and return bool` / `'<P>' is already declared` (or `already declared by '<B>'`) / `a protocol can only declare methods` / `a protocol method's body must be '...'` / `protocol method parameters cannot have defaults` / `protocols cannot be generic` / `a protocol can only derive from 'Protocol'` (M17) |
@@ -1199,11 +1199,11 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0229 | `'<P>' is a protocol, so it can only be a type parameter bound`, with help `use a bounded type parameter, e.g. 'def f[T: <P>](x: T)'` (M17) |
 | TP0231 | `'<T>.<m>' uses <N>, which Taipan can't use yet` (`<N>` the .NET type, e.g. `Dictionary<string, int>` or `Func<int, bool>`) / `'<N>' can't be imported: generic .NET types aren't supported yet` (M21) |
 | TP0232 | `ambiguous call to '<T>.<m>': it could be '<m>(<P1>)' or '<m>(<P2>)'` (M21) |
-| TP0233 | `a native program can't use Python`, with help `build it without '--native'` / `'<T>.<m>' can't be used in a native program: <message>` (M23) |
+| TP0233 | `a native program can't use Python`, with help `build it without '--native'` / `'<T>.<m>' can't be used in a native program: <message>` (M23) / `a Python extension can't use Python interop itself` (M25) |
 | TP0230 | `type alias '<A>' refers to itself` / `type alias '<A>' refers to itself through '<B>'` (`'<B>' and '<C>'` for longer cycles), with help `use a class for a recursive type` (M18) |
 | TP0300 | `unreachable match arm` / `unreachable except clause`, with help `'<B>' is already caught above` / `unreachable code` (M16) |
 | TP0301 | `this clause catches every exception and discards it`, with help `catch a specific class, re-raise with 'raise', or bind it with 'as e' and use it` (M16) |
-| TP0302 | `'<f>' is not exported: <reason>`, where `<reason>` is `its type parameter '<T>' has a bound` / `'<T>?' has no .NET generic form` / `it uses '<g>', which isn't a .NET generic` / `it uses '<C>', which isn't exported` / `it has its module's name`, with help `rename it '_<f>' to keep it private` (M22) |
+| TP0302 | `'<f>' is not exported: <reason>`, where `<reason>` is `its type parameter '<T>' has a bound` / `'<T>?' has no .NET generic form` / `it uses '<g>', which isn't a .NET generic` / `it uses '<C>', which isn't exported` / `it has its module's name` (M22) / `'<T>' can't be passed to Python` / `it's generic` (M25), with help `rename it '_<f>' to keep it private` |
 
 Types are written as in source: `int`, `str?`, `list[int]`. The type of `None` is written `None`, and a missing value is written `nothing`.
 
@@ -1290,7 +1290,7 @@ Types are written as in source: `int`, `str?`, `list[int]`. The type of `None` i
 - dataclass exceptions (mixing dataclasses and plain classes), and `args` on exceptions
 - format specs in f-strings
 - language server features beyond §16: completion, signature help, find references, rename, semantic tokens, formatting, code actions, incremental sync, workspace-wide diagnostics, and editor extensions
-- emitting CPython extension modules (interop level 3)
+- CPython extension modules beyond §17: classes and enums as Python types, Python functions and objects as arguments, Python interop inside an extension, generic functions, free-threaded CPython, and builds for one exact Python version
 - .NET interop beyond §13: generic methods and generic .NET types (other than the collections of §13.3), delegates and passing Taipan functions to .NET, `async` and `Task`, events, `ref`/`out`/`in` parameters, `params` arrays, indexers, operators, extension methods (LINQ), `object` and `decimal` results, dictionaries, deriving from .NET classes or implementing .NET interfaces, raising .NET exceptions, `isinstance`/`as`/`match` on .NET types, flags enums, namespace imports (`import dotnet.System.IO as io`), and packages with native assets
 - an MSBuild project SDK (`TaipanLang.Sdk`), for building `.tpn` files with `dotnet build` as part of a .NET solution
 - native builds beyond §15: another architecture (`--runtime <rid>`), Python in native programs, native libraries, and size options such as invariant globalization
@@ -1302,10 +1302,11 @@ Types are written as in source: `int`, `str?`, `list[int]`. The type of `None` i
 
 ### 12.1 Commands
 ```
-taipan check <file> [--library | --native]           type-check only, printing diagnostics
-taipan emit  <file> [--library | --native]           print the generated C# (§8)
-taipan build <file> [--library | --native] -o <dir>  write a runnable program, a library (M22, §14),
-                                                     or a native executable (M23, §15) to <dir>
+taipan check <file> [<kind>]                         type-check only, printing diagnostics
+taipan emit  <file> [<kind>]                         print the generated C# (§8)
+taipan build <file> [<kind>] -o <dir>                write a runnable program to <dir>, or with <kind>:
+                                                     --library (M22, §14), --native (M23, §15),
+                                                     or --python-extension (M25, §17)
 taipan run   <file> [-- args]                        compile and run
 taipan lsp [--stdio]                                 run the language server on stdin and stdout (M24, §16)
 taipan --version                                     print "taipan <version>", e.g. "taipan 0.2.0"
@@ -1612,3 +1613,73 @@ This adds a local store per statement and a filter per method; it's emitted only
 
 ### 16.4 Deferred
 §11 lists what's deferred: completion, signature help, find references, rename, semantic tokens, formatting, code actions, incremental document sync, workspace-wide diagnostics, and editor extensions (a VS Code extension, a TextMate grammar).
+
+---
+
+## 17. CPython extension modules (M25)
+`taipan build <file> --python-extension -o <dir>` compiles a Taipan module into a native CPython extension module, through NativeAOT (§15), so Python code can import it and call its functions. This is interop in the other direction from §10.
+
+```python
+# geometry.tpn
+const PI = 3.14159
+
+class NegativeRadius(Exception):
+    pass
+
+def area(r: float) -> float:
+    if r < 0.0:
+        raise NegativeRadius(f"radius {r} is negative")
+    return PI * r * r
+```
+
+```
+$ taipan build geometry.tpn --python-extension -o out
+built out/geometry.abi3.so
+$ cd out && python3 -c "import geometry; print(geometry.area(2.0))"
+12.56636
+```
+
+### 17.1 Building
+- **The module** is `<dir>/<name>.abi3.so` (`<name>.pyd` on Windows), where `<name>` is the file's name without `.tpn`, which is also the Python module's name. Its imports are compiled in, but only its own definitions are exported (§17.2).
+- **Python versions:** the module uses only CPython's stable ABI (the limited API of Python 3.10), so one build imports into any CPython from 3.10 on, for the platform it was built for. Python isn't needed to build it. Free-threaded builds of CPython (`python3.13t`) can't load stable-ABI modules, and aren't supported.
+- **Building** is a NativeAOT build as §15.1 says, of a shared library rather than an executable, with the same requirements (the .NET SDK and the native toolchain), errors (`taipan: …`, exit `2`) and platform. Nothing beside the module is needed to import it; in particular, no .NET runtime.
+- **Restrictions:** an extension module runs natively, so §15.2 applies (`TP0233`): it can't use Python interop (§10) itself, or .NET members that need run-time code generation. Like a library's main file (§14.3), it contains declarations only, so a top-level statement is `TP0222`.
+- `--python-extension` can't be combined with `--library` or `--native` (a usage error). `taipan check <file> --python-extension` and `taipan emit <file> --python-extension` check and emit the module as for a build, with its diagnostics.
+
+### 17.2 What's exported
+The module file's own definitions whose names don't start with `_` (§14.1), as module attributes:
+- **Functions** whose parameter and result types are all *convertible* (§10.3), other than `py`: `int`, `float`, `bool`, `str`, and lists, dicts, tuples and optionals of those, or no result. Each is a Python built-in function (`geometry.area`).
+- **Constants** of convertible types, as attributes holding their values (`geometry.PI`), set when the module is imported.
+- **Exception classes** (§3.10) defined in the file, as Python exception classes named `<name>.<Class>` (`geometry.NegativeRadius`). Each derives from the Python class of its Taipan base: the module's own class for an exported exception class, or the built-in of the same name (§17.4), so `except ValueError` catches a Taipan class deriving from `ValueError`. A base that isn't exported (`_Base`) is skipped for its nearest exported or built-in ancestor.
+- **Not exported (`TP0302`):** a function or constant that uses a type that isn't convertible, such as a class, an enum or a function type, is warning `TP0302`, with `'<T>' can't be passed to Python` as the reason, as is a generic function (`it's generic`). Other classes and enums aren't exported, and aren't warned about.
+
+### 17.3 Calls and conversions
+- **Arguments** are passed by position or by keyword, using the Taipan parameter names, and a parameter with a default may be left out; its default is evaluated at each call, as in Taipan (§4.2). Python's own errors for a wrong call are `TypeError`s with Python's messages: `area() takes 1 positional argument but 2 were given`, `area() got an unexpected keyword argument 'radius'`, `area() missing required argument 'r'`, `area() got multiple values for argument 'r'`.
+- **Each argument converts** from Python to its parameter's Taipan type:
+
+  | Taipan | Python argument |
+  |---|---|
+  | `int` | an `int` (Python's `bool` is an `int`, so `True` is `1`); outside Taipan's 64-bit range, `OverflowError` |
+  | `float` | a `float`, or an `int`, which widens |
+  | `bool` | a `bool` |
+  | `str` | a `str` |
+  | `T?` | `None`, or a `T` |
+  | `list[T]` | a `list` whose elements convert to `T`, copied |
+  | `dict[K, V]` | a `dict` whose keys and values convert, copied in order |
+  | `tuple[A, B, …]` | a `tuple` of that many elements, each converting |
+
+  Anything else is a `TypeError`: `area() argument 'r' must be float, not str`, naming the Taipan type and the Python type of the value that doesn't convert (`must be list[float], not str` for a list holding a `str`).
+- **Results** convert from Taipan to Python as §10.3 says: `int`, `float`, `bool` and `str` to their Python types, lists to new lists, dicts to new dicts, tuples to tuples, and `None` for a `None` optional or a function with no result.
+- Calls run while holding Python's GIL, which Taipan code doesn't release.
+
+### 17.4 Exceptions
+A Taipan exception raised by an exported function, or while the module's constants are evaluated, raises a Python exception whose argument is the Taipan message, so `str(e)` is the message (for `KeyError`, Python quotes it: `str(KeyError("x"))` is `'x'`), and `e.args` is `(message,)`:
+- Taipan's built-in exception classes raise the Python built-ins of the same names: `Exception`, `ArithmeticError`, `ZeroDivisionError`, `OverflowError`, `LookupError`, `IndexError`, `KeyError`, `ValueError`, `TypeError`, `RuntimeError`. Integer overflow is `OverflowError("integer overflow")`.
+- A user exception class raises the module's Python class for it, or for its nearest exported ancestor (§17.2).
+- A .NET exception raises `RuntimeError` with `.NET <class>: <message>`, as an uncaught one panics (§13.6).
+- An exception while the module is imported propagates from Python's `import`.
+
+`print` writes to the process's standard output, as C code does, which may interleave with Python's own buffered `sys.stdout` differently than Python's `print` would.
+
+### 17.5 Deferred
+§11 lists what's deferred: classes and enums as Python types, passing Python functions or objects (`py`) to Taipan functions, Python interop inside an extension module, generic functions, free-threaded CPython, and builds for one exact Python version.

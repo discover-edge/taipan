@@ -146,7 +146,9 @@ public sealed partial class CSharpEmitter
     {
         var emitter = new CSharpEmitter(source, program) { _native = native };
         var code = program.Library is null ? emitter.EmitProgram() : emitter.EmitLibrary();
-        return new EmittedProgram(code, program.Library is null ? emitter._entryClass : null, emitter._diagnostics.ToImmutable(), program.References);
+        // A library and an extension module have no entry point (SPEC §14.4, §17.1).
+        var entry = program.Library is null && program.Extension is null ? emitter._entryClass : null;
+        return new EmittedProgram(code, entry, emitter._diagnostics.ToImmutable(), program.References);
     }
 
     private string UniqueGlobal(string name)
@@ -206,6 +208,11 @@ public sealed partial class CSharpEmitter
         code.Append(_functionsOut);
         code.Append("}\n");
         code.Append(_typesOut);
+        if (_program.Extension is { } extension)
+        {
+            code.Append(ExtensionClass(extension));
+            return code.ToString();
+        }
         code.Append($"\npublic static class {_entryClass}\n{{\n");
         code.Append($"    public static int Main() => {Runtime}.Panic.Run({_programClass}.{_topLevelMethod});\n");
         code.Append("}\n");

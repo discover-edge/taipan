@@ -1,0 +1,1 @@
+tests/cases/m25/tp0233_extension.tpn:2:1: error TP0233: a Python extension can't use Python interop itself

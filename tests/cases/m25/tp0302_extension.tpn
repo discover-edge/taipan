@@ -1,0 +1,33 @@
+# What an extension module can't give Python is warned about, unless it's private (SPEC §17.2).
+@dataclass
+class Point:
+    x: float
+
+enum Size:
+    Small
+    Large
+
+const ORIGIN_X = 0.0
+
+def norm(p: Point) -> float:
+    return p.x
+
+def size_of(n: int) -> Size:
+    if n < 10:
+        return Small
+    return Large
+
+def apply(f: Callable[[int], int], x: int) -> int:
+    return f(x)
+
+def pick(xs: list[Point?]) -> int:
+    return len(xs)
+
+def identity[T](x: T) -> T:
+    return x
+
+def _hidden(p: Point) -> float:
+    return p.x
+
+def fine(xs: dict[str, list[tuple[int, str?]]]) -> int?:
+    return None

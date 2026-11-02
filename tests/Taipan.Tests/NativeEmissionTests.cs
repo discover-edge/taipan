@@ -22,7 +22,7 @@ public class NativeEmissionTests
         var data = new TheoryData<string>();
         foreach (string path in GoldenTests.Cases())
         {
-            string[] skipped = [".library", ".native", ".requires"];
+            string[] skipped = [".library", ".native", ".python-extension", ".requires"];
             if (File.Exists(Path.ChangeExtension(path, ".out")) && !skipped.Any(s => File.Exists(Path.ChangeExtension(path, s))))
                 data.Add(path);
         }

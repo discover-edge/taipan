@@ -1,0 +1,10 @@
+tests/cases/m25/tp0302_extension.tpn:12:5: warning TP0302: 'norm' is not exported: 'Point' can't be passed to Python
+  help: rename it '_norm' to keep it private
+tests/cases/m25/tp0302_extension.tpn:15:5: warning TP0302: 'size_of' is not exported: 'Size' can't be passed to Python
+  help: rename it '_size_of' to keep it private
+tests/cases/m25/tp0302_extension.tpn:20:5: warning TP0302: 'apply' is not exported: 'Callable[[int], int]' can't be passed to Python
+  help: rename it '_apply' to keep it private
+tests/cases/m25/tp0302_extension.tpn:23:5: warning TP0302: 'pick' is not exported: 'Point' can't be passed to Python
+  help: rename it '_pick' to keep it private
+tests/cases/m25/tp0302_extension.tpn:26:5: warning TP0302: 'identity' is not exported: it's generic
+  help: rename it '_identity' to keep it private

@@ -1,0 +1,1 @@
+tests/cases/m25/tp0222_extension.tpn:5:1: error TP0222: a Python extension can't have top-level statements
