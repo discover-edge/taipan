@@ -1,0 +1,70 @@
+# Type errors with special methods and class members (SPEC §4.8).
+class Money:
+    cents: int
+
+    def __init__(self, cents: int):
+        self.cents = cents
+
+    def __add__(self, other: Money) -> Money:
+        return Money(self.cents + other.cents)
+
+    def __eq__(self, other: Money) -> bool:
+        return self.cents == other.cents
+
+    def __lt__(self, other: Money) -> bool:
+        return self.cents < other.cents
+
+    def __str__(self) -> str:
+        return ""
+
+    @property
+    def dollars(self) -> int:
+        return self.cents // 100
+
+    def show(self) -> str:
+        return ""
+
+    @classmethod
+    def make(cls) -> Money:
+        let c = cls
+        print(cls)
+        return cls(0)
+
+let m = Money(1)
+print(m.__add__(m))
+print(m.__str__())
+print(m.__eq__(m))
+let prices: dict[Money, int] = {}
+print(hash([1]))
+print(hash(m))
+print(m <= m)
+print(-m)
+print(m - m)
+print(m + 1)
+print(f"{m:>5}")
+print(Money.dollars)
+print(Money.show())
+let x: ClassVar[int] = 1
+
+class Shape(ABC):
+    @abstractmethod
+    def area(self) -> float: ...
+
+class Square(Shape):
+    @override
+    def area(self) -> float:
+        return super().area()
+
+# '+' would be ambiguous: a subclass's __add__ could take the right operand.
+class Left:
+    pass
+
+class LeftSub(Left):
+    def __add__(self, other: Right) -> int:
+        return 1
+
+class Right:
+    def __radd__(self, other: Left) -> int:
+        return 2
+
+print(Left() + Right())

@@ -130,6 +130,16 @@ public sealed class @Version : global::Taipan.Runtime.IObject
 
     string global::Taipan.Runtime.IObject.TypeName => "Version";
     public override string ToString() => global::Taipan.Runtime.Display.Format(this);
+    bool global::Taipan.Runtime.IClass.TryCompare(int op, object other, out bool result)
+    {
+        if (op == 0 && other is global::@Version @lt_other)
+        {
+            result = this.@__lt__(@lt_other);
+            return true;
+        }
+        result = false;
+        return false;
+    }
 
     public void @__init__(long @n)
     {

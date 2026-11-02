@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using Taipan.Compiler.Syntax;
 using Taipan.Compiler.Diagnostics;
 using Taipan.Compiler.Text;
 
@@ -9,16 +10,16 @@ namespace Taipan.Compiler.Semantics;
 public sealed partial class Binder
 {
     /// <summary>
-    /// A field path, <c>p.x</c> or <c>self.config.port</c> (SPEC §3.9). It can be narrowed when its
-    /// root can't change.
+    /// A field path, <c>p.x</c> or <c>self.config.port</c> (SPEC §3.9), or one rooted at a class
+    /// attribute, <c>C.cache</c> with no fields (§4.8, M28). It can be narrowed when its root can't change.
     /// </summary>
-    private sealed record FieldPath(VariableSymbol Root, ImmutableArray<FieldSymbol> Fields)
+    private sealed record FieldPath(Symbol Root, ImmutableArray<FieldSymbol> Fields)
     {
         public bool Equals(FieldPath? other) => other is not null && other.Root == Root && other.Fields.SequenceEqual(Fields);
 
         public override int GetHashCode() => Fields.Aggregate(Root.GetHashCode(), (hash, field) => HashCode.Combine(hash, field));
 
-        public bool CanNarrow => Root.Kind is VariableKind.Let or VariableKind.Parameter or VariableKind.LoopVariable;
+        public bool CanNarrow => Root is VariableSymbol { Kind: VariableKind.Let or VariableKind.Parameter or VariableKind.LoopVariable } or ClassAttributeSymbol;
     }
 
     // Each ending since the binder started, in order, so a nested region's endings can be applied
@@ -95,6 +96,8 @@ public sealed partial class Binder
             => call.Arguments.Any(a => a.Type is FunctionType or OptionalOf { Inner: FunctionType }),
         BoundSort sort => sort.Keywords.Any(k => k.Name == "key"),
         BoundMethodCall or BoundNew or BoundConstruct or BoundInvoke or BoundSuperCall => true,
+        BoundPropertyGet or BoundClassMethodCall or BoundClsNew => true,
+        _ when RunsSpecialMethod(expr) => true,
         BoundPyCall or BoundPyGetAttr or BoundPyGetItem or BoundDotNetCall or BoundDotNetNew or BoundDotNetMember => true,
         _ => false,
     };
@@ -109,9 +112,22 @@ public sealed partial class Binder
     private BoundExpr EndPathsAfter(BoundExpr bound)
     {
         if (RunsCode(bound) && _narrowing.Types.Keys.Any(k => k is FieldPath))
-            EndPaths(_ => true, $"the call on line {Line(bound.Span)} could have changed it; copy it to a 'let' first");
+            EndPaths(_ => true, CallWhy(bound.Span));
         return bound;
     }
+
+    private string CallWhy(TextSpan span) => $"the call on line {Line(span)} could have changed it; copy it to a 'let' first";
+
+    /// <summary>An assignment to a class attribute ends the paths rooted at it (SPEC §4.8).</summary>
+    private void EndPathsThrough(ClassAttributeSymbol attribute, TextSpan span) =>
+        EndPaths(path => path.Root == attribute,
+            $"the assignment to '{attribute.Owner.Name}.{attribute.Name}' on line {Line(span)} could have changed it; copy it to a 'let' first");
+
+    /// <summary>A class attribute's read, narrowed if it is (SPEC §4.8).</summary>
+    private BoundExpr NarrowedAttribute(BoundClassAttribute attribute) =>
+        KeyOf(attribute) is FieldPath path && _narrowing.Types.TryGetValue(path, out var type)
+            ? new BoundNarrowed(attribute, type, attribute.Span)
+            : attribute;
 
     /// <summary>An assignment to a field ends every path through a field of that name, on any object.</summary>
     private void EndPathsThrough(FieldSymbol field, TextSpan span) =>
@@ -224,6 +240,14 @@ public sealed partial class Binder
                         ? $"it can be None again after the assignment on line {Line(assign.Span)}"
                         : $"it was assigned again on line {Line(assign.Span)}");
                     break;
+                case BoundPropertySet propertySet:
+                    foreach (var path in state.Types.Keys.OfType<FieldPath>())
+                        ended.TryAdd(path, CallWhy(propertySet.Span));
+                    break;
+                case BoundClassAttributeAssign attributeAssign:
+                    foreach (var path in state.Types.Keys.OfType<FieldPath>().Where(p => p.Root == attributeAssign.Attribute))
+                        ended.TryAdd(path, $"the assignment to '{attributeAssign.Attribute.Owner.Name}.{attributeAssign.Attribute.Name}' on line {Line(attributeAssign.Span)} could have changed it; copy it to a 'let' first");
+                    break;
                 case BoundFieldAssign fieldAssign:
                     foreach (var path in state.Types.Keys.OfType<FieldPath>().Where(p => p.Fields.Any(f => f.Name == fieldAssign.Field.Name)))
                         ended.TryAdd(path, $"the assignment to '.{fieldAssign.Field.Name}' on line {Line(fieldAssign.Span)} could have changed it; copy it to a 'let' first");
@@ -265,6 +289,7 @@ public sealed partial class Binder
     {
         BoundVariable variable => variable.Symbol,
         BoundNarrowed narrowed => KeyOf(narrowed.Value),
+        BoundClassAttribute attribute => new FieldPath(attribute.Attribute, []),
         BoundFieldAccess access => KeyOf(access.Target) switch
         {
             VariableSymbol root => new FieldPath(root, [access.Field]),
@@ -288,6 +313,44 @@ public sealed partial class Binder
             : access;
 
     /// <summary>The help for a name or path that isn't narrowed here, saying why; null if nothing would have narrowed it.</summary>
-    private string? WhyNotNarrowed(BoundExpr value) =>
-        KeyOf(value) is { } key && _narrowing.Why.TryGetValue(key, out var why) ? why : null;
+    private string? WhyNotNarrowed(BoundExpr value) => value switch
+    {
+        // A property is code, and isn't narrowed (SPEC §4.8).
+        BoundPropertyGet get => $"'{get.Property.Name}' is a property, so it may change; copy it to a 'let' first",
+        _ => KeyOf(value) is { } key && _narrowing.Why.TryGetValue(key, out var why) ? why : null,
+    };
+
+    /// <summary>
+    /// Whether an operation runs a special method that a class, or a class derived from it, defines
+    /// (SPEC §3.9, §4.8): an operator on a class value, or display, equality, hashing and dict
+    /// lookups on values that hold one.
+    /// </summary>
+    private static bool RunsSpecialMethod(BoundExpr expr) => expr switch
+    {
+        BoundUnary unary => Holds(unary.Operand.Type, "__neg__"),
+        BoundBinary { Op: BinaryOp.Equal or BinaryOp.NotEqual or BinaryOp.In or BinaryOp.NotIn } binary =>
+            Holds(binary.Left.Type, "__eq__", "__hash__") || Holds(binary.Right.Type, "__eq__", "__hash__"),
+        BoundBinary binary when SpecialMethods.Forward(binary.Op) is { } forward =>
+            Holds(binary.Left.Type, forward, SpecialMethods.Reflected(binary.Op)!) || Holds(binary.Right.Type, forward, SpecialMethods.Reflected(binary.Op)!),
+        BoundCall { Function.Builtin: BuiltinFunction.Print or BuiltinFunction.Str or BuiltinFunction.Repr } call =>
+            call.Arguments.Any(a => Holds(a.Type, "__str__", "__repr__")),
+        BoundCall { Function.Builtin: BuiltinFunction.Hash } call => call.Arguments.Any(a => Holds(a.Type, "__hash__")),
+        BoundFormat format => Holds(format.Value.Type, "__str__", "__repr__"),
+        BoundIndex { Target.Type: DictOfType dict } => Holds(dict.Key, "__eq__", "__hash__"),
+        BoundBuiltinMethodCall call => Holds(call.Target.Type, "__eq__", "__hash__"),
+        _ => false,
+    };
+
+    /// <summary>Whether a value of this type could hold a class value that has one of the methods, its own or a derived class's.</summary>
+    private static bool Holds(TaipanType type, params string[] methods) => type switch
+    {
+        ClassType classType => classType.Symbol.MayDefine(methods),
+        // A bounded type parameter's type argument may be a class (SPEC §3.11).
+        TypeParameterType { Symbol.Bound: not null } => true,
+        OptionalOf optional => Holds(optional.Inner, methods),
+        ListOfType list => Holds(list.Element, methods),
+        DictOfType dict => Holds(dict.Key, methods) || Holds(dict.Value, methods),
+        TupleOfType tuple => tuple.Elements.Any(e => Holds(e, methods)),
+        _ => false,
+    };
 }

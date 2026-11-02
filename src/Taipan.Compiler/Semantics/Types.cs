@@ -106,10 +106,10 @@ public sealed record DictOfType(TaipanType Key, TaipanType Value) : TaipanType
 {
     public override string ToString() => $"dict[{Key}, {Value}]";
 
-    /// <summary>Dict keys are int, str, bool, tuples of keys, and plain class instances (SPEC §3.1).</summary>
+    /// <summary>Dict keys are int, str, bool, tuples of keys, and hashable classes (SPEC §3.1, §4.8).</summary>
     public static bool IsValidKey(TaipanType type) =>
         type.IsError || type == Int || type == Str || type == Bool
-        || type is ClassType { Symbol.IsDataclass: false }
+        || type is ClassType { Symbol.IsHashable: true }
         || type is TupleOfType tuple && tuple.Elements.All(IsValidKey)
         || type is TypeParameterType { Symbol.Constraints: [_, ..] constraints } && constraints.All(IsValidKey);
 }

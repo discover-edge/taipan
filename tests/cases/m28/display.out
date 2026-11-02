@@ -1,0 +1,12 @@
+only str OnlyRepr() both
+[<OnlyStr object>] [OnlyRepr()] [OnlyRepr()]
+only str OnlyRepr() both OnlyRepr()
+OnlyRepr() OnlyRepr() "quoted" 3 [1, 2]
+{"k": OnlyRepr()} (OnlyRepr(), 1)
+<1, 2> [<1, 2>]
+Point3(x=1, y=2, z=3) [Point3(x=1, y=2, z=3)]
+hi [Labeled(label="hi")] x
+no such key: a [NotFound("missing a")] missing a
+5 -2 1 0
+True True
+-2

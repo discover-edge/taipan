@@ -51,7 +51,7 @@ public static class TaipanProgram
     }
 }
 
-public sealed class @Box_int : global::Taipan.Runtime.IStruct
+public sealed class @Box_int : global::Taipan.Runtime.IDataclass
 {
     public long @value { get; set; }
 
@@ -86,7 +86,7 @@ public sealed class @Box_int : global::Taipan.Runtime.IStruct
     }
 }
 
-public sealed class @Box_str : global::Taipan.Runtime.IStruct
+public sealed class @Box_str : global::Taipan.Runtime.IDataclass
 {
     public string @value { get; set; }
 
@@ -121,7 +121,7 @@ public sealed class @Box_str : global::Taipan.Runtime.IStruct
     }
 }
 
-public sealed class @Box_float : global::Taipan.Runtime.IStruct
+public sealed class @Box_float : global::Taipan.Runtime.IDataclass
 {
     public double @value { get; set; }
 
@@ -156,7 +156,7 @@ public sealed class @Box_float : global::Taipan.Runtime.IStruct
     }
 }
 
-public sealed class @Box_list_int : global::Taipan.Runtime.IStruct
+public sealed class @Box_list_int : global::Taipan.Runtime.IDataclass
 {
     public global::System.Collections.Generic.List<long> @value { get; set; }
 
@@ -191,7 +191,7 @@ public sealed class @Box_list_int : global::Taipan.Runtime.IStruct
     }
 }
 
-public sealed class @Box_int_opt : global::Taipan.Runtime.IStruct
+public sealed class @Box_int_opt : global::Taipan.Runtime.IDataclass
 {
     public long? @value { get; set; }
 
@@ -226,7 +226,7 @@ public sealed class @Box_int_opt : global::Taipan.Runtime.IStruct
     }
 }
 
-public sealed class @Box_Box_int_opt : global::Taipan.Runtime.IStruct
+public sealed class @Box_Box_int_opt : global::Taipan.Runtime.IDataclass
 {
     public global::@Box_int_opt @value { get; set; }
 
@@ -261,7 +261,7 @@ public sealed class @Box_Box_int_opt : global::Taipan.Runtime.IStruct
     }
 }
 
-public sealed class @Pair_int_str : global::Taipan.Runtime.IStruct
+public sealed class @Pair_int_str : global::Taipan.Runtime.IDataclass
 {
     public long @first { get; set; }
     public string @second { get; set; }
@@ -284,7 +284,7 @@ public sealed class @Pair_int_str : global::Taipan.Runtime.IStruct
     }
 }
 
-public sealed class @Pair_str_int : global::Taipan.Runtime.IStruct
+public sealed class @Pair_str_int : global::Taipan.Runtime.IDataclass
 {
     public string @first { get; set; }
     public long @second { get; set; }

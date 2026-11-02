@@ -1,0 +1,7 @@
+tests/cases/m28/tp0202_members.tpn:11:13: error TP0202: cannot assign to 'total' through 'cls'
+  help: assign 'Counter.total'
+tests/cases/m28/tp0202_members.tpn:17:3: error TP0202: cannot assign to 'doubled': it is a read-only property
+tests/cases/m28/tp0202_members.tpn:18:3: error TP0202: cannot assign to 'total' through 'c'
+  help: assign 'Counter.total'
+tests/cases/m28/tp0202_members.tpn:19:5: error TP0202: cannot assign to 'total' through 'Sub'
+  help: assign 'Counter.total'

@@ -59,9 +59,11 @@ public static class Panic
     private static string MessageFor(TaipanException exception)
     {
         var name = ((IObject)exception).TypeName;
-        if (exception.message.Length == 0)
+        // As Python prints str(e), a class's __str__ gives the text (SPEC §4.8).
+        var text = ((IClass)exception).__str__();
+        if (text.Length == 0)
             return name;
-        return exception.GetType().Assembly == typeof(Panic).Assembly ? exception.message : $"{name}: {exception.message}";
+        return exception.GetType().Assembly == typeof(Panic).Assembly ? text : $"{name}: {text}";
     }
 
     private sealed record Location(string Text);

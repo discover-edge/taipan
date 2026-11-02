@@ -1,0 +1,130 @@
+# Comparison and arithmetic special methods, with Python's reflected forms and subclass priority.
+@dataclass
+class Vec:
+    x: float
+    y: float
+
+    def __add__(self, other: Vec) -> Vec:
+        return Vec(self.x + other.x, self.y + other.y)
+
+    def __sub__(self, other: Vec) -> Vec:
+        return Vec(self.x - other.x, self.y - other.y)
+
+    def __mul__(self, k: float) -> Vec:
+        return Vec(self.x * k, self.y * k)
+
+    def __rmul__(self, k: float) -> Vec:
+        return Vec(self.x * k, self.y * k)
+
+    def __truediv__(self, k: float) -> Vec:
+        return Vec(self.x / k, self.y / k)
+
+    def __neg__(self) -> Vec:
+        return Vec(-self.x, -self.y)
+
+    def __eq__(self, other: Vec) -> bool:
+        return self.x == other.x and self.y == other.y
+
+let v = Vec(1.0, 2.0)
+print(v + Vec(0.5, 0.5), v - v, v * 2, 3 * v, v / 4, -v)
+var w = v
+w *= 2
+w -= Vec(1.0, 1.0)
+print(w, w == Vec(1.0, 3.0))
+
+class Grade:
+    points: int
+
+    def __init__(self, points: int):
+        self.points = points
+
+    def __lt__(self, other: Grade) -> bool:
+        return self.points < other.points
+
+    def __le__(self, other: Grade) -> bool:
+        return self.points <= other.points
+
+    def __gt__(self, other: int) -> bool:
+        return self.points > other
+
+    def __floordiv__(self, n: int) -> int:
+        return self.points // n
+
+    def __mod__(self, n: int) -> int:
+        return self.points % n
+
+    def __rsub__(self, n: int) -> int:
+        return n - self.points
+
+    def __str__(self) -> str:
+        return f"Grade({self.points})"
+
+let a = Grade(70)
+let b = Grade(85)
+print(a < b, a > b, a <= b, a >= b, b <= a)
+print(a > 50, 90 < a, 60 < a)
+print(a // 8, a % 8, 100 - a)
+print(sorted([b, a, Grade(10)]))
+
+# A subclass's reflected method goes first, as in Python.
+class Base:
+    def __eq__(self, other: Base) -> bool:
+        print("Base.__eq__")
+        return True
+
+    def __lt__(self, other: Base) -> bool:
+        print("Base.__lt__")
+        return True
+
+    def __gt__(self, other: Base) -> bool:
+        print("Base.__gt__")
+        return False
+
+    def __add__(self, other: Base) -> str:
+        return "Base.__add__"
+
+    def __radd__(self, other: Base) -> str:
+        return "Base.__radd__"
+
+class Derived(Base):
+    @override
+    def __eq__(self, other: Base) -> bool:
+        print("Derived.__eq__")
+        return False
+
+    @override
+    def __gt__(self, other: Base) -> bool:
+        print("Derived.__gt__")
+        return True
+
+    @override
+    def __radd__(self, other: Base) -> str:
+        return "Derived.__radd__"
+
+let base = Base()
+let derived = Derived()
+print(base == derived)
+print(derived == base)
+print(base != derived)
+print(base < derived)
+print(derived < base)
+print(base + derived)
+print(derived + base)
+print(base + base)
+let bases: list[Base] = [base, derived]
+print(bases[0] + bases[1])
+print(derived in bases, Derived() in bases)
+
+# Without __eq__ on the left's class, a subclass's __eq__ still runs, and identity is last.
+class Plain:
+    pass
+
+class Fussy(Plain):
+    def __eq__(self, other: Plain) -> bool:
+        return isinstance(other, Fussy)
+
+    def __hash__(self) -> int:
+        return 0
+
+let p = Plain()
+print(p == p, p == Plain(), p == Fussy(), Fussy() == Fussy(), Fussy() == p)

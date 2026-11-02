@@ -39,7 +39,7 @@ public static class TaipanProgram
     }
 }
 
-public sealed class @Counter : global::Taipan.Runtime.IStruct
+public sealed class @Counter : global::Taipan.Runtime.IDataclass
 {
     public long @n { get; set; }
 

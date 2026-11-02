@@ -33,7 +33,8 @@ public sealed record FuncDef(
     TypeSyntax? ReturnType, Block Body, TextSpan Span) : TopItem(Span);
 
 /// <summary><c>@name</c> on the line before a class or <c>def</c> (SPEC §2, M15).</summary>
-public sealed record Decorator(Identifier Name, TextSpan Span) : Node(Span);
+/// <summary><c>@name</c>, or <c>@name.member</c> for a property's setter (SPEC §4.8, M28).</summary>
+public sealed record Decorator(Identifier Name, Identifier? Member, TextSpan Span) : Node(Span);
 
 /// <summary>A parameter; <see cref="Default"/> is its default value, if any (SPEC §4.2, M14).</summary>
 public sealed record Param(Identifier Name, TypeSyntax Type, Expr? Default, TextSpan Span) : Node(Span);
@@ -43,10 +44,16 @@ public sealed record ClassDef(
     ImmutableArray<Decorator> Decorators, Identifier Name, ImmutableArray<TypeParam> TypeParams, ImmutableArray<TypeSyntax> Bases,
     ImmutableArray<FieldDef> Fields, ImmutableArray<MethodDef> Methods, TextSpan Span) : TopItem(Span);
 
-/// <summary>A method; <see cref="Params"/> excludes the leading <c>self</c>, whose span is <see cref="Self"/>.</summary>
+/// <summary>What a method's first parameter is: <c>self</c>, <c>cls</c>, or neither (SPEC §4.8, M28).</summary>
+public enum Receiver { Self, Cls, None }
+
+/// <summary>
+/// A method; <see cref="Params"/> excludes the leading <c>self</c> or <c>cls</c>, whose span is
+/// <see cref="ReceiverSpan"/> (empty, at the parameters, for <see cref="Receiver.None"/>).
+/// </summary>
 public sealed record MethodDef(
-    ImmutableArray<Decorator> Decorators, Identifier Name, TextSpan Self, ImmutableArray<Param> Params, TypeSyntax? ReturnType,
-    Block Body, TextSpan Span) : Node(Span);
+    ImmutableArray<Decorator> Decorators, Identifier Name, Receiver Receiver, TextSpan ReceiverSpan, ImmutableArray<Param> Params,
+    TypeSyntax? ReturnType, Block Body, TextSpan Span) : Node(Span);
 
 /// <summary>A class field or variant payload field; only a class field may have a <see cref="Default"/>.</summary>
 public sealed record FieldDef(Identifier Name, TypeSyntax Type, Expr? Default, TextSpan Span) : Node(Span);

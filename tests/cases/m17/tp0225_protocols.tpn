@@ -20,7 +20,7 @@ class Bad:
     def __lt__(self, a: Bad, b: Bad) -> bool:
         return True
 
-class Worse:
+class Worse:  # valid since M28: '__lt__' may take any type (§4.8)
     def __lt__(self, other: int) -> bool:
         return True
 

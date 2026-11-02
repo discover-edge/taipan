@@ -1,0 +1,11 @@
+tests/cases/m28/tp0225_members.tpn:3:5: error TP0225: class attribute 'count' needs a value
+tests/cases/m28/tp0225_members.tpn:5:9: error TP0225: 'no_self' must take 'self' first
+tests/cases/m28/tp0225_members.tpn:9:9: error TP0225: 'no_cls' must take 'cls' first
+tests/cases/m28/tp0225_members.tpn:13:9: error TP0225: a static method takes neither 'self' nor 'cls'
+tests/cases/m28/tp0225_members.tpn:17:9: error TP0225: a property must have a return type
+tests/cases/m28/tp0225_members.tpn:25:9: error TP0225: a setter must take one parameter of type int and return nothing
+tests/cases/m28/tp0225_members.tpn:36:9: error TP0225: a setter must follow its property
+tests/cases/m28/tp0225_members.tpn:41:5: error TP0225: generic classes cannot have class attributes
+tests/cases/m28/tp0225_members.tpn:47:9: error TP0225: generic classes cannot have static methods
+tests/cases/m28/tp0225_members.tpn:51:9: error TP0225: generic classes cannot have class methods
+tests/cases/m28/tp0225_members.tpn:57:9: error TP0225: an abstract method's body must be '...'

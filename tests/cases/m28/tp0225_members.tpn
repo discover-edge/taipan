@@ -1,0 +1,57 @@
+# Receivers, properties, setters, class attributes and abstract methods (SPEC §4.8).
+class C:
+    count: ClassVar[int]
+
+    def no_self() -> int:
+        return 0
+
+    @classmethod
+    def no_cls(self) -> int:
+        return 0
+
+    @staticmethod
+    def with_self(self) -> int:
+        return 0
+
+    @property
+    def nothing(self):
+        pass
+
+    @property
+    def size(self) -> int:
+        return 0
+
+    @size.setter
+    def size(self, value: str):
+        pass
+
+    @property
+    def width(self) -> int:
+        return 0
+
+    def between(self):
+        pass
+
+    @width.setter
+    def width(self, value: int):
+        pass
+
+class Box[T]:
+    item: T
+    total: ClassVar[int] = 0
+
+    def __init__(self, item: T):
+        self.item = item
+
+    @staticmethod
+    def make() -> int:
+        return 0
+
+    @classmethod
+    def build(cls) -> int:
+        return 0
+
+class Shape(ABC):
+    @abstractmethod
+    def area(self) -> float:
+        return 0.0

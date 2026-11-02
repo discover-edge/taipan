@@ -1,0 +1,20 @@
+# Assigning read-only properties and class attributes the wrong way (SPEC §4.8).
+class Counter:
+    total: ClassVar[int] = 0
+
+    @property
+    def doubled(self) -> int:
+        return Counter.total * 2
+
+    @classmethod
+    def bump(cls):
+        cls.total += 1
+
+class Sub(Counter):
+    pass
+
+let c = Counter()
+c.doubled = 3
+c.total = 1
+Sub.total = 2
+Counter.total = 3

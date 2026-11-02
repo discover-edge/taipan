@@ -1,0 +1,25 @@
+Vec(x=1.5, y=2.5) Vec(x=0.0, y=0.0) Vec(x=2.0, y=4.0) Vec(x=3.0, y=6.0) Vec(x=0.25, y=0.5) Vec(x=-1.0, y=-2.0)
+Vec(x=1.0, y=3.0) True
+True False True False False
+True False True
+8 6 30
+[<Grade object>, <Grade object>, <Grade object>]
+Derived.__eq__
+False
+Derived.__eq__
+False
+Derived.__eq__
+True
+Derived.__gt__
+True
+Base.__lt__
+True
+Derived.__radd__
+Base.__add__
+Base.__add__
+Derived.__radd__
+Derived.__eq__
+Derived.__eq__
+Derived.__eq__
+True False
+True False False True False

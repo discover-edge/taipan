@@ -1,0 +1,27 @@
+tests/cases/m28/tp0200_special.tpn:29:17: error TP0200: 'cls' can only be called, or used to reach static and class methods and class attributes
+tests/cases/m28/tp0200_special.tpn:30:15: error TP0200: 'cls' can only be called, or used to reach static and class methods and class attributes
+tests/cases/m28/tp0200_special.tpn:34:9: error TP0200: '__add__' cannot be called directly
+  help: use '+'
+tests/cases/m28/tp0200_special.tpn:35:9: error TP0200: '__str__' cannot be called directly
+  help: use 'str(m)'
+tests/cases/m28/tp0200_special.tpn:36:9: error TP0200: '__eq__' cannot be called directly
+  help: use '=='
+tests/cases/m28/tp0200_special.tpn:37:18: error TP0200: dict keys must be hashable, found Money
+  help: 'Money' defines '__eq__' without '__hash__'
+tests/cases/m28/tp0200_special.tpn:38:12: error TP0200: cannot hash list[int]
+tests/cases/m28/tp0200_special.tpn:39:12: error TP0200: cannot hash Money
+tests/cases/m28/tp0200_special.tpn:40:7: error TP0200: operator '<=' cannot be applied to Money and Money
+  help: define '__le__' on 'Money'
+tests/cases/m28/tp0200_special.tpn:41:7: error TP0200: operator '-' cannot be applied to Money
+  help: define '__neg__' on 'Money'
+tests/cases/m28/tp0200_special.tpn:42:7: error TP0200: operator '-' cannot be applied to Money and Money
+  help: define '__sub__' on 'Money'
+tests/cases/m28/tp0200_special.tpn:43:7: error TP0200: operator '+' cannot be applied to Money and int
+  help: define '__add__' on 'Money'
+tests/cases/m28/tp0200_special.tpn:44:12: error TP0200: format specs apply to int, float and str, found Money
+  help: convert it with str() first
+tests/cases/m28/tp0200_special.tpn:45:13: error TP0200: 'dollars' is a property; read it from an instance
+tests/cases/m28/tp0200_special.tpn:46:13: error TP0200: 'show' needs an instance of 'Money'
+tests/cases/m28/tp0200_special.tpn:47:8: error TP0200: 'ClassVar' can only annotate a class attribute
+tests/cases/m28/tp0200_special.tpn:56:24: error TP0200: 'Shape.area' is abstract
+tests/cases/m28/tp0200_special.tpn:70:7: error TP0200: '+' on Left and Right is ambiguous: 'LeftSub.__add__' would run when it fits

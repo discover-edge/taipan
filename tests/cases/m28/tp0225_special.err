@@ -1,0 +1,15 @@
+tests/cases/m28/tp0225_special.tpn:3:9: error TP0225: '__str__' must be 'def __str__(self) -> str'
+tests/cases/m28/tp0225_special.tpn:6:9: error TP0225: '__repr__' must be 'def __repr__(self) -> str'
+tests/cases/m28/tp0225_special.tpn:9:9: error TP0225: '__eq__' must be 'def __eq__(self, other: Wrong) -> bool'
+tests/cases/m28/tp0225_special.tpn:12:9: error TP0225: '__hash__' must be 'def __hash__(self) -> int'
+tests/cases/m28/tp0225_special.tpn:15:9: error TP0225: '__lt__' must be 'def __lt__(self, other: T) -> bool'
+tests/cases/m28/tp0225_special.tpn:18:9: error TP0225: '__add__' must be 'def __add__(self, other: T) -> R'
+tests/cases/m28/tp0225_special.tpn:21:9: error TP0225: '__sub__' must be 'def __sub__(self, other: T) -> R'
+tests/cases/m28/tp0225_special.tpn:24:9: error TP0225: '__neg__' must be 'def __neg__(self) -> R'
+tests/cases/m28/tp0225_special.tpn:27:9: error TP0225: '__mul__' must be 'def __mul__(self, other: T) -> R'
+tests/cases/m28/tp0225_special.tpn:30:9: error TP0225: special method '__bool__' is not supported
+tests/cases/m28/tp0225_special.tpn:33:9: error TP0225: special method '__len__' is not supported
+tests/cases/m28/tp0225_special.tpn:40:7: error TP0225: 'EqOnly' would not be hashable, but its base 'Key' is
+  help: define '__hash__'
+tests/cases/m28/tp0225_special.tpn:52:7: error TP0225: 'Point3' would not be hashable, but its base 'Point' is
+  help: define '__hash__'

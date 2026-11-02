@@ -1,0 +1,2 @@
+tests/cases/m28/tp0201_static.tpn:7:16: error TP0201: undefined name 'self'
+tests/cases/m28/tp0201_static.tpn:11:16: error TP0201: undefined name 'self'

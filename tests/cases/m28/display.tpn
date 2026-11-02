@@ -1,0 +1,68 @@
+# __str__ and __repr__: str() falls back to __repr__, containers use __repr__.
+class OnlyStr:
+    def __str__(self) -> str:
+        return "only str"
+
+class OnlyRepr:
+    def __repr__(self) -> str:
+        return "OnlyRepr()"
+
+class Both(OnlyRepr):
+    def __str__(self) -> str:
+        return "both"
+
+let s = OnlyStr()
+let r = OnlyRepr()
+let b = Both()
+print(s, r, b)
+print([s], [r], [b])
+print(f"{s} {r!r} {b!s} {b!r}")
+print(repr(r), repr(b), repr("quoted"), repr(3), repr([1, 2]))
+print({"k": b}, (r, 1))
+
+@dataclass
+class Point:
+    x: int
+    y: int
+
+    def __repr__(self) -> str:
+        return f"<{self.x}, {self.y}>"
+
+@dataclass
+class Point3(Point):
+    z: int
+
+@dataclass
+class Labeled:
+    label: str
+
+    def __str__(self) -> str:
+        return self.label
+
+print(Point(1, 2), [Point(1, 2)])
+print(Point3(1, 2, 3), [Point3(1, 2, 3)])
+print(Labeled("hi"), [Labeled("hi")], str(Labeled("x")))
+
+class NotFound(Exception):
+    key: str
+
+    def __init__(self, key: str):
+        self.key = key
+        super().__init__(f"missing {key}")
+
+    def __str__(self) -> str:
+        return f"no such key: {self.key}"
+
+try:
+    raise NotFound("a")
+except NotFound as e:
+    print(e, [e], e.message)
+
+print(hash(5), hash(-1), hash(True), hash(0))
+print(hash("a") == hash("a"), hash((1, "x")) == hash((1, "x")))
+
+class Hashed:
+    def __hash__(self) -> int:
+        return -1
+
+print(hash(Hashed()))

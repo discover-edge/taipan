@@ -30,6 +30,12 @@ public class TaipanException : Exception, IObject
     // A built-in class's name is its C# name; a compiled subclass gives its own.
     string IObject.TypeName => GetType() == typeof(TaipanException) ? "Exception" : GetType().Name;
 
+    // An exception displays as its message, and inside a container with its class (SPEC §6), unless
+    // its class defines __str__ or __repr__ (SPEC §4.8).
+    string IClass.__str__() => message;
+
+    string IClass.__repr__() => $"{((IObject)this).TypeName}({Display.Repr(message)})";
+
     public override string Message => message;
 
     public override string ToString() => Display.Format(this);

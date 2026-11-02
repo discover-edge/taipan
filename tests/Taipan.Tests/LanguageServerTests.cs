@@ -139,6 +139,27 @@ public class LanguageServerTests
     }
 
     [Fact]
+    public void HoverShowsClassMembers()
+    {
+        var path = Path.Combine(Root, "tests", "cases", "m28", "members.tpn");
+        var text = File.ReadAllText(path);
+        var session = new Session().Open(path, text)
+            .Hover(path, text, "fahrenheit)")
+            .Hover(path, text, "freezing(), t")
+            .Hover(path, text, "parse(\"21.5\")")
+            .Hover(path, text, "created, Reading")
+            .Run();
+        Assert.Equal(
+            [
+                "@property def Temperature.fahrenheit(self) -> float",
+                "@staticmethod def Temperature.freezing() -> Temperature",
+                "@classmethod def Temperature.parse(cls, text: str) -> Temperature",
+                "Temperature.created: ClassVar[int]",
+            ],
+            session.Responses().Select(r => r["result"]?["contents"]?["value"]?.GetValue<string>()?.Split('\n')[1]));
+    }
+
+    [Fact]
     public void HoverShowsDotNetSignatures()
     {
         var path = Path.Combine(Root, "tests", "cases", "m21", "strings.tpn");

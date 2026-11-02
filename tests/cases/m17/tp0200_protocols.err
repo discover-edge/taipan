@@ -4,9 +4,9 @@ tests/cases/m17/tp0200_protocols.tpn:34:12: error TP0200: operator '<' cannot be
 tests/cases/m17/tp0200_protocols.tpn:37:13: error TP0200: '__lt__' cannot be called directly
   help: use '<'
 tests/cases/m17/tp0200_protocols.tpn:38:12: error TP0200: operator '<=' cannot be applied to Version and Version
-  help: '__lt__' defines only '<' and '>'
+  help: define '__le__' on 'Version'
 tests/cases/m17/tp0200_protocols.tpn:38:22: error TP0200: operator '>=' cannot be applied to Version and Version
-  help: '__lt__' defines only '<' and '>'
+  help: define '__ge__' on 'Version'
 tests/cases/m17/tp0200_protocols.tpn:40:1: error TP0200: 'Point' does not satisfy 'Comparable': it has no method '__lt__'
 tests/cases/m17/tp0200_protocols.tpn:41:1: error TP0200: 'bool' does not satisfy 'Comparable': it has no method '__lt__'
 tests/cases/m17/tp0200_protocols.tpn:43:1: error TP0200: 'int?' does not satisfy 'Comparable': it has no method '__lt__'

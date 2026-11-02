@@ -1,0 +1,13 @@
+# A property is a use of self until the object is complete (SPEC §4.8).
+class Box:
+    width: int
+    height: int
+
+    def __init__(self, width: int):
+        self.width = width
+        print(self.area)
+        self.height = 1
+
+    @property
+    def area(self) -> int:
+        return self.width * self.height

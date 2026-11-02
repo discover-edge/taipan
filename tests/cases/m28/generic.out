@@ -1,0 +1,6 @@
+Pair(1, 4) True True
+Pair("x", "q") [Pair("x", "q")] Pair("x", "q")
+a False False
+Rank(1) [Rank(1), Rank(2), Rank(3)]
+Reversed.__gt__
+False

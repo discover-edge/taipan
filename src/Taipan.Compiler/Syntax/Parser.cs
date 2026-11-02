@@ -285,7 +285,7 @@ public sealed class Parser
         return new ExprStmt(new ErrorExpr(Here), Here);
     }
 
-    // decorator = "@" NAME NEWLINE
+    // decorator = "@" NAME [ "." NAME ] NEWLINE
     private ImmutableArray<Decorator> ParseDecorators()
     {
         var decorators = ImmutableArray.CreateBuilder<Decorator>();
@@ -293,9 +293,15 @@ public sealed class Parser
         {
             var start = Next().Span.Start;
             var name = ExpectIdentifier();
+            Identifier? member = null;
+            if (At(TokenKind.Dot))
+            {
+                Next();
+                member = ExpectIdentifier();
+            }
             var span = SpanFrom(start);
             Expect(TokenKind.Newline);
-            decorators.Add(new Decorator(name, span));
+            decorators.Add(new Decorator(name, member, span));
         }
         return decorators.ToImmutable();
     }
@@ -443,23 +449,29 @@ public sealed class Parser
         return field;
     }
 
-    // method_def = { decorator } "def" NAME "(" "self" [ "," params ] ")" [ "->" type ] ":" ( block | "..." NEWLINE )
+    // method_def    = { decorator } "def" NAME "(" [ method_params ] ")" [ "->" type ] ":" ( block | "..." NEWLINE )
+    // method_params = ( "self" | "cls" ) { "," param } [ "," ] | params
+    // Which receiver a method needs depends on its decorators, so the binder checks it (SPEC §2, M28).
     private MethodDef ParseMethodDef(int start, ImmutableArray<Decorator> decorators)
     {
         Expect(TokenKind.DefKeyword);
         var name = ExpectIdentifier();
         Expect(TokenKind.OpenParen);
 
-        var self = Here;
-        if (At(TokenKind.Name) && Current.Text == "self")
-            self = Next().Span;
-        else
-            ReportExpected("'self'");
-
+        var (receiver, receiverSpan) = (Receiver.None, Here);
         var parameters = ImmutableArray<Param>.Empty;
-        if (At(TokenKind.Comma))
+        if (At(TokenKind.Name) && Current.Text is "self" or "cls" && Peek(1).Kind != TokenKind.Colon)
         {
-            Next();
+            receiver = Current.Text == "self" ? Receiver.Self : Receiver.Cls;
+            receiverSpan = Next().Span;
+            if (At(TokenKind.Comma))
+            {
+                Next();
+                parameters = ParseParams();
+            }
+        }
+        else
+        {
             parameters = ParseParams();
         }
         Expect(TokenKind.CloseParen);
@@ -477,7 +489,7 @@ public sealed class Parser
 
         Expect(TokenKind.Colon);
         var body = At(TokenKind.Ellipsis) ? ParseEllipsisBody() : ParseBlock();
-        return new MethodDef(decorators, name, self, parameters, returnType, body, SpanFrom(start));
+        return new MethodDef(decorators, name, receiver, receiverSpan, parameters, returnType, body, SpanFrom(start));
     }
 
     // enum_def = "enum" NAME [ type_params ] ":" NEWLINE INDENT variant { variant } DEDENT

@@ -1,0 +1,16 @@
+13.00 EUR
+total: 13.00 EUR, repr: Money(1300, "EUR")
+15.50 EUR
+10.50 EUR
+True
+False True
+False
+sale
+True
+none
+2 {Money(1300, "EUR"): "sale", Money(500, "USD"): "changed"}
+[Money(1050, "EUR"), Money(250, "EUR")]
+True
+True
+True
+13.00 EUR

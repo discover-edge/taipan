@@ -1,0 +1,64 @@
+# Special methods on a generic class, through a bounded type parameter, and when sorting a
+# class with subclasses (SPEC §3.11, §4.8).
+class Pair[T]:
+    first: T
+    second: T
+
+    def __init__(self, first: T, second: T):
+        self.first = first
+        self.second = second
+
+    def __add__(self, other: Pair[T]) -> Pair[T]:
+        return Pair(self.first, other.second)
+
+    def __eq__(self, other: Pair[T]) -> bool:
+        return self.first == other.first and self.second == other.second
+
+    def __hash__(self) -> int:
+        return 7
+
+    def __repr__(self) -> str:
+        return f"Pair({self.first!r}, {self.second!r})"
+
+let a = Pair(1, 2)
+let b = Pair(3, 4)
+print(a + b, a == Pair(1, 2), a != b)
+let names = Pair("x", "y") + Pair("p", "q")
+print(names, [names], str(names))
+let seen: dict[Pair[int], str] = {a: "a"}
+print(seen[Pair(1, 2)], Pair(3, 4) in seen, b in seen)
+
+class Rank:
+    n: int
+
+    def __init__(self, n: int):
+        self.n = n
+
+    def __lt__(self, other: Rank) -> bool:
+        return self.n < other.n
+
+    def __gt__(self, other: Rank) -> bool:
+        return self.n > other.n
+
+    def __repr__(self) -> str:
+        return f"Rank({self.n})"
+
+class Reversed(Rank):
+    @override
+    def __gt__(self, other: Rank) -> bool:
+        print("Reversed.__gt__")
+        return self.n < other.n
+
+def smallest[T: Comparable](xs: list[T]) -> T?:
+    var best: T? = None
+    for x in xs:
+        if best is some b:
+            if x < b:
+                best = x
+        else:
+            best = x
+    return best
+
+let ranks: list[Rank] = [Rank(3), Rank(1), Rank(2)]
+print(smallest(ranks), sorted(ranks))
+print(Rank(1) < Reversed(5))

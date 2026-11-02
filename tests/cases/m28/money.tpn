@@ -1,0 +1,59 @@
+# M28 acceptance: a Money class with __add__, __eq__, __hash__ and __str__ works with +, ==,
+# as a dict key, and in f-strings, as in Python.
+class Money:
+    cents: int
+    currency: str
+
+    def __init__(self, cents: int, currency: str):
+        self.cents = cents
+        self.currency = currency
+
+    def __add__(self, other: Money) -> Money:
+        return Money(self.cents + other.cents, self.currency)
+
+    def __radd__(self, other: int) -> Money:
+        return Money(self.cents + other, self.currency)
+
+    def __eq__(self, other: Money) -> bool:
+        return self.cents == other.cents and self.currency == other.currency
+
+    def __hash__(self) -> int:
+        return hash((self.cents, self.currency))
+
+    def __str__(self) -> str:
+        return f"{self.cents // 100}.{self.cents % 100:02d} {self.currency}"
+
+    def __repr__(self) -> str:
+        return f"Money({self.cents}, {self.currency!r})"
+
+let a = Money(1050, "EUR")
+let b = Money(250, "EUR")
+let total = a + b
+print(total)
+print(f"total: {total}, repr: {total!r}")
+print(str(a + b + b))
+print(0 + a)
+
+print(a + b == Money(1300, "EUR"))
+print(a == b, a != b)
+print(Money(1, "USD") == Money(1, "EUR"))
+
+var prices: dict[Money, str] = {}
+prices[Money(1300, "EUR")] = "sale"
+prices[Money(500, "USD")] = "full"
+print(prices[total])
+print(Money(500, "USD") in prices)
+print(prices.get(Money(1, "USD")) ?? "none")
+prices[Money(500, "USD")] = "changed"
+print(len(prices), prices)
+
+let wallet = [a, b]
+print(wallet)
+print(Money(250, "EUR") in wallet)
+print(wallet == [Money(1050, "EUR"), Money(250, "EUR")])
+print(hash(a) == hash(Money(1050, "EUR")))
+
+var sum = Money(0, "EUR")
+for m in wallet:
+    sum += m
+print(sum)

@@ -1,0 +1,10 @@
+# A class attribute's value is evaluated once, before any code runs (SPEC §4.8).
+def seed() -> int:
+    return 1
+
+class C:
+    ok: ClassVar[list[int]] = [1, -2, 3 * 4]
+    none: ClassVar[str?] = None
+    pairs: ClassVar[dict[str, tuple[int, str]]] = {"a": (1, "b")}
+    bad: ClassVar[int] = seed()
+    other: ClassVar[int] = len("x")

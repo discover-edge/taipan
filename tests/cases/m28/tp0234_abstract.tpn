@@ -1,0 +1,37 @@
+# Abstract classes can't be instantiated (SPEC §4.8).
+class Shape(ABC):
+    @abstractmethod
+    def area(self) -> float: ...
+
+    @abstractmethod
+    def perimeter(self) -> float: ...
+
+    @classmethod
+    def unit(cls) -> Shape:
+        return cls()
+
+class Square(Shape):
+    @override
+    def area(self) -> float:
+        return 1.0
+
+class Full(Square):
+    @override
+    def perimeter(self) -> float:
+        return 4.0
+
+let a = Shape()
+let b = Square()
+let c = Full()
+
+class Maker(ABC):
+    def __init__(self):
+        pass
+
+    @classmethod
+    def make(cls) -> Maker:
+        return cls()
+
+class Late(Maker):
+    @abstractmethod
+    def run(self) -> int: ...
