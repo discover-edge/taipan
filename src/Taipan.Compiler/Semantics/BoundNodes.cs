@@ -17,7 +17,23 @@ public sealed record BoundProgram(
 {
     /// <summary>The .NET assemblies the program compiles and runs against, if it uses .NET (SPEC §13.2); else empty.</summary>
     public ImmutableArray<string> References { get; init; } = [];
+
+    /// <summary>How a program bound as a library is exported (SPEC §14); null for a program.</summary>
+    public BoundLibrary? Library { get; init; }
 }
+
+/// <summary>
+/// A library's namespace and modules, main file first; the definitions it exports; and the generic
+/// definitions emitted as .NET generics rather than monomorphized (SPEC §14.2).
+/// </summary>
+public sealed record BoundLibrary(
+    string Namespace, ImmutableArray<BoundModule> Modules, ImmutableHashSet<Symbol> Exported, ImmutableHashSet<Symbol> Generic);
+
+/// <summary>One file of a library: its definitions, and the modules it imports, which it initializes first (SPEC §14.3).</summary>
+public sealed record BoundModule(
+    string Name, SourceText Source, ImmutableArray<string> Imports, ImmutableArray<FunctionSymbol> Functions,
+    ImmutableArray<ClassSymbol> Classes, ImmutableArray<EnumSymbol> Enums, ImmutableArray<BoundConstant> Constants,
+    ImmutableArray<BoundPythonImport> PythonImports);
 
 /// <summary>A class; <see cref="Methods"/> includes its own <c>__init__</c>, if it writes one (SPEC §4.3).</summary>
 public sealed record BoundClass(ClassSymbol Symbol, ImmutableArray<BoundFunction> Methods, TextSpan Span);

@@ -11,7 +11,7 @@ namespace Taipan.Compiler.Emit;
 /// <param name="EntryClass">The class holding <c>Main</c>, to pass to the C# compiler.</param>
 /// <param name="Diagnostics">Errors found while instantiating generics (TP0219); the code is unusable if there are any.</param>
 /// <param name="References">The .NET assemblies it compiles and runs against beyond the defaults (SPEC §13.2).</param>
-public sealed record EmittedProgram(string Code, string EntryClass, ImmutableArray<Diagnostic> Diagnostics, ImmutableArray<string> References);
+public sealed record EmittedProgram(string Code, string? EntryClass, ImmutableArray<Diagnostic> Diagnostics, ImmutableArray<string> References);
 
 /// <summary>
 /// Emits one C# compilation unit for a bound program (SPEC §8). Every statement is preceded by a
@@ -41,6 +41,9 @@ public sealed partial class CSharpEmitter
     private StringBuilder _out;
     private readonly HashSet<string> _globalNames;
     private readonly string _programClass;
+
+    // The program class, fully qualified.
+    private readonly string _programPath;
     private readonly string _topLevelMethod;
     private readonly string _entryClass;
 
@@ -93,7 +96,11 @@ public sealed partial class CSharpEmitter
         _source = source;
         _lineSource = source;
         _program = program;
+        _library = program.Library;
         _globalNames = [.. program.Enums.SelectMany(e => e.Variants.Select(v => v.Name))];
+        // A library's module classes share its namespace with its internal types (SPEC §14.1).
+        if (_library is not null)
+            _globalNames.UnionWith(_library.Modules.Select(m => m.Name));
         IEnumerable<Symbol> definitions =
         [
             .. program.PythonImports.Select(p => p.Symbol),
@@ -120,16 +127,19 @@ public sealed partial class CSharpEmitter
         }
         foreach (var classDef in program.Classes)
             _classes[classDef.Symbol] = classDef;
-        _programClass = UniqueGlobal("TaipanProgram");
+        _programClass = UniqueGlobal(_library is null ? "TaipanProgram" : "TaipanLibrary");
+        _programPath = _library is null ? $"global::{_programClass}" : $"global::{_library.Namespace}.{_programClass}";
         _topLevelMethod = UniqueGlobal("TopLevel");
         _entryClass = UniqueGlobal("TaipanEntry");
+        if (_library is not null)
+            SetUpLibrary(_library);
     }
 
     public static EmittedProgram Emit(SourceText source, BoundProgram program)
     {
         var emitter = new CSharpEmitter(source, program);
-        var code = emitter.EmitProgram();
-        return new EmittedProgram(code, emitter._entryClass, emitter._diagnostics.ToImmutable(), program.References);
+        var code = program.Library is null ? emitter.EmitProgram() : emitter.EmitLibrary();
+        return new EmittedProgram(code, program.Library is null ? emitter._entryClass : null, emitter._diagnostics.ToImmutable(), program.References);
     }
 
     private string UniqueGlobal(string name)
@@ -198,6 +208,12 @@ public sealed partial class CSharpEmitter
     private void EmitInstance(Instance instance)
     {
         (_depth, _rootSpan, _rootSource) = (instance.Depth, instance.RootSpan, instance.RootSource);
+        // In a library, instances are internal (SPEC §14.2).
+        if (_library is not null)
+        {
+            _currentModule = _moduleOf[instance.Definition];
+            _typeAccess = "internal";
+        }
         switch (instance.Definition)
         {
             case FunctionSymbol function:
@@ -223,6 +239,7 @@ public sealed partial class CSharpEmitter
                 break;
         }
         _map = [];
+        _typeAccess = "public";
     }
 
     /// <summary>
@@ -288,6 +305,7 @@ public sealed partial class CSharpEmitter
     private string ClassName(TaipanType owner) => Concrete(owner) switch
     {
         ClassType { TypeArguments.IsEmpty: true } s => _names[s.Symbol],
+        ClassType s when IsNetGeneric(s.Symbol) => _names[s.Symbol],
         ClassType s => InstanceName(s.Symbol, s.TypeArguments),
         _ => throw new InvalidOperationException($"no class for {owner}"),
     };
@@ -349,7 +367,8 @@ public sealed partial class CSharpEmitter
             : isInit ? (owner.Base is null ? "" : "new ")
             : symbol.Overrides is not null ? "override "
             : owner.HasSubclasses ? "virtual " : "";
-        Line($"public {modifier}{TypeName(symbol.ReturnType)} @{name ?? symbol.Name}({parameters})");
+        var typeParameters = owner is null && IsNetGeneric(symbol) ? TypeParameterList(symbol.TypeParameters) : "";
+        Line($"{MemberAccess(symbol.Name)} {modifier}{TypeName(symbol.ReturnType)} @{name ?? symbol.Name}{typeParameters}({parameters})");
         Line("{");
         _indent++;
         if (isInit)
@@ -364,10 +383,12 @@ public sealed partial class CSharpEmitter
             if (symbol.DefaultFor(i) is not { } value)
                 continue;
             if (!isMethod)
-                EmitDefault(value, symbol.Parameters[i].Type, DefaultName(name ?? symbol.Name, symbol, i), "static ");
+                EmitDefault(value, symbol.Parameters[i].Type, DefaultName(name ?? symbol.Name, symbol, i) + typeParameters, "static ");
             else
                 EmitDefault(value, symbol.Parameters[i].Type, MethodDefaultName(symbol, i), DefaultModifier(symbol, i));
         }
+        if (_library is not null && isMethod && !isInit && symbol.Overrides is null)
+            EmitMethodOverloads(symbol);
         _self = null;
     }
 
@@ -399,9 +420,12 @@ public sealed partial class CSharpEmitter
     {
         _locals = LocalNames.For([], new BoundBlock([new BoundExprStmt(value, value.Span)], value.Span), _globalNames);
         Line();
-        Line($"public {modifier}{TypeName(type)} @{name}()");
+        Line($"{HelperAccess} {modifier}{TypeName(type)} @{name}()");
         Line("{");
         _indent++;
+        // A library's helpers can run first in a module, in a constructor's arguments (SPEC §14.3).
+        if (_library is not null)
+            Line($"{InitCall(_currentModule!)};");
         LineDirective(value.Span);
         Line($"return {Expr(value)};");
         HiddenDirective();
@@ -437,7 +461,7 @@ public sealed partial class CSharpEmitter
     // A class's base list: its base class, or nothing, then the runtime interface it implements,
     // listed again in a subclass to give it its own TypeName (SPEC §8).
     private string BaseList(ClassSymbol symbol, string runtimeInterface) =>
-        symbol.Base is { } baseClass ? $"global::@{_names[baseClass]}, {Runtime}.{runtimeInterface}" : $"{Runtime}.{runtimeInterface}";
+        symbol.Base is { } baseClass ? $"{TypePath(baseClass)}, {Runtime}.{runtimeInterface}" : $"{Runtime}.{runtimeInterface}";
 
     private void EmitClass(BoundClass classDef, string className)
     {
@@ -456,11 +480,11 @@ public sealed partial class CSharpEmitter
     private void EmitDataclass(BoundClass classDef, string className)
     {
         var symbol = classDef.Symbol;
-        Line($"public {(symbol.HasSubclasses ? "" : "sealed ")}class @{className} : {BaseList(symbol, "IStruct")}");
+        Line($"{_typeAccess} {(symbol.HasSubclasses ? "" : "sealed ")}class @{className}{TypeParameterList(symbol)} : {BaseList(symbol, "IStruct")}");
         Line("{");
         _indent++;
         foreach (var field in symbol.Fields)
-            Line($"public {TypeName(field.Type)} @{FieldName(className, field)} {{ get; set; }}");
+            Line($"{MemberAccess(field.Name)} {TypeName(field.Type)} @{FieldName(className, field)} {{ get; set; }}");
         Line();
 
         var all = symbol.AllFields;
@@ -469,9 +493,13 @@ public sealed partial class CSharpEmitter
         var baseCall = inherited.IsEmpty ? "" : $" : base({string.Join(", ", inherited.Select(f => $"@{Member(f, symbol.Type)}"))})";
         Line($"public @{className}({parameters}){baseCall}");
         Line("{");
+        if (_library is not null)
+            Line($"    {InitCall(_currentModule!)};");
         foreach (var field in symbol.Fields)
             Line($"    this.@{FieldName(className, field)} = @{FieldName(className, field)};");
         Line("}");
+        if (_library is not null)
+            EmitDataclassOverloads(symbol, className);
         Line();
 
         var fields = string.Join(", ", all.Select(f => $"(\"{f.Name}\", (object?)this.@{Member(f, symbol.Type)})"));
@@ -495,22 +523,31 @@ public sealed partial class CSharpEmitter
     private void EmitPlainClass(BoundClass classDef, string className)
     {
         var symbol = classDef.Symbol;
-        Line($"public {(symbol.HasSubclasses ? "" : "sealed ")}class @{className} : {BaseList(symbol, "IObject")}");
+        var self = $"@{className}{TypeParameterList(symbol)}";
+        Line($"{_typeAccess} {(symbol.HasSubclasses ? "" : "sealed ")}class {self} : {BaseList(symbol, "IObject")}");
         Line("{");
         _indent++;
         foreach (var field in symbol.Fields)
-            Line($"public {TypeName(field.Type)} @{FieldName(className, field)} {{ get; set; }} = default!;");
+            Line($"{MemberAccess(field.Name)} {TypeName(field.Type)} @{FieldName(className, field)} {{ get; set; }} = default!;");
         if (!symbol.Fields.IsEmpty)
             Line();
-        Line($"{(symbol.HasSubclasses ? "protected" : "private")} @{className}() {{ }}");
-        Line();
-
         var constructor = symbol.Constructor;
         var parameters = string.Join(", ", constructor.Parameters.Select(p => $"{TypeName(p.Type)} @{p.Name}"));
         var arguments = string.Join(", ", constructor.Parameters.Select(p => $"@{p.Name}"));
-        Line($"public static @{className} @__new__({parameters})");
+        if (_library is null)
+        {
+            Line($"{(symbol.HasSubclasses ? "protected" : "private")} @{className}() {{ }}");
+        }
+        else
+        {
+            EmitHiddenConstructor(symbol, className);
+            EmitPublicConstructors(symbol, className, parameters, arguments);
+        }
+        Line();
+
+        Line($"{HelperAccess} static {self} @__new__({parameters})");
         Line("{");
-        Line($"    var @__self = new @{className}();");
+        Line($"    var @__self = new {self}({(_library is null ? "" : HiddenArgument)});");
         Line($"    @__self.@__init__({arguments});");
         Line("    return @__self;");
         Line("}");
@@ -523,7 +560,7 @@ public sealed partial class CSharpEmitter
         {
             // Without its own __init__, a class sets its defaults and passes its arguments on (SPEC §4.3).
             Line();
-            Line($"public {(symbol.Base is null ? "" : "new ")}void @__init__({parameters})");
+            Line($"{MemberAccess("__init__")} {(symbol.Base is null ? "" : "new ")}void @__init__({parameters})");
             Line("{");
             _indent++;
             EmitFieldDefaults(symbol);
@@ -558,7 +595,8 @@ public sealed partial class CSharpEmitter
     private void EmitEnum(EnumSymbol symbol, string className)
     {
         var variantInterface = $"{Runtime}.IVariant";
-        Line($"public abstract record @{className}");
+        var self = $"@{className}{TypeParameterList(symbol.TypeParameters, IsNetGeneric(symbol))}";
+        Line($"{_typeAccess} abstract record {self}");
         Line("{");
         _indent++;
         Line($"private @{className}() {{ }}");
@@ -568,7 +606,7 @@ public sealed partial class CSharpEmitter
         {
             Line();
             var parameters = string.Join(", ", variant.Fields.Select(f => $"{TypeName(f.Type)} @{FieldName(variant.Name, f)}"));
-            Line($"public sealed record @{variant.Name}({parameters}) : @{className}, {variantInterface}");
+            Line($"public sealed record @{variant.Name}({parameters}) : {self}, {variantInterface}");
             Line("{");
             _indent++;
             var fields = string.Join(", ", variant.Fields.Select(f => $"(\"{f.Name}\", (object?)this.@{FieldName(variant.Name, f)})"));
@@ -920,7 +958,7 @@ public sealed partial class CSharpEmitter
             _globalNames.Add(cached.Field);
             _functionValues[value.Function] = cached;
         }
-        return $"global::{_programClass}.@{cached.Field}";
+        return $"{_programPath}.@{cached.Field}";
     }
 
     // A value tuple with explicit element types, so each value converts to its element's type.
@@ -1173,12 +1211,16 @@ public sealed partial class CSharpEmitter
     }
 
     /// <summary>A function or constant: unqualified in the program class, qualified from a class's members.</summary>
-    private string Global(string name) => _self is null ? $"@{name}" : $"global::{_programClass}.@{name}";
+    private string Global(string name) => _self is null ? $"@{name}" : $"{_programPath}.@{name}";
 
-    private string FunctionReference(BoundCall call) => Global(FunctionName(call));
+    private string FunctionReference(BoundCall call) => Global(FunctionName(call)) + TypeArgumentList(call);
 
     private string FunctionName(BoundCall call) =>
-        call.TypeArguments.IsEmpty ? _names[call.Function] : InstanceName(call.Function, [.. call.TypeArguments.Select(Concrete)]);
+        call.TypeArguments.IsEmpty || IsNetGeneric(call.Function) ? _names[call.Function] : InstanceName(call.Function, [.. call.TypeArguments.Select(Concrete)]);
+
+    // A .NET generic function's type arguments, which C# can't always infer (SPEC §14.2).
+    private string TypeArgumentList(BoundCall call) =>
+        IsNetGeneric(call.Function) ? $"<{string.Join(", ", call.TypeArguments.Select(TypeName))}>" : "";
 
     /// <summary>
     /// A call's arguments (SPEC §4.2): positional while each is its own parameter, then named, so
@@ -1262,7 +1304,8 @@ public sealed partial class CSharpEmitter
         var left = Operand(binary.Left);
         var right = Operand(binary.Right);
         var compared = TypeChecker.Unwrap(leftType) is NoneType ? TypeChecker.Unwrap(Concrete(binary.Right.Type)) : TypeChecker.Unwrap(leftType);
-        var structural = compared is ListOfType or DictOfType or ClassType or EnumType or TupleOfType or FunctionType;
+        // A .NET generic's type parameter could be any of these (SPEC §14.2).
+        var structural = compared is ListOfType or DictOfType or ClassType or EnumType or TupleOfType or FunctionType or TypeParameterType;
         var tuple = leftType is TupleOfType;
         // A class's __lt__ (SPEC §3.11): 'a > b' evaluates a, then b, and calls b.__lt__(a).
         if (binary.Op is BinaryOp.Less && leftType is ClassType)
@@ -1311,7 +1354,7 @@ public sealed partial class CSharpEmitter
         return call.Function.Builtin switch
         {
             null when call.Shape is not null => $"{FunctionReference(call)}({ShapedArguments(call.Arguments, call.Shape,
-                p => $"@{call.Function.Parameters[p].Name}", p => $"{Global(DefaultName(FunctionName(call), call.Function, p))}()")})",
+                p => $"@{call.Function.Parameters[p].Name}", p => $"{Global(DefaultName(FunctionName(call), call.Function, p))}{TypeArgumentList(call)}()")})",
             null => $"{FunctionReference(call)}({arguments})",
             BuiltinFunction.Print => $"{Runtime}.Builtins.Print({arguments})",
             BuiltinFunction.Len when argumentType == TaipanType.Py => $"{Interop}.Len({arguments})",
@@ -1518,10 +1561,13 @@ public sealed partial class CSharpEmitter
         NothingType => "void",
         ListOfType list => $"{Collections}.List<{TypeName(list.Element)}>",
         DictOfType dict => $"{Collections}.OrderedDictionary<{TypeName(dict.Key)}, {TypeName(dict.Value)}>",
-        ClassType { TypeArguments.IsEmpty: true } classType => $"global::@{_names[classType.Symbol]}",
-        ClassType classType => $"global::@{InstanceName(classType.Symbol, classType.TypeArguments)}",
-        EnumType { TypeArguments.IsEmpty: true } enumType => $"global::@{_names[enumType.Symbol]}",
-        EnumType enumType => $"global::@{InstanceName(enumType.Symbol, enumType.TypeArguments)}",
+        ClassType { TypeArguments.IsEmpty: true } classType => TypePath(classType.Symbol),
+        ClassType classType when IsNetGeneric(classType.Symbol) => $"{TypePath(classType.Symbol)}<{string.Join(", ", classType.TypeArguments.Select(TypeName))}>",
+        ClassType classType => InstancePath(InstanceName(classType.Symbol, classType.TypeArguments)),
+        EnumType { TypeArguments.IsEmpty: true } enumType => TypePath(enumType.Symbol),
+        EnumType enumType when IsNetGeneric(enumType.Symbol) => $"{TypePath(enumType.Symbol)}<{string.Join(", ", enumType.TypeArguments.Select(TypeName))}>",
+        EnumType enumType => InstancePath(InstanceName(enumType.Symbol, enumType.TypeArguments)),
+        TypeParameterType parameter => $"@{parameter.Symbol.Name}",
         OptionalOf optional => $"{TypeName(optional.Inner)}?",
         FunctionType function => $"{Runtime}.Function<{DelegateName(function)}>",
         TupleOfType tuple => $"({string.Join(", ", tuple.Elements.Select(TypeName))})",

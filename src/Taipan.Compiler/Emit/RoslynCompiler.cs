@@ -27,8 +27,9 @@ public static class RoslynCompiler
             path: assemblyName + ".g.cs",
             encoding: Encoding.UTF8);
 
+        // A library has no entry point (SPEC §14.4).
         var options = new CSharpCompilationOptions(
-            OutputKind.ConsoleApplication,
+            program.EntryClass is null ? OutputKind.DynamicallyLinkedLibrary : OutputKind.ConsoleApplication,
             mainTypeName: program.EntryClass,
             optimizationLevel: OptimizationLevel.Debug,
             checkOverflow: true,
@@ -81,8 +82,9 @@ public static class RoslynCompiler
     /// <summary>
     /// Writes a runnable program to <paramref name="directory"/>: the assembly, the runtime and
     /// other assemblies it references, and a runtimeconfig so <c>dotnet &lt;name&gt;.dll</c> runs it.
+    /// A library gets no runtimeconfig, since it doesn't run by itself (SPEC §14.4).
     /// </summary>
-    public static string Save(byte[] image, string assemblyName, string directory, ImmutableArray<string> assemblies)
+    public static string Save(byte[] image, string assemblyName, string directory, ImmutableArray<string> assemblies, bool library = false)
     {
         Directory.CreateDirectory(directory);
         var path = Path.Combine(directory, assemblyName + ".dll");
@@ -90,6 +92,8 @@ public static class RoslynCompiler
 
         foreach (var dependency in (string[])[typeof(Panic).Assembly.Location, Interop.PythonRuntimeAssembly, .. assemblies])
             File.Copy(dependency, Path.Combine(directory, Path.GetFileName(dependency)), overwrite: true);
+        if (library)
+            return path;
 
         var version = Environment.Version;
         File.WriteAllText(Path.Combine(directory, assemblyName + ".runtimeconfig.json"), $$"""

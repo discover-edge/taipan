@@ -12,16 +12,16 @@ namespace Taipan.Compiler.Semantics;
 /// </summary>
 public sealed class DotNetLibrary
 {
-    private static readonly Lazy<DotNetLibrary> RuntimeOnly = new(() => new DotNetLibrary([]));
+    private static readonly Lazy<DotNetLibrary> RuntimeOnly = new(() => new DotNetLibrary([], RuntimeDirectory));
 
     // Libraries by their references, since reading metadata takes a while and a test run compiles many programs.
     private static readonly ConcurrentDictionary<string, Lazy<DotNetLibrary>> WithReferences = new();
 
     private readonly CSharpCompilation _compilation;
 
-    private DotNetLibrary(ImmutableArray<string> references)
+    private DotNetLibrary(ImmutableArray<string> references, string frameworkDirectory)
     {
-        References = [.. FrameworkAssemblies(), .. references];
+        References = [.. FrameworkAssemblies(frameworkDirectory), .. references];
         _compilation = CSharpCompilation.Create(
             "taipan-metadata", references: References.Select(path => MetadataReference.CreateFromFile(path)));
     }
@@ -29,10 +29,40 @@ public sealed class DotNetLibrary
     /// <summary>The runtime's own assemblies, which every program may use.</summary>
     public static DotNetLibrary Framework => RuntimeOnly.Value;
 
-    /// <summary>The runtime's assemblies and those at <paramref name="references"/>, which must exist.</summary>
-    public static DotNetLibrary For(ImmutableArray<string> references) => references.IsEmpty
-        ? Framework
-        : WithReferences.GetOrAdd(string.Join("\n", references), _ => new(() => new DotNetLibrary(references))).Value;
+    /// <summary>
+    /// The framework's assemblies and those at <paramref name="references"/>, which must exist. The
+    /// framework is the running runtime's, or with <paramref name="frameworkDirectory"/> the SDK's
+    /// reference assemblies, which a library compiles against (SPEC §14.4).
+    /// </summary>
+    public static DotNetLibrary For(ImmutableArray<string> references, string? frameworkDirectory = null) =>
+        references.IsEmpty && frameworkDirectory is null
+            ? Framework
+            : WithReferences.GetOrAdd(
+                string.Join("\n", [frameworkDirectory ?? RuntimeDirectory, .. references]),
+                _ => new(() => new DotNetLibrary(references, frameworkDirectory ?? RuntimeDirectory))).Value;
+
+    private static string RuntimeDirectory => Path.GetDirectoryName(typeof(object).Assembly.Location)!;
+
+    /// <summary>
+    /// The .NET SDK's reference assemblies for the running runtime's version, which libraries
+    /// compile against so other projects can reference them (SPEC §14.4); null without the SDK.
+    /// The runtime is <c>&lt;root&gt;/shared/Microsoft.NETCore.App/&lt;version&gt;</c>, and the
+    /// references <c>&lt;root&gt;/packs/Microsoft.NETCore.App.Ref/&lt;version&gt;/ref/net&lt;major.minor&gt;</c>.
+    /// </summary>
+    public static string? ReferencePackDirectory()
+    {
+        var root = Directory.GetParent(RuntimeDirectory)?.Parent?.Parent?.FullName;
+        var packs = root is null ? null : Path.Combine(root, "packs", "Microsoft.NETCore.App.Ref");
+        if (packs is null || !Directory.Exists(packs))
+            return null;
+        var version = Environment.Version;
+        var framework = $"net{version.Major}.{version.Minor}";
+        return Directory.EnumerateDirectories(packs)
+            .Where(d => Version.TryParse(Path.GetFileName(d).Split('-')[0], out var v) && v.Major == version.Major && v.Minor == version.Minor)
+            .OrderByDescending(d => Version.Parse(Path.GetFileName(d).Split('-')[0]))
+            .Select(d => Path.Combine(d, "ref", framework))
+            .FirstOrDefault(Directory.Exists);
+    }
 
     /// <summary>Every assembly's path, to compile and load the program against.</summary>
     public ImmutableArray<string> References { get; }
@@ -50,12 +80,9 @@ public sealed class DotNetLibrary
         return current;
     }
 
-    // The managed assemblies beside System.Private.CoreLib, which is the running runtime's directory.
-    private static IEnumerable<string> FrameworkAssemblies()
-    {
-        var directory = Path.GetDirectoryName(typeof(object).Assembly.Location)!;
-        return Directory.EnumerateFiles(directory, "*.dll").Order(StringComparer.Ordinal).Where(IsManaged);
-    }
+    // The managed assemblies in a framework directory.
+    private static IEnumerable<string> FrameworkAssemblies(string directory) =>
+        Directory.EnumerateFiles(directory, "*.dll").Order(StringComparer.Ordinal).Where(IsManaged);
 
     private static bool IsManaged(string path)
     {

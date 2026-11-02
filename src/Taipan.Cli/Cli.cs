@@ -22,9 +22,9 @@ public static class Cli
 
     private const string Usage = """
         usage:
-          taipan check <file>
-          taipan emit  <file>
-          taipan build <file> -o <dir>
+          taipan check <file> [--library]
+          taipan emit  <file> [--library]
+          taipan build <file> [--library] -o <dir>
           taipan run   <file> [-- args]
           taipan --version
           taipan --help
@@ -39,9 +39,9 @@ public static class Cli
         var rest = args[1..];
         return command switch
         {
-            "check" => Check(rest, stderr),
-            "emit" => Emit(rest, stdout, stderr),
-            "build" => Build(rest, stdout, stderr),
+            "check" => Check(WithoutLibrary(rest, out var library), library, stderr),
+            "emit" => Emit(WithoutLibrary(rest, out var library), library, stdout, stderr),
+            "build" => Build(WithoutLibrary(rest, out var library), library, stdout, stderr),
             "run" => RunFile(rest, stdout, stderr),
             "--version" or "--help" when rest.Length > 0 => UsageError(stderr, $"{command} takes no arguments"),
             "--version" => Print(stdout, $"taipan {Version}"),
@@ -51,33 +51,40 @@ public static class Cli
         };
     }
 
-    private static int Check(string[] args, TextWriter stderr)
+    // `--library` (SPEC §14) may come anywhere among a command's arguments.
+    private static string[] WithoutLibrary(string[] args, out bool library)
+    {
+        library = args.Contains("--library");
+        return [.. args.Where(a => a != "--library")];
+    }
+
+    private static int Check(string[] args, bool library, TextWriter stderr)
     {
         if (args.Length != 1)
             return UsageError(stderr, "check takes exactly one file");
-        return Compile(args[0], stderr, out _, out _);
+        return Compile(args[0], library, stderr, out _, out _);
     }
 
-    private static int Emit(string[] args, TextWriter stdout, TextWriter stderr)
+    private static int Emit(string[] args, bool library, TextWriter stdout, TextWriter stderr)
     {
         if (args.Length != 1)
             return UsageError(stderr, "emit takes exactly one file");
-        var exit = Compile(args[0], stderr, out var program, out _);
+        var exit = Compile(args[0], library, stderr, out var program, out _);
         if (program is not null)
             stdout.Write(program.Code);
         return exit;
     }
 
-    private static int Build(string[] args, TextWriter stdout, TextWriter stderr)
+    private static int Build(string[] args, bool library, TextWriter stdout, TextWriter stderr)
     {
         if (args.Length != 3 || args[1] != "-o")
             return UsageError(stderr, "build takes a file and -o <dir>");
-        var exit = Compile(args[0], stderr, out var program, out var project);
+        var exit = Compile(args[0], library, stderr, out var program, out var project);
         if (program is null)
             return exit;
 
         var name = Path.GetFileNameWithoutExtension(args[0]);
-        var path = RoslynCompiler.Save(RoslynCompiler.Compile(program, name), name, args[2], project!.RuntimeAssemblies);
+        var path = RoslynCompiler.Save(RoslynCompiler.Compile(program, name), name, args[2], project!.RuntimeAssemblies, library);
         stdout.WriteLine($"built {path}");
         return ExitSuccess;
     }
@@ -89,7 +96,7 @@ public static class Cli
             return UsageError(stderr, "run takes a file");
         if (args.Length > 1 && args[1] != "--")
             return UsageError(stderr, "program arguments must follow '--'");
-        var exit = Compile(args[0], stderr, out var program, out var project);
+        var exit = Compile(args[0], library: false, stderr, out var program, out var project);
         if (program is null)
             return exit;
 
@@ -103,7 +110,7 @@ public static class Cli
     /// <paramref name="program"/> and <paramref name="project"/> are set only on success. A wrong
     /// <c>taipan.json</c> isn't an error in the source (SPEC §13.2).
     /// </summary>
-    private static int Compile(string path, TextWriter stderr, out EmittedProgram? program, out ProjectFile? project)
+    private static int Compile(string path, bool library, TextWriter stderr, out EmittedProgram? program, out ProjectFile? project)
     {
         program = null;
         project = null;
@@ -122,7 +129,14 @@ public static class Cli
         if (Report(loaded.Diagnostics, stderr))
             return ExitCompileError;
 
-        var bound = Binder.Bind(loaded.Modules, DotNetLibrary.For(loadedProject.CompileReferences));
+        // A library compiles against the SDK's reference assemblies, so other projects can reference it (SPEC §14.4).
+        string? framework = null;
+        if (library && (framework = DotNetLibrary.ReferencePackDirectory()) is null)
+        {
+            stderr.WriteLine("taipan: building a library needs the .NET SDK's reference assemblies (Microsoft.NETCore.App.Ref)");
+            return ExitUsage;
+        }
+        var bound = Binder.Bind(loaded.Modules, DotNetLibrary.For(loadedProject.CompileReferences, framework), library);
         if (bound.Unsupported is not null)
             return NotImplemented(bound.Unsupported, stderr);
         if (Report(bound.Diagnostics, stderr))

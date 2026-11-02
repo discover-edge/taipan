@@ -1043,6 +1043,7 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 | `tuple[A, B]` | a C# value tuple `(A, B)` (M12), with elements read as `Item1`, `Item2`, …. Unpacking stores the value in a temporary first. `==` uses `Taipan.Runtime.Equality.Equal`, and ordering uses a runtime comparison that orders strings by ordinal. In generic instance names, a tuple type is written `tuple_` followed by its element types: `first_tuple_int_str`. |
 | slices | `Taipan.Runtime.Ops.Slice(target, start, stop, step)`, with `null` for an omitted part (M12) |
 | type aliases (M18) | Nothing: each use is its expanded type. |
+| libraries (M22) | `--library` (§14): one public static class per module in the library's namespace, with its classes and enums nested inside, instead of `TaipanProgram`, and no `TaipanEntry`. Exported definitions are public and everything else internal. Each module has an internal initializer, called at the start of each exported member, that runs once (§14.3). |
 | .NET types and members (M21) | Used directly, by their full names (`global::System.Text.StringBuilder`). Arguments and results convert as §13.3 says: `checked` casts for narrower integers, copies for arrays and enumerables, and a runtime null check on a result that's not annotated as nullable. |
 | generics | Monomorphized. Each distinct instantiation the program uses becomes its own C# method or type, named after its type arguments: `first_int`, `Box_str`, `Box_list_int`, `Maybe_int_opt` (for `Maybe[int?]`). A clash with another name gets a numeric suffix. Generic definitions that are never instantiated are type-checked but not emitted. |
 | function types | `Taipan.Runtime.Function<D>` (M11), with `D` a `Func<…>` or `Action<…>`. It wraps the delegate and the display name, and calls go through the delegate. A top-level function used as a value is one cached object per function, and each evaluation of a lambda or nested `def` creates a new object, so `==` is reference equality. In generic instance names, a function type is written `fn_` followed by its parameter and result types: `apply_fn_int_str`, `Box_fn_none`. |
@@ -1076,7 +1077,7 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 - Each compiler stage runs only if the stages before it reported no errors: lexing (§1), then parsing (§2), then type checking. This keeps one mistake from cascading into spurious errors in later stages.
 - `<file>` is the source path exactly as given on the command line.
 
-- **Warnings** (`TP0300` and `TP0301`) print as `<file>:<line>:<col>: warning TP<code>: <message>`. They don't stop compilation or change the exit code. They're printed with the type checker's errors, before the program runs.
+- **Warnings** (`TP0300`, `TP0301` and `TP0302`) print as `<file>:<line>:<col>: warning TP<code>: <message>`. They don't stop compilation or change the exit code. They're printed with the type checker's errors, before the program runs.
 
 **Exit codes:**
 - `0` success
@@ -1116,7 +1117,7 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 | TP0219 | generic instantiation too deep (polymorphic recursion) |
 | TP0220 | invalid type parameter constraint or bound |
 | TP0221 | module not found |
-| TP0222 | top-level statement in an imported module |
+| TP0222 | top-level statement in an imported module, or in a library's main file (M22) |
 | TP0223 | nested function with type parameters |
 | TP0224 | invalid decorator |
 | TP0225 | invalid class definition |
@@ -1129,6 +1130,7 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 | TP0232 | ambiguous .NET overload |
 | TP0300 | warning: unreachable code (a statement, `match` arm or `except` clause) |
 | TP0301 | warning: broad `except` clause discards the exception |
+| TP0302 | warning: a library definition can't be exported (M22) |
 
 New codes go into this table before they're implemented.
 
@@ -1184,7 +1186,7 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0218 | `'<f>' takes no keyword arguments` (a built-in) / `a function value takes no keyword arguments` / `'<f>' has no parameter '<k>'` (M14; also for `sorted`, `sort` and `enumerate`) |
 | TP0219 | `instantiating '<f>' needs '<f>[<T>]', which is too deep`, at the call that starts the chain |
 | TP0221 | `module '<m>' not found`, with help `looked for <path>` / `'python' is not a module`, with help `use 'from python import <module>'` / `'dotnet' is not a module`, with help `use 'from dotnet.<namespace> import <type>'` / `.NET namespace '<ns>' not found` (M21) |
-| TP0222 | `only the main file can have top-level statements` |
+| TP0222 | `only the main file can have top-level statements` / `a library can't have top-level statements` (M22) |
 | TP0223 | `nested functions cannot have type parameters` |
 | TP0224 | `unknown decorator '@<d>'` / `'@<d>' cannot be used here` (with help `'@dataclass' goes on a class, '@override' on a method`) / `duplicate decorator '@<d>'` |
 | TP0225 | `a class can have only one base class` (protocols aside, M17) / `'<T>' cannot be a base class` / `a dataclass can only derive from a dataclass` (with help `exceptions are plain classes; give it an '__init__'` for an exception base, M16) / `a plain class can only derive from a plain class` / `generic classes cannot be derived from` / `generic classes cannot have a base class` / `'<C>' derives from itself` / `special method '<m>' is not supported` / `a dataclass cannot define '__init__'` / `field without a default follows field with a default` / `'__lt__' must take one parameter of type '<C>' (or a base class) and return bool` / `'<P>' is already declared` (or `already declared by '<B>'`) / `a protocol can only declare methods` / `a protocol method's body must be '...'` / `protocol method parameters cannot have defaults` / `protocols cannot be generic` / `a protocol can only derive from 'Protocol'` (M17) |
@@ -1198,6 +1200,7 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0230 | `type alias '<A>' refers to itself` / `type alias '<A>' refers to itself through '<B>'` (`'<B>' and '<C>'` for longer cycles), with help `use a class for a recursive type` (M18) |
 | TP0300 | `unreachable match arm` / `unreachable except clause`, with help `'<B>' is already caught above` / `unreachable code` (M16) |
 | TP0301 | `this clause catches every exception and discards it`, with help `catch a specific class, re-raise with 'raise', or bind it with 'as e' and use it` (M16) |
+| TP0302 | `'<f>' is not exported: <reason>`, where `<reason>` is `its type parameter '<T>' has a bound` / `'<T>?' has no .NET generic form` / `it uses '<g>', which isn't a .NET generic` / `it uses '<C>', which isn't exported` / `it has its module's name`, with help `rename it '_<f>' to keep it private` (M22) |
 
 Types are written as in source: `int`, `str?`, `list[int]`. The type of `None` is written `None`, and a missing value is written `nothing`.
 
@@ -1288,6 +1291,7 @@ Types are written as in source: `int`, `str?`, `list[int]`. The type of `None` i
 - emitting CPython extension modules (interop level 3)
 - .NET interop beyond §13: generic methods and generic .NET types (other than the collections of §13.3), delegates and passing Taipan functions to .NET, `async` and `Task`, events, `ref`/`out`/`in` parameters, `params` arrays, indexers, operators, extension methods (LINQ), `object` and `decimal` results, dictionaries, deriving from .NET classes or implementing .NET interfaces, raising .NET exceptions, `isinstance`/`as`/`match` on .NET types, flags enums, namespace imports (`import dotnet.System.IO as io`), and packages with native assets
 - an MSBuild project SDK (`TaipanLang.Sdk`), for building `.tpn` files with `dotnet build` as part of a .NET solution
+- Taipan libraries beyond §14: a configurable namespace, assembly name and version (in `taipan.json`), PascalCase names, XML documentation, value `Equals` and `GetHashCode` for dataclasses, deriving from Taipan classes in other .NET languages, plain delegates for function types, and packing a library as a NuGet package
 
 ---
 
@@ -1295,12 +1299,12 @@ Types are written as in source: `int`, `str?`, `list[int]`. The type of `None` i
 
 ### 12.1 Commands
 ```
-taipan check <file>              type-check only, printing diagnostics
-taipan emit  <file>              print the generated C# (§8)
-taipan build <file> -o <dir>     write a runnable program to <dir>
-taipan run   <file> [-- args]    compile and run
-taipan --version                 print "taipan <version>", e.g. "taipan 0.2.0"
-taipan --help                    print the usage text
+taipan check <file> [--library]           type-check only, printing diagnostics
+taipan emit  <file> [--library]           print the generated C# (§8)
+taipan build <file> [--library] -o <dir>  write a runnable program, or a library (M22, §14), to <dir>
+taipan run   <file> [-- args]             compile and run
+taipan --version                          print "taipan <version>", e.g. "taipan 0.2.0"
+taipan --help                             print the usage text
 ```
 - `--version` and `--help` print to stdout and exit `0`. Each takes no other arguments.
 - No arguments, an unknown command or option, or wrong arguments to a command print a one-line error (if there is one) and the usage text to stderr, and exit `2` (§9).
@@ -1437,3 +1441,82 @@ So `sb.Append(5)` calls `Append(long)`, `sb.Append("x")` calls `Append(string)` 
 
 ### 13.7 Deferred
 §11 lists what's deferred: generic methods and most generic types, delegates and passing Taipan functions to .NET, `async`, events, `ref`/`out`/`in`, `params` arrays, indexers, operators, extension methods, dictionaries, deriving from .NET types, raising .NET exceptions, and type tests on .NET types.
+
+---
+
+## 14. Taipan as a .NET library (M22)
+`taipan build <file> --library -o <dir>` compiles a program's files into a .NET assembly that C#, F# and other .NET code can reference. Its definitions are the assembly's public API, with the types §13.3 maps from .NET used in the other direction: `int` is `long`, `str` is `string`, `list[T]` is `List<T>`.
+
+```python
+# geometry.tpn
+import shapes
+
+const VERSION = "1.0"
+
+def total_area(items: list[shapes.Shape]) -> float:
+    var total = 0.0
+    for item in items:
+        total += shapes.area(item)
+    return total
+```
+
+```csharp
+using Geometry;
+
+var circle = new shapes.Shape.Circle(2.0);
+Console.WriteLine(geometry.total_area([circle, new shapes.Shape.Square(3.0)]));
+try { shapes.parse("hexagon"); }
+catch (shapes.UnknownShape e) { Console.WriteLine(e.message); }
+```
+
+### 14.1 Layout and names
+- **The assembly** is `<name>.dll`, where `<name>` is the main file's name without `.tpn`.
+- **The namespace** is `<name>` in PascalCase: each `_`-separated part capitalized and the underscores dropped, so `geometry` is `Geometry` and `health_checks` is `HealthChecks`.
+- **Each module**, the main file included, is a public static class in that namespace, named as the module: `Geometry.geometry`, `Geometry.shapes`. Its functions are static methods, and its constants static read-only properties.
+- **Classes and enums** are nested in their module's class: `Geometry.shapes.Point`, `Geometry.shapes.Shape.Circle`. So two modules may define the same name, as in a program.
+- **Names are as written in Taipan**, case and underscores included: `shapes.area_of(r)`, `p.distance_to(q)`, `p.x`. There's no renaming to PascalCase, just as .NET names aren't renamed in Taipan (§13.4).
+- **Private names:** a definition, field or method whose name starts with `_` isn't exported. It's internal to the assembly, and Taipan code uses it as before. Privacy applies only at the library's edge: within the library, every module still exports every name (§4.7).
+- **Stable:** only exported definitions are public, by their Taipan names. Everything else the compiler generates (generic instances, default-value helpers, nested functions, renamed locals) is internal, so renaming a local or adding a private definition doesn't change the public API.
+
+### 14.2 What's exported
+| Taipan | Public .NET form |
+|---|---|
+| `def f(a: int, b: str = "x") -> float` | `public static double f(long a, string b)`, plus an overload for each trailing parameter with a default, `f(long a)`, that evaluates the default as a Taipan call would (§4.2) |
+| `const LIMIT = 10` | `public static long LIMIT { get; }` |
+| `@dataclass class P` | a public class with a public constructor over every field (and overloads for trailing defaults), a `{ get; set; }` property per field, its methods as public instance methods (with overloads for trailing defaults, as for functions), and `ToString` giving Taipan's display form |
+| `class C` (plain) | a public class with a public constructor taking `__init__`'s parameters (and overloads for trailing defaults), which runs `__init__`; its fields and methods as for a dataclass |
+| exception classes | as plain classes, deriving from the runtime's `Taipan.Runtime.TaipanException` (Taipan's `Exception`), or another exception class |
+| `enum E` | a public abstract record with a nested public sealed record per variant: `new Shape.Circle(2.0)`, `new Shape.Empty()` |
+| generic definitions | real .NET generics, where they can be (below) |
+| protocols, type aliases | nothing, as in a program (§8) |
+
+- **Types in signatures** are §8's: `int` is `long`, `float` is `double`, `bool`, `str`, `T?` (`long?` or `string?`), `list[T]` is `List<T>`, `dict[K, V]` is `OrderedDictionary<K, V>`, `tuple[A, B]` is a value tuple, a function type is `Taipan.Runtime.Function<D>` (constructed from a delegate: `new Function<Func<long, long>>("twice", x => x * 2)`), `py` is pythonnet's `PyObject`, and .NET types are themselves. Lists and dicts are shared, not copied, both ways.
+- **Equality and hashing** are .NET's for the C# caller: a class's `Equals` is reference identity, and an enum's is the record's (field by field, with C#'s `Equals` on each). `Taipan.Runtime.Equality.Equal(a, b)` compares as Taipan's `==` does.
+- `__init__`, `__new__` and the helpers that evaluate defaults are internal, as names starting with `_` are. Classes implement the runtime's `IStruct` or `IObject`, which display and equality use; they aren't meant for callers. Deriving from a Taipan class in another .NET language isn't supported.
+- **Generic definitions.** A generic function, class or enum is exported as a .NET generic (`first<T>`, `Box<T>`) when:
+  - none of its type parameters has a bound (§3.11), and
+  - no type parameter appears as `T?`, in its signature, fields or body, since .NET has no type that is `T?` for both value and reference types, and
+  - every generic definition it uses with its own type parameters is exported as a .NET generic too.
+
+  In a library, such a class or enum is a .NET generic everywhere, so `Box[int]` in a signature is `Box<long>`. Any other generic definition is monomorphized as in a program (§8) and isn't exported.
+- **Not exported (`TP0302`).** A definition without a leading `_` that can't be exported is warning `TP0302`, at its name, saying why: a generic definition that can't be a .NET generic, a definition whose signature uses a type that isn't exported (for a class: its base class, or the types of its public fields, constructor and methods), or a definition named the same as its module (which C# can't express). It's still compiled, and Taipan code in the library uses it. Renaming it with a leading `_` says it's private on purpose, and silences the warning.
+
+### 14.3 Running library code
+- **No top level:** a library's main file contains declarations only, as other modules do (§4.7), so a top-level statement in it is `TP0222`. Nothing runs when the library loads.
+- **Module initialization.** A module initializes when one of its exported functions, constructors or constants is first used. Initializing a module first initializes the modules it imports, then imports its Python modules (§10.1), then evaluates its constants in source order. Each module initializes once, and a cycle is broken at the module reached first, as in a program (§4.7).
+  - If initialization raises, the call that triggered it throws that exception, and the next use tries again.
+  - If Python can't be loaded, the call throws `Taipan.Runtime.TaipanPanic`, with §10.5's message `cannot load Python: <reason>`. Python is found as §10.6 says, when it's first needed.
+- **Exceptions propagate** to the caller as .NET exceptions. There's no panic handler and nothing is printed:
+  - Taipan's exceptions are their runtime classes (`Taipan.Runtime.KeyError`, `Taipan.Runtime.ValueError`, …) or the library's own classes (`Geometry.shapes.UnknownShape`), with `message` and `Message` both the Taipan message.
+  - Integer overflow is .NET's `System.OverflowException`, as from C#'s checked arithmetic.
+  - A Python exception is a `Taipan.Runtime.PythonError`, and a .NET exception from .NET code propagates unchanged.
+- **`print`** writes to the process's standard output, as `Console.Out` does.
+
+### 14.4 Building
+- `taipan build <file> --library -o <dir>` writes `<name>.dll` with `Taipan.Runtime.dll`, `Python.Runtime.dll` and any assemblies `taipan.json` references (§13.2) beside it. There's no runtimeconfig, since a library doesn't run by itself.
+- `taipan check <file> --library` and `taipan emit <file> --library` check and emit the program as a library, with the library's diagnostics (`TP0222` in the main file, `TP0302`).
+- **Referencing a library** from a .NET project means referencing `<name>.dll` and the `TaipanLang.Runtime` package (§12.2) of the version that built it, or `Taipan.Runtime.dll` from the build directory. A library that uses Python needs `Python.Runtime.dll` too, which the package brings.
+- The library targets the .NET runtime `taipan` runs on (`net10.0`). It compiles against that runtime's reference assemblies, as every .NET library does, so other projects can reference it. They come with the .NET SDK (`packs/Microsoft.NETCore.App.Ref` beside the runtime), so building a library needs the SDK, unlike building a program (§12.2). Without it, `taipan: building a library needs the .NET SDK's reference assemblies (Microsoft.NETCore.App.Ref)` exits with `2`.
+
+### 14.5 Deferred
+§11 lists what's deferred: a configurable namespace, assembly name and version, PascalCase names, XML documentation from docstrings, `Equals` and `GetHashCode` on dataclasses, deriving from Taipan classes in other .NET languages, delegates for function types, and publishing a library as a NuGet package.

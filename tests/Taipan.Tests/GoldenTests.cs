@@ -6,8 +6,9 @@ namespace Taipan.Tests;
 /// <c>main.tpn</c>, only that file is a case and the others are its modules (SPEC §4.7):
 /// <c>.out</c> (stdout; its presence selects <c>run</c> over <c>check</c>),
 /// <c>.err</c> (stderr, exact), <c>.exit</c> (default 0, or 1 when <c>.err</c> exists), and
-/// <c>.cs</c> (the exact output of <c>taipan emit</c>), and <c>.requires</c> (naming <c>python</c>
-/// for a case that needs CPython).
+/// <c>.cs</c> (the exact output of <c>taipan emit</c>), <c>.requires</c> (naming <c>python</c>
+/// for a case that needs CPython), and <c>.library</c> (empty, for a case checked and emitted with
+/// <c>--library</c>, SPEC §14).
 /// </summary>
 public class GoldenTests
 {
@@ -47,20 +48,21 @@ public class GoldenTests
         var exitText = ReadSidecar(casePath, ".exit");
         var expectedExit = exitText is not null ? int.Parse(exitText.Trim()) : expectedErr is not null ? 1 : 0;
 
-        var (exit, stdout, stderr) = RunCli(expectedOut is not null ? "run" : "check", casePath);
+        string[] flags = File.Exists(Path.ChangeExtension(casePath, ".library")) ? ["--library"] : [];
+        var (exit, stdout, stderr) = RunCli([expectedOut is not null ? "run" : "check", casePath, .. flags]);
         Assert.Equal(expectedErr ?? "", stderr);
         Assert.Equal(expectedOut ?? "", stdout);
         Assert.Equal(expectedExit, exit);
 
         if (ReadSidecar(casePath, ".cs") is { } expectedCSharp)
-            Assert.Equal(expectedCSharp, RunCli("emit", casePath).Stdout);
+            Assert.Equal(expectedCSharp, RunCli(["emit", casePath, .. flags]).Stdout);
     }
 
-    private static (int Exit, string Stdout, string Stderr) RunCli(string command, string path)
+    private static (int Exit, string Stdout, string Stderr) RunCli(string[] args)
     {
         var stdout = new StringWriter();
         var stderr = new StringWriter();
-        var exit = Cli.Cli.Run([command, path], stdout, stderr);
+        var exit = Cli.Cli.Run(args, stdout, stderr);
         return (exit, Normalize(stdout.ToString()), Normalize(stderr.ToString()));
     }
 

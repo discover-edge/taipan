@@ -1,0 +1,58 @@
+# Definitions a library can't export are warned about, unless they're private (SPEC §14.2).
+class Box[T]:
+    value: T
+
+    def __init__(self, value: T):
+        self.value = value
+
+def wrap[T](value: T) -> Box[T]:
+    return Box(value)
+
+def largest[T: Comparable](xs: list[T]) -> T:
+    var best = xs[0]
+    for x in xs:
+        if best < x:
+            best = x
+    return best
+
+def first[T](xs: list[T]) -> T?:
+    if len(xs) == 0:
+        return None
+    return xs[0]
+
+def head[T](xs: list[T], fallback: T) -> T:
+    return first(xs) ?? fallback
+
+def top[T](xs: list[T], fallback: T) -> T:
+    return head(xs, fallback)
+
+@dataclass
+class Maybe[T]:
+    value: T?
+
+def some_int(n: int) -> Maybe[int]:
+    return Maybe(n)
+
+class _Hidden:
+    pass
+
+def hidden() -> _Hidden:
+    return _Hidden()
+
+class Holder:
+    secret: _Hidden
+
+    def __init__(self):
+        self.secret = _Hidden()
+
+class _Base:
+    pass
+
+class Derived(_Base):
+    pass
+
+def tp0302_library() -> int:
+    return 1
+
+def _private_largest[T: Comparable](xs: list[T]) -> T:
+    return largest(xs)

@@ -25,7 +25,8 @@ public static class Equality
         (IStruct l, IStruct r) => l.GetType() == r.GetType() && FieldsEqual(l, r),
         (IDictionary l, IDictionary r) => DictsEqual(l, r),
         (IList l, IList r) => ListsEqual(l, r),
-        _ => false,
+        // A .NET value, which a library's generic code can be given (SPEC §13.3, §14.2).
+        _ => left.Equals(right),
     };
 
     private static bool FieldsEqual(IStruct left, IStruct right)

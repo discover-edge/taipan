@@ -126,6 +126,16 @@ print(sb.ToString())
 { "references": ["lib/Acme.Geometry.dll"], "packages": { "Humanizer.Core": "2.14.1" } }
 ```
 
+- **Taipan as a .NET library:** `taipan build geometry.tpn --library -o out` compiles a program's modules into `geometry.dll` for C# or F# to reference, alongside the `TaipanLang.Runtime` package. Each module is a static class in the namespace `Geometry`, with its classes and enums nested inside, all named as in Taipan. Names starting with `_` stay private, and Taipan exceptions reach the caller as .NET exceptions. Building a library needs the .NET SDK.
+
+```csharp
+using Geometry;
+
+Console.WriteLine(shapes.area(new shapes.Shape.Circle(2.0)));
+try { shapes.parse("hexagon"); }
+catch (shapes.UnknownShape e) { Console.WriteLine(e.message); }
+```
+
 [SPEC.md](SPEC.md) is the full language definition, and `examples/` and `tests/cases/` have many more programs.
 
 ## How it works

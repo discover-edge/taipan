@@ -1,0 +1,2 @@
+tests/cases/m22/tp0222_library.tpn:5:1: error TP0222: a library can't have top-level statements
+tests/cases/m22/tp0222_library.tpn:6:1: error TP0222: a library can't have top-level statements

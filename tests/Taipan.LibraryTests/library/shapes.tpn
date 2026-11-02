@@ -1,0 +1,71 @@
+# Shapes for the C# tests to call (SPEC §14).
+const SIDES = 4
+
+enum Shape:
+    Circle(r: float)
+    Square(side: float)
+
+class UnknownShape(Exception):
+    name: str
+
+    def __init__(self, name: str):
+        self.name = name
+        super().__init__(f"unknown shape: {name}")
+
+@dataclass
+class Point:
+    x: float
+    y: float = 0.0
+
+    def moved(self, by: float = 1.0) -> Point:
+        return Point(self.x + by, self.y + by)
+
+class Counter:
+    count: int
+    _secret: int
+
+    def __init__(self, start: int = 0):
+        self.count = start
+        self._secret = SIDES
+
+    def bump(self) -> int:
+        self.count += 1
+        return self.count
+
+class Box[T]:
+    value: T
+
+    def __init__(self, value: T):
+        self.value = value
+
+    def get(self) -> T:
+        return self.value
+
+def wrap[T](value: T) -> Box[T]:
+    return Box(value)
+
+def area(shape: Shape) -> float:
+    return match shape:
+        Circle(r): 3.0 * r * r
+        Square(side): side * side
+
+def parse(name: str) -> Shape:
+    if name == "circle":
+        return Circle(1.0)
+    raise UnknownShape(name)
+
+def scale(p: Point, by: float = 2.0) -> Point:
+    return Point(p.x * by, p.y * by)
+
+def corners(name: str) -> int:
+    let known = {"square": SIDES, "triangle": 3}
+    return known[name]
+
+def doubled(n: int) -> int:
+    return n * 2
+
+def apply(f: Callable[[int], int], x: int) -> int:
+    return f(x)
+
+def _helper() -> int:
+    return 1

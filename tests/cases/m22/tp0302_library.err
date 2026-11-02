@@ -1,0 +1,20 @@
+tests/cases/m22/tp0302_library.tpn:11:5: warning TP0302: 'largest' is not exported: its type parameter 'T' has a bound
+  help: rename it '_largest' to keep it private
+tests/cases/m22/tp0302_library.tpn:18:5: warning TP0302: 'first' is not exported: 'T?' has no .NET generic form
+  help: rename it '_first' to keep it private
+tests/cases/m22/tp0302_library.tpn:23:5: warning TP0302: 'head' is not exported: 'T?' has no .NET generic form
+  help: rename it '_head' to keep it private
+tests/cases/m22/tp0302_library.tpn:26:5: warning TP0302: 'top' is not exported: it uses 'head', which isn't a .NET generic
+  help: rename it '_top' to keep it private
+tests/cases/m22/tp0302_library.tpn:30:7: warning TP0302: 'Maybe' is not exported: 'T?' has no .NET generic form
+  help: rename it '_Maybe' to keep it private
+tests/cases/m22/tp0302_library.tpn:33:5: warning TP0302: 'some_int' is not exported: it uses 'Maybe', which isn't exported
+  help: rename it '_some_int' to keep it private
+tests/cases/m22/tp0302_library.tpn:39:5: warning TP0302: 'hidden' is not exported: it uses '_Hidden', which isn't exported
+  help: rename it '_hidden' to keep it private
+tests/cases/m22/tp0302_library.tpn:42:7: warning TP0302: 'Holder' is not exported: it uses '_Hidden', which isn't exported
+  help: rename it '_Holder' to keep it private
+tests/cases/m22/tp0302_library.tpn:51:7: warning TP0302: 'Derived' is not exported: it uses '_Base', which isn't exported
+  help: rename it '_Derived' to keep it private
+tests/cases/m22/tp0302_library.tpn:54:5: warning TP0302: 'tp0302_library' is not exported: it has its module's name
+  help: rename it '_tp0302_library' to keep it private
