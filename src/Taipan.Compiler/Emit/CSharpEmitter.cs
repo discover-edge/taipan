@@ -834,6 +834,12 @@ public sealed partial class CSharpEmitter
             case BoundUnpack unpack:
                 LineDirective(unpack.Span);
                 Line($"{TypeName(unpack.Temp.Type)} @{_locals[unpack.Temp]} = {Expr(unpack.Value)};");
+                // A list's length is known only now (SPEC §3.8, M29).
+                if (unpack.Length is var (count, starred))
+                {
+                    LineDirective(unpack.Span);
+                    Line($"{Runtime}.Ops.CheckUnpack(@{_locals[unpack.Temp]}.Count, {count}, {(starred ? "true" : "false")});");
+                }
                 EmitStatements(unpack.Stores);
                 break;
             default:
@@ -1117,11 +1123,9 @@ public sealed partial class CSharpEmitter
         if (_loops.TryPeek(out var loop))
             loop.SwitchDepth++;
 
-        var hasDefault = false;
         foreach (var arm in match.Arms.Where(a => a.IsReachable))
         {
-            hasDefault |= arm.Pattern is BoundWildcardPattern;
-            Line(CaseLabel(arm.Pattern, Concrete(match.Scrutinee.Type)));
+            Line(CaseLabel(arm.Pattern));
             Line("{");
             _indent++;
             EmitStatements(arm.Body.Statements);
@@ -1131,7 +1135,7 @@ public sealed partial class CSharpEmitter
             _indent--;
             Line("}");
         }
-        if (!hasDefault)
+        if (!match.Arms.Any(a => a.IsReachable && Irrefutable(a.Pattern)))
         {
             Line("default:");
             Line("    throw new global::System.Diagnostics.UnreachableException();");
@@ -1143,41 +1147,118 @@ public sealed partial class CSharpEmitter
         Line("}");
     }
 
-    private string CaseLabel(BoundPattern pattern, TaipanType scrutineeType) =>
-        pattern is BoundWildcardPattern ? "default:" : $"case {Pattern(pattern, scrutineeType)}:";
+    // A pattern C# knows matches everything, after which a default label would be unreachable.
+    private static bool Irrefutable(BoundPattern pattern) => pattern switch
+    {
+        BoundWildcardPattern or BoundBindingPattern => true,
+        BoundTuplePattern tuple => tuple.Elements.All(Irrefutable),
+        _ => false,
+    };
+
+    private string CaseLabel(BoundPattern pattern) =>
+        pattern is BoundWildcardPattern ? "default:" : $"case {GuardedPattern(pattern)}:";
+
+    /// <summary>A pattern and, for a list pattern's starred name, the guard that binds it (SPEC §8).</summary>
+    private string GuardedPattern(BoundPattern pattern)
+    {
+        var guards = new List<string>();
+        var text = Pattern(pattern, guards);
+        return guards.Count == 0 ? text : $"{text} when {string.Join(" && ", guards)}";
+    }
 
     /// <summary>A pattern as C# writes it in a <c>case</c> label or a switch expression's arm.</summary>
-    private string Pattern(BoundPattern pattern, TaipanType scrutineeType) => pattern switch
+    private string Pattern(BoundPattern pattern, List<string> guards)
     {
-        BoundWildcardPattern => "_",
-        BoundLiteralPattern literal => Literal(literal.Value),
-        BoundVariantPattern { Bindings.IsEmpty: true } variant => VariantTypeName(variant.Variant, scrutineeType),
-        BoundVariantPattern variant =>
-            $"{VariantTypeName(variant.Variant, scrutineeType)}({string.Join(", ", variant.Bindings.Select(b => b is null ? "_" : $"var @{_locals[b]}"))})",
-        BoundClassPattern { Bindings.IsEmpty: true } classPattern => TypeName(classPattern.Class),
-        BoundClassPattern classPattern =>
-            $"{TypeName(classPattern.Class)} {{ {string.Join(", ", classPattern.Bindings.Select(b => $"@{Member(b.Field, classPattern.Class)}: var @{_locals[b.Binding]}"))} }}",
-        _ => throw new InvalidOperationException($"unexpected pattern {pattern.GetType().Name}"),
-    };
+        string Sub(BoundPattern sub) => Pattern(sub, guards);
+        switch (pattern)
+        {
+            case BoundWildcardPattern:
+                return "_";
+            case BoundBindingPattern binding:
+                return $"var @{_locals[binding.Symbol]}";
+            case BoundLiteralPattern literal:
+                return Literal(literal.Value);
+            case BoundVariantPattern { Fields.IsEmpty: true } variant:
+                return VariantTypeName(variant.Variant, variant.Enum);
+            case BoundVariantPattern variant:
+                return $"{VariantTypeName(variant.Variant, variant.Enum)}({string.Join(", ", variant.Fields.Select(Sub))})";
+            case BoundClassPattern { Fields.IsEmpty: true } classPattern:
+                return TypeName(classPattern.Class);
+            case BoundClassPattern classPattern:
+                return $"{TypeName(classPattern.Class)} {{ {string.Join(", ", classPattern.Fields.Select(f => $"@{Member(f.Field, classPattern.Class)}: {Sub(f.Pattern)}"))} }}";
+            case BoundTuplePattern tuple:
+                return $"({string.Join(", ", tuple.Elements.Select(Sub))})";
+            case BoundListPattern list:
+                IEnumerable<string> parts = list.HasStar
+                    ? [.. list.Before.Select(Sub), "..", .. list.After.Select(Sub)]
+                    : list.Before.Select(Sub);
+                var text = $"[{string.Join(", ", parts)}]";
+                if (list.Rest is not { } rest)
+                    return text;
+                // C#'s slice pattern needs a range indexer, which List<T> lacks: the guard takes the rest.
+                var whole = _locals.Fresh("list");
+                guards.Add($"{Runtime}.Ops.Rest(@{whole}, {list.Before.Length}, {list.After.Length}, out var @{_locals[rest]})");
+                return $"{text} @{whole}";
+            default:
+                throw new InvalidOperationException($"unexpected pattern {pattern.GetType().Name}");
+        }
+    }
 
     /// <summary>
     /// A switch expression (SPEC §8). A value of another type than the result is cast to it, since
     /// C# can't always find one type for the arms (int and float, sibling classes, None); a raising
-    /// arm is a throw.
+    /// arm is a throw. With a block arm (M29), it's a switch statement in a lambda that's called at once.
     /// </summary>
     private string MatchExpr(BoundMatchExpr match)
     {
-        var scrutineeType = Concrete(match.Scrutinee.Type);
         var result = Concrete(match.Type);
-        var arms = match.Arms.Where(a => a.IsReachable).Select(arm =>
-        {
-            var value = arm.Raise is { } raise ? Throw(raise)
-                : Concrete(arm.Value!.Type) == result ? Expr(arm.Value) : $"({TypeName(result)})({Expr(arm.Value)})";
-            return $"{Pattern(arm.Pattern, scrutineeType)} => {value}";
-        }).ToList();
-        if (!match.Arms.Any(a => a.IsReachable && a.Pattern is BoundWildcardPattern))
+        string Value(BoundExpr value) => Concrete(value.Type) == result ? Expr(value) : $"({TypeName(result)})({Expr(value)})";
+        var reachable = match.Arms.Where(a => a.IsReachable).ToList();
+        if (reachable.Any(a => a.Body is not null))
+            return BlockMatchExpr(match, reachable, Value);
+        var arms = reachable.Select(arm => $"{GuardedPattern(arm.Pattern)} => {(arm.Raise is { } raise ? Throw(raise) : Value(arm.Value!))}").ToList();
+        if (!reachable.Any(a => Irrefutable(a.Pattern)))
             arms.Add("_ => throw new global::System.Diagnostics.UnreachableException()");
         return $"{Operand(match.Scrutinee)} switch {{ {string.Join(", ", arms)} }}";
+    }
+
+    private string BlockMatchExpr(BoundMatchExpr match, List<BoundValueArm> arms, Func<BoundExpr, string> value)
+    {
+        var (outer, outerIndent, outerLoops) = (_out, _indent, _loops);
+        _out = new System.Text.StringBuilder();
+        _loops = new Stack<LoopContext>();
+        _indent = outerIndent + 1;
+        Line("{");
+        _indent++;
+        Line($"switch ({Expr(match.Scrutinee)})");
+        Line("{");
+        _indent++;
+        foreach (var arm in arms)
+        {
+            Line(arm.Pattern is BoundWildcardPattern ? "default:" : $"case {GuardedPattern(arm.Pattern)}:");
+            Line("{");
+            _indent++;
+            if (arm.Body is { } body)
+                EmitStatements(body.Statements);
+            if (arm.Raise is { } raise)
+                Line($"{Throw(raise)};");
+            else if (arm.Value is { } armValue)
+                Line($"return {value(armValue)};");
+            _indent--;
+            Line("}");
+        }
+        if (!arms.Any(a => Irrefutable(a.Pattern)))
+        {
+            Line("default:");
+            Line("    throw new global::System.Diagnostics.UnreachableException();");
+        }
+        _indent--;
+        Line("}");
+        _indent--;
+        Line(new string(' ', 4 * (outerIndent + 1)) + "}");
+        var lambda = _out.ToString();
+        (_out, _indent, _loops) = (outer, outerIndent, outerLoops);
+        return $"((global::System.Func<{TypeName(Concrete(match.Type))}>)(() =>\n{lambda.TrimEnd('\n')}))()";
     }
 
     private string Throw(BoundRaise raise) =>
@@ -1245,6 +1326,11 @@ public sealed partial class CSharpEmitter
             BoundSort sort => Sort(sort),
             BoundTupleLiteral tuple => NewTuple(((TupleOfType)Concrete(tuple.Type)).Elements, [.. tuple.Elements.Select(Expr)]),
             BoundTupleElement element => $"{Operand(element.Tuple)}.Item{element.Index + 1}",
+            BoundListElement { Index: >= 0 } element => $"{Operand(element.List)}[{element.Index}]",
+            BoundListElement element => $"{Operand(element.List)}[{Operand(element.List)}.Count - {-element.Index}]",
+            BoundListRest rest => $"{Runtime}.Ops.UnpackRest({Expr(rest.List)}, {rest.Start}, {rest.After})",
+            BoundTupleRest rest => $"new {TypeName(rest.ListType)} {{ {string.Join(", ", Enumerable.Range(rest.Start, rest.End - rest.Start).Select(i =>
+                $"({TypeName(rest.ListType.Element)}){Operand(rest.Tuple)}.Item{i + 1}"))} }}",
             BoundSlice slice => Slice(slice),
             BoundMatchExpr match => MatchExpr(match),
             BoundDotNetCall call => DotNetCall(call),

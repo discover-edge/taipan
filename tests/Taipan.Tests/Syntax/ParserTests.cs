@@ -385,12 +385,38 @@ public class ParserTests
             "ReturnStmt(MatchExpr(NameExpr(n), [ValueArm(IntPattern(0), IntLiteral(0), null)]))]))",
             Snapshot("def f():\n    x += match n:\n        _: 1\n    a, b = match n:\n        _: t\n    return match n:\n        0: 0\n"));
 
+    // Since M29 a match expression is an atom, whose colon ends its line (SPEC §2).
     [Fact]
-    public void MatchExpressionElsewhere() =>
+    public void MatchExpressionColonEndsItsLine() =>
+        Assert.Equal(["1:16 TP0100: expected newline, found name '_'"], Errors("print(match n: _: 1)\n"));
+
+    [Fact]
+    public void MatchExpressionAnywhere() =>
         Assert.Equal(
-            ["1:7 TP0100: 'match' can only be the whole value of 'let', 'var', an assignment or 'return'",
-             "2:13 TP0100: 'match' can only be the whole value of 'let', 'var', an assignment or 'return'"],
-            Errors("print(match n: _: 1)\nlet x = 1 + match n:\n    _: 1\n"));
+            "LetStmt(x, null, BinaryExpr(IntLiteral(1), Add, MatchExpr(NameExpr(n), [ValueArm(WildcardPattern, IntLiteral(1), null)])))",
+            Snapshot("let x = 1 + match n:\n    _: 1\n"));
+
+    // Inside brackets, the arms are indented as outside, and the brackets continue after them (SPEC §1.2).
+    [Fact]
+    public void MatchExpressionInBrackets() =>
+        Assert.Equal(
+            "ExprStmt(CallExpr(NameExpr(f), [Argument(null, MatchExpr(NameExpr(n), [ValueArm(IntPattern(0), StringLiteral(\"a\"), null), " +
+            "ValueArm(WildcardPattern, CallExpr(NameExpr(g), [Argument(null, IntLiteral(1)), Argument(null, IntLiteral(2))]), null)])), Argument(null, IntLiteral(3))]))",
+            Snapshot("f(match n:\n    0: \"a\"\n    _: g(1,\n        2)\n, 3)\n"));
+
+    [Fact]
+    public void BlockArmsAndNestedPatterns() =>
+        Assert.Equal(
+            "LetStmt(y, null, MatchExpr(NameExpr(p), [ValueArm(TuplePattern([IntPattern(0), VariantPattern(null, null, b, null)]), null, null, " +
+            "Block([ExprStmt(NameExpr(b))])), ValueArm(ListPattern([VariantPattern(null, null, a, null), StarPattern(rest)]), NameExpr(a), null), " +
+            "ValueArm(VariantPattern(null, null, Some, [VariantPattern(null, null, Dog, [PatternBinding(name, StringPattern(\"rex\"))])]), IntLiteral(1), null)]))",
+            Snapshot("let y = match p:\n    (0, b):\n        b\n    [a, *rest]: a\n    Some(Dog(name=\"rex\")): 1\n"));
+
+    [Fact]
+    public void NestedAndStarredUnpacking() =>
+        Assert.Equal(
+            "UnpackStmt(False, [UnpackedGroup([a, b]), UnpackedName(c, True)], NameExpr(t))",
+            Snapshot("let (a, b), *c = t\n"));
 
     // ---- type / base_type ----
 

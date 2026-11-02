@@ -1,0 +1,36 @@
+# Sub-patterns must fit their position's type (SPEC §5.1).
+enum Box:
+    Full(item: tuple[int, str])
+    Empty
+
+def check(b: Box, xs: list[int], n: int?, t: tuple[int, int?]):
+    match b:
+        Full((1, 2)):
+            pass
+        Full((1, "a", 3)):
+            pass
+        Full([p, q]):
+            pass
+        Full(Empty):
+            pass
+        _:
+            pass
+    match xs:
+        (p, q):
+            pass
+        ["x"]:
+            pass
+        _:
+            pass
+    match t:
+        (_, 3):
+            pass
+        (p, p):
+            pass
+        _:
+            pass
+    match b:
+        Fulll(_):
+            pass
+        _:
+            pass

@@ -769,6 +769,38 @@ public sealed class DiagnosticBag
         return list.Count <= 1 ? string.Concat(list) : $"{string.Join(", ", list[..^1])} and {list[^1]}";
     }
 
+    // ---- Destructuring (SPEC §3.8, §5.1, M29) ----
+
+    public void ReportTwoStars(TextSpan span, string where) =>
+        Add("TP0100", span, where == "a list pattern" ? "a list pattern can have only one '*'" : "an unpacking can have only one '*' at each level");
+
+    public void ReportLoneStar(TextSpan span) =>
+        Add("TP0100", span, "a starred name can't be unpacked to alone", "add another name, or drop the '*'");
+
+    public void ReportMisplacedStar(TextSpan span) =>
+        Add("TP0100", span, "'*' can only mark a name or target being unpacked");
+
+    public void ReportOneElementTuplePattern(TextSpan span) =>
+        Add("TP0209", span, "a tuple needs at least two elements");
+
+    public void ReportTuplePatternCount(TextSpan span, object type, int elements, int patterns) =>
+        Add("TP0209", span, $"{type} has {elements} elements, found {patterns} {(patterns == 1 ? "pattern" : "patterns")}");
+
+    public void ReportCannotMatchPattern(TextSpan span, object type, string kind) =>
+        Add("TP0200", span, $"{type} cannot match a {kind} pattern");
+
+    public void ReportOptionalPattern(TextSpan span, object type) =>
+        Add("TP0203", span, $"{type} can only be matched by '_' or a binding", "'None' patterns aren't supported yet; bind it and test it with 'is some'");
+
+    public void ReportArmGivesNoValue(TextSpan span) =>
+        Add("TP0200", span, "this arm gives no value", "end it with an expression");
+
+    public void ReportLeavesMatchExpression(TextSpan span, string keyword) =>
+        Add("TP0215", span, $"'{keyword}' can't leave a 'match' expression", "use a 'match' statement");
+
+    public void ReportStarredJoin(TextSpan span, string name, object first, object second) =>
+        Add("TP0200", span, $"'*{name}' would hold {first} and {second}");
+
     public void AddRange(IEnumerable<Diagnostic> diagnostics) => _items.AddRange(diagnostics);
 
     private void Add(string code, TextSpan span, string message, string? help = null) =>

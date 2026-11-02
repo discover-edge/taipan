@@ -27,7 +27,12 @@ public static class AstPrinter
         TypeParam parameter => $"TypeParam({parameter.Name.Text}, {Print(parameter.Bound)})",
         Param { Default: null } parameter => $"Param({parameter.Name.Text}, {Print(parameter.Type)})",
         FieldDef { Default: null } field => $"FieldDef({field.Name.Text}, {Print(field.Type)})",
-        PatternBinding { Field: null } binding => binding.Name.Text,
+        // A bare name prints as itself, as before patterns nested (M29).
+        PatternBinding { Field: null, Pattern: VariantPattern { Module: null, Enum: null, Bindings: null } bare } => bare.Variant.Text,
+        PatternBinding { Field: { } field, Pattern: VariantPattern { Module: null, Enum: null, Bindings: null } bare } => $"PatternBinding({field.Text}, {bare.Variant.Text})",
+        PatternBinding { Field: null } binding => Print(binding.Pattern),
+        UnpackedName { Starred: false } name => name.Name.Text,
+        UnpackedTarget { Starred: false } target => Print(target.Target),
         bool b => b ? "True" : "False",
         BigInteger i => i.ToString(CultureInfo.InvariantCulture),
         double d => d.ToString("R", CultureInfo.InvariantCulture),
@@ -45,6 +50,7 @@ public static class AstPrinter
             .Where(p => !(p.Name == "Decorators" && p.GetValue(node) is ImmutableArray<Decorator> { IsEmpty: true }))
             .Where(p => !(p.Name == "Member" && node is Decorator { Member: null }))
             .Where(p => !(p.Name == "Receiver" && node is MethodDef { Receiver: Receiver.Self }))
+            .Where(p => !(p.Name == "Block" && node is ValueArm { Block: null }))
             .Select(p => Print(p.GetValue(node)))
             .ToList();
         return children.Count == 0 ? type.Name : $"{type.Name}({string.Join(", ", children)})";

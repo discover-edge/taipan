@@ -1,0 +1,5 @@
+# Unpacking needs a tuple or a list, and a starred name in a tuple needs one element type (SPEC §3.8).
+let a, *b = (1, "x", 2.5)
+let c, d = 5
+let (e, f), g = ([1, 2], 3)
+print(e, f, g)

@@ -1,4 +1,5 @@
-# A match expression is only the whole value of 'let', 'var', an assignment or 'return' (SPEC §2).
+# Before M29 a match expression was only the whole value of 'let', 'var', an assignment or 'return' (SPEC §2).
+# Since M29 it's an atom, whose colon ends its line, so only line 4 is an error.
 let n = 3
 print(match n: _: 1)
 let x = 1 + match n:

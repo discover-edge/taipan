@@ -1,0 +1,48 @@
+# match expressions anywhere an expression may appear, and arms with blocks (SPEC §5.1.1).
+enum Shape:
+    Circle(r: float)
+    Square(side: float)
+
+let shapes = [Circle(1.0), Square(3.0), Circle(2.0)]
+print(match shapes[0]:
+    Circle(r): f"circle {r}"
+    Square(_): "square"
+, "first")
+
+let by_area = sorted(shapes, key=lambda s: match s:
+    Circle(r): r * r * 3.0
+    Square(side): side * side
+)
+print(by_area)
+
+let total = 1 + match len(shapes):
+    0: 0
+    n: n * 10
+print(total)
+
+let labels = map(lambda s: match s:
+    Circle(_): "c"
+    Square(_): "s"
+, shapes)
+print(labels, [match labels[0]:
+    "c": 1
+    _: 2
+, 3])
+
+def cost(s: Shape) -> float:
+    let base = match s:
+        Circle(r):
+            let d = 2.0 * r
+            print("diameter", d)
+            d * 1.5
+        Square(side):
+            if side > 10.0:
+                raise ValueError("too big")
+            side
+    return base + 1.0
+
+print(cost(Circle(1.0)), cost(Square(2.0)))
+try:
+    print(cost(Square(20.0)))
+except ValueError as e:
+    print("error:", e)

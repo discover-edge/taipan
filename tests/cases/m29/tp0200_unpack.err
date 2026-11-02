@@ -1,0 +1,2 @@
+tests/cases/m29/tp0200_unpack.tpn:2:8: error TP0200: '*b' would hold str and float
+tests/cases/m29/tp0200_unpack.tpn:3:12: error TP0200: cannot unpack int

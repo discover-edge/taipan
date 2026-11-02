@@ -1,0 +1,5 @@
+tests/cases/m29/tp0200_match_expr.tpn:6:17: error TP0200: 'print' does not return a value
+tests/cases/m29/tp0200_match_expr.tpn:8:17: error TP0215: 'break' can't leave a 'match' expression
+  help: use a 'match' statement
+tests/cases/m29/tp0200_match_expr.tpn:10:17: error TP0215: 'return' can't leave a 'match' expression
+  help: use a 'match' statement

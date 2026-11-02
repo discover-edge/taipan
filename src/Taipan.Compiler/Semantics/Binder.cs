@@ -1392,6 +1392,24 @@ public sealed partial class Binder
         return new BoundFunction(symbol, boundBody, span) { Source = _source };
     }
 
+    // The names an unpacking or a pattern may bind (SPEC §3.8, §5.1), for TP0211.
+    private static IEnumerable<string> UnpackedNames(IEnumerable<Unpacked> items) => items.SelectMany(item => item switch
+    {
+        UnpackedName { Name.Text: not "_" } name => [name.Name.Text],
+        UnpackedGroup group => UnpackedNames(group.Items),
+        _ => (IEnumerable<string>)[],
+    });
+
+    private static IEnumerable<string> PatternNames(Pattern pattern) => pattern switch
+    {
+        VariantPattern { Module: null, Enum: null, Bindings: null } bare => [bare.Variant.Text],
+        VariantPattern { Bindings: { } arguments } => arguments.SelectMany(a => PatternNames(a.Pattern)),
+        TuplePattern tuple => tuple.Elements.SelectMany(PatternNames),
+        ListPattern list => list.Elements.SelectMany(PatternNames),
+        StarPattern { Name.Text: not "_" } star => [star.Name.Text],
+        _ => [],
+    };
+
     /// <summary>Records every let/var/loop variable outside functions, for TP0211.</summary>
     private void CollectScriptNames(Stmt stmt)
     {
@@ -1419,11 +1437,11 @@ public sealed partial class Binder
                 CollectScriptNames(whileStmt.Body);
                 break;
             case ForStmt forStmt:
-                _scriptNames.UnionWith(forStmt.Variables.Select(v => v.Text).Where(n => n != "_"));
+                _scriptNames.UnionWith(UnpackedNames(forStmt.Variables));
                 CollectScriptNames(forStmt.Body);
                 break;
             case UnpackStmt unpack:
-                _scriptNames.UnionWith(unpack.Names.Select(n => n.Text).Where(n => n != "_"));
+                _scriptNames.UnionWith(UnpackedNames(unpack.Names));
                 break;
             case FuncDefStmt funcDef:
                 _scriptNames.Add(funcDef.Function.Name.Text);
@@ -1431,8 +1449,7 @@ public sealed partial class Binder
             case MatchStmt match:
                 foreach (var arm in match.Arms)
                 {
-                    if (arm.Pattern is VariantPattern { Bindings: { } names })
-                        _scriptNames.UnionWith(names.Select(n => n.Name.Text).Where(n => n != "_"));
+                    _scriptNames.UnionWith(PatternNames(arm.Pattern));
                     CollectScriptNames(arm.Body);
                 }
                 break;
@@ -1737,79 +1754,6 @@ public sealed partial class Binder
         _ => throw new InvalidOperationException($"unexpected statement {stmt.GetType().Name}"),
     };
 
-    // ---- Unpacking (SPEC §3.8) ----
-
-    /// <summary>
-    /// The element types of a tuple being unpacked into <paramref name="count"/> names, or null
-    /// after reporting a value that isn't such a tuple (silently, if it already has an error).
-    /// </summary>
-    private ImmutableArray<TaipanType>? UnpackedTypes(BoundExpr value, TextSpan span, int count)
-    {
-        if (value.Type.ContainsError || ReportIfOptional(value, span))
-            return null;
-        if (value.Type is not TupleOfType tuple)
-        {
-            _diagnostics.ReportCannotUnpack(span, value.Type);
-            return null;
-        }
-        if (tuple.Elements.Length != count)
-        {
-            _diagnostics.ReportUnpackCount(span, tuple, tuple.Elements.Length, count);
-            return null;
-        }
-        return tuple.Elements;
-    }
-
-    /// <summary>
-    /// Declarations that unpack <paramref name="temp"/>'s elements into <paramref name="names"/>
-    /// (<c>_</c> declares nothing). The element types are the error type if it can't be unpacked.
-    /// </summary>
-    private ImmutableArray<BoundStmt> UnpackInto(
-        VariableSymbol temp, ImmutableArray<TaipanType>? elements, ImmutableArray<Identifier> names, VariableKind kind, TextSpan span)
-    {
-        var stores = ImmutableArray.CreateBuilder<BoundStmt>();
-        for (var i = 0; i < names.Length; i++)
-        {
-            if (names[i].Text == "_")
-                continue;
-            var type = elements?[i] ?? TaipanType.Error;
-            var symbol = new VariableSymbol(names[i].Text, type, kind);
-            DeclareLocal(names[i], symbol);
-            stores.Add(new BoundVariableDecl(symbol, new BoundTupleElement(new BoundVariable(temp, span), i, type, span), span));
-        }
-        return stores.ToImmutable();
-    }
-
-    // The value is held in a temporary named `_`, which the emitter always renames.
-    private static VariableSymbol UnpackTemp(TaipanType type) => new("_", type, VariableKind.Let);
-
-    private BoundUnpack BindUnpack(UnpackStmt unpack)
-    {
-        var value = BindValue(unpack.Value);
-        var elements = UnpackedTypes(value, unpack.Value.Span, unpack.Names.Length);
-        var temp = UnpackTemp(value.Type);
-        var stores = UnpackInto(temp, elements, unpack.Names, unpack.IsVar ? VariableKind.Var : VariableKind.Let, unpack.Span);
-        return new BoundUnpack(temp, value, stores, unpack.Span);
-    }
-
-    /// <summary>
-    /// <c>a, b = e</c>: the value first, then each target in turn, as for <c>=</c>. A tuple
-    /// literal on the right is bound without expected types; its elements are checked against
-    /// the targets as they're stored.
-    /// </summary>
-    private BoundUnpack BindTupleAssign(TupleAssignStmt assign)
-    {
-        var value = BindValue(assign.Value);
-        var elements = UnpackedTypes(value, assign.Value.Span, assign.Targets.Length);
-        var temp = UnpackTemp(value.Type);
-        var stores = assign.Targets
-            .Select((target, i) => BindAssign(
-                new AssignStmt(target, AssignOp.Assign, assign.Value, assign.Span),
-                new BoundTupleElement(new BoundVariable(temp, assign.Value.Span), i, elements?[i] ?? TaipanType.Error, assign.Value.Span)))
-            .ToImmutableArray();
-        return new BoundUnpack(temp, value, stores, assign.Span);
-    }
-
     /// <summary>
     /// A nested <c>def</c> (SPEC §3.7): a local function value, visible from here to the end of the
     /// block and in its own body. Its body sees the enclosing bindings, and has its own returns and loops.
@@ -1851,388 +1795,6 @@ public sealed partial class Binder
         (_handlerDepth, _finallyLoopDepth) = (outerHandlerDepth, outerFinallyLoopDepth);
         _typeParameters = outerTypeParameters;
         return new BoundLocalFunction(symbol, function, parameters, body, stmt.Span);
-    }
-
-    // ---- match (SPEC §5.1) ----
-
-    private BoundMatch BindMatch(MatchStmt match)
-    {
-        var (scrutinee, type) = BindScrutinee(match.Scrutinee);
-        // After a match statement, what holds at the end of every arm that can finish (SPEC §3.9).
-        var ends = new List<Narrowing>();
-        var arms = BindArms(scrutinee, type, match.Span, [.. match.Arms.Select(a => a.Pattern)], (i, pattern, reachable) =>
-        {
-            var arm = new BoundArm(pattern, BindBlock(match.Arms[i].Body), reachable);
-            if (reachable && !Exits(arm.Body))
-                ends.Add(_narrowing);
-            return arm;
-        });
-        if (ends.Count > 0)
-            _narrowing = Join(ends);
-        return new BoundMatch(scrutinee, arms, match.Span);
-    }
-
-    /// <summary>
-    /// A match expression (SPEC §5.1.1): each arm is checked against the expected type, or the
-    /// arms' types join as list elements do. Raising and unreachable arms give no type.
-    /// </summary>
-    private BoundExpr BindMatchExpr(MatchExpr match, TaipanType? expected)
-    {
-        var (scrutinee, type) = BindScrutinee(match.Scrutinee);
-        var arms = BindArms(scrutinee, type, match.Span, [.. match.Arms.Select(a => a.Pattern)], (i, pattern, reachable) =>
-        {
-            var arm = match.Arms[i];
-            if (arm.Raise is { } raise)
-                return new BoundValueArm(pattern, null, BindRaise(raise), reachable);
-            var value = expected is null ? BindValue(arm.Value!) : BindExpected(arm.Value!, expected);
-            return new BoundValueArm(pattern, value, null, reachable);
-        });
-
-        var values = arms.Where(a => a.IsReachable && a.Value is not null).Select(a => a.Value!).ToImmutableArray();
-        if (values.IsEmpty)
-        {
-            _diagnostics.ReportEveryArmRaises(MatchKeyword(match.Span));
-            return new BoundMatchExpr(scrutinee, arms, TaipanType.Error, match.Span);
-        }
-        return new BoundMatchExpr(scrutinee, arms, expected ?? InferElementType(values), match.Span);
-    }
-
-    private static TextSpan MatchKeyword(TextSpan match) => new(match.Start, "match".Length);
-
-    /// <summary>A match's scrutinee, and the type its patterns are checked against (an error type if it can't be matched).</summary>
-    private (BoundExpr Scrutinee, TaipanType Type) BindScrutinee(Expr syntax)
-    {
-        var scrutinee = BindValue(syntax);
-        var type = scrutinee.Type;
-        if (ReportIfOptional(scrutinee, syntax.Span))
-            type = TaipanType.Error;
-        else if (!type.ContainsError && type is not (EnumType or ClassType) && type != TaipanType.Int && type != TaipanType.Str && type != TaipanType.Bool)
-        {
-            _diagnostics.ReportCannotMatch(syntax.Span, type);
-            type = TaipanType.Error;
-        }
-        return (scrutinee, type);
-    }
-
-    /// <summary>
-    /// Binds each arm's pattern and then, with its bindings in scope and a class pattern's narrowing
-    /// applied, its body; then checks exhaustiveness (SPEC §5.1).
-    /// </summary>
-    private ImmutableArray<TArm> BindArms<TArm>(
-        BoundExpr scrutinee, TaipanType type, TextSpan matchSpan, ImmutableArray<Pattern> patterns, Func<int, BoundPattern, bool, TArm> bindBody)
-    {
-        var covered = new MatchCoverage();
-        var arms = ImmutableArray.CreateBuilder<TArm>();
-        var allValid = true;
-        for (var i = 0; i < patterns.Length; i++)
-        {
-            var (pattern, bindings, key) = BindPattern(patterns[i], type);
-            allValid &= key is not null;
-            var reachable = covered.Add(key);
-            if (!reachable)
-                _diagnostics.ReportUnreachableArm(patterns[i].Span);
-
-            var outer = _scope;
-            _scope = new Scope(outer);
-            foreach (var (identifier, symbol) in bindings)
-                DeclareLocal(identifier, symbol);
-            // A class pattern narrows the scrutinee in its arm (SPEC §5.1).
-            var (outerNarrowing, mark) = (_narrowing, _endings.Count);
-            if (pattern is BoundClassPattern classPattern)
-                _narrowing = _narrowing.With(Narrow(scrutinee, classPattern.Class.Symbol.DerivesFrom(((ClassType)type).Symbol) ? classPattern.Class : type));
-            arms.Add(bindBody(i, pattern, reachable));
-            // Each arm starts from the state before the match; a statement collects the arms' ends.
-            _narrowing = Replay(outerNarrowing, mark);
-            _scope = outer;
-        }
-
-        // An invalid pattern was already reported; don't also call its variant missing.
-        if (allValid && !type.ContainsError && covered.Missing(type) is { Count: > 0 } missing)
-            _diagnostics.ReportNonExhaustiveMatch(MatchKeyword(matchSpan), missing);
-        return arms.ToImmutable();
-    }
-
-    /// <summary>
-    /// Binds a pattern against the scrutinee type. Returns its bindings to declare in the arm, and
-    /// a coverage key: <c>_</c>, the variant, or the literal value (null if the pattern is invalid).
-    /// </summary>
-    private (BoundPattern Pattern, List<(Identifier, VariableSymbol)> Bindings, object? Key) BindPattern(Pattern pattern, TaipanType type)
-    {
-        var bindings = new List<(Identifier, VariableSymbol)>();
-        switch (pattern)
-        {
-            case WildcardPattern:
-                return (new BoundWildcardPattern(), bindings, MatchCoverage.Wildcard);
-            case IntPattern intPattern:
-                return LiteralPattern(pattern, TaipanType.Int, type, intPattern.Value >= long.MinValue && intPattern.Value <= long.MaxValue
-                    ? (long)intPattern.Value
-                    : OutOfRange(intPattern.Span));
-            case StringPattern stringPattern:
-                return LiteralPattern(pattern, TaipanType.Str, type, stringPattern.Value);
-            case BoolPattern boolPattern:
-                return LiteralPattern(pattern, TaipanType.Bool, type, boolPattern.Value);
-            case VariantPattern classPattern when type is ClassType classType:
-                return BindClassPattern(classPattern, classType);
-            case VariantPattern variantPattern:
-                var variant = ResolveVariantPattern(variantPattern, type);
-                if (variant is null)
-                {
-                    return (new BoundWildcardPattern(), bindings, null);
-                }
-                var symbols = ImmutableArray<VariableSymbol?>.Empty;
-                if (variantPattern.Bindings is { } names && !(names.IsEmpty && variant.Fields.IsEmpty))
-                {
-                    if (names.Length != variant.Fields.Length)
-                    {
-                        _diagnostics.ReportBindingCount(variantPattern.Span, variant.Name, variant.Fields.Length, names.Length);
-                        return (new BoundWildcardPattern(), bindings, null);
-                    }
-                    var builder = ImmutableArray.CreateBuilder<VariableSymbol?>();
-                    foreach (var (name, field) in names.Select(n => n.Name).Zip(variant.Fields))
-                    {
-                        if (name.Text == "_")
-                        {
-                            builder.Add(null);
-                            continue;
-                        }
-                        var symbol = new VariableSymbol(name.Text, FieldType(type, field), VariableKind.Let);
-                        if (bindings.Any(b => b.Item1.Text == name.Text))
-                            _diagnostics.ReportDuplicateDefinition(name.Span, name.Text);
-                        else
-                            bindings.Add((name, symbol));
-                        builder.Add(symbol);
-                    }
-                    symbols = builder.ToImmutable();
-                }
-                return (new BoundVariantPattern(variant, symbols), bindings, variant);
-            default:
-                return (new BoundWildcardPattern(), bindings, null);
-        }
-    }
-
-    /// <summary>
-    /// <c>C(…)</c> on a class scrutinee (SPEC §5.1): it matches instances of <c>C</c>, which must
-    /// derive from the scrutinee's class. Fields bind by name, or for a dataclass also by position.
-    /// Its coverage key is the class.
-    /// </summary>
-    private (BoundPattern, List<(Identifier, VariableSymbol)>, object?) BindClassPattern(VariantPattern pattern, ClassType scrutinee)
-    {
-        var bindings = new List<(Identifier, VariableSymbol)>();
-        var invalid = (new BoundWildcardPattern(), bindings, (object?)null);
-        if (pattern.Module is not null)
-        {
-            _diagnostics.ReportNotAClass(pattern.Span, _source.ToString(pattern.Span));
-            return invalid;
-        }
-        Symbol? found;
-        if (pattern.Enum is { } moduleName)
-        {
-            if (_scope.Lookup(moduleName.Text) is not ModuleSymbol module)
-            {
-                _diagnostics.ReportUndefinedName(moduleName.Span, moduleName.Text);
-                return invalid;
-            }
-            if (!module.Definitions.TryGetValue(pattern.Variant.Text, out found))
-            {
-                _diagnostics.ReportNoDefinition(pattern.Variant.Span, module.Name, pattern.Variant.Text);
-                return invalid;
-            }
-        }
-        else if ((found = LookupName(pattern.Variant.Text, pattern.Variant.Span)) is null)
-        {
-            return invalid;
-        }
-        if (found is TypeAliasSymbol alias)
-        {
-            _diagnostics.ReportAliasAsValue(pattern.Variant.Span, pattern.Variant.Text, alias.TargetName);
-            return invalid;
-        }
-        var classSymbol = found as ClassSymbol;
-        var name = _source.ToString(new TextSpan(pattern.Span.Start, pattern.Variant.Span.End - pattern.Span.Start));
-        if (classSymbol is null)
-        {
-            _diagnostics.ReportNotAClass(pattern.Span, name);
-            return invalid;
-        }
-        if (classSymbol.IsProtocol)
-        {
-            _diagnostics.ReportProtocolAsType(pattern.Variant.Span, classSymbol.Name);
-            return invalid;
-        }
-        if (pattern.Bindings is not { } names)
-        {
-            _diagnostics.ReportBareClassPattern(pattern.Span, name);
-            return invalid;
-        }
-        if (!classSymbol.DerivesFrom(scrutinee.Symbol))
-        {
-            _diagnostics.ReportNeverInstance(pattern.Span, scrutinee, classSymbol.Name);
-            return invalid;
-        }
-
-        // Generic classes don't derive, so the pattern's class is the scrutinee's type or isn't generic.
-        var classType = classSymbol == scrutinee.Symbol ? scrutinee : new ClassType(classSymbol);
-        var positional = names.TakeWhile(n => n.Field is null).Count();
-        var fields = classSymbol.AllFields;
-        if (positional > 0 && !classSymbol.IsDataclass)
-        {
-            _diagnostics.ReportPositionalOnPlainClass(pattern.Span, classSymbol.Name);
-            return invalid;
-        }
-        if (positional > fields.Length)
-        {
-            _diagnostics.ReportBindingCount(pattern.Span, classSymbol.Name, fields.Length, positional);
-            return invalid;
-        }
-        var bound = ImmutableArray.CreateBuilder<(FieldSymbol, VariableSymbol)>();
-        var given = new HashSet<FieldSymbol>();
-        var valid = true;
-        for (var i = 0; i < names.Length; i++)
-        {
-            var binding = names[i];
-            FieldSymbol? field;
-            if (binding.Field is null)
-            {
-                field = fields[i];
-            }
-            else
-            {
-                field = classSymbol.FindField(binding.Field.Text);
-                if (field is null)
-                {
-                    _diagnostics.ReportNoField(binding.Field.Span, classType, binding.Field.Text);
-                    valid = false;
-                    continue;
-                }
-            }
-            if (!given.Add(field))
-            {
-                _diagnostics.ReportRepeatedField((binding.Field ?? binding.Name).Span, field.Name);
-                valid = false;
-                continue;
-            }
-            if (binding.Name.Text == "_")
-                continue;
-            var symbol = new VariableSymbol(binding.Name.Text, FieldType(classType, field), VariableKind.Let);
-            if (bindings.Any(b => b.Item1.Text == binding.Name.Text))
-                _diagnostics.ReportDuplicateDefinition(binding.Name.Span, binding.Name.Text);
-            else
-                bindings.Add((binding.Name, symbol));
-            bound.Add((field, symbol));
-        }
-        return valid ? (new BoundClassPattern(classType, bound.ToImmutable()), bindings, classSymbol) : invalid;
-    }
-
-    private object? OutOfRange(TextSpan span)
-    {
-        _diagnostics.ReportIntegerOutOfRange(span);
-        return null;
-    }
-
-    private (BoundPattern, List<(Identifier, VariableSymbol)>, object?) LiteralPattern(Pattern pattern, TaipanType patternType, TaipanType type, object? value)
-    {
-        if (!type.ContainsError && type != patternType)
-        {
-            _diagnostics.ReportTypeMismatch(pattern.Span, type, patternType);
-            value = null;
-        }
-        return (value is null ? new BoundWildcardPattern() : new BoundLiteralPattern(value), [], value);
-    }
-
-    /// <summary>Variant patterns resolve against the scrutinee's enum, so they're never ambiguous (SPEC §5.1).</summary>
-    private VariantSymbol? ResolveVariantPattern(VariantPattern pattern, TaipanType type)
-    {
-        if (type.ContainsError)
-            return null;
-        if (type is not EnumType { Symbol: var enumSymbol })
-        {
-            var found = pattern.Enum?.Text ?? (_global.Lookup(pattern.Variant.Text) switch
-            {
-                VariantSymbol v => v.Enum.Name,
-                AmbiguousVariantSymbol a => a.Variants[0].Enum.Name,
-                _ => $"variant '{pattern.Variant.Text}'",
-            });
-            _diagnostics.ReportTypeMismatch(pattern.Span, type, found);
-            return null;
-        }
-        if (pattern.Enum is { } qualifier)
-        {
-            EnumSymbol? named;
-            if (pattern.Module is { } moduleName)
-            {
-                if (_scope.Lookup(moduleName.Text) is not ModuleSymbol module)
-                {
-                    _diagnostics.ReportUndefinedName(moduleName.Span, moduleName.Text);
-                    return null;
-                }
-                named = module.Enums.GetValueOrDefault(qualifier.Text);
-                if (module.Definitions.GetValueOrDefault(qualifier.Text) is TypeAliasSymbol alias)
-                {
-                    _diagnostics.ReportAliasAsValue(qualifier.Span, qualifier.Text, alias.TargetName);
-                    return null;
-                }
-                if (named is null)
-                {
-                    _diagnostics.ReportNoDefinition(qualifier.Span, module.Name, qualifier.Text);
-                    return null;
-                }
-            }
-            else
-            {
-                named = ResolveTypeName(qualifier.Text) as EnumSymbol;
-                if (_global.Lookup(qualifier.Text) is TypeAliasSymbol alias)
-                {
-                    _diagnostics.ReportAliasAsValue(qualifier.Span, qualifier.Text, alias.TargetName);
-                    return null;
-                }
-                if (named is null)
-                {
-                    _diagnostics.ReportUndefinedName(qualifier.Span, qualifier.Text);
-                    return null;
-                }
-            }
-            if (named != enumSymbol)
-            {
-                _diagnostics.ReportTypeMismatch(pattern.Span, type, named.Name);
-                return null;
-            }
-        }
-        var variant = enumSymbol.FindVariant(pattern.Variant.Text);
-        if (variant is null)
-            _diagnostics.ReportNoVariant(pattern.Variant.Span, type, pattern.Variant.Text);
-        return variant;
-    }
-
-    /// <summary>Which arms a match has covered so far, for TP0300 and TP0204.</summary>
-    private sealed class MatchCoverage
-    {
-        public static readonly object Wildcard = new();
-
-        private readonly HashSet<object> _keys = [];
-
-        /// <summary>Records an arm; false if an earlier arm already covers it (unreachable).</summary>
-        public bool Add(object? key)
-        {
-            if (_keys.Contains(Wildcard))
-                return false;
-            // A class pattern covers every class deriving from it (SPEC §5.1).
-            if (key is ClassSymbol classSymbol && _keys.OfType<ClassSymbol>().Any(classSymbol.DerivesFrom))
-                return false;
-            return key is null || _keys.Add(key);
-        }
-
-        public List<string> Missing(TaipanType type)
-        {
-            if (_keys.Contains(Wildcard))
-                return [];
-            return type switch
-            {
-                EnumType e => [.. e.Symbol.Variants.Where(v => !_keys.Contains(v)).Select(v => v.Name)],
-                PrimitiveType { Name: "bool" } => [.. new[] { true, false }.Where(b => !_keys.Contains(b)).Select(b => b ? "True" : "False")],
-                ClassType c when _keys.Contains(c.Symbol) => [],
-                _ => ["_"],
-            };
-        }
     }
 
     private BoundVariableDecl BindVariableDecl(
@@ -2402,6 +1964,8 @@ public sealed partial class Binder
 
         if (_finallyLoopDepth is not null)
             _diagnostics.ReportLeavesFinally(new TextSpan(ret.Span.Start, "return".Length), "return");
+        else if (LeavesMatchExpression(isReturn: true))
+            _diagnostics.ReportLeavesMatchExpression(new TextSpan(ret.Span.Start, "return".Length), "return");
         var returnType = TypeChecker.Substitute(_function.ReturnType, _specialization);
         if (ret.Value is null)
         {
@@ -2425,6 +1989,8 @@ public sealed partial class Binder
             _diagnostics.ReportBreakOutsideLoop(brk.Span);
         else if (_finallyLoopDepth == _loopDepth)
             _diagnostics.ReportLeavesFinally(brk.Span, "break");
+        else if (LeavesMatchExpression(isReturn: false))
+            _diagnostics.ReportLeavesMatchExpression(brk.Span, "break");
         return new BoundBreak(brk.Span);
     }
 
@@ -2434,6 +2000,8 @@ public sealed partial class Binder
             _diagnostics.ReportContinueOutsideLoop(cont.Span);
         else if (_finallyLoopDepth == _loopDepth)
             _diagnostics.ReportLeavesFinally(cont.Span, "continue");
+        else if (LeavesMatchExpression(isReturn: false))
+            _diagnostics.ReportLeavesMatchExpression(cont.Span, "continue");
         return new BoundContinue(cont.Span);
     }
 
@@ -2796,16 +2364,16 @@ public sealed partial class Binder
         _scope = new Scope(outer);
         VariableSymbol variable;
         var unpacked = ImmutableArray<BoundStmt>.Empty;
-        if (forStmt.Variables is [var single])
+        if (forStmt.Variables is [UnpackedName { Starred: false } single])
         {
-            variable = new VariableSymbol(single.Text, variableType, VariableKind.LoopVariable);
-            DeclareLocal(single, variable);
+            variable = new VariableSymbol(single.Name.Text, variableType, VariableKind.LoopVariable);
+            DeclareLocal(single.Name, variable);
         }
         else
         {
             variable = UnpackTemp(variableType);
-            var elements = UnpackedTypes(new BoundVariable(variable, forStmt.Iterable.Span), forStmt.Iterable.Span, forStmt.Variables.Length);
-            unpacked = UnpackInto(variable, elements, forStmt.Variables, VariableKind.LoopVariable, forStmt.Span);
+            unpacked = [Unpack(new BoundVariable(variable, forStmt.Iterable.Span), forStmt.Iterable.Span, forStmt.Variables,
+                (item, element) => DeclareUnpacked(item, element, VariableKind.LoopVariable), forStmt.Span)];
         }
         _loopDepth++;
         // The body runs again, and maybe not at all, so it and the code after it see what it can't end (SPEC §3.9).
@@ -3155,8 +2723,16 @@ public sealed partial class Binder
         SliceExpr slice => BindSlice(slice),
         ErrorExpr => new BoundErrorExpr(expr.Span),
         EllipsisExpr => MisplacedEllipsis(expr.Span),
+        StarredExpr starred => MisplacedStar(starred),
         _ => throw new InvalidOperationException($"unexpected expression {expr.GetType().Name}"),
     };
+
+    // `*x` is only an unpacking target (SPEC §3.8).
+    private BoundErrorExpr MisplacedStar(StarredExpr starred)
+    {
+        _diagnostics.ReportMisplacedStar(starred.Span);
+        return new BoundErrorExpr(starred.Span);
+    }
 
     private BoundErrorExpr MisplacedEllipsis(TextSpan span)
     {

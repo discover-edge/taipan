@@ -26,6 +26,7 @@ Taipan is a statically typed, compiled language with Python's surface syntax. Th
   - On lesser indentation, it pops and emits one `DEDENT` per pop. If the new level doesn't match an earlier level on the stack, that's `TP0002`.
 - Blank lines and comment-only lines are ignored for indentation.
 - **Implicit line joining:** inside `()`, `[]`, or `{}`, newlines and indentation are ignored.
+  - **Except for a `match` expression's arms (M29, §5.1.1).** Inside brackets, when a line ends with the `:` of a `match` at the current bracket depth, the lexer emits `NEWLINE` and treats the following lines as an indented block: `INDENT` on the first, which must be indented more than the line with `match` (`TP0100` otherwise), then `NEWLINE`, `INDENT` and `DEDENT` as usual. Brackets opened inside an arm join lines again until they close. The first line indented no more than the line with `match` ends the arms: the lexer emits the `DEDENT`s and returns to joining lines in the enclosing brackets.
 - There is no backslash line continuation.
 - At EOF, the lexer emits `NEWLINE` if needed, then a `DEDENT` for each remaining stack level, then `EOF`.
 
@@ -118,15 +119,18 @@ stmt          = simple_stmt NEWLINE | compound_stmt ;
 simple_stmt   = let_stmt | var_stmt | assign_stmt | return_stmt | raise_stmt | del_stmt
               | "pass" | "break" | "continue" | expr ;
 del_stmt      = "del" target { "," target } ;                       (* M26, §5.5 *)
-let_stmt      = "let" ( NAME [ ":" type ] | names ) "=" ( expr_list | match_expr ) ;
-var_stmt      = "var" ( NAME [ ":" type ] | names ) "=" ( expr_list | match_expr ) ;
-names         = NAME "," NAME { "," NAME } ;                         (* unpacking: M12, §3.8 *)
-assign_stmt   = target ( "=" | "+=" | "-=" | "*=" | "/=" ) ( expr | match_expr )
-              | target "," target { "," target } "=" ( expr_list | match_expr ) ;   (* M12 *)
+let_stmt      = "let" ( NAME [ ":" type ] | names ) "=" expr_list ;
+var_stmt      = "var" ( NAME [ ":" type ] | names ) "=" expr_list ;
+names         = unpacked "," unpacked { "," unpacked } [ "," ] ;      (* unpacking: M12, §3.8 *)
+unpacked      = NAME | "*" NAME | "(" names ")" ;                    (* "*" and nesting: M29 *)
+assign_stmt   = target ( "=" | "+=" | "-=" | "*=" | "/=" ) expr
+              | targets "=" expr_list ;                              (* M12 *)
+targets       = unpack_target "," unpack_target { "," unpack_target } [ "," ] ;
+unpack_target = target | "*" target | "(" targets ")" ;              (* "*" and nesting: M29 *)
 target        = NAME | postfix "." NAME | postfix "[" subscript "]" ;   (* a slice: M26, §5.5 *)
-return_stmt   = "return" [ expr_list | match_expr ] ;
-match_expr    = "match" expr ":" NEWLINE INDENT value_arm { value_arm } DEDENT ;   (* M19, §5.1.1 *)
-value_arm     = pattern ":" ( expr | raise_stmt ) NEWLINE ;
+return_stmt   = "return" [ expr_list ] ;
+match_expr    = "match" expr ":" NEWLINE INDENT value_arm { value_arm } DEDENT ;   (* M19, §5.1.1; an atom since M29 *)
+value_arm     = pattern ":" ( ( expr | raise_stmt ) NEWLINE | block ) ;   (* block: M29 *)
 expr_list     = expr { "," expr } ;                                  (* two or more make a tuple: M12 *)
 raise_stmt    = "raise" [ expr ] ;                                   (* M16, §3.10 *)
 
@@ -137,13 +141,16 @@ except_types  = qual_name | "(" qual_name { "," qual_name } [ "," ] ")" ;
 if_stmt       = "if" condition ":" block { "elif" condition ":" block } [ "else" ":" block ] ;
 condition     = expr "is" "some" NAME | expr ;
 while_stmt    = "while" condition ":" block ;
-for_stmt      = "for" ( NAME | names ) "in" expr ":" block ;
+for_stmt      = "for" ( NAME | names ) "in" expr ":" block ;       (* nested and starred names: M29 *)
 match_stmt    = "match" expr ":" NEWLINE INDENT arm { arm } DEDENT ;
 arm           = pattern ":" ( simple_stmt NEWLINE | block ) ;
 pattern       = "_" | [ "-" ] INT | STRING | "True" | "False"
-              | qual_name [ "(" [ pat_args ] ")" ] ;
+              | qual_name [ "(" [ pat_args ] ")" ]                   (* a bare NAME: a variant or a binding, M29, §5.1 *)
+              | "(" pattern "," [ pattern { "," pattern } [ "," ] ] ")"   (* tuple: M29; one element is TP0209 *)
+              | "[" [ list_pat { "," list_pat } [ "," ] ] "]" ;      (* list: M29 *)
+list_pat      = pattern | "*" NAME ;                                 (* "*_" ignores the rest *)
 pat_args      = pat_arg { "," pat_arg } [ "," ] ;
-pat_arg       = NAME | NAME "=" NAME ;                               (* keyword form: class patterns, M15, §5.1 *)
+pat_arg       = pattern | NAME "=" pattern ;                         (* keyword form: class patterns, M15; sub-patterns: M29 *)
 qual_name     = NAME [ "." NAME [ "." NAME ] ] ;                    (* module.Enum.Variant: M9 *)
 
 type          = base_type { "?" } ;                               (* more than one "?" is TP0213, §3.1 *)
@@ -176,14 +183,16 @@ atom          = INT | FLOAT | STRING | FSTRING | "True" | "False" | "None"
               | NAME | "self" | "(" expr ")" | "..."                 (* "...": M17, a protocol method's body *)
               | "(" expr "," [ expr { "," expr } [ "," ] ] ")"         (* a tuple: M12; one element is TP0209 *)
               | "[" [ expr { "," expr } [ "," ] ] "]"
-              | "{" [ expr ":" expr { "," expr ":" expr } [ "," ] ] "}" ;
+              | "{" [ expr ":" expr { "," expr ":" expr } [ "," ] ] "}"
+              | match_expr ;                                         (* anywhere: M29, §5.1.1 *)
 ```
 
 **Grammar notes**
 - `a < b < c` is `TP0212`. Write `a < b and b < c`.
 - An `arm` may take a simple statement on the same line (`Ok: print("ok")`) or an indented block.
-- **`match` expressions (M19)** are only the whole right-hand side of a `let`, `var` or assignment, or the whole value of a `return`, so the `match` always ends its line and its arms are indented under it. A statement ending in a `match_expr` has no `NEWLINE` of its own: the arms' `DEDENT` ends it. A `match` at the start of a statement is always a `match_stmt`. A `match` anywhere else in an expression (`f(match x: …)`, `1 + match x: …`, a lambda's body) is `TP0100`, `'match' can only be the whole value of 'let', 'var', an assignment or 'return'`, at `match`.
-- A `value_arm` is an expression or a `raise` on the same line as its pattern: `Ok: "up"`, `_: raise ValueError("bad status")`. An indented block is `TP0100`, `expected expression, found newline`.
+- **`match` expressions (M19)** were only the whole right-hand side of a `let`, `var` or assignment, or the whole value of a `return`, before M29 (`TP0100`, `'match' can only be the whole value of 'let', 'var', an assignment or 'return'`). Since M29 a `match_expr` is an atom, so it may appear anywhere an expression may (§5.1.1). Its `:` must end its line (`TP0100`, `expected newline, found <token>`), and its arms are indented under it. Outside brackets, a statement whose last expression is a `match_expr` has no `NEWLINE` of its own: the arms' `DEDENT` ends it. A `match` at the start of a statement is always a `match_stmt`.
+- A `value_arm` is an expression or a `raise` on the same line as its pattern, `Ok: "up"`, `_: raise ValueError("bad status")`, or since M29 an indented block (§5.1.1). Before M29 a block was `TP0100`, `expected expression, found newline`.
+- **Unpacking (M29):** a parenthesized group in `names` or `targets` nests, and `*` marks the name or target that takes the rest. In `for`, `names` may also be parenthesized as a whole: `for (a, b) in pairs`. Two starred names at one level are `TP0100`, `an unpacking can have only one '*' at each level`; a starred name alone is `TP0100`, `a starred name can't be unpacked to alone`; and `*x` anywhere else is `TP0100`, `'*' can only mark a name or target being unpacked`. A trailing comma needs two names before it, so `let a, = t` is still `TP0100`.
 - Keyword arguments are allowed in calls to functions and methods (M14, §4.2), class and enum-variant constructors (§4.3), `py` values (§10.2), and the keyword parameters of built-ins (`key` and `reverse` of `sorted` and `list.sort`, `start` of `enumerate`; §6). Keyword arguments may follow positional ones, as in Python. A positional argument after a keyword argument is `TP0100`.
 - In a parameter list, a parameter without a default after one with a default is `TP0100`, as in Python.
 - **Decorators (M15)** are only `@dataclass` on a `class` and `@override` on a method (§4.3), and since M28 `@property`, `@<name>.setter`, `@staticmethod`, `@classmethod` and `@abstractmethod` on a method (§4.8). A decorator takes no arguments: `@dataclass(frozen=True)` is `TP0100`. Any other decorator name, a decorator in any other place, a repeated one, or one that can't be combined with another (§4.8) is `TP0224`. A dotted decorator other than `@<property>.setter` is `TP0224`.
@@ -371,14 +380,17 @@ There are no other implicit conversions. Explicit conversions use the built-ins 
   - `let lo, hi = bounds(xs)` and `var a, b = pair` declare one binding per element.
   - `for i, x in enumerate(xs)` unpacks each element into loop variables.
   - `a, b = b, a` assigns to existing targets.
-  - The value must be a tuple (`TP0200` otherwise), with exactly as many elements as there are names (`TP0209`). Lists can't be unpacked, since their length isn't known when compiling. This differs from Python.
+  - The value must be a tuple, or since M29 a list (`TP0200` otherwise). A tuple must have exactly as many elements as there are names (`TP0209`).
   - `_` ignores an element and may repeat. Unpacking declarations take no annotation: each binding gets its element's type.
+  - **Nesting (M29):** a parenthesized group unpacks an element in turn: `let (a, b), c = (pair, 3)`, `for i, (k, v) in enumerate(d.items())`, `(x, y), z = …`. Each level follows these rules.
+  - **Lists (M29):** `let first, second = xs` unpacks a `list[T]`, each name a `T`. Its length is checked at run time: too few elements raises `ValueError`, `not enough values to unpack (expected 2, got 1)`, and too many `ValueError`, `too many values to unpack (expected 2)`, as in Python 3.12.
+  - **A starred name (M29)** takes the rest as a new list: `let first, *rest = xs`, `head, *_, last = line.split(",")`. At most one name per level may be starred (`TP0100`). It needs at least as many elements as the other names, or raises `ValueError`, `not enough values to unpack (expected at least 2, got 1)`. In a tuple, the starred name gets a `list` of the remaining elements' joined type, as a list literal's elements join (§4.6), or `TP0200` if they don't. A starred name alone, `*rest = xs`, is `TP0100`, as in Python.
   - In an assignment, the right side is evaluated first. Then, left to right, each target's own sub-expressions are evaluated and the value is stored, so `a, b = b, a` swaps. Every target follows the rules for `=` (`TP0202`). A compound form such as `a, b += 1` is `TP0100`.
 - **Equality and ordering:**
   - `==` and `!=` compare tuples element by element, structurally, as for lists. Two tuple types are comparable when they have the same length and each pair of element types is comparable.
   - `<`, `<=`, `>` and `>=` compare lexicographically, as in Python, when every element type is ordered: `int`, `float`, `str`, or a tuple of those. So `sorted(xs, key=lambda s: (s.healthy, s.name))` works.
 - **Dict keys:** a tuple of valid keys is itself a valid key: `dict[tuple[int, int], str]`.
-- **`match`:** a tuple can't be matched on (`TP0200`). Tuple patterns are post-M12.
+- **`match`:** since M29, tuple patterns match tuples (§5.1). Before M29, a tuple couldn't be matched on (`TP0200`).
 - **Display:** `(1, "a")`, with elements written as inside a list.
 - **Generics:** tuple types may be type arguments, and inference matches them element by element.
 
@@ -1001,35 +1013,37 @@ class Shape(ABC):
 ## 5. Statements and expressions
 
 ### 5.1 `match`
-- The scrutinee can be an enum, `int`, `str`, `bool`, or a class (M15).
-- **Patterns:**
-  - Variant patterns bind payload fields positionally: `Degraded(h, t)`. With a payload, the binding count must equal the field count. A variant with a payload may also be matched as `Degraded` without parentheses, binding nothing.
-  - Literal patterns apply to `int`, `str`, and `bool`.
-  - `_` matches anything.
-- **Class patterns (M15)** match when the scrutinee's runtime class is the named class or derives from it, as with `isinstance`:
-  - `Dog()` binds nothing. Unlike a variant, a class pattern always has parentheses, as in Python: a bare `Dog` is `TP0200`.
-  - `Dog(name=n, breed=b)` binds fields by name, in any order. Any field of `Dog`, inherited ones included, may be bound.
-  - For a dataclass, `Point(x, y)` binds fields by position, in constructor order, as Python's `__match_args__` does. Positional bindings may be followed by keyword ones. Positional bindings on a plain class are `TP0209`, and more than there are fields is `TP0209`.
+- The scrutinee can be an enum, `int`, `str`, `bool`, a class (M15), or since M29 a tuple or a list.
+- **Patterns** (M29 makes them nest, as in Python):
+  - `_` matches anything and binds nothing.
+  - **A name** binds the value, as a `let` scoped to the arm: `x`, `Degraded(h, t)`. It's a binding unless it names a variant of the enum its position has (below).
+  - **Literal patterns** (`0`, `-1`, `"api"`, `True`, `False`) apply to `int`, `str` and `bool`.
+  - **Variant patterns:** `Ok`, `Degraded(h, t)`, `Health.Down`. Each argument is a sub-pattern for a payload field, by position. With a payload, the argument count must equal the field count. A variant with a payload may also be matched as `Degraded` without parentheses, matching any payload.
+  - **Class patterns (M15):** `Dog()`, `Dog(name=n, breed="lab")`, and for a dataclass `Point(0, y)` by position, in constructor order, as Python's `__match_args__` does. Each argument is a sub-pattern for a field.
+  - **Tuple patterns (M29):** `(0, y)`, `(Circle(r), _)`, with one sub-pattern per element.
+  - **List patterns (M29):** `[]`, `[a, b]`, `[first, *rest]`, `[*init, last]`, `[a, *_, z]`. Without a star, a list matches when it has exactly as many elements as sub-patterns; with one, when it has at least as many as the others. `*name` binds the rest as a new list, and `*_` ignores it.
+- **Bare names (M29).** In a position whose type is an enum, a bare name that's one of its variants is a variant pattern: `Some(Ok)` matches the variant `Ok`. A bare name that names a variant or a class in scope is never a binding either, since a local can't shadow it (§4.4, §4.6): it's checked as that pattern, so a variant of another enum is `TP0200`, `expected <T>, found <E>`, and a class is `'Cat' is a class; write 'Cat()'`. Any other bare name binds. So that a misspelled variant isn't silently a binding, a bare name in an enum-typed position that starts with an uppercase letter and isn't a variant of that enum is `TP0210`, `<E> has no variant '<x>'`, as before M29. A qualified name (`Health.Ok`, `m.Health.Ok`) is always a variant pattern.
+- **Class patterns** match when the value's runtime class is the named class or derives from it, as with `isinstance`:
+  - Unlike a variant, a class pattern always has parentheses, as in Python: a bare `Dog` is `TP0200`.
+  - Keyword arguments name any field of the class, inherited ones included, in any order. Positional ones may come first, for a dataclass only (`TP0209` on a plain class, and more than there are fields is `TP0209`).
   - A field named twice is `TP0209`, and an unknown one is `TP0210`.
-  - The class must derive from the scrutinee's class, or be it (`TP0200` otherwise). In its arm, a scrutinee that's a name that can't change (§3.9) is narrowed to that class.
-  - Python's sub-patterns inside a class pattern (`Dog(name="rex")`) aren't supported: each argument is a binding.
-- **Exhaustiveness:**
-  - For an enum, every variant must be covered, or there must be a `_` arm. Otherwise it's `TP0204`, and the message lists the missing variants.
-  - For `bool`, the arms must cover `True` and `False`, or include `_`.
-  - For `int` and `str`, a `_` arm is required.
-  - For a class, there must be a `_` arm, or a pattern of the scrutinee's own class. Subclasses are open-ended, so listing them never covers the base.
-- An arm after `_`, or a duplicate arm, is warning `TP0300` (unreachable).
+  - The class must derive from the type of its position, or be it (`TP0200` otherwise). In its arm, a scrutinee that's a name that can't change (§3.9) is narrowed to that class.
+- **Types.** Each position has a type: the scrutinee's, then a payload field's, a class field's, a tuple element's, or a list's element type. A sub-pattern must fit it: a literal of another type, a variant pattern where there's no enum, a tuple pattern of another length (`TP0209`, `<T> has <n> elements, found <m> patterns`), or a list pattern on anything but a list, is `TP0200`. A binding gets its position's type, and `*rest` gets a `list` of the element type. An optional position takes only `_` and bindings; other patterns there are `TP0203`, since `None` patterns are deferred.
+- **Exhaustiveness** (generalized in M29): a `match` must cover every value its scrutinee's type can have, through all nesting. Otherwise it's `TP0204`. It's checked as Python's type checkers do (pyright's "exhaustive match"), by the usefulness of each arm against the arms before it:
+  - An enum is covered by its variants, a `bool` by `True` and `False`, a tuple or a class of the scrutinee's own type by one pattern whose sub-patterns cover each element or field, and a list by patterns covering every length.
+  - `int` and `str` positions, and class patterns of a subclass, are covered only by a `_` or a binding there: subclasses are open-ended, so listing them never covers the base.
+  - The message lists, in order, a missing case for each kind of value no arm covers, written as patterns with `_` for any value: `missing: Down, Degraded(0, _), Move((_, True))`, at most 12 of them. A variant no arm names is written bare, as before M29 (`missing: Down, Ok`); one that an arm names is written with its payload, `Level(_)`. A class pattern shows only the fields that matter, `Point(y=False)`. Lists are written by length, `[]` or `[_, _, *_]` for any longer.
+- **Reachability:** an arm that can't match anything the arms before it don't, such as one after `_`, a duplicate, or `(0, _)` after `(_, _)`, is warning `TP0300` (unreachable). Unreachable arms are still checked, but not emitted.
 - `match` is a statement, and since M19 also an expression (§5.1.1).
 - **Checking details:**
   - Any other scrutinee type is `TP0200`, and an optional scrutinee is `TP0203`.
-  - The scrutinee is evaluated once.
-  - A literal pattern of the wrong type, or a variant pattern on a non-enum scrutinee, is `TP0200`.
-  - Variant patterns are resolved against the scrutinee's enum, so an unqualified variant pattern is never ambiguous. A variant the enum doesn't have is `TP0210`, and a qualified pattern naming another enum is `TP0200`.
-  - A binding count that differs from the payload's field count is `TP0209`. A variant without a payload may be written with or without empty parentheses.
-  - **`_` as a binding** (`Degraded(_, t)`) ignores that field and may repeat.
-  - Other bindings are `let`s scoped to their arm. They follow the shadowing rules (`TP0207`), and a name repeated within one pattern is `TP0214`.
-  - **Duplicates (`TP0300`):** a duplicate arm is the same variant, literal or `True`/`False` as an earlier arm, regardless of its bindings. A class pattern is unreachable after a pattern of the same class or one of its bases, since bindings never fail to match. Unreachable arms are still checked, but not emitted.
-  - `TP0204` points at the `match` keyword. It lists missing variants in declaration order (`missing: Down, Ok`), `True`/`False` for bool, and `_` for int and str.
+  - The scrutinee is evaluated once. Sub-patterns are tested left to right, and a list's length before its elements.
+  - Variant patterns are resolved against their position's enum, so an unqualified variant pattern is never ambiguous. A variant the enum doesn't have is `TP0210`, and a qualified pattern naming another enum is `TP0200`.
+  - A variant without a payload may be written with or without empty parentheses. Arguments to it otherwise are `TP0209`.
+  - **`_`** may repeat, and so may `*_`. A list pattern with two stars is `TP0100`, `a list pattern can have only one '*'`.
+  - A pattern whose position's type already has an error isn't reported again, and the `match` isn't checked for exhaustiveness or reachability.
+  - Bindings follow the shadowing rules (`TP0207`), and a name bound twice within one pattern is `TP0214`.
+  - `TP0204` points at the `match` keyword.
 - **Return paths:** a `match` terminates (§4.5) if every arm's body terminates. Exhaustiveness is guaranteed once it type-checks.
 - **Control flow:** `break` and `continue` in an arm apply to the enclosing loop, as anywhere else.
 
@@ -1049,7 +1063,30 @@ def area(s: Shape) -> float:
         _: raise ValueError("unknown shape")
 ```
 
-- **Where:** only as the whole right-hand side of `let`, `var` or an assignment (`=` or a compound `+=`), or the whole value of `return` (§2). Python has no `match` expression; this follows the statement's syntax, with an expression after each pattern's colon instead of a statement.
+- **Where:** before M29, only as the whole right-hand side of `let`, `var` or an assignment (`=` or a compound `+=`), or the whole value of `return`. Since M29, anywhere an expression may appear: an operand (`1 + match x: …`), an argument, an element, a lambda's body. Python has no `match` expression; this follows the statement's syntax, with a value after each pattern's colon instead of a statement.
+  - Since its arms are indented lines below it, a `match` expression ends the line it starts on: its `:` is the line's last token.
+  - Outside brackets, the arms end the statement: `let n = 1 + match x:` and then its arms.
+  - Inside brackets, the lexer indents the arms as it would outside (§1.2), and the bracketed expression continues on the first line indented no more than the line with `match`:
+    ```python
+    print(match shape:
+        Circle(r): 3.14 * r * r
+        _: 0.0
+    , "units")
+    let by_area = sorted(shapes, key=lambda s: match s:
+        Circle(r): r * r
+        Square(side): side * side
+    )
+    ```
+  - A `match` at the start of a statement is always a `match` statement.
+- **Block arms (M29):** an arm may be an indented block instead of a value on its line. Its statements run in order, and its last statement gives the arm's value: an expression statement, or a statement that terminates (§4.5), such as `raise`, which gives none. Anything else last is `TP0200`, `this arm gives no value`, with help `end it with an expression`. A `return`, or a `break` or `continue` of a loop outside the `match`, can't leave a `match` expression, which is evaluated in the middle of its statement: each is `TP0215`, `'return' can't leave a 'match' expression`, with help `use a 'match' statement`.
+  ```python
+  let cost = match order:
+      Express(weight):
+          let base = rate(weight)
+          base * 2
+      Standard(weight): rate(weight)
+  ```
+  Bindings and other names a block declares are scoped to it.
 - **Patterns** are the statement's (§5.1): the same scrutinee types, patterns, bindings, narrowing and checks. Bindings are scoped to their arm's expression.
 - **Exhaustiveness** is required, as for the statement: a missing case is `TP0204` at `match`. An arm after `_` or a duplicate arm is warning `TP0300`, and is still checked, but doesn't count toward the result type and isn't emitted.
 - **Raising arms:** an arm may be `raise e` (or a bare `raise` inside an `except` clause, §3.10). It produces no value, so it doesn't count toward the result type. At least one reachable arm must give a value, or it's `TP0200`, `every arm of this 'match' raises`, with help `use a 'match' statement`.
@@ -1057,7 +1094,7 @@ def area(s: Shape) -> float:
   - With an expected type (an annotated `let` or `var`, an assignment target, a `return` in a function with a return type), each arm is checked against it, as each element of a list literal is (§4.6). So `let x: float = match n: …` accepts `int` arms.
   - Without one, the arms' types join as a list literal's elements do (§4.6): the same type, `int` and `float` to `float`, classes to their nearest common base, and `None` making the result optional (`1` and `None` give `int?`). A mismatch is `TP0200`, `expected <T>, found <U>`, at the first arm that differs. An arm of type `None` alone can't be inferred (`TP0206`).
   - In a function without a return type, `return match …` is `TP0200` like any `return` with a value.
-- **Evaluation:** the scrutinee is evaluated once, then only the matching arm's expression.
+- **Evaluation:** the scrutinee is evaluated once, then only the matching arm's expression or block. A `match` expression is evaluated where it appears among its neighbours, left to right as any operand.
 - **Return paths (§4.5):** `return match …` terminates, as any `return` does. A `let`, `var` or assignment whose `match` has a raising arm doesn't terminate, since other arms give values.
 
 ### 5.2 Loops
@@ -1067,7 +1104,7 @@ def area(s: Shape) -> float:
   - `str`, giving `x: str` (one character each)
   - `range(...)`, giving `x: int`
 - The loop variable is a `let` scoped to the body.
-- `for a, b in e` unpacks each element, which must be a tuple with that many elements (§3.8). Each name is a loop variable.
+- `for a, b in e` unpacks each element, which must be a tuple with that many elements, or since M29 a list (§3.8), with nesting and a starred name as for `let`. Each name is a loop variable.
 - Mutating a list or dict while iterating over it panics.
 
 ### 5.3 Operators
@@ -1209,6 +1246,7 @@ In `a == b` and `a != b`, `a`'s type is `b`'s expected type (§4.6), so `m == No
   - mutation during iteration: `list mutated during iteration` / `dict mutated during iteration`. Any change to the list or dict being iterated counts, including assigning to an existing element. (`RuntimeError`)
   - `split("")` / `replace("", …)`: `empty separator` (`ValueError`)
   - a slice step of 0: `slice step cannot be zero` (M12) (`ValueError`)
+  - unpacking a list of the wrong length (M29, §3.8): `not enough values to unpack (expected <n>, got <m>)`, `not enough values to unpack (expected at least <n>, got <m>)` with a starred name, or `too many values to unpack (expected <n>)` (`ValueError`)
   - Python interop (§10.5): `cannot convert Python <type> to <T>` (`TypeError`), `Python <ExceptionType>: <message>` (`PythonError`), `cannot load Python: <reason>` (at startup, so never caught)
   - failed non-optional `as` (M10), and `as` to a class the value isn't an instance of: `cannot convert <runtime class> to <C>` (M15) (`TypeError`)
   - an uncaught `raise` (M16): as §3.10 says
@@ -1370,7 +1408,7 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0200 | `'<m>' is a method; call it` / `'<f>' is a field, not a method` / `cannot index <T>` / `dict keys must be int, str, bool, tuples of those, or plain class instances, found <T>` (for a dataclass, with help `a dataclass compares by value, so it cannot be a key`; since M28 a class that isn't hashable gets `dict keys must be hashable, found <C>` instead, §4.8) |
 | TP0200 | `isinstance needs a class, found <T>` / `'<C>' is not a class` / `'<C>' is generic` / `<T> can never be a <C>` (`isinstance`, `as` and class patterns on unrelated classes) / `'<C>' is a class; write '<C>()'` (a class pattern without parentheses) (M15) |
 | TP0200 | `no overload of '<T>.<m>' takes (<A1>, <A2>)` / `'<T>' is a static class` (constructing it, or using it as a type) / `'<T>' cannot be constructed` (an interface, abstract class or enum) / `<v> is out of range for <N>` (a literal argument, `<N>` the .NET type's name, such as `Int32`) / `'<T>.<m>' returned null` (`TypeError`, at run time) / `'<C>' is not an exception class` (a .NET class not deriving from `System.Exception`) / `cannot bind both Taipan and .NET exceptions`, with help `write separate clauses` (M21) |
-| TP0200 | `every arm of this 'match' raises`, with help `use a 'match' statement` (M19) |
+| TP0200 | `every arm of this 'match' raises`, with help `use a 'match' statement` (M19) / `this arm gives no value`, with help `end it with an expression` / `<T> cannot match a tuple pattern` / `<T> cannot match a list pattern` / `'*<x>' would hold <A> and <B>` (a starred name in a tuple) (M29) |
 | TP0200 | `format spec '<spec>' isn't valid for <T>`, with help naming the part that isn't / `format specs apply to int, float and str, found <T>` (M26) |
 | TP0200 | `'<A>' is a type alias, not a value`, with help `use '<N>'` when it names a class or enum (M18) |
 | TP0200 | `cannot raise <T>` (with help `write '<C>(…)'` for a class name) / `'<C>' is not an exception class` / `'PythonError' cannot be constructed` (and `'DotNetError'`, M21) (M16) |
@@ -1379,22 +1417,22 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0200 | `'<m>' cannot be called directly`, with help `use '<form>'` (a special method, as M17's `__lt__`) / `dict keys must be hashable, found <C>`, with help as §4.8 says / `cannot hash <T>` / `'+' on <A> and <B> is ambiguous: '<C>.__add__' would run when it fits` / `'<p>' is a property; read it from an instance` / `'<m>' needs an instance of '<C>'` / `'cls' can only be called, or used to reach static and class methods and class attributes` / `'ClassVar' can only annotate a class attribute` / `'<B>.<m>' is abstract` (M28) |
 | TP0201 | `undefined name '<x>'` (with help `use 'None'` for `none`) / `undefined type '<T>'` / `module '<m>' has no definition '<x>'` / `.NET namespace '<ns>' has no type '<x>'` (M21) |
 | TP0202 | `cannot assign to '<x>': it is a <let binding\|parameter\|loop variable\|constant\|function\|method>`, with help `declare it with 'var'` for a `let` binding / `cannot assign to an element of str` / `cannot assign to an element of a tuple` / `cannot use '<op>' on a slice` / `cannot delete '<x>'`, with help `assign it a new value instead` / `cannot delete a field` / `cannot delete an element of <T>` (M26) / `cannot assign to '<p>': it is a read-only property` / `cannot assign to '<a>' through '<x>'`, with help `assign '<C>.<a>'` (M28) |
-| TP0203 | `expected <T>, found <T>?` / `<T>? must be narrowed before use`, with help `narrow it with 'is some', or give a default with '??'`, or one saying why a name or path isn't narrowed there (§3.9, M27) |
-| TP0204 | `non-exhaustive match (missing: <a>, <b>)` |
+| TP0203 | `<T>? can only be matched by '_' or a binding`, with help `'None' patterns aren't supported yet; bind it and test it with 'is some'` (a pattern, M29) / `expected <T>, found <T>?` / `<T>? must be narrowed before use`, with help `narrow it with 'is some', or give a default with '??'`, or one saying why a name or path isn't narrowed there (§3.9, M27) |
+| TP0204 | `non-exhaustive match (missing: <a>, <b>)`, each a variant, literal or, since M29, a pattern such as `Degraded(0, _)` or `[_, *_]` (§5.1) |
 | TP0205 | `condition must be bool, found <T>` (with help `convert it with 'as bool'` for `py`) |
 | TP0206 | `cannot infer the type of an empty list` / `... empty dict` / `cannot infer the type of None` / `cannot infer '<T>' for '<f>'` / `cannot infer the type of lambda parameter '<x>'`, with help `add a type annotation` |
 | TP0207 | `'<x>' shadows an outer binding` |
 | TP0208 | `not all paths in '<f>' return a value` |
 | TP0209 | `'<S>' takes <n> type arguments, found <m>` (`type argument` when n is 1) |
 | TP0209 | `'<v>' has <n> fields, found <m> bindings` (variant and dataclass patterns; `field` / `binding` when the count is 1) / `'<C>' is not a dataclass, so its fields can only be bound by name` / `field '<f>' is given more than once` (class patterns, M15) |
-| TP0209 | `<T> has <n> elements, found <m> names` (unpacking) / `a tuple needs at least two elements` (M12) |
+| TP0209 | `<T> has <n> elements, found <m> names` (unpacking) / `a tuple needs at least two elements` (M12) / `<T> has <n> elements, found <m> patterns` (a tuple pattern, M29) |
 | TP0209 | `'<f>' takes <n> arguments, found <m>` (`argument` when n is 1; `1 or 2 arguments` for `range`; `<a> to <b> arguments` for a function with defaults, M14; `2 or more arguments` for `zip`, M26; `function takes …` when the callee isn't a name) / `missing argument '<x>'` (M14) / `missing field '<f>' in '<S>'` / `field '<f>' is given more than once` / `argument '<k>' is given more than once` |
 | TP0209 | `expected a lambda with <n> parameters, found <m>` (`parameter` when n is 1) / `'Callable' takes a parameter list and a result type` |
 | TP0210 | `<T> has no field '<x>'` / `<T> has no method '<x>'` / `<E> has no variant '<x>'` |
 | TP0211 | `'<f>' cannot use top-level variable '<x>'`, with help `pass it as a parameter, or make it a const` |
 | TP0213 | `optional types cannot be nested` |
 | TP0214 | `duplicate definition of '<x>'` |
-| TP0215 | `'break' outside a loop` / `'continue' outside a loop` / `'return' outside a function` / `'raise' without an exception outside an except block` / `'return' cannot be used in a finally block` (and `'break'`, `'continue'`) (M16) |
+| TP0215 | `'<k>' can't leave a 'match' expression`, with help `use a 'match' statement` (M29) / `'break' outside a loop` / `'continue' outside a loop` / `'return' outside a function` / `'raise' without an exception outside an except block` / `'return' cannot be used in a finally block` (and `'break'`, `'continue'`) (M16) |
 | TP0216 | `'<v>' is ambiguous: it is a variant of <E1> and <E2>`, with help `qualify it, e.g. '<E1>.<v>'` |
 | TP0217 | `const initializer must be a constant expression` / `class attribute value must be a constant expression` (M28) |
 | TP0218 | `'<f>' takes no keyword arguments` (a built-in) / `a function value takes no keyword arguments` / `'<f>' has no parameter '<k>'` (M14; also for `sorted`, `sort` and `enumerate`) |
@@ -1487,12 +1525,9 @@ Types are written as in source: `int`, `str?`, `list[int]`. The type of `None` i
 - `@dataclass` options (`frozen`, `order`), `__post_init__`, and an `__init__` written in a dataclass
 - `@final`, `Self` outside protocols (so a class method's result is its declared class, not `cls`'s), static and class methods and class attributes on generic classes, abstract static and class methods, property deleters, and static and class methods as values
 - `isinstance` on `py` values, and `is` between two expressions (identity)
-- sub-patterns inside class patterns
 - generic functions, built-ins, methods and constructors as values (wrap them in a lambda)
 - iterators and generators (`map` and `filter` return lists)
-- tuple patterns in `match`
-- nested unpacking (`let (a, b), c = …`) and unpacking lists
-- `match` expressions inside other expressions (`f(match x: …)`, lambda bodies), and arms with indented blocks
+- or-patterns (`A | B`), guards (`case x if …`), `as` patterns, `None` and float literal patterns, mapping patterns, and `*` in tuple patterns (M29 has them in list patterns only)
 - type aliases inside functions and classes, recursive aliases, and showing an alias's name in diagnostics
 - keyword-only (`*`) and positional-only (`/`) parameters, `*args` and `**kwargs`, and defaults on lambda parameters (not planned, since loop variables are captured per iteration, §3.7)
 - narrowing elements (`xs[0]`) and paths rooted at a `var`, and narrowing that follows `==` comparisons with literals

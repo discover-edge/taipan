@@ -1,0 +1,16 @@
+# Arms that can't match anything earlier arms don't are unreachable (SPEC §5.1).
+def check(t: tuple[int, bool], xs: list[int]):
+    match t:
+        (_, True):
+            print("a")
+        (0, True):
+            print("b")
+        (_, _):
+            print("c")
+        (1, False):
+            print("d")
+    match xs:
+        [*_]:
+            print("any")
+        []:
+            print("empty")

@@ -1,0 +1,11 @@
+# Syntax errors in nested patterns, unpacking and match expressions (SPEC §2).
+def check(xs: list[int]):
+    match xs:
+        [a, *r, *s]:
+            pass
+        _:
+            pass
+let a, *b, *c = [1, 2, 3]
+*d = [1]
+let n = 1
+print(match n: _: 1)

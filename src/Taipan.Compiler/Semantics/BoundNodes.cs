@@ -150,7 +150,11 @@ public sealed record BoundExprStmt(BoundExpr Expr, TextSpan Span) : BoundStmt(Sp
 /// Unpacking (SPEC §3.8): <see cref="Value"/> is stored in <see cref="Temp"/>, then each of
 /// <see cref="Stores"/> declares or assigns one target from an element of it, in order.
 /// </summary>
-public sealed record BoundUnpack(VariableSymbol Temp, BoundExpr Value, ImmutableArray<BoundStmt> Stores, TextSpan Span) : BoundStmt(Span);
+public sealed record BoundUnpack(VariableSymbol Temp, BoundExpr Value, ImmutableArray<BoundStmt> Stores, TextSpan Span) : BoundStmt(Span)
+{
+    /// <summary>For a list (M29), how many elements it must have, or at least have with a starred name; checked at run time.</summary>
+    public (int Count, bool Starred)? Length { get; init; }
+}
 
 /// <summary>
 /// A nested <c>def</c> (SPEC §3.7). <see cref="Symbol"/> holds the function value; it's declared
@@ -197,24 +201,43 @@ public sealed record BoundDotNetMember(BoundExpr? Target, Microsoft.CodeAnalysis
 /// <summary>A <c>match</c> expression (SPEC §5.1.1); arms marked unreachable are checked but not emitted.</summary>
 public sealed record BoundMatchExpr(BoundExpr Scrutinee, ImmutableArray<BoundValueArm> Arms, TaipanType Type, TextSpan Span) : BoundExpr(Type, Span);
 
-/// <summary>Exactly one of <see cref="Value"/> and <see cref="Raise"/> is set.</summary>
-public sealed record BoundValueArm(BoundPattern Pattern, BoundExpr? Value, BoundRaise? Raise, bool IsReachable);
+/// <summary>
+/// Exactly one of <see cref="Value"/> and <see cref="Raise"/> is set, or neither for a block arm
+/// (M29) whose last statement leaves; a block arm's <see cref="Body"/> runs first.
+/// </summary>
+public sealed record BoundValueArm(BoundPattern Pattern, BoundExpr? Value, BoundRaise? Raise, bool IsReachable)
+{
+    public BoundBlock? Body { get; init; }
+}
 
 public abstract record BoundPattern;
 
 public sealed record BoundWildcardPattern : BoundPattern;
 
+/// <summary>A name that binds the value at its position (SPEC §5.1, M29).</summary>
+public sealed record BoundBindingPattern(VariableSymbol Symbol) : BoundPattern;
+
 /// <summary>An int, str or bool literal pattern; <see cref="Value"/> is a <c>long</c>, <c>string</c> or <c>bool</c>.</summary>
 public sealed record BoundLiteralPattern(object Value) : BoundPattern;
 
 /// <summary>
-/// A variant pattern. <see cref="Bindings"/> has one entry per payload field (null for <c>_</c>),
-/// or is empty when the pattern binds nothing.
+/// A variant pattern of <see cref="Enum"/>. <see cref="Fields"/> has one sub-pattern per payload
+/// field, or is empty when it matches any payload.
 /// </summary>
-public sealed record BoundVariantPattern(VariantSymbol Variant, ImmutableArray<VariableSymbol?> Bindings) : BoundPattern;
+public sealed record BoundVariantPattern(VariantSymbol Variant, TaipanType Enum, ImmutableArray<BoundPattern> Fields) : BoundPattern;
 
-/// <summary>A class pattern (SPEC §5.1): the class, and each field it binds, in source order.</summary>
-public sealed record BoundClassPattern(ClassType Class, ImmutableArray<(FieldSymbol Field, VariableSymbol Binding)> Bindings) : BoundPattern;
+/// <summary>A class pattern (SPEC §5.1): the class, and a sub-pattern for each field it names, in source order.</summary>
+public sealed record BoundClassPattern(ClassType Class, ImmutableArray<(FieldSymbol Field, BoundPattern Pattern)> Fields) : BoundPattern;
+
+/// <summary>A tuple pattern (M29): one sub-pattern per element.</summary>
+public sealed record BoundTuplePattern(TupleOfType Tuple, ImmutableArray<BoundPattern> Elements) : BoundPattern;
+
+/// <summary>
+/// A list pattern (M29): the sub-patterns before a star and after it. Without a star the list has
+/// exactly <see cref="Before"/>'s length; with one, at least both, and <see cref="Rest"/> (if any) binds the rest.
+/// </summary>
+public sealed record BoundListPattern(ListOfType List, ImmutableArray<BoundPattern> Before, bool HasStar, VariableSymbol? Rest,
+    ImmutableArray<BoundPattern> After) : BoundPattern;
 
 // ---- Expressions ----
 
@@ -335,6 +358,15 @@ public sealed record BoundTupleLiteral(ImmutableArray<BoundExpr> Elements, Tuple
 
 /// <summary>An element of a tuple; <see cref="Index"/> counts from 0, already normalized.</summary>
 public sealed record BoundTupleElement(BoundExpr Tuple, int Index, TaipanType Type, TextSpan Span) : BoundExpr(Type, Span);
+
+/// <summary>An element of a list being unpacked (M29): from the start, or for a negative <see cref="Index"/> from the end.</summary>
+public sealed record BoundListElement(BoundExpr List, int Index, TaipanType Type, TextSpan Span) : BoundExpr(Type, Span);
+
+/// <summary>A starred name's new list (M29): the elements from <see cref="Start"/>, leaving <see cref="After"/> at the end.</summary>
+public sealed record BoundListRest(BoundExpr List, int Start, int After, ListOfType ListType, TextSpan Span) : BoundExpr(ListType, Span);
+
+/// <summary>A starred name's new list from a tuple (M29): its elements from <see cref="Start"/> up to <see cref="End"/>.</summary>
+public sealed record BoundTupleRest(BoundExpr Tuple, int Start, int End, ListOfType ListType, TextSpan Span) : BoundExpr(ListType, Span);
 
 /// <summary>A slice of a list, str or py value; omitted parts are null.</summary>
 public sealed record BoundSlice(BoundExpr Target, BoundExpr? Start, BoundExpr? Stop, BoundExpr? Step, TaipanType Type, TextSpan Span)

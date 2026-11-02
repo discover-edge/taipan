@@ -1,0 +1,38 @@
+# Exhaustiveness through nested patterns lists the missing cases (SPEC §5.1).
+enum Signal:
+    Pair(value: tuple[bool, bool])
+    Level(n: int)
+    Off
+
+def check(s: Signal):
+    match s:
+        Pair((True, _)):
+            pass
+        Pair((False, True)):
+            pass
+        Level(0):
+            pass
+
+def lists(xs: list[int]):
+    match xs:
+        []:
+            pass
+        [_, 1]:
+            pass
+
+def tuples(t: tuple[bool, str]):
+    match t:
+        (True, "a"):
+            pass
+        (False, _):
+            pass
+
+@dataclass
+class Point:
+    x: int
+    y: bool
+
+def points(p: Point) -> int:
+    return match p:
+        Point(_, True): 1
+        Point(0, False): 2

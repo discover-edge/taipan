@@ -1,0 +1,5 @@
+tests/cases/m29/tp0100_patterns.tpn:4:17: error TP0100: a list pattern can have only one '*'
+tests/cases/m29/tp0100_patterns.tpn:8:12: error TP0100: an unpacking can have only one '*' at each level
+tests/cases/m29/tp0100_patterns.tpn:9:1: error TP0100: a starred name can't be unpacked to alone
+  help: add another name, or drop the '*'
+tests/cases/m29/tp0100_patterns.tpn:11:16: error TP0100: expected newline, found name '_'

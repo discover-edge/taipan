@@ -1,0 +1,18 @@
+# An optional position takes only '_' and bindings (SPEC §5.1).
+enum Slot:
+    Filled(value: int?)
+    Free
+
+def check(s: Slot, t: tuple[str?, int]):
+    match s:
+        Filled(3):
+            pass
+        Filled(v):
+            print(v ?? 0)
+        Free:
+            pass
+    match t:
+        ("a", _):
+            pass
+        (name, n):
+            print(name ?? "", n)

@@ -25,6 +25,9 @@ public sealed class Parser
     private readonly DiagnosticBag _diagnostics;
     private readonly bool _isHole;
     private int _index;
+
+    // The token index just after the last match expression's arms, whose DEDENT ends a statement (SPEC §2).
+    private int _matchArmsEnd = -1;
     private int _previousEnd;
     private bool _recovering;
 
@@ -617,26 +620,18 @@ public sealed class Parser
         }
     }
 
-    /// <summary>A simple statement's NEWLINE, unless it ends in a match expression, whose DEDENT ends it (SPEC §2).</summary>
+    /// <summary>
+    /// A simple statement's NEWLINE, unless its last token ended a match expression's arms, whose
+    /// DEDENT ends it (SPEC §2).
+    /// </summary>
     private void ExpectStatementEnd(Stmt stmt)
     {
-        var value = stmt switch
-        {
-            LetStmt let => let.Value,
-            VarStmt var => var.Value,
-            UnpackStmt unpack => unpack.Value,
-            AssignStmt assign => assign.Value,
-            TupleAssignStmt assign => assign.Value,
-            ReturnStmt ret => ret.Value,
-            _ => null,
-        };
-        if (value is not MatchExpr)
+        if (_index != _matchArmsEnd)
             Expect(TokenKind.Newline);
     }
 
-    /// <summary>The value of a <c>let</c>, <c>var</c>, assignment or <c>return</c>: an expression list, or a match expression (M19).</summary>
-    private Expr ParseValue(bool list = true) =>
-        At(TokenKind.MatchKeyword) ? ParseMatchExpr() : list ? ParseExprList() : ParseExpr();
+    /// <summary>The value of a <c>let</c>, <c>var</c>, assignment or <c>return</c>: an expression list.</summary>
+    private Expr ParseValue(bool list = true) => list ? ParseExprList() : ParseExpr();
 
     // simple_stmt = let_stmt | var_stmt | assign_stmt | return_stmt | raise_stmt | del_stmt | "pass" | "break" | "continue" | expr
     private Stmt ParseSimpleStmt()
@@ -675,34 +670,72 @@ public sealed class Parser
     // var_stmt = "var" ( NAME [ ":" type ] | names ) "=" expr_list
     private Stmt ParseVarStmt() => ParseBindingStmt(isVar: true);
 
-    // names = NAME "," NAME { "," NAME }
     private Stmt ParseBindingStmt(bool isVar)
     {
         var start = Next().Span.Start;
-        var name = ExpectIdentifier();
-        if (At(TokenKind.Comma))
+        if (!(At(TokenKind.Name) && Peek(1).Kind == TokenKind.Comma || At(TokenKind.Star) || At(TokenKind.OpenParen)))
         {
-            var names = ParseMoreNames(name);
+            var name = ExpectIdentifier();
+            var type = ParseOptionalAnnotation();
             Expect(TokenKind.Equals);
-            return new UnpackStmt(isVar, names, ParseValue(), SpanFrom(start));
+            var value = ParseValue();
+            return isVar ? new VarStmt(name, type, value, SpanFrom(start)) : new LetStmt(name, type, value, SpanFrom(start));
         }
-        var type = ParseOptionalAnnotation();
+        var names = ParseNames();
         Expect(TokenKind.Equals);
-        var value = ParseValue();
-        return isVar ? new VarStmt(name, type, value, SpanFrom(start)) : new LetStmt(name, type, value, SpanFrom(start));
+        return new UnpackStmt(isVar, names, ParseValue(), SpanFrom(start));
     }
 
-    // The rest of a comma-separated list of names, after the first.
-    private ImmutableArray<Identifier> ParseMoreNames(Identifier first)
+    // names    = unpacked "," unpacked { "," unpacked } [ "," ]
+    // unpacked = NAME | "*" NAME | "(" names ")"
+    // One group alone, `(a, b)`, is its names (M29).
+    private ImmutableArray<Unpacked> ParseNames()
     {
-        var names = ImmutableArray.CreateBuilder<Identifier>();
-        names.Add(first);
-        while (At(TokenKind.Comma))
+        var names = ImmutableArray.CreateBuilder<Unpacked>();
+        do
+        {
+            if (names.Count > 0)
+                Next();
+            // A trailing comma ends the names, once there are two (SPEC §2).
+            if (names.Count > 1 && (At(TokenKind.Equals) || At(TokenKind.InKeyword) || At(TokenKind.CloseParen)))
+                break;
+            names.Add(ParseUnpacked());
+        }
+        while (At(TokenKind.Comma));
+        CheckStars(names);
+        if (names is [UnpackedGroup group])
+            return group.Items;
+        if (names is [UnpackedName { Starred: true } alone])
+            ReportSyntaxError(bag => bag.ReportLoneStar(alone.Span));
+        return names.ToImmutable();
+    }
+
+    private Unpacked ParseUnpacked()
+    {
+        var start = Current.Span.Start;
+        if (At(TokenKind.Star))
         {
             Next();
-            names.Add(ExpectIdentifier());
+            var name = ExpectIdentifier();
+            return new UnpackedName(name, Starred: true, SpanFrom(start));
         }
-        return names.ToImmutable();
+        if (At(TokenKind.OpenParen))
+        {
+            Next();
+            var items = ParseNames();
+            Expect(TokenKind.CloseParen);
+            return new UnpackedGroup(items, SpanFrom(start));
+        }
+        var plain = ExpectIdentifier();
+        return new UnpackedName(plain, Starred: false, plain.Span);
+    }
+
+    // At most one starred name or target per level (SPEC §3.8, M29).
+    private void CheckStars(IEnumerable<Unpacked> items)
+    {
+        var stars = items.Where(i => i is UnpackedName { Starred: true } or UnpackedTarget { Starred: true }).ToList();
+        if (stars.Count > 1)
+            ReportSyntaxError(bag => bag.ReportTwoStars(stars[1].Span, "an unpacking"));
     }
 
     // expr_list = expr { "," expr }; two or more make a tuple (SPEC §3.8)
@@ -737,6 +770,9 @@ public sealed class Parser
         var target = ParseExpr();
         if (!_recovering && At(TokenKind.Comma))
             return ParseTupleAssignStmt(start, target);
+        // `(a, b) = e` unpacks too, and `*a = e` is an unpacking with nothing to unpack into (M29).
+        if (!_recovering && target is TupleExpr or StarredExpr && At(TokenKind.Equals))
+            return ParseTupleAssignStmt(start, target);
 
         AssignOp? op = _recovering ? null : Current.Kind switch
         {
@@ -758,26 +794,52 @@ public sealed class Parser
         return new AssignStmt(target, op.Value, value, SpanFrom(start));
     }
 
+    // targets       = unpack_target "," unpack_target { "," unpack_target } [ "," ]
+    // unpack_target = target | "*" target | "(" targets ")"
     private Stmt ParseTupleAssignStmt(int start, Expr first)
     {
-        var targets = ImmutableArray.CreateBuilder<Expr>();
-        targets.Add(first);
+        var expressions = ImmutableArray.CreateBuilder<Expr>();
+        expressions.Add(first);
         while (At(TokenKind.Comma))
         {
             Next();
-            targets.Add(ParseExpr());
-        }
-        foreach (var target in targets)
-        {
-            if (!IsTarget(target))
-            {
-                ReportSyntaxError(bag => bag.ReportInvalidAssignmentTarget(target.Span));
+            if (At(TokenKind.Equals))
                 break;
-            }
+            expressions.Add(ParseExpr());
         }
+        var targets = expressions is [TupleExpr only] ? ToTargets(only.Elements) : ToTargets(expressions.ToImmutable());
+        if (targets is [UnpackedTarget { Starred: true } alone])
+            ReportSyntaxError(bag => bag.ReportLoneStar(alone.Span));
         Expect(TokenKind.Equals);
         var value = ParseValue();
-        return new TupleAssignStmt(targets.ToImmutable(), value, SpanFrom(start));
+        return new TupleAssignStmt(targets, value, SpanFrom(start));
+    }
+
+    // Unpacking targets from the expressions parsed: tuples nest, and `*x` takes the rest (M29).
+    private ImmutableArray<Unpacked> ToTargets(ImmutableArray<Expr> expressions)
+    {
+        var targets = ImmutableArray.CreateBuilder<Unpacked>();
+        foreach (var expr in expressions)
+        {
+            switch (expr)
+            {
+                case TupleExpr group:
+                    targets.Add(new UnpackedGroup(ToTargets(group.Elements), group.Span));
+                    break;
+                case StarredExpr { Value: var target } starred when IsTarget(target):
+                    targets.Add(new UnpackedTarget(target, Starred: true, starred.Span));
+                    break;
+                case var target when IsTarget(target):
+                    targets.Add(new UnpackedTarget(target, Starred: false, target.Span));
+                    break;
+                default:
+                    ReportSyntaxError(bag => bag.ReportInvalidAssignmentTarget(expr.Span));
+                    targets.Add(new UnpackedTarget(expr, Starred: false, expr.Span));
+                    break;
+            }
+        }
+        CheckStars(targets);
+        return targets.ToImmutable();
     }
 
     // target = NAME | postfix "." NAME | postfix "[" subscript "]"; a slice isn't a target in a tuple assignment.
@@ -805,7 +867,7 @@ public sealed class Parser
     private ReturnStmt ParseReturnStmt()
     {
         var start = Next().Span.Start;
-        var value = At(TokenKind.MatchKeyword) || (!_recovering && CanStartExpression(Current.Kind)) ? ParseValue() : null;
+        var value = !_recovering && CanStartExpression(Current.Kind) ? ParseValue() : null;
         return new ReturnStmt(value, SpanFrom(start));
     }
 
@@ -968,7 +1030,7 @@ public sealed class Parser
     private ForStmt ParseForStmt()
     {
         var start = Next().Span.Start;
-        var variables = ParseMoreNames(ExpectIdentifier());
+        var variables = ParseNames();
         Expect(TokenKind.InKeyword);
         var iterable = ParseExpr();
         Expect(TokenKind.Colon);
@@ -1008,34 +1070,63 @@ public sealed class Parser
     }
 
     // match_expr = "match" expr ":" NEWLINE INDENT value_arm { value_arm } DEDENT
+    // An atom since M29: its colon ends its line, and its arms are indented under it (SPEC §5.1.1).
     private MatchExpr ParseMatchExpr()
     {
         var start = Next().Span.Start;
         var scrutinee = ParseExpr();
         Expect(TokenKind.Colon);
         var arms = ParseIndentedBody(ParseValueArm);
+        _matchArmsEnd = _index;
         return new MatchExpr(scrutinee, arms, SpanFrom(start));
     }
 
-    // value_arm = pattern ":" ( expr | raise_stmt ) NEWLINE
+    // value_arm = pattern ":" ( ( expr | raise_stmt ) NEWLINE | block )
     private ValueArm ParseValueArm()
     {
         var start = Current.Span.Start;
         var pattern = ParsePattern();
         Expect(TokenKind.Colon);
+        if (At(TokenKind.Newline))
+        {
+            var block = ParseBlock();
+            return new ValueArm(pattern, null, null, SpanFrom(start)) { Block = block };
+        }
         var raise = At(TokenKind.RaiseKeyword) ? ParseRaiseStmt() : null;
         var value = raise is null ? ParseExpr() : null;
         var arm = new ValueArm(pattern, value, raise, SpanFrom(start));
-        Expect(TokenKind.Newline);
+        if (_index != _matchArmsEnd)
+            Expect(TokenKind.Newline);
         return arm;
     }
 
-    // pattern = "_" | [ "-" ] INT | STRING | "True" | "False" | qual_name [ "(" [ NAME { "," NAME } ] ")" ]
+    // pattern  = "_" | [ "-" ] INT | STRING | "True" | "False" | qual_name [ "(" [ pat_args ] ")" ]
+    //          | "(" pattern "," [ pattern { "," pattern } [ "," ] ] ")" | "[" [ list_pat { "," list_pat } [ "," ] ] "]"
+    // list_pat = pattern | "*" NAME
     private Pattern ParsePattern()
     {
         var start = Current.Span.Start;
         if (At(TokenKind.Name) && Current.Text == "_")
             return new WildcardPattern(Next().Span);
+        if (At(TokenKind.OpenParen))
+        {
+            Next();
+            var elements = ParseCommaList(TokenKind.CloseParen, ParsePattern);
+            Expect(TokenKind.CloseParen);
+            if (elements.Length < 2)
+                ReportSyntaxError(bag => bag.ReportOneElementTuplePattern(SpanFrom(start)));
+            return new TuplePattern(elements, SpanFrom(start));
+        }
+        if (At(TokenKind.OpenBracket))
+        {
+            Next();
+            var elements = ParseCommaList(TokenKind.CloseBracket, ParseListElementPattern);
+            Expect(TokenKind.CloseBracket);
+            var stars = elements.OfType<StarPattern>().ToList();
+            if (stars.Count > 1)
+                ReportSyntaxError(bag => bag.ReportTwoStars(stars[1].Span, "a list pattern"));
+            return new ListPattern(elements, SpanFrom(start));
+        }
         if (At(TokenKind.Minus) && Peek(1).Kind == TokenKind.Int)
         {
             Next();
@@ -1088,15 +1179,28 @@ public sealed class Parser
         return new VariantPattern(module, enumName, variant, bindings, SpanFrom(first.Span.Start));
     }
 
-    // pat_arg = NAME | NAME "=" NAME
+    private Pattern ParseListElementPattern()
+    {
+        if (!At(TokenKind.Star))
+            return ParsePattern();
+        var start = Next().Span.Start;
+        var name = ExpectIdentifier();
+        return new StarPattern(name, SpanFrom(start));
+    }
+
+    // pat_arg = pattern | NAME "=" pattern
     private PatternBinding ParsePatternBinding()
     {
-        var first = ExpectIdentifier();
-        if (!At(TokenKind.Equals))
-            return new PatternBinding(null, first, first.Span);
-        Next();
-        var name = ExpectIdentifier();
-        return new PatternBinding(first, name, SpanFrom(first.Span.Start));
+        var start = Current.Span.Start;
+        if (At(TokenKind.Name) && Peek(1).Kind == TokenKind.Equals)
+        {
+            var field = ExpectIdentifier();
+            Next();
+            var pattern = ParsePattern();
+            return new PatternBinding(field, pattern, SpanFrom(start));
+        }
+        var positional = ParsePattern();
+        return new PatternBinding(null, positional, positional.Span);
     }
 
     // ---- Types ----
@@ -1396,9 +1500,15 @@ public sealed class Parser
         }
     }
 
-    // unary = "-" unary | cast
+    // unary = "-" unary | cast; `*x` is parsed here too, only to be an unpacking target (M29)
     private Expr ParseUnary()
     {
+        if (At(TokenKind.Star))
+        {
+            var starStart = Next().Span.Start;
+            var starred = ParseUnary();
+            return new StarredExpr(starred, SpanFrom(starStart));
+        }
         if (!At(TokenKind.Minus))
             return ParseCast();
         var start = Next().Span.Start;
@@ -1568,8 +1678,7 @@ public sealed class Parser
                 return new DictExpr(entries, SpanFrom(token.Span.Start));
             }
             case TokenKind.MatchKeyword:
-                ReportSyntaxError(bag => bag.ReportMisplacedMatch(token.Span));
-                return new ErrorExpr(Here);
+                return ParseMatchExpr();
             default:
                 ReportExpected("expression");
                 return new ErrorExpr(Here);
@@ -1635,5 +1744,6 @@ public sealed class Parser
         TokenKind.Int or TokenKind.Float or TokenKind.String or TokenKind.FString
         or TokenKind.TrueKeyword or TokenKind.FalseKeyword or TokenKind.NoneKeyword
         or TokenKind.Name or TokenKind.OpenParen or TokenKind.OpenBracket or TokenKind.OpenBrace
-        or TokenKind.Minus or TokenKind.NotKeyword or TokenKind.LambdaKeyword or TokenKind.Ellipsis;
+        or TokenKind.Minus or TokenKind.NotKeyword or TokenKind.LambdaKeyword or TokenKind.Ellipsis
+        or TokenKind.MatchKeyword or TokenKind.Star;
 }
