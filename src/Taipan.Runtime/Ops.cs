@@ -88,7 +88,7 @@ public static class Ops
     {
         foreach (var element in list)
         {
-            if (Equality.Equal(element, item))
+            if (Equality.ElementEqual(element, item))
                 return true;
         }
         return false;
@@ -328,8 +328,70 @@ public static class Ops
     public static void SortBy<T, TKey>(List<T> list, Function<Func<T, TKey>> key, bool reverse = false, Func<TKey, TKey, bool>? less = null) =>
         Replace(list, SortedBy(list, key, reverse, less));
 
-    /// <summary><c>a &gt; b</c> through a class's <c>__lt__</c>: <c>b.__lt__(a)</c>, after evaluating both (SPEC §3.11).</summary>
-    public static bool Reversed<TLeft, TRight>(TLeft left, TRight right, Func<TRight, TLeft, bool> less) => less(right, left);
+    /// <summary><c>a op b</c> through the right operand's reflected method, after evaluating both (SPEC §3.11, §4.8).</summary>
+    public static TResult Reversed<TLeft, TRight, TResult>(TLeft left, TRight right, Func<TRight, TLeft, TResult> method) => method(right, left);
+
+    // ---- Special methods (SPEC §4.8) ----
+
+    /// <summary>
+    /// <c>a op b</c> on class values by Python's protocol: if <paramref name="right"/>'s runtime class is a
+    /// proper subclass of <paramref name="left"/>'s, its reflected method first; then the left's
+    /// method, then the right's reflected one, each only where it applies.
+    /// </summary>
+    public static bool Compare(object left, object right, int op)
+    {
+        var reflected = op switch { IClass.Lt => IClass.Gt, IClass.Le => IClass.Ge, IClass.Gt => IClass.Lt, _ => IClass.Le };
+        bool result;
+        if (left is IClass && right is IClass r && Equality.Subclassed(left, right) && r.TryCompare(reflected, left, out result))
+            return result;
+        if (left is IClass l && l.TryCompare(op, right, out result))
+            return result;
+        if (right is IClass rr && rr.TryCompare(reflected, left, out result))
+            return result;
+        throw new System.Diagnostics.UnreachableException("no comparison method applies");
+    }
+
+    /// <summary>
+    /// <c>a op b</c> through <paramref name="left"/>'s method, unless <paramref name="right"/>'s runtime
+    /// class is a proper subclass of the left's with a different reflected method that applies,
+    /// which Python calls instead (SPEC §4.8).
+    /// </summary>
+    public static TResult Arithmetic<TLeft, TRight, TResult>(TLeft left, TRight right, int reflected, Func<TLeft, TRight, TResult> method)
+    {
+        if (left is IClass l && right is IClass r && Equality.Subclassed(left, right)
+            && r.ReflectedOwner(reflected) is { } owner && owner != l.ReflectedOwner(reflected)
+            && r.TryReflected(reflected, left, out var result))
+            return (TResult)result!;
+        return method(left, right);
+    }
+
+    /// <summary>A class attribute reached through an instance, which is evaluated first (SPEC §4.8).</summary>
+    public static T After<T>(object? instance, T value) => value;
+
+    /// <summary>
+    /// <c>hash(x)</c> (SPEC §6): Python's for int and bool, a class's <c>__hash__</c> reduced as Python
+    /// reduces it, and otherwise .NET's, which for a str differs between runs, as Python's does.
+    /// </summary>
+    public static long Hash(object? value) => value switch
+    {
+        long l => HashInt(l),
+        bool b => b ? 1 : 0,
+        string s => s.GetHashCode(),
+        IClass c => c.TryHash(out var h) ? (h == -1 ? -2 : h) : System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(c),
+        System.Runtime.CompilerServices.ITuple t => Enumerable.Range(0, t.Length).Aggregate(0x345678L, (acc, i) => unchecked(acc * 1000003 ^ Hash(t[i]))),
+        null => 0,
+        _ => value.GetHashCode(),
+    };
+
+    // Python's int hash: the value modulo 2**61 - 1, keeping its sign, with -1 taken by -2.
+    private static long HashInt(long value)
+    {
+        const long modulus = (1L << 61) - 1;
+        var magnitude = (long)((ulong)(value < 0 ? -(value + 1) : value) % modulus);
+        if (value < 0)
+            magnitude = -((magnitude + 1) % modulus);
+        return magnitude == -1 ? -2 : magnitude;
+    }
 
     // Keys are computed once per element, in list order, while the list counts as being iterated.
     // OrderBy and OrderByDescending are stable, so equal keys keep their order either way. Strings

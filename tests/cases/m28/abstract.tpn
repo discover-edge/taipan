@@ -1,0 +1,71 @@
+# Abstract classes: abstract methods and properties, implemented by concrete subclasses.
+class Shape(ABC):
+    name: str
+
+    def __init__(self, name: str):
+        self.name = name
+
+    @abstractmethod
+    def area(self) -> float: ...
+
+    @property
+    @abstractmethod
+    def sides(self) -> int: ...
+
+    def describe(self) -> str:
+        return f"{self.name}: {self.sides} sides, area {self.area()}"
+
+class Polygon(Shape):
+    @property
+    @override
+    def sides(self) -> int:
+        return 4
+
+class Square(Polygon):
+    side: float
+
+    def __init__(self, side: float):
+        self.side = side
+        super().__init__("square")
+
+    @override
+    def area(self) -> float:
+        return self.side * self.side
+
+class Triangle(Shape):
+    base: float
+    height: float
+
+    def __init__(self, base: float, height: float):
+        self.base = base
+        self.height = height
+        super().__init__("triangle")
+
+    @override
+    def area(self) -> float:
+        return self.base * self.height / 2
+
+    @override
+    @property
+    def sides(self) -> int:
+        return 3
+
+let shapes: list[Shape] = [Square(2.0), Triangle(3.0, 4.0)]
+for s in shapes:
+    print(s.describe())
+
+@dataclass
+class Named(ABC):
+    label: str
+
+    @abstractmethod
+    def kind(self) -> str: ...
+
+@dataclass
+class Tag(Named):
+    @override
+    def kind(self) -> str:
+        return "tag"
+
+let t = Tag("x")
+print(t, t.kind())

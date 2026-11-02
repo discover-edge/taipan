@@ -170,7 +170,7 @@ public sealed class @Puppy : global::@Dog, global::Taipan.Runtime.IObject
     }
 }
 
-public sealed class @Point : global::Taipan.Runtime.IStruct
+public sealed class @Point : global::Taipan.Runtime.IDataclass
 {
     public double @x { get; set; }
     public double @y { get; set; }

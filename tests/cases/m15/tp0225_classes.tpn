@@ -38,8 +38,8 @@ class Loop2(Loop1):
     pass
 
 class Printable:
-    def __str__(self) -> str:
-        return "p"
+    def __bool__(self) -> bool:
+        return True
 
 @dataclass
 class WithInit:

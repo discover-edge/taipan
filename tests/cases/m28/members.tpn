@@ -1,0 +1,88 @@
+# Properties, static and class methods, and class attributes.
+class Temperature:
+    celsius: float
+    created: ClassVar[int] = 0
+    names: ClassVar[list[str]] = []
+    unit: ClassVar[str] = "C"
+
+    def __init__(self, celsius: float):
+        self.celsius = celsius
+        Temperature.created += 1
+
+    @property
+    def fahrenheit(self) -> float:
+        return self.celsius * 9 / 5 + 32
+
+    @fahrenheit.setter
+    def fahrenheit(self, value: float):
+        self.celsius = (value - 32) * 5 / 9
+
+    @staticmethod
+    def freezing() -> Temperature:
+        return Temperature(0.0)
+
+    @classmethod
+    def parse(cls, text: str) -> Temperature:
+        return cls(float(text) ?? 0.0)
+
+    @classmethod
+    def describe(cls) -> str:
+        return f"{cls.label()} in {cls.unit}"
+
+    @classmethod
+    def label(cls) -> str:
+        return "temperature"
+
+    def __str__(self) -> str:
+        return f"{self.celsius}°{self.unit}"
+
+class Reading(Temperature):
+    @override
+    @classmethod
+    def label(cls) -> str:
+        return "reading"
+
+    @override
+    @property
+    def fahrenheit(self) -> float:
+        return 0.0
+
+    @fahrenheit.setter
+    def fahrenheit(self, value: float):
+        print("Reading.fahrenheit =", value)
+
+let t = Temperature(100.0)
+print(t.fahrenheit)
+t.fahrenheit = 32.0
+print(t, t.celsius)
+t.fahrenheit += 18.0
+print(t)
+print(Temperature.freezing(), t.freezing())
+print(Temperature.parse("21.5"), type_of(Reading.parse("3")))
+print(Temperature.describe(), Reading.describe(), t.describe())
+let r: Temperature = Reading.parse("5")
+print(r.describe(), r.fahrenheit)
+r.fahrenheit = 1.0
+print(Temperature.created, Reading.created, t.created)
+Temperature.names.append("first")
+print(Reading.names, t.unit)
+Temperature.unit = "K"
+print(t, Reading.unit)
+
+def type_of(t: Temperature) -> str:
+    if isinstance(t, Reading):
+        return "Reading"
+    return "Temperature"
+
+# A class attribute narrows like a field path.
+class Cache:
+    last: ClassVar[str?] = None
+
+    @staticmethod
+    def remember(s: str):
+        Cache.last = s
+
+print(Cache.last)
+Cache.remember("x")
+if Cache.last is not None:
+    print(Cache.last.upper())

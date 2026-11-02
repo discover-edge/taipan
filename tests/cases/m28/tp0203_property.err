@@ -1,0 +1,4 @@
+tests/cases/m28/tp0203_property.tpn:25:15: error TP0203: str? must be narrowed before use
+  help: 'name' is a property, so it may change; copy it to a 'let' first
+tests/cases/m28/tp0203_property.tpn:28:15: error TP0203: str? must be narrowed before use
+  help: the call on line 27 could have changed it; copy it to a 'let' first

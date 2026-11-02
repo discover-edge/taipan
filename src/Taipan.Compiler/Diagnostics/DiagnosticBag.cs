@@ -111,8 +111,8 @@ public sealed class DiagnosticBag
     public void ReportBinaryOperatorTypes(TextSpan span, string op, object left, object right, string? help = null) =>
         Add("TP0200", span, $"operator '{op}' cannot be applied to {left} and {right}", help);
 
-    public void ReportUnaryOperatorType(TextSpan span, string op, object operand) =>
-        Add("TP0200", span, $"operator '{op}' cannot be applied to {operand}");
+    public void ReportUnaryOperatorType(TextSpan span, string op, object operand, string? help = null) =>
+        Add("TP0200", span, $"operator '{op}' cannot be applied to {operand}", help);
 
     public void ReportCannotCompare(TextSpan span, object left, object right) =>
         Add("TP0200", span, $"cannot compare {left} and {right}");
@@ -257,8 +257,8 @@ public sealed class DiagnosticBag
     public void ReportMisplacedEllipsis(TextSpan span) =>
         Add("TP0200", span, "'...' can only be the body of a protocol method");
 
-    public void ReportSpecialMethodCalled(TextSpan span, string name) =>
-        Add("TP0200", span, $"'{name}' cannot be called directly", "use '<'");
+    public void ReportSpecialMethodCalled(TextSpan span, string name, string form) =>
+        Add("TP0200", span, $"'{name}' cannot be called directly", $"use '{form}'");
 
     public void ReportLessThanSignature(TextSpan span, string className) =>
         Add("TP0225", span, $"'__lt__' must take one parameter of type '{className}' (or a base class) and return bool");
@@ -499,8 +499,8 @@ public sealed class DiagnosticBag
     public void ReportUnknownDecorator(TextSpan span, string name) =>
         Add("TP0224", span, $"unknown decorator '@{name}'");
 
-    public void ReportMisplacedDecorator(TextSpan span, string name) =>
-        Add("TP0224", span, $"'@{name}' cannot be used here", "'@dataclass' goes on a class, '@override' on a method");
+    public void ReportMisplacedDecorator(TextSpan span, string name, string? help = "'@dataclass' goes on a class, '@override' on a method") =>
+        Add("TP0224", span, $"'@{name}' cannot be used here", help);
 
     public void ReportDuplicateDecorator(TextSpan span, string name) =>
         Add("TP0224", span, $"duplicate decorator '@{name}'");
@@ -671,6 +671,103 @@ public sealed class DiagnosticBag
 
     public void ReportOutOfRangeFor(TextSpan span, string value, string type) =>
         Add("TP0200", span, $"{value} is out of range for {type}");
+
+    // ---- Special methods and class members (SPEC §4.8, M28) ----
+
+    public void ReportSpecialSignature(TextSpan span, string method, string signature) =>
+        Add("TP0225", span, $"'{method}' must be '{signature}'");
+
+    public void ReportReceiver(TextSpan span, string method, string? receiver) =>
+        Add("TP0225", span, receiver is null ? "a static method takes neither 'self' nor 'cls'" : $"'{method}' must take '{receiver}' first");
+
+    public void ReportPropertySignature(TextSpan span, bool hasParameters) =>
+        Add("TP0225", span, hasParameters ? "a property takes no parameters other than 'self'" : "a property must have a return type");
+
+    public void ReportSetterPlacement(TextSpan span) =>
+        Add("TP0225", span, "a setter must follow its property");
+
+    public void ReportSetterSignature(TextSpan span, object type) =>
+        Add("TP0225", span, $"a setter must take one parameter of type {type} and return nothing");
+
+    public void ReportClassAttributeValue(TextSpan span, string name) =>
+        Add("TP0225", span, $"class attribute '{name}' needs a value");
+
+    public void ReportGenericClassMembers(TextSpan span, string what) =>
+        Add("TP0225", span, $"generic classes cannot have {what}");
+
+    public void ReportAbstractBody(TextSpan span) =>
+        Add("TP0225", span, "an abstract method's body must be '...'");
+
+    public void ReportUnhashableSubclass(TextSpan span, string className, string baseClass) =>
+        Add("TP0225", span, $"'{className}' would not be hashable, but its base '{baseClass}' is", "define '__hash__'");
+
+    public void ReportDecoratorCombination(TextSpan span, string first, string second) =>
+        Add("TP0224", span, $"'@{first}' cannot be combined with '@{second}'");
+
+    public void ReportAbstractNeedsAbc(TextSpan span) =>
+        Add("TP0224", span, "'@abstractmethod' needs a class deriving from 'ABC'");
+
+    public void ReportSetterWithoutProperty(TextSpan span, string property) =>
+        Add("TP0224", span, $"'@{property}.setter' needs a property '{property}' just above it");
+
+    public void ReportMemberKind(TextSpan span, string member, string kind, string baseClass) =>
+        Add("TP0228", span, $"'{member}' is a {kind} in '{baseClass}'");
+
+    public void ReportSetterRequired(TextSpan span, string property, string baseClass) =>
+        Add("TP0228", span, $"'{property}' must have a setter, as '{baseClass}.{property}' does");
+
+    public void ReportReflectedReturn(TextSpan span, string className, string method, object type, string baseClass, string forward) =>
+        Add("TP0228", span, $"'{className}.{method}' must return {type}, since it can run in place of '{baseClass}.{forward}'");
+
+    public void ReportClsConstructor(TextSpan span, string className, string baseClass, string method) =>
+        Add("TP0228", span, $"'{className}' must be constructed as '{baseClass}' is, since '{baseClass}.{method}' calls 'cls(…)'");
+
+    public void ReportAbstractInstantiation(TextSpan span, string className, IEnumerable<string> missing) =>
+        Add("TP0234", span, $"cannot instantiate abstract class '{className}'", $"it does not implement {JoinAnd(missing.Select(m => $"'{m}'"))}");
+
+    public void ReportClsInAbstract(TextSpan span, string className) =>
+        Add("TP0234", span, $"'cls(…)' may construct the abstract class '{className}'");
+
+    public void ReportAbstractBelowCls(TextSpan span, string className, string method, string baseClass, string classMethod) =>
+        Add("TP0234", span, $"'{className}' cannot add abstract method '{method}', since '{baseClass}.{classMethod}' calls 'cls(…)'");
+
+    /// <summary><paramref name="definer"/> is the class whose <c>__eq__</c> removes the hash; null for a dataclass.</summary>
+    public void ReportUnhashableKey(TextSpan span, object type, string? definer) =>
+        Add("TP0200", span, $"dict keys must be hashable, found {type}",
+            definer is null ? "a dataclass needs its own '__hash__' to be a key" : $"'{definer}' defines '__eq__' without '__hash__'");
+
+    public void ReportCannotHash(TextSpan span, object type) =>
+        Add("TP0200", span, $"cannot hash {type}");
+
+    public void ReportAmbiguousOperator(TextSpan span, string op, object left, object right, string method) =>
+        Add("TP0200", span, $"'{op}' on {left} and {right} is ambiguous: '{method}' would run when it fits");
+
+    public void ReportPropertyThroughClass(TextSpan span, string property) =>
+        Add("TP0200", span, $"'{property}' is a property; read it from an instance");
+
+    public void ReportNeedsInstance(TextSpan span, string member, string className) =>
+        Add("TP0200", span, $"'{member}' needs an instance of '{className}'");
+
+    public void ReportClsMisuse(TextSpan span) =>
+        Add("TP0200", span, "'cls' can only be called, or used to reach static and class methods and class attributes");
+
+    public void ReportClassVarMisplaced(TextSpan span) =>
+        Add("TP0200", span, "'ClassVar' can only annotate a class attribute");
+
+    public void ReportAbstractSuper(TextSpan span, string baseClass, string method) =>
+        Add("TP0200", span, $"'{baseClass}.{method}' is abstract");
+
+    public void ReportClassAttributeThrough(TextSpan span, string attribute, string through, string owner) =>
+        Add("TP0202", span, $"cannot assign to '{attribute}' through '{through}'", $"assign '{owner}.{attribute}'");
+
+    public void ReportClassAttributeNotConstant(TextSpan span) =>
+        Add("TP0217", span, "class attribute value must be a constant expression");
+
+    private static string JoinAnd(IEnumerable<string> items)
+    {
+        var list = items.ToList();
+        return list.Count <= 1 ? string.Concat(list) : $"{string.Join(", ", list[..^1])} and {list[^1]}";
+    }
 
     public void AddRange(IEnumerable<Diagnostic> diagnostics) => _items.AddRange(diagnostics);
 

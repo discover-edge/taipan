@@ -35,6 +35,23 @@ public class LibraryTests
     }
 
     [Fact]
+    public void ClassMembersAreDotNetMembers()
+    {
+        var before = shapes.Money.made;
+        var money = shapes.Money.of(250);
+        Assert.Equal(2.5, money.dollars);
+        money.dollars = 3.0;
+        Assert.Equal(300, money.cents);
+        Assert.Equal("$3.0", money.ToString());
+        Assert.Equal(0, shapes.Money.zero().cents);
+        Assert.Equal(before + 2, shapes.Money.made);
+        // A hashable class's __eq__ and __hash__ are Equals and GetHashCode (SPEC §14).
+        Assert.Equal(new shapes.Money(300), money);
+        Assert.Equal(new shapes.Money(300).GetHashCode(), money.GetHashCode());
+        Assert.True(typeof(shapes.Polygon).IsAbstract);
+    }
+
+    [Fact]
     public void DefaultsAreOverloads()
     {
         Assert.Equal(0.0, new shapes.Point(1.0).y);

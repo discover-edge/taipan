@@ -63,6 +63,7 @@ public sealed class SemanticIndex
         FunctionSymbol { Builtin: not null } => null,
         FunctionSymbol function => Signature(function),
         FieldSymbol field => $"{field.Owner?.Name}.{field.Name}: {field.Type}",
+        ClassAttributeSymbol attribute => $"{attribute.Owner.Name}.{attribute.Name}: ClassVar[{attribute.Type}]",
         ClassSymbol classSymbol => $"{(classSymbol.IsDataclass ? "@dataclass " : "")}class {classSymbol.Name}{TypeParameters(classSymbol.TypeParameters)}",
         EnumSymbol enumSymbol => $"enum {enumSymbol.Name}{TypeParameters(enumSymbol.TypeParameters)}",
         VariantSymbol variant => $"{variant.Enum.Name}.{variant.Name}{(variant.Fields.IsEmpty ? "" : $"({string.Join(", ", variant.Fields.Select(f => $"{f.Name}: {f.Type}"))})")}",
@@ -78,9 +79,18 @@ public sealed class SemanticIndex
         var parameters = function.Parameters.Select((p, i) => $"{p.Name}: {p.Type}{(function.DefaultFor(i) is null ? "" : " = …")}");
         if (function.Self is not null)
             parameters = parameters.Prepend("self");
+        else if (function.Cls is not null)
+            parameters = parameters.Prepend("cls");
         var owner = function.Owner is { } classSymbol ? $"{classSymbol.Name}." : "";
         var result = function.ReturnType is NothingType ? "" : $" -> {function.ReturnType}";
-        return $"def {owner}{function.Name}{TypeParameters(function.TypeParameters)}({string.Join(", ", parameters)}){result}";
+        var decorator = function.Kind switch
+        {
+            MemberKind.Property => "@property ",
+            MemberKind.Static => "@staticmethod ",
+            MemberKind.Class => "@classmethod ",
+            _ => function.IsAbstract ? "@abstractmethod " : "",
+        };
+        return $"{decorator}def {owner}{function.Name}{TypeParameters(function.TypeParameters)}({string.Join(", ", parameters)}){result}";
     }
 
     private static string TypeParameters(IEnumerable<TypeParameterSymbol> parameters) =>

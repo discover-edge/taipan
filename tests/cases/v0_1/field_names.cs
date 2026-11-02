@@ -34,7 +34,7 @@ public static class TaipanProgram
     }
 }
 
-public sealed class @Node : global::Taipan.Runtime.IStruct
+public sealed class @Node : global::Taipan.Runtime.IDataclass
 {
     public long @Node_ { get; set; }
     public string @ToString_ { get; set; }

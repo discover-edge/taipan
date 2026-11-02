@@ -1,0 +1,12 @@
+tests/cases/m28/tp0224_decorators.tpn:8:5: error TP0224: '@classmethod' cannot be combined with '@staticmethod'
+tests/cases/m28/tp0224_decorators.tpn:13:5: error TP0224: '@staticmethod' cannot be combined with '@property'
+tests/cases/m28/tp0224_decorators.tpn:17:5: error TP0224: '@abstractmethod' needs a class deriving from 'ABC'
+tests/cases/m28/tp0224_decorators.tpn:20:5: error TP0224: '@size.setter' needs a property 'size' just above it
+tests/cases/m28/tp0224_decorators.tpn:24:5: error TP0224: unknown decorator '@speak.getter'
+tests/cases/m28/tp0224_decorators.tpn:28:5: error TP0224: '@property' cannot be used here
+tests/cases/m28/tp0224_decorators.tpn:34:5: error TP0224: '@staticmethod' cannot be combined with '@abstractmethod'
+tests/cases/m28/tp0224_decorators.tpn:39:5: error TP0224: '@override' cannot be combined with '@abstractmethod'
+tests/cases/m28/tp0224_decorators.tpn:42:1: error TP0224: '@property' cannot be used here
+  help: '@property' goes on a method
+tests/cases/m28/tp0224_decorators.tpn:46:1: error TP0224: '@staticmethod' cannot be used here
+  help: '@staticmethod' goes on a method

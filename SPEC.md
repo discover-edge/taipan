@@ -94,7 +94,7 @@ import_name   = NAME [ "as" NAME ] ;
 const_def     = "const" NAME [ ":" type ] "=" expr NEWLINE ;
 
 func_def      = { decorator } "def" NAME [ type_params ] "(" [ params ] ")" [ "->" type ] ":" block ;
-decorator     = "@" NAME NEWLINE ;                                   (* M15: @dataclass, @override; §4.3 *)
+decorator     = "@" NAME [ "." NAME ] NEWLINE ;                      (* M15: @dataclass, @override; §4.3. M28: §4.8 *)
 params        = param { "," param } [ "," ] ;
 param         = NAME ":" type [ "=" expr ] ;                         (* default: M14, §4.2 *)
 type_params   = "[" type_param { "," type_param } "]" ;             (* M8, §3.6 *)
@@ -105,7 +105,8 @@ class_def     = { decorator } "class" NAME [ type_params ] [ "(" base { "," base
                 NEWLINE INDENT class_member { class_member } DEDENT ;
 base          = NAME [ "." NAME ] [ "[" type { "," type } "]" ] ;   (* more than one class base is TP0225; protocols may be added: M17 *)
 class_member  = NAME ":" type [ "=" expr ] NEWLINE | method_def | "pass" NEWLINE ;
-method_def    = { decorator } "def" NAME "(" "self" [ "," params ] ")" [ "->" type ] ":" ( block | "..." NEWLINE ) ;   (* M5; "...": M17 *)
+method_def    = { decorator } "def" NAME "(" [ method_params ] ")" [ "->" type ] ":" ( block | "..." NEWLINE ) ;   (* M5; "...": M17 *)
+method_params = ( "self" | "cls" ) { "," param } [ "," ] | params ;  (* M28: "cls", or neither, for class and static methods, §4.8 *)
 
 enum_def      = "enum" NAME [ type_params ] ":" NEWLINE INDENT variant { variant } DEDENT ;
 variant       = NAME [ "(" named_fields ")" ] NEWLINE ;
@@ -185,7 +186,8 @@ atom          = INT | FLOAT | STRING | FSTRING | "True" | "False" | "None"
 - A `value_arm` is an expression or a `raise` on the same line as its pattern: `Ok: "up"`, `_: raise ValueError("bad status")`. An indented block is `TP0100`, `expected expression, found newline`.
 - Keyword arguments are allowed in calls to functions and methods (M14, §4.2), class and enum-variant constructors (§4.3), `py` values (§10.2), and the keyword parameters of built-ins (`key` and `reverse` of `sorted` and `list.sort`, `start` of `enumerate`; §6). Keyword arguments may follow positional ones, as in Python. A positional argument after a keyword argument is `TP0100`.
 - In a parameter list, a parameter without a default after one with a default is `TP0100`, as in Python.
-- **Decorators (M15)** are only `@dataclass` on a `class` and `@override` on a method (§4.3). A decorator takes no arguments: `@dataclass(frozen=True)` is `TP0100`. Any other decorator name, a decorator in any other place, or a repeated one is `TP0224`.
+- **Decorators (M15)** are only `@dataclass` on a `class` and `@override` on a method (§4.3), and since M28 `@property`, `@<name>.setter`, `@staticmethod`, `@classmethod` and `@abstractmethod` on a method (§4.8). A decorator takes no arguments: `@dataclass(frozen=True)` is `TP0100`. Any other decorator name, a decorator in any other place, a repeated one, or one that can't be combined with another (§4.8) is `TP0224`. A dotted decorator other than `@<property>.setter` is `TP0224`.
+- **Receivers (M28):** an instance method, property or setter must take `self` first, a `@classmethod` must take `cls` first, and a `@staticmethod` takes neither. Otherwise it's `TP0225`, `'<m>' must take 'self' first` (or `'cls'`, or `a static method takes neither 'self' nor 'cls'`). As before M28, `self` and `cls` are written without a type.
 - **`is`:** `x is None` and `x is not None` are comparisons that give `bool`, usable in any expression (M15). `x is some v` binds a name, so it's only a whole `if`/`elif`/`while` condition. Any other right operand of `is`, including another expression (`x is y`), is `TP0100`, `expected 'some', 'not' or 'None'`.
 - **`try` (M16):** a `try` needs at least one `except` clause or a `finally`, and an `else` needs at least one `except`. A bare `except:` must be the last clause. Otherwise it's `TP0100`. An `except` clause names its types (`except KeyError`, `except zoo.NotFound`, `except json.JSONDecodeError`) rather than taking an expression, so in `except KeyError as e` the `as` names the binding rather than starting a cast.
 - A class body holds field declarations, methods and `pass`. Classes are top-level only, so a `class` inside a block is `TP0100`.
@@ -221,7 +223,7 @@ atom          = INT | FLOAT | STRING | FSTRING | "True" | "False" | "None"
 | `bool` | `True` / `False` | `bool` |
 | `str` | immutable Unicode string | `string` |
 | `list[T]` | growable array | `List<T>` |
-| `dict[K, V]` | hash map that keeps insertion order; `K` ∈ {`int`, `str`, `bool`}, a tuple of valid keys (M12), or a plain class, compared by identity (M15), otherwise `TP0200` | `OrderedDictionary<K, V>` |
+| `dict[K, V]` | hash map that keeps insertion order; `K` ∈ {`int`, `str`, `bool`}, a tuple of valid keys (M12), or a plain class, compared by identity (M15), or since M28 any hashable class (§4.8), otherwise `TP0200` | `OrderedDictionary<K, V>` |
 | `tuple[A, B, …]` | fixed-size, immutable group of values (M12, §3.8) | `ValueTuple<A, B, …>` |
 | `T?` | optional `T` | `T?` (C# nullable) |
 | `py` | dynamic Python object (M10, §10) | `Python.Runtime.PyObject` |
@@ -428,6 +430,7 @@ def first_port(config: Config) -> int:
   - A `var` that a nested function assigns (§3.7) isn't narrowed from that function's `def` on, nor anywhere in a loop containing it, since any call could run the function.
   - **A path** stays narrowed until something could change it:
     - any call that could run Taipan or foreign code: a Taipan function, method, constructor or function value, `super()`, any operation on a `py` value, and any .NET member; and a built-in given a function (`map`, `filter`, and `sorted` or `sort` with a `key`). Other built-ins (`len`, `print`, `str`, list and dict methods) don't end it.
+    - since M28, anything that runs a special method or property (§4.8): reading or setting a property, and an operator, `==`, `in`, `contains`, `print`, `str()`, `repr()`, `hash()`, an f-string hole, or a dict access, on a class value, or a list, dict, tuple or optional holding one, when that class or a class derived from it defines the special method used.
     - any assignment to a field with the name of one of the path's fields, on any object, since another name could refer to the same object.
   - Ending is ordered as the code runs: in `p.x is not None and check(p)`, the call ends the narrowing of `p.x`, so the `if` block doesn't see it.
 - **Errors:** using a name or path as if it were narrowed reports the usual error (`TP0203`, `TP0210`), with help saying why it isn't:
@@ -597,11 +600,11 @@ Built-in types have no methods for this purpose except `__lt__`, so `str` doesn'
       def __lt__(self, other: Self) -> bool: ...
   ```
 - `int`, `float` and `str`, and tuples of them (§3.8), satisfy it, as does a class with a suitable `__lt__`. `bool` and `None` don't, since Taipan doesn't order them (§5.3).
-- **`__lt__` on a class** is the one special method besides `__init__` that a class may define (§4.3). It takes exactly one parameter, whose type is the class or one of its bases, and returns `bool` (`TP0225` otherwise). It overrides like any method (§4.3).
-- `a < b` on a class value `a` calls `a.__lt__(b)`, and `b` must fit its parameter. `a > b` evaluates `a` and then `b`, and calls `b.__lt__(a)`, as Python does when `a` has no `__gt__`.
-- `<=` and `>=` aren't defined by `__lt__`: on a class or a bounded type parameter they're `TP0200`, with help `'__lt__' defines only '<' and '>'`. Python raises `TypeError` for them at run time; `__le__`, `__ge__` and `functools.total_ordering` are deferred.
+- **`__lt__` on a class** was the one special method besides `__init__` that a class could define before M28 (§4.3), and took the class or one of its bases. Since M28 it takes any type and is one of the comparison methods of §4.8. A class satisfies `Comparable` when its `__lt__` takes the class itself.
+- `a < b` on a class value `a` calls `a.__lt__(b)`, and `b` must fit its parameter. `a > b` evaluates `a` and then `b`, and calls `b.__lt__(a)`, as Python does when `a` has no `__gt__`. Since M28 these follow §4.8's resolution and run-time protocol, so `a > b` calls `a.__gt__(b)` when `a`'s class has one.
+- `<=` and `>=` aren't defined by `__lt__`: on a class without `__le__` and `__ge__` they're `TP0200` (§4.8), and on a bounded type parameter `TP0200`, with help `'__lt__' defines only '<' and '>'`. Python raises `TypeError` for them at run time; `functools.total_ordering` is deferred.
 - `sorted` and `list.sort` accept a list, or a key, of any `Comparable` type (§6), and call only `__lt__`, as Python's sort does.
-- Calling `__lt__` directly (`a.__lt__(b)`) is `TP0200`, with help `use '<'`, except as `super().__lt__(…)` in an override.
+- Calling `__lt__` directly (`a.__lt__(b)`) is `TP0200`, with help `use '<'`, except as `super().__lt__(…)` in an override, as for every special method (§4.8).
 
 **Bounds**
 - A function's type parameter may be bounded by a protocol, as in PEP 695: `def largest[T: Comparable](xs: list[T]) -> T?:`. The bound may be qualified with a module: `[S: shapes.Shape]`.
@@ -718,12 +721,13 @@ class Point:
 - **Two kinds of class:**
   - A **plain class** has an `__init__` that sets its fields, compares by identity, and displays as `<Dog object>`. Its instances may be dict keys, compared by identity.
   - A **dataclass**, marked `@dataclass`, gets a generated constructor that takes its fields in order. It compares field by field and displays as `Point(x=1.0, y=0.0)`, as in Python. Like Python's (without `frozen=True`), its instances can't be dict keys (`TP0200`).
+  - Since M28, either kind may define `__str__`, `__repr__`, `__eq__` and `__hash__` to change this (§4.8).
 - **Fields** are declared in the class body, with a type and an optional default: `legs: int = 4`. Assigning a field that isn't declared, through `self` or otherwise, is `TP0210`. Python would create it.
   - A field's default is evaluated each time an instance is made: in a plain class, just before the class's own `__init__` body runs, and in a dataclass, as the constructor's parameter default. This differs from Python, where a class-level `items: list[int] = []` is one list shared by every instance.
   - Defaults follow the rules for parameter defaults (§4.2): checked against the field's type, and unable to use `self` or the `__init__` parameters (`TP0201`).
   - Fields are mutable through any binding: `s.healthy = 2` is valid even when `s` is a `let`. `let` fixes the binding, not the object.
 - **Methods** take an explicit `self` as the first parameter, typed implicitly as the enclosing class. They're called as `s.method(args)`, with arguments matched as for functions (§4.2), and are dispatched on the object's runtime class, so a `Dog` in a `list[Animal]` runs `Dog.speak`. Inside a method, other methods are reached as `self.m()`, and a bare `m()` refers to a global function.
-- **Special methods:** a plain class may define `__init__`, and any class may define `__lt__` (M17, §3.11). Any other method named `__x__` (`__str__`, `__eq__`, `__hash__`, …) is `TP0225`. They're deferred, and Taipan reports them rather than silently ignore them.
+- **Special methods:** a plain class may define `__init__`, and any class may define `__lt__` (M17, §3.11). Since M28, any class may define the special methods of §4.8 (`__str__`, `__eq__`, `__hash__`, `__add__`, …). Any other method named `__x__` is `TP0225`: Taipan reports it rather than silently ignore it.
 - **Members** are looked up on the static type. An unknown field or method is `TP0210`. A `Dog`-only method on an `Animal` needs narrowing first (§3.9).
 
 **Construction**
@@ -779,7 +783,7 @@ class Point:
 - **Plain class:** `==` and `!=` compare identity, as in Python without `__eq__`. Each construction makes a new object, equal only to itself. The display form is `<Dog object>`, by runtime class.
 - **Dataclass:** `==` compares the runtime classes, then every field, inherited ones included, structurally. Values of different classes are never equal, as in Python's `dataclass`. The display form is the runtime class's name and every field: `Dog(name="rex", breed="lab")`.
 - `==` between two class types is valid when one is assignable to the other. Unrelated classes are `TP0200`.
-- `dict[C, V]` is valid for a plain class `C`, with keys compared by identity (§3.1).
+- `dict[C, V]` is valid for a plain class `C`, with keys compared by identity (§3.1). Since M28, for any hashable class (§4.8).
 - Class values aren't convertible to Python (§10.3).
 
 **Generics:** classes may take type parameters, plain or dataclass, as structs could (§3.6): `class Box[T]:`, with `@dataclass` on the line before it for a dataclass.
@@ -823,7 +827,7 @@ class Point:
 - **Error types:** once an expression has an error, its type is treated as compatible with everything. This means one mistake is reported once, not again at every use.
 
 ### 4.6 Classes, lists and dicts: checking rules
-- **Class names** live in the type namespace and also in the global value scope, as the class's constructor. So a class can't share a name with a function, constant or built-in (`TP0214`), and a local can't take its name (`TP0207`). A class named `int`, `float`, `bool`, `str`, `list`, `dict`, `py`, `Callable` or `tuple` is also `TP0214`, as is one named `Protocol`, `Self` or `Comparable` (M17).
+- **Class names** live in the type namespace and also in the global value scope, as the class's constructor. So a class can't share a name with a function, constant or built-in (`TP0214`), and a local can't take its name (`TP0207`). A class named `int`, `float`, `bool`, `str`, `list`, `dict`, `py`, `Callable` or `tuple` is also `TP0214`, as is one named `Protocol`, `Self` or `Comparable` (M17), or `ABC` or `ClassVar` (M28).
 - **Type alias names (M18)** live in the type namespace only, but share the global scope's names: an alias can't share a name with any other global (`TP0214`), and a local can't take its name (`TP0207`).
 - **Members:** field and method names within one class, inherited ones included, must be distinct (`TP0214`). Field types may name any class, including the class itself, for example through `list[Node]` or `Node?`.
 - **Dataclass construction:**
@@ -865,6 +869,132 @@ class Point:
 - **Cycles are allowed.** Since definitions are hoisted, `a` may import `b` while `b` imports `a`, and their functions may call each other.
 - **Stages:** every file is lexed and parsed before any is type-checked, and §9's stage gating applies across all of them. Diagnostics name the file they're in, by its path relative to the main file's path as given (for example `tests/cases/m9/shapes/geometry.tpn`).
 - **Order:** constants are initialized module by module, each module after the modules it imports (a cycle is broken at the file reached first), and the main file's last.
+
+### 4.8 Special methods and class members (M28)
+```python
+class Money:
+    cents: int
+    currency: str
+    count: ClassVar[int] = 0
+
+    def __init__(self, cents: int, currency: str):
+        self.cents = cents
+        self.currency = currency
+        Money.count += 1
+
+    @classmethod
+    def parse(cls, s: str) -> Money:
+        let parts = s.split(" ")
+        return cls(int(parts[0]) ?? 0, parts[1])
+
+    @property
+    def dollars(self) -> float:
+        return self.cents / 100
+
+    def __add__(self, other: Money) -> Money:
+        return Money(self.cents + other.cents, self.currency)
+
+    def __radd__(self, other: int) -> Money:
+        return Money(self.cents + other, self.currency)
+
+    def __eq__(self, other: Money) -> bool:
+        return self.cents == other.cents and self.currency == other.currency
+
+    def __hash__(self) -> int:
+        return hash((self.cents, self.currency))
+
+    def __str__(self) -> str:
+        return f"{self.dollars:.2f} {self.currency}"
+
+class Shape(ABC):
+    @abstractmethod
+    def area(self) -> float: ...
+```
+
+**Special methods.** A class may define these, each with exactly the parameters shown (after `self`, without defaults) and the result shown, or it's `TP0225`, `'<m>' must be 'def <m>(self, …) -> <R>'`. Any other name of the form `__x__` (`__bool__`, `__len__`, `__ne__`, `__iadd__`, `__format__`, …) is still `TP0225`.
+
+| Method | Signature | Used by |
+|---|---|---|
+| `__str__` | `(self) -> str` | `print`, `str()`, f-string holes |
+| `__repr__` | `(self) -> str` | the form inside lists, dicts, tuples and dataclasses, `!r`, `repr()`, and `str()` when there's no `__str__` |
+| `__eq__` | `(self, other: C) -> bool`, where `C` is the class or one of its bases | `==`, `!=`, `in`, `contains`, list and dict equality, dict keys |
+| `__hash__` | `(self) -> int` | dict keys, `hash()` |
+| `__lt__`, `__le__`, `__gt__`, `__ge__` | `(self, other: T) -> bool`, for any `T` | `<`, `<=`, `>`, `>=`; `sorted` and `sort` use `__lt__` only (§3.11) |
+| `__add__`, `__sub__`, `__mul__`, `__truediv__`, `__floordiv__`, `__mod__` | `(self, other: T) -> R`, for any `T` and `R` | `+ - * / // %` with the class value on the left |
+| `__radd__`, `__rsub__`, `__rmul__`, `__rtruediv__`, `__rfloordiv__`, `__rmod__` | `(self, other: T) -> R` | the same operators with the class value on the right |
+| `__neg__` | `(self) -> R` | unary `-` |
+
+- Special methods are inherited and overridden like other methods (§4.3), with `@override` when a base class defines the method in its body. Defining one that only Python's `object` has (`__str__`, `__eq__`, …), or that a dataclass generates (below), needs no `@override`.
+- Calling one directly (`m.__add__(n)`, `m.__str__()`) is `TP0200`, `'<m>' cannot be called directly`, with help naming its form (`use '+'`, `use 'str(m)'`, `use 'repr(m)'`, `use 'hash(m)'`), except as `super().__m__(…)` in an override.
+- A special method can't be a property, static method or class method (`TP0224`).
+- `x op= y` is `x = x op y` (§4.5), as in Python without `__iadd__`.
+
+**Display.** `str(x)`, `print` and f-string holes call `__str__`. A class without one in its hierarchy uses `__repr__`, as Python's `object.__str__` does. A class without `__repr__` gets the M15 forms: `<Dog object>` for a plain class, and for a dataclass the generated `Point(x=1.0, y=0.0)`. As in Python, every dataclass generates its `__repr__` unless its own body defines one, so a dataclass deriving from one with a custom `__repr__` displays in the generated form. `repr(x) -> str` (§6) gives the form inside a container for any value, which `!r` writes. Format specs on a class value are still `TP0200` (`__format__` is deferred).
+
+**Equality.**
+- `a == b` on classes needs related types, as in M15 (§4.3). At run time it follows Python's protocol:
+  1. If `b`'s runtime class is a proper subclass of `a`'s, `b.__eq__(a)` is tried first.
+  2. Then `a.__eq__(b)`, then `b.__eq__(a)`.
+  3. If none applies, `a` and `b` are equal only if they're the same object.
+- A method *applies* when the other operand is an instance of its parameter's class at run time. Otherwise it's skipped, as when a Python `__eq__` returns `NotImplemented`. Taipan never calls a method with a value its parameter doesn't accept.
+- **A dataclass** generates `__eq__` unless its own body defines one, as in Python: it applies when both operands have the same runtime class, and compares every field. So a dataclass deriving from one with a custom `__eq__` compares field by field.
+- `a != b` is `not (a == b)`, as Python's default `__ne__` gives.
+- Inside lists, dicts and tuples, and for `in` and `contains`, an element is equal to itself before `__eq__` is consulted, as in Python's containers.
+
+**Hashing and dict keys.**
+- A class is **hashable** unless its body defines `__eq__` without `__hash__`, in which case `__hash__` is removed, as in Python. A class that defines neither inherits both, so a plain class is hashable by identity. **A dataclass** is hashable only if its own body defines `__hash__`, since the generated `__eq__` removes it otherwise.
+- `dict[C, V]` (and a tuple key containing `C`) needs `C` hashable: otherwise `TP0200`, `dict keys must be hashable, found <C>`, with help `'<C>' defines '__eq__' without '__hash__'` or `a dataclass needs its own '__hash__' to be a key`.
+- **A subclass of a hashable class must be hashable** (`TP0225`, `'<C>' would not be hashable, but its base '<B>' is`, with help `define '__hash__'`), so that a `dict[Animal, V]` never meets an unhashable `Dog` at run time. Python raises `TypeError` there.
+- Keys are found by `__hash__`, then by identity, then by `==` as above. Objects that are equal must hash equally; Taipan doesn't check it, as Python doesn't.
+- `hash(x) -> int` (§6) gives `x.__hash__()` reduced as Python reduces it, so `hash(x)` is never `-1`.
+
+**Ordering.**
+- `a < b` is valid when `a`'s class has `__lt__` taking `b`, or `b`'s class has `__gt__` taking `a`. `<=` pairs with `__ge__`, `>` with `__lt__`, and `>=` with `__le__`. Otherwise it's `TP0200`, `operator '<' cannot be applied to <A> and <B>`, with help `define '__lt__' on '<A>'` when `a` is a class.
+- At run time it follows Python's protocol: if `b`'s runtime class is a proper subclass of `a`'s, `b`'s reflected method (`__gt__` for `<`) is tried first. Then `a`'s method, then `b`'s reflected one, each only when it applies (above), using the methods of the operands' runtime classes. One of them always applies, since the check above found one for the static types.
+- `functools.total_ordering` is deferred, so `<=` needs `__le__` (or a reflected `__ge__`) even when the class has `__lt__` and `__eq__`.
+
+**Arithmetic.**
+- `a + b` uses `a`'s class's `__add__` when it takes `b`. Otherwise, it uses `b`'s class's `__radd__` when it takes `a`. Otherwise the built-in rules of §5.3 apply, and failing those it's `TP0200`. So `m + n`, `m + 5` with `__add__(self, other: int)`, and `0 + m` with `__radd__(self, other: int)`. The result has the method's return type, and the other operand converts to its parameter as for any argument (`m * 2` with `__mul__(self, k: float)`).
+- **Subclass priority.** At run time, if `b`'s runtime class is a proper subclass of `a`'s and defines a different `__radd__` that takes `a`, `b.__radd__(a)` runs instead, as in Python. So that its result fits the expression's type, a class's `__rop__` must return a type assignable to the result of any base's `__op__` that the class fits: `TP0228`, `'<D>.__radd__' must return <R>, since it can run in place of '<B>.__add__'`.
+- When `a + b` uses `b.__radd__(a)`, and `a`'s class, or a class derived from it, has an `__add__` that a `b` could fit at run time, it's `TP0200`, `'+' on <A> and <B> is ambiguous: '<C>.__add__' would run when it fits`. Python would call that `__add__` first.
+- `-a` calls `a.__neg__()`.
+
+**Properties.**
+- `@property` makes a method with no parameters other than `self`, and a return type, into a read: `m.dollars`, not `m.dollars()`. Other parameters, or no return type, are `TP0225`.
+- `@<name>.setter`, on a method named the same that directly follows the property in the class body, takes one parameter of the property's type and has no return type (`TP0225` otherwise). Then `m.dollars = 2.5` and `m.dollars += 1.0` call it, the latter after reading the property once. Without a setter, assignment is `TP0202`, `cannot assign to 'dollars': it is a read-only property`.
+- Properties are members like fields and methods (§4.6), and dispatch on the runtime class. A property overrides only a property, with `@override` on its getter: the same type, or for a property without a setter, a class type assignable to the base's (`TP0228`). If the base's property has a setter, the override must have one too (`TP0228`), since Python's overriding property would otherwise be read-only.
+- A property is code, not storage: reading or setting one counts as a call. It ends the narrowing of field paths (§3.9), isn't narrowed itself (`TP0203`, with help `'<p>' is a property, so it may change; copy it to a 'let' first`), and in `__init__` it's a use of `self` (`TP0226`) until the object is complete.
+- `C.dollars`, a property reached through its class rather than an instance, is `TP0200`, `'dollars' is a property; read it from an instance`.
+
+**Static and class methods.**
+- `@staticmethod` makes a method without `self`: `def make(n: int) -> C:`. `@classmethod` makes one whose first parameter is `cls`, written without a type: `def parse(cls, s: str) -> C:`.
+- Both are called through the class (`C.parse(s)`, `zoo.C.parse(s)`, `Sub.parse(s)`) or an instance (`m.parse(s)`, `self.parse(s)`), and inside a class method through `cls` (`cls.other()`). An instance method or property called through a class (`C.speak()`) is `TP0200`, `'speak' needs an instance of 'C'`.
+- **`cls`** is the class the method was called through: `Sub.parse(s)` and `sub.parse(s)` run with `cls` as `Sub`, even when `parse` is inherited, as in Python.
+  - `cls(…)` constructs an instance of that class. Its type is the method's class, and its arguments are checked against that class's constructor. So that it's valid for every class `cls` can be, each class derived from a class with a class method that calls `cls(…)` must take the same constructor arguments: the same parameters, as for an override (§4.3), with a default wherever the base has one. Otherwise it's `TP0228`, `'<D>' must be constructed as '<C>' is, since '<C>.<m>' calls 'cls(…)'`. A dataclass that adds a field changes its constructor, and so is reported.
+  - `cls.m(…)` calls a static or class method, and `cls.a` reads a class attribute, both by `cls`'s class.
+  - Any other use of `cls` (passing, storing, displaying or comparing it) is `TP0200`, `'cls' can only be called, or used to reach static and class methods and class attributes`.
+- Static and class methods override like instance methods (§4.3), with `@override`, and only one of the same kind (`TP0228`, `'<m>' is a <static method|class method|method|property> in '<B>'`). Through an instance or `cls` they dispatch on the runtime class, and through a class name they're found from that class upwards.
+- They can't use `self` (`TP0201`), and a class method's `cls` follows the `self` rules: it's an immutable parameter, and a local can't take its name.
+- Using a static or class method without calling it is `TP0200`, with help `wrap it in a lambda`, as for other methods.
+- A generic class can't have static or class methods or class attributes (`TP0225`, `generic classes cannot have <static methods|class methods|class attributes>`); that's deferred.
+
+**Class attributes.**
+- `count: ClassVar[int] = 0` in a class body declares a class attribute, shared by the class, its subclasses and their instances. A field declaration without `ClassVar` is still per instance (§4.3). `ClassVar[T]` is valid only as the whole annotation of a class-body declaration (`TP0200` elsewhere), and the attribute needs a value (`TP0225`, `class attribute 'count' needs a value`).
+- The value may contain only what a `const` initializer may (§4.5), plus `None` and list, dict and tuple literals of such values, since it's evaluated once, before any code runs (`TP0217`, `class attribute value must be a constant expression`).
+- It's read as `C.count`, `Sub.count`, `self.count`, `m.count` or `cls.count`. It's assigned only through the class that declares it, `C.count = 5` or `C.count += 1`: through a subclass, an instance or `cls`, it's `TP0202`, `cannot assign to 'count' through '<x>'`, with help `assign 'C.count'`. In Python those would create a new attribute that hides the class's.
+- A class attribute is narrowed as a field path is (§3.9), rooted at its class: `if C.cache is not None:` narrows `C.cache` until a call or an assignment to it.
+- Class attributes share the member namespace (§4.6). A subclass can't redeclare one (`TP0214`). They aren't fields: they're not constructor parameters of a dataclass, aren't displayed, and aren't compared.
+
+**Abstract classes.**
+- `class Shape(ABC):` makes `Shape` able to have abstract methods. `ABC` is a built-in name, as `Protocol` is (Python imports it from `abc`), and it doesn't count as a base class, so `class Shape(Base, ABC)` is valid, and so is a dataclass deriving from it.
+- `@abstractmethod` marks a method, or a property, as abstract. Its body is `...` (`TP0225` otherwise). It's valid only in a class that derives from `ABC`, directly or through its bases, and not together with `@override`, `@staticmethod` or `@classmethod` (`TP0224`).
+- **A class is abstract** if it has an abstract method that neither it nor a class between overrides. Overriding one needs `@override` (§4.3), and must be compatible (`TP0228`).
+- **Compile-time checks (`TP0234`):**
+  - Constructing an abstract class, `Shape()` or `Square()`, is `TP0234`, `cannot instantiate abstract class 'Square'`, with help `it does not implement 'Shape.area'` (listing each such method: `'Shape.area' and 'Shape.perimeter'`).
+  - `cls(…)` in a class method of an abstract class is `TP0234`, since `cls` may be that class.
+  - A class can't add an abstract method when a base class has a class method that calls `cls(…)` (`TP0234`, `'<C>' cannot add abstract method '<m>', since '<B>.<cm>' calls 'cls(…)'`), so that the call stays valid when `cls` is the new class.
+- `super().area()` that reaches an abstract method is `TP0200`, `'Shape.area' is abstract`.
+- An abstract class may have fields, `__init__` and concrete methods, and may be a type: values of it are instances of its concrete subclasses.
 
 ---
 
@@ -951,10 +1081,11 @@ def area(s: Shape) -> float:
 | `%` | int, int | int | result takes the divisor's sign (Python semantics) |
 | `+` | str, str | str | concatenation |
 | `+` | list[T], list[T] | list[T] | new list |
-| `== !=` | same type, int/float, or related classes | bool | structural for dataclasses, enums, lists, dicts, tuples; identity for plain classes (§4.3) and functions (§3.7) |
+| `== !=` | same type, int/float, or related classes | bool | structural for dataclasses, enums, lists, dicts, tuples; identity for plain classes (§4.3) and functions (§3.7); a class's `__eq__` since M28 (§4.8) |
 | `is None`, `is not None` | T? | bool | M15; narrows (§3.9) |
 | `< <= > >=` | numeric, or str (ordinal), or tuples of those (M12) | bool | tuples compare lexicographically |
 | `< >` | a class with `__lt__`, or a type parameter bounded by a protocol with `__lt__` (M17) | bool | `a < b` is `a.__lt__(b)`, `a > b` is `b.__lt__(a)` (§3.11) |
+| `< <= > >=`, `+ - * / // %`, unary `-` | a class with the matching special method (M28) | the method's | §4.8 |
 | `in`, `not in` | T in list[T]; K in dict[K,V]; str in str | bool | |
 | `??` | T?, T | T | |
 | `and or not` | bool | bool | short-circuit |
@@ -1003,6 +1134,8 @@ In `a == b` and `a != b`, `a`'s type is `b`'s expected type (§4.6), so `m == No
 - `len(x) -> int` takes a list, dict, or str. For a `str` it counts Unicode code points, so `len("🐍")` is `1`.
 - `range(stop)` and `range(start, stop)` iterate only (they're not a list).
 - `str(x) -> str` gives the display form.
+- `repr(x) -> str` (M28) gives the form a value has inside a list, as `!r` writes it: `repr("a")` is `"a"` with its quotes. A class's `__repr__` defines it (§4.8).
+- `hash(x) -> int` (M28) takes any value that can be a dict key (§3.1), and is `TP0200` otherwise, `cannot hash <T>`. Equal values hash equally. For an `int` or `bool` it's Python's (`hash(-1)` is `-2`), for a class with `__hash__` it's that method's result reduced as Python reduces it (§4.8), and otherwise its value is unspecified and may differ between runs, as `str` hashes do in Python.
 - `int(x: float) -> int` truncates toward zero. An `int` argument is returned unchanged. `int(x: str) -> int?` parses, returning `None` on failure. It accepts an optional sign and decimal digits with `_` only between digits (as in §1.3), with surrounding whitespace allowed. A value outside the int range gives `None`.
 - `float(x: int) -> float`. A `float` argument is returned unchanged. `float(x: str) -> float?` accepts the same forms as `int(str)`, plus an optional fraction and exponent (`1.5`, `2e-3`, `.5`, `5.`), and `inf`, `infinity` and `nan` in any case. Otherwise it returns `None`.
 - `range` can only be used as the iterable of a `for` loop. Any other use is `TP0200`.
@@ -1042,6 +1175,7 @@ In `a == b` and `a != b`, `a`'s type is `b`'s expected type (§4.6), so `m == No
 | dict | `{"a": 1}` |
 | dataclass | `Service(name="api", replicas=3, healthy=3)`, by runtime class, with inherited fields first |
 | plain class | `<Dog object>`, by runtime class (M15) |
+| class with `__str__` or `__repr__` | as §4.8 says (M28): `__str__` at top level, `__repr__` inside a container |
 | enum | `Ok`, `Degraded(healthy=1, total=4)` |
 | function | `<function name>`, `<function <lambda>>` (M11) |
 | exception | its message, as Python's `str(e)` (M16). Inside a container, its class and message: `[KeyError("missing key \"a\"")]` |
@@ -1099,6 +1233,13 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 | methods (M15) | `public virtual` where a method is introduced and `public override` for `@override`, with C#'s covariant return types for a narrower class result. `super().m(…)` is `base.@m(…)`. |
 | protocols (M17) | Nothing: a protocol has no C# form, and a protocol a class declares is left out of its base list. A bounded generic function is monomorphized (below), so in `largest_Version`, `x > b` is `b.@__lt__(x)`, and in `largest_int` it's `x > b`. |
 | `__lt__` (M17) | an ordinary method, `@__lt__`. `a < b` on classes is `a.@__lt__(b)`. `a > b` evaluates `a` and `b` into temporaries, then calls `b.@__lt__(a)`. Sorting a list of classes passes the runtime sort a comparison that calls `__lt__`. |
+| special methods (M28) | Ordinary methods: `@__add__`, `@__str__`, …. Every class has virtual `@__str__` and `@__repr__`, with the default forms where it defines neither (`@__str__` calls `@__repr__`), and `ToString` calls `@__str__`. A dataclass overrides `@__repr__` (and its `==` hook) unless it defines its own. |
+| `==`, ordering (M28) | Each `__eq__`, `__lt__`, `__le__`, `__gt__` and `__ge__` also overrides a runtime hook, `TryEq(object other, out bool result)` and so on, which tests the parameter's class with `is` and calls the method, returning `false` when it doesn't apply. `Taipan.Runtime.Equality.Equal` and `Ops.Compare` run §4.8's protocol over the hooks, using `Type.IsSubclassOf` for subclass priority. A hashable class overrides C# `Equals` and `GetHashCode` with `Equality.Equal` and `hash()`, so `OrderedDictionary` finds keys as §4.8 says. |
+| arithmetic (M28) | `a + b` is `a.@__add__(b)` or `b.@__radd__(a)`. When subclass priority could apply (some class derived from `a`'s static class and `b`'s defines `__radd__`), the operands go into temporaries and `Ops.Prefer(a, b)` tests whether `b.@__radd__(a)` runs instead. |
+| properties (M28) | C# properties, `public virtual R @p { get { … } set { … } }`, `override` for `@override`, `abstract` for `@abstractmethod`. |
+| static and class methods (M28) | Each class with static or class methods, or a base with them, has a nested class object, `C.@__Class`, deriving from the base's, with a singleton `C.@__class` and the methods as virtual instance methods (`this` is `cls`). `C.m(…)` is `C.@__class.@m(…)`, and `x.m(…)` is `x.@__classobj.@m(…)`, a virtual property each class overrides. `cls(…)` calls a virtual `@__call__` that each class object overrides with its class's construction. |
+| class attributes (M28) | `public static T @a { get; set; }` on the declaring class, initialized by its C# static initializer. |
+| abstract classes (M28) | `public abstract class`, with `public abstract` methods. An abstract class has no `@__new__`, since nothing constructs it. |
 | `isinstance(x, C)` / narrowed `x` | `x is C`. A narrowed read is `((C)x)`, or `x!` / `x.Value` for `x is not None` on a reference / value type. |
 | `x as C` / `x as C?` | `Taipan.Runtime.Ops.Cast<C>(x)`, which panics as §7 says / `x as C` |
 | exceptions (M16) | `Exception` is `Taipan.Runtime.Exception`, which derives from `System.Exception` and is emitted against like a plain class's base (`__new__`, `@__init__`, a `message` property); the other built-in exception classes derive from it. A user exception class is a plain class deriving from one of them. Runtime errors throw the matching class, and a Python exception becomes a `PythonError` where the `py` operation calls Python. Checked arithmetic keeps throwing C#'s `OverflowException`, which a `catch` turns into an `OverflowError`. `raise e` is `throw e`. A bare `raise` is `throw Taipan.Runtime.Exceptions.Rethrow(caught)`, which rethrows with `ExceptionDispatchInfo` and so keeps the original stack trace and line. |
@@ -1198,6 +1339,7 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 | TP0231 | .NET member or type that Taipan can't use |
 | TP0232 | ambiguous .NET overload |
 | TP0233 | can't be used in a native program (M23) |
+| TP0234 | abstract class instantiated (M28) |
 | TP0300 | warning: unreachable code (a statement, `match` arm or `except` clause) |
 | TP0301 | warning: broad `except` clause discards the exception |
 | TP0302 | warning: a library's or extension module's definition can't be exported (M22, M25) |
@@ -1225,7 +1367,7 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0200 | `'as' converts py values; found <T>` / `cannot convert to <T>` / `cannot pass <T> to Python` (§10) |
 | TP0200 | `cannot match on <T>` / `'<E>' is a type, not a value` / `'<v>' is not a function` (a variant without a payload) |
 | TP0200 | `'is some' needs an optional, found <T>` / `'is None' needs an optional, found <T>` / `'is not None' needs an optional, found <T>` / `'??' needs an optional on the left, found <T>` |
-| TP0200 | `'<m>' is a method; call it` / `'<f>' is a field, not a method` / `cannot index <T>` / `dict keys must be int, str, bool, tuples of those, or plain class instances, found <T>` (for a dataclass, with help `a dataclass compares by value, so it cannot be a key`) |
+| TP0200 | `'<m>' is a method; call it` / `'<f>' is a field, not a method` / `cannot index <T>` / `dict keys must be int, str, bool, tuples of those, or plain class instances, found <T>` (for a dataclass, with help `a dataclass compares by value, so it cannot be a key`; since M28 a class that isn't hashable gets `dict keys must be hashable, found <C>` instead, §4.8) |
 | TP0200 | `isinstance needs a class, found <T>` / `'<C>' is not a class` / `'<C>' is generic` / `<T> can never be a <C>` (`isinstance`, `as` and class patterns on unrelated classes) / `'<C>' is a class; write '<C>()'` (a class pattern without parentheses) (M15) |
 | TP0200 | `no overload of '<T>.<m>' takes (<A1>, <A2>)` / `'<T>' is a static class` (constructing it, or using it as a type) / `'<T>' cannot be constructed` (an interface, abstract class or enum) / `<v> is out of range for <N>` (a literal argument, `<N>` the .NET type's name, such as `Int32`) / `'<T>.<m>' returned null` (`TypeError`, at run time) / `'<C>' is not an exception class` (a .NET class not deriving from `System.Exception`) / `cannot bind both Taipan and .NET exceptions`, with help `write separate clauses` (M21) |
 | TP0200 | `every arm of this 'match' raises`, with help `use a 'match' statement` (M19) |
@@ -1234,8 +1376,9 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0200 | `cannot raise <T>` (with help `write '<C>(…)'` for a class name) / `'<C>' is not an exception class` / `'PythonError' cannot be constructed` (and `'DotNetError'`, M21) (M16) |
 | TP0200 | `'<T>' does not satisfy '<P>': it has no method '<m>'` / `'<T>' does not satisfy '<P>': '<m>' must be 'def <m>(self, …) -> <R>'` (the protocol's signature with `Self` replaced; `-> <R>` left out when it returns nothing), at a call's callee or a declared protocol, with ` (declared by '<B>')` after `'<P>'` for an inherited declaration / `'...' can only be the body of a protocol method` / `'<m>' cannot be called directly`, with help `use '<'` (M17) |
 | TP0200 | `'super()' can only be used as 'super().<method>(…)'` / `'super()' can only be used in a method` / `'<C>' has no base class` / `'__init__' cannot be called directly` / `'__init__' cannot have a return type` (M15) |
+| TP0200 | `'<m>' cannot be called directly`, with help `use '<form>'` (a special method, as M17's `__lt__`) / `dict keys must be hashable, found <C>`, with help as §4.8 says / `cannot hash <T>` / `'+' on <A> and <B> is ambiguous: '<C>.__add__' would run when it fits` / `'<p>' is a property; read it from an instance` / `'<m>' needs an instance of '<C>'` / `'cls' can only be called, or used to reach static and class methods and class attributes` / `'ClassVar' can only annotate a class attribute` / `'<B>.<m>' is abstract` (M28) |
 | TP0201 | `undefined name '<x>'` (with help `use 'None'` for `none`) / `undefined type '<T>'` / `module '<m>' has no definition '<x>'` / `.NET namespace '<ns>' has no type '<x>'` (M21) |
-| TP0202 | `cannot assign to '<x>': it is a <let binding\|parameter\|loop variable\|constant\|function\|method>`, with help `declare it with 'var'` for a `let` binding / `cannot assign to an element of str` / `cannot assign to an element of a tuple` / `cannot use '<op>' on a slice` / `cannot delete '<x>'`, with help `assign it a new value instead` / `cannot delete a field` / `cannot delete an element of <T>` (M26) |
+| TP0202 | `cannot assign to '<x>': it is a <let binding\|parameter\|loop variable\|constant\|function\|method>`, with help `declare it with 'var'` for a `let` binding / `cannot assign to an element of str` / `cannot assign to an element of a tuple` / `cannot use '<op>' on a slice` / `cannot delete '<x>'`, with help `assign it a new value instead` / `cannot delete a field` / `cannot delete an element of <T>` (M26) / `cannot assign to '<p>': it is a read-only property` / `cannot assign to '<a>' through '<x>'`, with help `assign '<C>.<a>'` (M28) |
 | TP0203 | `expected <T>, found <T>?` / `<T>? must be narrowed before use`, with help `narrow it with 'is some', or give a default with '??'`, or one saying why a name or path isn't narrowed there (§3.9, M27) |
 | TP0204 | `non-exhaustive match (missing: <a>, <b>)` |
 | TP0205 | `condition must be bool, found <T>` (with help `convert it with 'as bool'` for `py`) |
@@ -1253,17 +1396,18 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0214 | `duplicate definition of '<x>'` |
 | TP0215 | `'break' outside a loop` / `'continue' outside a loop` / `'return' outside a function` / `'raise' without an exception outside an except block` / `'return' cannot be used in a finally block` (and `'break'`, `'continue'`) (M16) |
 | TP0216 | `'<v>' is ambiguous: it is a variant of <E1> and <E2>`, with help `qualify it, e.g. '<E1>.<v>'` |
-| TP0217 | `const initializer must be a constant expression` |
+| TP0217 | `const initializer must be a constant expression` / `class attribute value must be a constant expression` (M28) |
 | TP0218 | `'<f>' takes no keyword arguments` (a built-in) / `a function value takes no keyword arguments` / `'<f>' has no parameter '<k>'` (M14; also for `sorted`, `sort` and `enumerate`) |
 | TP0219 | `instantiating '<f>' needs '<f>[<T>]', which is too deep`, at the call that starts the chain |
 | TP0221 | `module '<m>' not found`, with help `looked for <path>` / `'python' is not a module`, with help `use 'from python import <module>'` / `'dotnet' is not a module`, with help `use 'from dotnet.<namespace> import <type>'` / `.NET namespace '<ns>' not found` (M21) |
 | TP0222 | `only the main file can have top-level statements` / `a library can't have top-level statements` (M22) / `a Python extension can't have top-level statements` (M25) |
 | TP0223 | `nested functions cannot have type parameters` |
-| TP0224 | `unknown decorator '@<d>'` / `'@<d>' cannot be used here` (with help `'@dataclass' goes on a class, '@override' on a method`) / `duplicate decorator '@<d>'` |
-| TP0225 | `a class can have only one base class` (protocols aside, M17) / `'<T>' cannot be a base class` / `a dataclass can only derive from a dataclass` (with help `exceptions are plain classes; give it an '__init__'` for an exception base, M16) / `a plain class can only derive from a plain class` / `generic classes cannot be derived from` / `generic classes cannot have a base class` / `'<C>' derives from itself` / `special method '<m>' is not supported` / `a dataclass cannot define '__init__'` / `field without a default follows field with a default` / `'__lt__' must take one parameter of type '<C>' (or a base class) and return bool` / `'<P>' is already declared` (or `already declared by '<B>'`) / `a protocol can only declare methods` / `a protocol method's body must be '...'` / `protocol method parameters cannot have defaults` / `protocols cannot be generic` / `a protocol can only derive from 'Protocol'` (M17) |
+| TP0224 | `unknown decorator '@<d>'` / `'@<d>' cannot be used here` (with help `'@dataclass' goes on a class, '@override' on a method`) / `duplicate decorator '@<d>'` / `'@<d>' cannot be used here`, with help `'@<d>' goes on a method`, for a method's decorator elsewhere / `'@<a>' cannot be combined with '@<b>'` / `'@abstractmethod' needs a class deriving from 'ABC'` / `'@<x>.setter' needs a property '<x>' just above it` (M28) |
+| TP0225 | `a class can have only one base class` (protocols aside, M17) / `'<T>' cannot be a base class` / `a dataclass can only derive from a dataclass` (with help `exceptions are plain classes; give it an '__init__'` for an exception base, M16) / `a plain class can only derive from a plain class` / `generic classes cannot be derived from` / `generic classes cannot have a base class` / `'<C>' derives from itself` / `special method '<m>' is not supported` / `a dataclass cannot define '__init__'` / `field without a default follows field with a default` / `'<m>' must be 'def <m>(self, …) -> <R>'` (M28, replacing M17's `'__lt__' must take one parameter of type '<C>' (or a base class) and return bool`) / `'<m>' must take 'self' first` (or `'cls'`) / `a static method takes neither 'self' nor 'cls'` / `a property takes no parameters other than 'self'` / `a property must have a return type` / `a setter must follow its property` / `a setter must take one parameter of type <T> and return nothing` / `class attribute '<a>' needs a value` / `generic classes cannot have <static methods\|class methods\|class attributes>` / `an abstract method's body must be '...'` / `'<C>' would not be hashable, but its base '<B>' is`, with help `define '__hash__'` (M28) / `'<P>' is already declared` (or `already declared by '<B>'`) / `a protocol can only declare methods` / `a protocol method's body must be '...'` / `protocol method parameters cannot have defaults` / `protocols cannot be generic` / `a protocol can only derive from 'Protocol'` (M17) |
 | TP0226 | `'__init__' does not set '<f>'` / `'<f>' has no default, and '<C>' has no '__init__'` / `'<f>' is read before it is set` / `'self' is used before '<f>' is set` (or `before 'super().__init__' is called`) / `'<f>' is inherited, so it is set by 'super().__init__'` / `'super().__init__' is called before '<f>' is set` / `'<C>.__init__' must call 'super().__init__(…)'` / `'super().__init__' must be called once, directly in '__init__'` / `'super().__init__' can only be called in '__init__'` / `'__init__' returns before '<f>' is set` (or `before 'super().__init__' is called`) (when several fields are unset, the first in declaration order is named) |
 | TP0227 | `'<m>' overrides '<B>.<m>'; mark it '@override'` / `'<m>' does not override a method of <a base class\|'<B>'>` / `'__init__' cannot be marked '@override'` |
-| TP0228 | `'<m>' must take the same parameters as '<B>.<m>'` / `parameter '<p>' of '<m>' must have type <T>, as in '<B>.<m>'` / `parameter '<p>' of '<m>' needs a default, as in '<B>.<m>'` / `'<m>' must return <T>, as '<B>.<m>' does` (or `return nothing`) |
+| TP0228 | `'<m>' must take the same parameters as '<B>.<m>'` / `parameter '<p>' of '<m>' must have type <T>, as in '<B>.<m>'` / `parameter '<p>' of '<m>' needs a default, as in '<B>.<m>'` / `'<m>' must return <T>, as '<B>.<m>' does` (or `return nothing`) / `'<m>' is a <static method\|class method\|method\|property> in '<B>'` / `'<p>' must have a setter, as '<B>.<p>' does` / `'<D>.<m>' must return <R>, since it can run in place of '<B>.<op>'` / `'<D>' must be constructed as '<C>' is, since '<C>.<m>' calls 'cls(…)'` (M28) |
+| TP0234 | `cannot instantiate abstract class '<C>'`, with help `it does not implement '<B>.<m>'` (`'<B>.<m>' and '<B>.<n>'` for more) / `'cls(…)' may construct the abstract class '<C>'` / `'<C>' cannot add abstract method '<m>', since '<B>.<cm>' calls 'cls(…)'` (M28) |
 | TP0220 | `a constraint needs at least two types` / `'<T>' is listed twice in the constraint` / `a constraint cannot be optional or generic` / `constraints are only supported on functions` / `'<T>' is not a protocol` (with help `class bounds are not supported`, for a class) / `bounds are only supported on functions` (M17) |
 | TP0229 | `'<P>' is a protocol, so it can only be a type parameter bound`, with help `use a bounded type parameter, e.g. 'def f[T: <P>](x: T)'` (M17) |
 | TP0231 | `'<T>.<m>' uses <N>, which Taipan can't use yet` (`<N>` the .NET type, e.g. `Dictionary<string, int>` or `Func<int, bool>`) / `'<N>' can't be imported: generic .NET types aren't supported yet` (M21) |
@@ -1338,10 +1482,10 @@ Types are written as in source: `int`, `str?`, `list[int]`. The type of `None` i
 ## 11. Deferred (post-v0.1)
 - protocols as types of values, protocol fields, generic protocols, protocols extending other protocols, and a check that a class used with a protocol declares it
 - class bounds (`[T: Animal]`), bounds on classes' and enums' type parameters, and built-in types' ordinary methods satisfying protocols
-- special methods other than `__init__` and `__lt__`, such as `__str__`, `__eq__`, `__hash__`, `__le__` and `__add__`, and `functools.total_ordering`
+- special methods beyond §4.8 (`__bool__`, `__len__`, `__iter__`, `__getitem__`, `__contains__`, `__call__`, `__ne__`, `__pow__`, in-place `__iadd__` and the like, `__format__`), special methods in protocols other than `__lt__`, and `functools.total_ordering`
 - multiple inheritance, mixing dataclasses and plain classes in one hierarchy, and inheritance involving generic classes
 - `@dataclass` options (`frozen`, `order`), `__post_init__`, and an `__init__` written in a dataclass
-- class attributes, `@staticmethod`, `@classmethod`, `@property`, abstract classes, `@final`, and `Self` outside protocols
+- `@final`, `Self` outside protocols (so a class method's result is its declared class, not `cls`'s), static and class methods and class attributes on generic classes, abstract static and class methods, property deleters, and static and class methods as values
 - `isinstance` on `py` values, and `is` between two expressions (identity)
 - sub-patterns inside class patterns
 - generic functions, built-ins, methods and constructors as values (wrap them in a lambda)
@@ -1563,8 +1707,8 @@ catch (shapes.UnknownShape e) { Console.WriteLine(e.message); }
 | protocols, type aliases | nothing, as in a program (§8) |
 
 - **Types in signatures** are §8's: `int` is `long`, `float` is `double`, `bool`, `str`, `T?` (`long?` or `string?`), `list[T]` is `List<T>`, `dict[K, V]` is `OrderedDictionary<K, V>`, `tuple[A, B]` is a value tuple, a function type is `Taipan.Runtime.Function<D>` (constructed from a delegate: `new Function<Func<long, long>>("twice", x => x * 2)`), `py` is pythonnet's `PyObject`, and .NET types are themselves. Lists and dicts are shared, not copied, both ways.
-- **Equality and hashing** are .NET's for the C# caller: a class's `Equals` is reference identity, and an enum's is the record's (field by field, with C#'s `Equals` on each). `Taipan.Runtime.Equality.Equal(a, b)` compares as Taipan's `==` does.
-- `__init__`, `__new__` and the helpers that evaluate defaults are internal, as names starting with `_` are. Classes implement the runtime's `IStruct` or `IObject`, which display and equality use; they aren't meant for callers. Deriving from a Taipan class in another .NET language isn't supported.
+- **Equality and hashing** are .NET's for the C# caller: a class's `Equals` is reference identity (or, since M28, `==` for a class that defines `__hash__`, §8), and an enum's is the record's (field by field, with C#'s `Equals` on each). `Taipan.Runtime.Equality.Equal(a, b)` compares as Taipan's `==` does.
+- `__init__`, `__new__` and the helpers that evaluate defaults are internal, as names starting with `_` are. So are special methods (M28), though `__str__` gives `ToString`, and a class whose body defines `__hash__` overrides `Equals` and `GetHashCode` with `==` and `hash()`. A property is a C# property, a static or class method a public static method (a class method's `cls` is its own class), and a class attribute a public static property. Classes implement the runtime's `IStruct` or `IObject`, which display and equality use; they aren't meant for callers. Deriving from a Taipan class in another .NET language isn't supported.
 - **Generic definitions.** A generic function, class or enum is exported as a .NET generic (`first<T>`, `Box<T>`) when:
   - none of its type parameters has a bound (§3.11), and
   - no type parameter appears as `T?`, in its signature, fields or body, since .NET has no type that is `T?` for both value and reference types, and

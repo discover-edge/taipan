@@ -375,17 +375,31 @@ public sealed partial class CSharpEmitter
         var symbol = function.Symbol;
         _lineSource = function.Source ?? _source;
         _locals = LocalNames.For(function.Parameters, function.Body, _globalNames);
-        _self = symbol.Self;
-        var parameters = string.Join(", ", function.Parameters.Select(p => $"{TypeName(p.Type)} @{_locals[p]}"));
         var owner = symbol.Owner;
+        _self = symbol.Self ?? (owner is null ? null : NoSelf);
+        _cls = symbol.Cls;
+        var parameters = string.Join(", ", function.Parameters.Select(p => $"{TypeName(p.Type)} @{_locals[p]}"));
         var isInit = owner is not null && symbol == owner.Init;
         // Methods dispatch on the runtime class (SPEC §4.3); each class's __init__ is its own.
         var modifier = owner is null ? "static "
             : isInit ? (owner.Base is null ? "" : "new ")
-            : symbol.Overrides is not null ? "override "
+            : symbol.IsAbstract ? "abstract "
+            : symbol.Overrides is not null || symbol.SetterOf?.Overrides?.Setter is not null ? "override "
             : owner.HasSubclasses ? "virtual " : "";
         var typeParameters = owner is null && IsNetGeneric(symbol) ? TypeParameterList(symbol.TypeParameters) : "";
-        Line($"{MemberAccess(symbol.Name)} {modifier}{TypeName(symbol.ReturnType)} @{name ?? symbol.Name}{typeParameters}({parameters})");
+        name ??= owner is null ? symbol.Name : MethodName(symbol);
+        // In a library, a property's getter and setter are behind a C# property (SPEC §14).
+        var access = symbol.Kind == MemberKind.Property || symbol.SetterOf is not null ? HelperAccess : MemberAccess(symbol.Name);
+        var signature = $"{access} {modifier}{TypeName(symbol.ReturnType)} @{name}{typeParameters}({parameters})";
+        if (symbol.IsAbstract)
+        {
+            // An abstract method has no body (SPEC §8); its defaults are still helpers.
+            Line($"{signature};");
+            EmitMethodDefaults(symbol);
+            (_self, _cls) = (null, null);
+            return;
+        }
+        Line(signature);
         Line("{");
         _indent++;
         EmitTracked(function.Span, () =>
@@ -398,18 +412,30 @@ public sealed partial class CSharpEmitter
         _indent--;
         Line("}");
 
+        if (!isMethod)
+        {
+            for (var i = 0; i < symbol.Parameters.Length; i++)
+            {
+                if (symbol.DefaultFor(i) is { } value)
+                    EmitDefault(value, symbol.Parameters[i].Type, DefaultName(name, symbol, i) + typeParameters, "static ");
+            }
+        }
+        else
+        {
+            EmitMethodDefaults(symbol);
+        }
+        if (_library is not null && isMethod && !isInit && symbol.Overrides is null && !symbol.IsClassLevel && symbol.Kind != MemberKind.Property && symbol.SetterOf is null)
+            EmitMethodOverloads(symbol);
+        (_self, _cls) = (null, null);
+    }
+
+    private void EmitMethodDefaults(FunctionSymbol symbol)
+    {
         for (var i = 0; i < symbol.Parameters.Length; i++)
         {
-            if (symbol.DefaultFor(i) is not { } value)
-                continue;
-            if (!isMethod)
-                EmitDefault(value, symbol.Parameters[i].Type, DefaultName(name ?? symbol.Name, symbol, i) + typeParameters, "static ");
-            else
+            if (symbol.DefaultFor(i) is { } value)
                 EmitDefault(value, symbol.Parameters[i].Type, MethodDefaultName(symbol, i), DefaultModifier(symbol, i));
         }
-        if (_library is not null && isMethod && !isInit && symbol.Overrides is null)
-            EmitMethodOverloads(symbol);
-        _self = null;
     }
 
     /// <summary>
@@ -503,7 +529,7 @@ public sealed partial class CSharpEmitter
     private void EmitDataclass(BoundClass classDef, string className)
     {
         var symbol = classDef.Symbol;
-        Line($"{_typeAccess} {(symbol.HasSubclasses ? "" : "sealed ")}class @{className}{TypeParameterList(symbol)} : {BaseList(symbol, "IStruct")}");
+        Line($"{_typeAccess} {ClassModifier(symbol)}class @{className}{TypeParameterList(symbol)} : {BaseList(symbol, "IDataclass")}");
         Line("{");
         _indent++;
         foreach (var field in symbol.Fields)
@@ -529,15 +555,35 @@ public sealed partial class CSharpEmitter
         Line($"string {Runtime}.IStruct.TypeName => \"{symbol.Name}\";");
         Line($"{Collections}.IReadOnlyList<(string Name, object? Value)> {Runtime}.IStruct.Fields => [{fields}];");
         Line($"public override string ToString() => {Runtime}.Display.Format(this);");
+        EmitSpecialHooks(symbol, ClassTypeOf(classDef));
         EmitFieldDefaultHelpers(symbol, className);
+        EmitMembers(classDef);
+        _indent--;
+        Line("}");
+    }
 
-        foreach (var method in classDef.Methods)
+    // An abstract class can't be sealed, and a class nothing derives from is (SPEC §8).
+    private static string ClassModifier(ClassSymbol symbol) =>
+        symbol.IsAbstract ? "abstract " : symbol.HasSubclasses ? "" : "sealed ";
+
+    // The class being emitted, as a type: a generic class's instance, by the current substitution.
+    private ClassType ClassTypeOf(BoundClass classDef) =>
+        classDef.Symbol.TypeParameters.IsEmpty ? classDef.Symbol.Type : (ClassType)TypeChecker.Substitute(classDef.Symbol.Type, _map);
+
+    // Class attributes, instance methods, properties and setters, then the class object (SPEC §8).
+    private void EmitMembers(BoundClass classDef)
+    {
+        var self = _self;
+        EmitClassAttributes(classDef.Symbol);
+        foreach (var method in classDef.Methods.Where(m => !m.Symbol.IsClassLevel))
         {
             Line();
             EmitFunction(method, isMethod: true);
         }
-        _indent--;
-        Line("}");
+        if (_library is not null)
+            EmitLibraryMembers(classDef);
+        EmitClassObject(classDef, ClassTypeOf(classDef));
+        _self = self;
     }
 
     // A plain class is constructed by a static __new__, which makes the object with a hidden
@@ -547,7 +593,7 @@ public sealed partial class CSharpEmitter
     {
         var symbol = classDef.Symbol;
         var self = $"@{className}{TypeParameterList(symbol)}";
-        Line($"{_typeAccess} {(symbol.HasSubclasses ? "" : "sealed ")}class {self} : {BaseList(symbol, "IObject")}");
+        Line($"{_typeAccess} {ClassModifier(symbol)}class {self} : {BaseList(symbol, "IObject")}");
         Line("{");
         _indent++;
         foreach (var field in symbol.Fields)
@@ -564,19 +610,25 @@ public sealed partial class CSharpEmitter
         else
         {
             EmitHiddenConstructor(symbol, className);
-            EmitPublicConstructors(symbol, className, parameters, arguments);
+            if (!symbol.IsAbstract)
+                EmitPublicConstructors(symbol, className, parameters, arguments);
         }
         Line();
 
-        Line($"{HelperAccess} static {self} @__new__({parameters})");
-        Line("{");
-        Line($"    var @__self = new {self}({(_library is null ? "" : HiddenArgument)});");
-        Line($"    @__self.@__init__({arguments});");
-        Line("    return @__self;");
-        Line("}");
-        Line();
+        // Nothing constructs an abstract class (SPEC §8).
+        if (!symbol.IsAbstract)
+        {
+            Line($"{HelperAccess} static {self} @__new__({parameters})");
+            Line("{");
+            Line($"    var @__self = new {self}({(_library is null ? "" : HiddenArgument)});");
+            Line($"    @__self.@__init__({arguments});");
+            Line("    return @__self;");
+            Line("}");
+            Line();
+        }
         Line($"string {Runtime}.IObject.TypeName => \"{symbol.Name}\";");
         Line($"public override string ToString() => {Runtime}.Display.Format(this);");
+        EmitSpecialHooks(symbol, ClassTypeOf(classDef));
         EmitFieldDefaultHelpers(symbol, className);
 
         if (symbol.Init is null)
@@ -592,11 +644,7 @@ public sealed partial class CSharpEmitter
             _indent--;
             Line("}");
         }
-        foreach (var method in classDef.Methods)
-        {
-            Line();
-            EmitFunction(method, isMethod: true);
-        }
+        EmitMembers(classDef);
         _indent--;
         Line("}");
     }
@@ -685,6 +733,15 @@ public sealed partial class CSharpEmitter
                 EmitCompound(assign.IsCompound, [assign.Target],
                     () => Line($"{Operand(assign.Target)}.@{Member(assign.Field, assign.Target.Type)} = {Expr(assign.Value)};"));
                 break;
+            case BoundPropertySet assign:
+                LineDirective(assign.Span);
+                EmitCompound(assign.IsCompound, [assign.Target],
+                    () => Line($"{Operand(assign.Target)}.@{assign.Property.Name}__set({Expr(assign.Value)});"));
+                break;
+            case BoundClassAttributeAssign assign:
+                LineDirective(assign.Span);
+                Line($"{TypePath(assign.Attribute.Owner)}.@{assign.Attribute.Name} = {Expr(assign.Value)};");
+                break;
             case BoundDotNetAssign assign:
                 LineDirective(assign.Span);
                 EmitCompound(assign.IsCompound, assign.Target is null ? [] : [assign.Target], () => Line($"{DotNetAssignment(assign)};"));
@@ -736,7 +793,7 @@ public sealed partial class CSharpEmitter
                     Line($"@{_lineVariable} = {loopLine};");
                 Line("continue;");
                 break;
-            case BoundExprStmt { Expr: BoundCall or BoundMethodCall or BoundBuiltinMethodCall or BoundPyCall or BoundInvoke or BoundSort or BoundSuperCall or BoundDotNetCall { Method.ReturnsVoid: true } } exprStmt:
+            case BoundExprStmt { Expr: BoundCall or BoundMethodCall or BoundBuiltinMethodCall or BoundPyCall or BoundInvoke or BoundSort or BoundSuperCall or BoundClassMethodCall or BoundDotNetCall { Method.ReturnsVoid: true } } exprStmt:
                 LineDirective(exprStmt.Span);
                 Line($"{Expr(exprStmt.Expr)};");
                 break;
@@ -819,8 +876,9 @@ public sealed partial class CSharpEmitter
         BoundNarrowed narrowed => IsSimple(narrowed.Value),
         BoundFieldAccess access => IsSimple(access.Target),
         BoundIndex index => IsSimple(index.Target) && IsSimple(index.Index),
-        BoundUnary unary => IsSimple(unary.Operand),
-        BoundBinary binary => IsSimple(binary.Left) && IsSimple(binary.Right),
+        BoundUnary unary => IsSimple(unary.Operand) && unary.Operand.Type is not ClassType,
+        // An operator on a class value calls a special method (SPEC §4.8).
+        BoundBinary binary => IsSimple(binary.Left) && IsSimple(binary.Right) && binary.Left.Type is not ClassType && binary.Right.Type is not ClassType,
         _ => false,
     };
 
@@ -1039,10 +1097,12 @@ public sealed partial class CSharpEmitter
         var method = (sort.InPlace ? "Sort" : "Sorted") + (key is not null ? "By" : "");
         var arguments = sort.Keywords.Select(k => $"{k.Name}: {Expr(k.Value)}").Prepend(Expr(sort.List));
         var sorted = key is not null ? ((FunctionType)TypeChecker.Unwrap(Concrete(key.Type))).Result : ((ListOfType)Concrete(sort.List.Type)).Element;
-        if (sorted is ClassType)
+        if (sorted is ClassType sortedClass)
         {
+            // Python's sort uses '<', so with subclasses it follows the comparison protocol (SPEC §4.8).
             var (a, b) = (_locals.Fresh("a"), _locals.Fresh("b"));
-            arguments = arguments.Append($"less: static (@{a}, @{b}) => @{a}.@__lt__(@{b})");
+            var less = sortedClass.Symbol.HasSubclasses ? $"{Runtime}.Ops.Compare(@{a}, @{b}, {ClassInterface}.Lt)" : $"@{a}.@__lt__(@{b})";
+            arguments = arguments.Append($"less: static (@{a}, @{b}) => {less}");
         }
         return $"{Runtime}.Ops.{method}({string.Join(", ", arguments)})";
     }
@@ -1139,9 +1199,12 @@ public sealed partial class CSharpEmitter
         {
             BoundLiteral literal => Literal(literal.Value),
             BoundVariable variable when variable.Symbol == _self => "this",
+            // In a class method, cls is the class object the method runs on (SPEC §8).
+            BoundVariable variable when variable.Symbol == _cls => "this",
             BoundVariable { Symbol.Kind: VariableKind.Constant } variable => Global(_names[variable.Symbol]),
             BoundVariable variable => $"@{_locals[variable.Symbol]}",
             BoundUnary { Op: UnaryOp.Negate, Type: PrimitiveType { Name: "py" } } unary => $"{Interop}.Negate({Expr(unary.Operand)})",
+            BoundUnary { Op: UnaryOp.Negate } unary when Concrete(unary.Operand.Type) is ClassType => $"{Operand(unary.Operand)}.@__neg__()",
             BoundUnary { Op: UnaryOp.Negate } unary when OverflowsAtCompileTime(unary) =>
                 $"{Runtime}.Ops.Negate({Expr(unary.Operand)})",
             BoundUnary unary => $"{(unary.Op == UnaryOp.Negate ? "-" : "!")}{Operand(unary.Operand)}",
@@ -1154,6 +1217,10 @@ public sealed partial class CSharpEmitter
             BoundConstruct construct => Construct(construct),
             BoundConstructVariant construct => ConstructVariant(construct),
             BoundFieldAccess access => $"{Operand(access.Target)}.@{Member(access.Field, access.Target.Type)}",
+            BoundPropertyGet get => $"{Operand(get.Target)}.@{MethodName(get.Property)}()",
+            BoundClassAttribute attribute => ClassAttribute(attribute),
+            BoundClassMethodCall call => ClassMethodCall(call),
+            BoundClsNew created => ClsNew(created),
             BoundIndex index => $"{Runtime}.Ops.Index({Expr(index.Target)}, {Expr(index.Index)})",
             BoundMethodCall call => MethodCall(call),
             BoundBuiltinMethodCall call => BuiltinMethodCall(call),
@@ -1361,14 +1428,9 @@ public sealed partial class CSharpEmitter
         // A .NET generic's type parameter could be any of these (SPEC §14.2).
         var structural = compared is ListOfType or DictOfType or ClassType or EnumType or TupleOfType or FunctionType or TypeParameterType;
         var tuple = leftType is TupleOfType;
-        // A class's __lt__ (SPEC §3.11): 'a > b' evaluates a, then b, and calls b.__lt__(a).
-        if (binary.Op is BinaryOp.Less && leftType is ClassType)
-            return $"{left}.@__lt__({r})";
-        if (binary.Op is BinaryOp.Greater && leftType is ClassType)
-        {
-            var (first, second) = (_locals.Fresh("left"), _locals.Fresh("right"));
-            return $"{Runtime}.Ops.Reversed({l}, {r}, static (@{second}, @{first}) => @{second}.@__lt__(@{first}))";
-        }
+        // A class's special methods (SPEC §3.11, §4.8): 'a > b' evaluates a, then b, and may call b.__lt__(a).
+        if (SpecialMethods.Forward(binary.Op) is not null && SpecialBinary(binary) is { } special)
+            return special;
         return binary.Op switch
         {
             BinaryOp.Add when leftType is ListOfType => $"{Runtime}.Ops.Concat({l}, {r})",
@@ -1414,6 +1476,8 @@ public sealed partial class CSharpEmitter
             BuiltinFunction.Len when argumentType == TaipanType.Py => $"{Interop}.Len({arguments})",
             BuiltinFunction.Len => $"{Runtime}.Builtins.Len({arguments})",
             BuiltinFunction.Str => $"{Runtime}.Display.Format({arguments})",
+            BuiltinFunction.Repr => $"{Runtime}.Display.Repr({arguments})",
+            BuiltinFunction.Hash => $"{Runtime}.Ops.Hash({arguments})",
             BuiltinFunction.Int when argumentType == TaipanType.Str => $"{Runtime}.Ops.ParseInt({arguments})",
             BuiltinFunction.Float when argumentType == TaipanType.Str => $"{Runtime}.Ops.ParseFloat({arguments})",
             BuiltinFunction.Int when argumentType == TaipanType.Float => $"{Runtime}.Ops.ToInt({arguments})",

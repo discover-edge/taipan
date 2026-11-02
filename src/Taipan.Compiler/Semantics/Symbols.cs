@@ -22,7 +22,10 @@ public sealed class VariableSymbol(string name, TaipanType type, VariableKind ki
     public VariableKind Kind { get; } = kind;
 }
 
-public enum BuiltinFunction { Print, Len, Str, Int, Float, Range, Sorted, Map, Filter, Enumerate, Zip, IsInstance, Super }
+public enum BuiltinFunction { Print, Len, Str, Int, Float, Range, Sorted, Map, Filter, Enumerate, Zip, IsInstance, Super, Repr, Hash }
+
+/// <summary>What kind of method a function is (SPEC §4.8, M28); <see cref="Instance"/> for a function.</summary>
+public enum MemberKind { Instance, Property, Static, Class }
 
 /// <summary>A function, or a method when <see cref="Self"/> is set.</summary>
 public sealed class FunctionSymbol(
@@ -72,7 +75,30 @@ public sealed class FunctionSymbol(
     public FunctionSymbol? Overrides { get; set; }
 
     /// <summary>For a method, the class it's declared in.</summary>
-    public ClassSymbol? Owner => (Self?.Type as ClassType)?.Symbol;
+    public ClassSymbol? Owner => DeclaredIn ?? (Self?.Type as ClassType)?.Symbol;
+
+    /// <summary>The class a static or class method is declared in, since it has no <c>self</c> (SPEC §4.8).</summary>
+    public ClassSymbol? DeclaredIn { get; init; }
+
+    public MemberKind Kind { get; init; }
+
+    /// <summary>A class method's <c>cls</c> parameter (SPEC §4.8).</summary>
+    public VariableSymbol? Cls { get; init; }
+
+    /// <summary>A property's setter, once bound (SPEC §4.8).</summary>
+    public FunctionSymbol? Setter { get; set; }
+
+    /// <summary>For a setter, its property.</summary>
+    public FunctionSymbol? SetterOf { get; set; }
+
+    /// <summary>Whether the method is marked <c>@abstractmethod</c> (SPEC §4.8).</summary>
+    public bool IsAbstract { get; init; }
+
+    /// <summary>Whether a class method's body calls <c>cls(…)</c>, so every subclass must be constructed alike (SPEC §4.8).</summary>
+    public bool CallsCls { get; set; }
+
+    /// <summary>Whether the method is reached through a class, not an instance: a static or class method.</summary>
+    public bool IsClassLevel => Kind is MemberKind.Static or MemberKind.Class;
 
     public BoundExpr? DefaultFor(int parameter) => parameter < Defaults.Length ? Defaults[parameter] : null;
 
@@ -91,6 +117,8 @@ public sealed class FunctionSymbol(
         new("zip", [], TaipanType.Error, BuiltinFunction.Zip),
         new("isinstance", [], TaipanType.Bool, BuiltinFunction.IsInstance),
         new("super", [], TaipanType.Error, BuiltinFunction.Super),
+        new("repr", [], TaipanType.Str, BuiltinFunction.Repr),
+        new("hash", [], TaipanType.Int, BuiltinFunction.Hash),
     ];
 }
 
@@ -106,6 +134,17 @@ public sealed class FieldSymbol(string name, TaipanType type) : Symbol(name)
     public bool HasDefault { get; init; }
 
     public BoundExpr? Default { get; set; }
+}
+
+/// <summary>A class attribute, <c>count: ClassVar[int] = 0</c> (SPEC §4.8, M28): one value, shared by the class and its subclasses.</summary>
+public sealed class ClassAttributeSymbol(string name, TaipanType type, ClassSymbol owner) : Symbol(name)
+{
+    public TaipanType Type { get; } = type;
+
+    public ClassSymbol Owner { get; } = owner;
+
+    /// <summary>Its value, once bound.</summary>
+    public BoundExpr? Value { get; set; }
 }
 
 /// <summary>
@@ -145,8 +184,50 @@ public sealed class ClassSymbol(string name, ImmutableArray<TypeParameterSymbol>
     /// <summary>Every field, inherited ones first: a dataclass's constructor parameters (SPEC §4.3).</summary>
     public ImmutableArray<FieldSymbol> AllFields => [.. Base?.AllFields ?? [], .. Fields];
 
-    /// <summary>The methods the class itself declares, apart from <c>__init__</c>.</summary>
+    /// <summary>The methods the class itself declares, apart from <c>__init__</c>; properties and static and class methods too.</summary>
     public Dictionary<string, FunctionSymbol> Methods { get; } = [];
+
+    /// <summary>The class attributes the class itself declares (SPEC §4.8).</summary>
+    public ImmutableArray<ClassAttributeSymbol> ClassAttributes { get; set; } = [];
+
+    /// <summary>Whether <c>ABC</c> is in the class's base list (SPEC §4.8).</summary>
+    public bool IsAbc { get; set; }
+
+    /// <summary>Whether the class derives from <c>ABC</c>, directly or through its bases, so it may declare abstract methods.</summary>
+    public bool DerivesFromAbc => IsAbc || Base?.DerivesFromAbc == true;
+
+    /// <summary>The abstract methods no class from this one up to their own overrides, own and inherited (SPEC §4.8).</summary>
+    public IEnumerable<FunctionSymbol> AbstractMethods
+    {
+        get
+        {
+            var seen = new HashSet<string>();
+            for (var c = this; c is not null; c = c.Base)
+            {
+                foreach (var method in c.Methods.Values.Where(m => seen.Add(m.Name)).Where(m => m.IsAbstract))
+                    yield return method;
+            }
+        }
+    }
+
+    public bool IsAbstract => AbstractMethods.Any();
+
+    /// <summary>
+    /// Whether instances can be dict keys (SPEC §4.8): a class whose body defines <c>__eq__</c>
+    /// without <c>__hash__</c> isn't, a dataclass is only if its body defines <c>__hash__</c>, and
+    /// any other class is as its base is, so a plain class is by identity.
+    /// </summary>
+    public bool IsHashable =>
+        Methods.ContainsKey("__hash__") || !IsDataclass && !Methods.ContainsKey("__eq__") && Base?.IsHashable != false;
+
+    /// <summary>The classes that derive directly from this one.</summary>
+    public List<ClassSymbol> Subclasses { get; } = [];
+
+    /// <summary>Whether this class has one of these methods, its own or inherited, or a class derived from it defines one.</summary>
+    public bool MayDefine(IReadOnlyCollection<string> methods) =>
+        methods.Any(m => FindMethod(m) is not null) || Subclasses.Any(s => s.MayDefine(methods));
+
+    public ClassAttributeSymbol? FindClassAttribute(string name) => ClassAttributes.FirstOrDefault(a => a.Name == name) ?? Base?.FindClassAttribute(name);
 
     /// <summary>A plain class's own <c>__init__</c>, if it writes one.</summary>
     public FunctionSymbol? Init { get; set; }

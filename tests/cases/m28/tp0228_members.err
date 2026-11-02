@@ -1,0 +1,7 @@
+tests/cases/m28/tp0228_members.tpn:28:9: error TP0228: 'size' must have a setter, as 'Base.size' does
+tests/cases/m28/tp0228_members.tpn:32:9: error TP0228: 'make' is a static method in 'Base'
+tests/cases/m28/tp0228_members.tpn:37:9: error TP0228: 'build' is a class method in 'Base'
+tests/cases/m28/tp0228_members.tpn:42:9: error TP0228: 'run' is a method in 'Base'
+tests/cases/m28/tp0228_members.tpn:45:40: error TP0228: 'Derived.__radd__' must return int, since it can run in place of 'Base.__add__'
+tests/cases/m28/tp0228_members.tpn:58:7: error TP0228: 'Special' must be constructed as 'Factory' is, since 'Factory.create' calls 'cls(…)'
+tests/cases/m28/tp0228_members.tpn:71:7: error TP0228: 'Extended' must be constructed as 'Record' is, since 'Record.first' calls 'cls(…)'

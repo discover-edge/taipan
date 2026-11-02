@@ -1,0 +1,11 @@
+# A static method has no self, and a class method has cls instead (SPEC §4.8).
+class C:
+    x: int = 0
+
+    @staticmethod
+    def make() -> int:
+        return self.x
+
+    @classmethod
+    def build(cls) -> int:
+        return self.x

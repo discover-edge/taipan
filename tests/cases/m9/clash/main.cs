@@ -35,7 +35,7 @@ public static class TaipanProgram
     }
 }
 
-public sealed class @Size : global::Taipan.Runtime.IStruct
+public sealed class @Size : global::Taipan.Runtime.IDataclass
 {
     public long @value { get; set; }
 
@@ -49,7 +49,7 @@ public sealed class @Size : global::Taipan.Runtime.IStruct
     public override string ToString() => global::Taipan.Runtime.Display.Format(this);
 }
 
-public sealed class @Size2 : global::Taipan.Runtime.IStruct
+public sealed class @Size2 : global::Taipan.Runtime.IDataclass
 {
     public long @feet { get; set; }
 

@@ -1,0 +1,31 @@
+# Properties aren't narrowed, and special methods end narrowing like calls (SPEC §3.9, §4.8).
+class Node:
+    label: str?
+
+    def __init__(self):
+        self.label = None
+
+    @property
+    def name(self) -> str?:
+        return self.label
+
+    def __str__(self) -> str:
+        return "node"
+
+class Holder:
+    node: Node
+    text: str?
+
+    def __init__(self):
+        self.node = Node()
+        self.text = None
+
+def use(n: Node, h: Holder, s: Holder):
+    if n.name is not None:
+        print(n.name.upper())
+    if h.text is not None:
+        print(h.node)
+        print(h.text.upper())
+    if s.text is not None:
+        print(len(s.text))
+        print(s.text.upper())

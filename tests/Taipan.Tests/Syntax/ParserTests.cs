@@ -171,12 +171,21 @@ public class ParserTests
     public void ClassSyntaxErrors(string text, string expected) =>
         Assert.Equal([expected], Errors(text));
 
+    // Since M28 a method may take self, cls or neither; the binder checks which (SPEC §2).
     [Theory]
-    [InlineData("class S:\n    def m():\n        pass\n", "2:11 TP0100: expected 'self', found ')'")]
-    [InlineData("class S:\n    def m(x: int):\n        pass\n", "2:11 TP0100: expected 'self', found name 'x'")]
     [InlineData("class S:\n    def m(self x: int):\n        pass\n", "2:16 TP0100: expected ')', found name 'x'")]
-    public void MethodNeedsSelf(string text, string expected) =>
+    [InlineData("class S:\n    def m(cls x: int):\n        pass\n", "2:15 TP0100: expected ')', found name 'x'")]
+    public void MethodReceiverSyntax(string text, string expected) =>
         Assert.Equal([expected], Errors(text));
+
+    [Fact]
+    public void MethodReceivers() =>
+        Assert.Equal(
+            "ClassDef(C, [], [], [], [MethodDef([Decorator(staticmethod)], make, None, [Param(n, NamedType(int))], null, Block([PassStmt])), " +
+            "MethodDef([Decorator(classmethod)], build, Cls, [], null, Block([PassStmt])), " +
+            "MethodDef([Decorator(x, setter)], x, [Param(v, NamedType(int))], null, Block([PassStmt]))])",
+            Snapshot("class C:\n    @staticmethod\n    def make(n: int):\n        pass\n    @classmethod\n    def build(cls):\n        pass\n" +
+                "    @x.setter\n    def x(self, v: int):\n        pass\n"));
 
     // ---- enum_def / variant / named_fields ----
 

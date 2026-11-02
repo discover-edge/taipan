@@ -26,7 +26,14 @@ public sealed record BindResult(BoundProgram Program, ImmutableArray<Diagnostic>
 public sealed partial class Binder
 {
     private static readonly BigInteger MaxInt = long.MaxValue;
-    private static readonly HashSet<string> BuiltinTypeNames = ["int", "float", "bool", "str", "list", "dict", "py", "Callable", "tuple", "Protocol", "Self"];
+    private static readonly HashSet<string> BuiltinTypeNames = ["int", "float", "bool", "str", "list", "dict", "py", "Callable", "tuple", "Protocol", "Self", "ABC", "ClassVar"];
+
+    // Every class the program defines, for checks across a hierarchy (SPEC §4.8).
+    private readonly List<ClassSymbol> _allClasses = [];
+
+    // Dict key types that name classes, checked once every class's members are declared (SPEC §4.8).
+    private readonly List<(Module Module, TextSpan Span, TaipanType Key)> _pendingKeys = [];
+    private bool _membersDeclared;
 
     private DiagnosticBag _diagnostics = new();
     private readonly Scope _builtins = new(null);
@@ -206,6 +213,13 @@ public sealed partial class Binder
             Enter(module);
             BindDeclarations(module);
         }
+        _membersDeclared = true;
+        foreach (var (module, span, key) in _pendingKeys)
+        {
+            Enter(module);
+            if (!DictOfType.IsValidKey(key))
+                ReportInvalidKey(span, key);
+        }
 
         // Every class's members are known now, so overrides can be checked against bases (SPEC §4.3).
         foreach (var module in modules)
@@ -268,6 +282,12 @@ public sealed partial class Binder
                 c.Symbol,
                 [.. module.Methods.Where(m => m.Symbol.Owner == c.Symbol).Select(m => BindMethodBody(c.Symbol, m.Syntax, m.Symbol))],
                 c.Syntax.Span)));
+        }
+
+        foreach (var module in modules)
+        {
+            Enter(module);
+            CheckClsConstruction(module.ClassDefs.Where(c => !c.Symbol.IsProtocol), module.Methods);
         }
 
         Enter(main);
@@ -640,13 +660,18 @@ public sealed partial class Binder
         var found = false;
         foreach (var decorator in decorators)
         {
-            var name = decorator.Name.Text;
+            var name = decorator.Member is { } member ? $"{decorator.Name.Text}.{member.Text}" : decorator.Name.Text;
             if (!seen.Add(name))
                 _diagnostics.ReportDuplicateDecorator(decorator.Span, name);
-            else if (name is not ("dataclass" or "override"))
+            else if (name is not ("dataclass" or "override") && !MethodDecorators.Contains(name))
                 _diagnostics.ReportUnknownDecorator(decorator.Span, name);
             else if (name != allowed)
-                _diagnostics.ReportMisplacedDecorator(decorator.Span, name);
+            {
+                if (name is "dataclass" or "override")
+                    _diagnostics.ReportMisplacedDecorator(decorator.Span, name);
+                else
+                    _diagnostics.ReportMisplacedDecorator(decorator.Span, name, $"'@{name}' goes on a method");
+            }
             else
                 found = true;
         }
@@ -654,6 +679,9 @@ public sealed partial class Binder
     }
 
     private static bool IsProtocolMarker(TypeSyntax type) => type is NamedType { Name.Text: "Protocol" };
+
+    // ABC lets a class declare abstract methods, and isn't a base (SPEC §4.8).
+    private static bool IsAbcMarker(TypeSyntax type) => type is NamedType { Name.Text: "ABC" };
 
     /// <summary>
     /// A class's base list (SPEC §4.3, §3.11): the protocols it declares, and at most one base: a
@@ -672,6 +700,11 @@ public sealed partial class Binder
         var bases = new List<TypeSyntax>();
         foreach (var syntax in classDef.Bases)
         {
+            if (IsAbcMarker(syntax))
+            {
+                symbol.IsAbc = true;
+                continue;
+            }
             if (PeekClass(syntax) is not { IsProtocol: true } protocol)
             {
                 bases.Add(syntax);
@@ -742,7 +775,7 @@ public sealed partial class Binder
                 {
                     if (ancestor != symbol)
                         continue;
-                    _diagnostics.ReportInheritanceCycle(syntax.Bases.First(b => PeekClass(b) is not { IsProtocol: true }).Span, symbol.Name);
+                    _diagnostics.ReportInheritanceCycle(syntax.Bases.First(b => !IsAbcMarker(b) && PeekClass(b) is not { IsProtocol: true }).Span, symbol.Name);
                     symbol.Base = null;
                     break;
                 }
@@ -752,7 +785,11 @@ public sealed partial class Binder
         {
             // Built-in classes are shared, and always open to subclasses.
             if (symbol.Base is { RuntimeName: null } baseClass)
+            {
                 baseClass.HasSubclasses = true;
+                baseClass.Subclasses.Add(symbol);
+            }
+            _allClasses.Add(symbol);
         }
     }
 
@@ -857,6 +894,25 @@ public sealed partial class Binder
         return new BoundConstant(symbol, value, constDef.Span);
     }
 
+    // A class attribute's value is evaluated once, before any code runs: a constant, None, or a
+    // list, dict or tuple of those (SPEC §4.8).
+    private BoundExpr BindClassAttributeValue(Expr value, TaipanType type)
+    {
+        if (IsAttributeConstant(value))
+            return BindExpected(value, type);
+        _diagnostics.ReportClassAttributeNotConstant(value.Span);
+        return new BoundErrorExpr(value.Span);
+    }
+
+    private static bool IsAttributeConstant(Expr expr) => expr switch
+    {
+        NoneLiteral => true,
+        ListExpr list => list.Elements.All(IsAttributeConstant),
+        TupleExpr tuple => tuple.Elements.All(IsAttributeConstant),
+        DictExpr dict => dict.Entries.All(e => IsAttributeConstant(e.Key) && IsAttributeConstant(e.Value)),
+        _ => IsConstantExpression(expr),
+    };
+
     // Literals, unary minus, and + - * / // % (SPEC §4.5).
     private static bool IsConstantExpression(Expr expr) => expr switch
     {
@@ -928,8 +984,20 @@ public sealed partial class Binder
         var outer = EnterTypeParameters(symbol.TypeParameters);
         var names = new HashSet<string>();
         var fields = ImmutableArray.CreateBuilder<FieldSymbol>();
+        var attributes = ImmutableArray.CreateBuilder<ClassAttributeSymbol>();
         foreach (var field in classDef.Fields)
         {
+            // `count: ClassVar[int] = 0` is a class attribute (SPEC §4.8).
+            if (field.Type is GenericType { Name.Text: "ClassVar" } classVar)
+            {
+                if (DeclareClassAttribute(symbol, field, classVar) is not { } attribute)
+                    continue;
+                if (names.Add(field.Name.Text))
+                    attributes.Add(attribute);
+                else
+                    _diagnostics.ReportDuplicateDefinition(field.Name.Span, field.Name.Text);
+                continue;
+            }
             var fieldSymbol = new FieldSymbol(field.Name.Text, BindType(field.Type)) { Owner = symbol, HasDefault = field.Default is not null };
             if (names.Add(field.Name.Text))
             {
@@ -940,63 +1008,19 @@ public sealed partial class Binder
                 _diagnostics.ReportDuplicateDefinition(field.Name.Span, field.Name.Text);
         }
         symbol.Fields = fields.ToImmutable();
+        symbol.ClassAttributes = attributes.ToImmutable();
 
         var methods = new List<(MethodDef, FunctionSymbol)>();
+        MethodDef? previous = null;
         foreach (var method in classDef.Methods)
         {
-            var name = method.Name.Text;
-            var isOverride = CheckDecorators(method.Decorators, "override");
-            var returnType = BindReturnType(method.ReturnType);
-            if (name == "__init__" && method.ReturnType is { } initReturn)
-            {
-                _diagnostics.ReportInitReturnType(initReturn.Span);
-                returnType = TaipanType.Nothing;
-            }
-            var self = new VariableSymbol("self", symbol.Type, VariableKind.Parameter);
-            var methodSymbol = new FunctionSymbol(name, BindParams(method.Params), returnType, self: self)
-            {
-                Defaults = PendingDefaults(method.Params),
-                IsMarkedOverride = isOverride,
-            };
-            methods.Add((method, methodSymbol));
-            Index(method.Name.Span, methodSymbol, isDefinition: true);
-            if (!names.Add(name))
-            {
-                _diagnostics.ReportDuplicateDefinition(method.Name.Span, name);
-            }
-            else if (name == "__init__")
-            {
-                if (symbol.IsDataclass)
-                    _diagnostics.ReportDataclassInit(method.Name.Span);
-                else
-                    symbol.Init = methodSymbol;
-                if (isOverride)
-                    _diagnostics.ReportInitOverride(method.Name.Span);
-            }
-            // __lt__ takes the class or a base, for '<', '>' and sorting (SPEC §3.11).
-            else if (name == "__lt__")
-            {
-                if (IsLessThan(methodSymbol, other => other == symbol.Type || other is ClassType { Symbol: var c } && c != symbol && symbol.DerivesFrom(c)))
-                    symbol.Methods[name] = methodSymbol;
-                else
-                    _diagnostics.ReportLessThanSignature(method.Name.Span, symbol.Name);
-            }
-            // Other special methods are deferred (SPEC §4.3).
-            else if (IsSpecialName(name))
-            {
-                _diagnostics.ReportSpecialMethod(method.Name.Span, name);
-            }
-            else
-            {
-                symbol.Methods[name] = methodSymbol;
-            }
+            if (DeclareMethod(symbol, method, previous, names) is { } methodSymbol)
+                methods.Add((method, methodSymbol));
+            previous = method;
         }
         _typeParameters = outer;
         return methods;
     }
-
-    private static bool IsSpecialName(string name) =>
-        name.Length > 4 && name.StartsWith("__", StringComparison.Ordinal) && name.EndsWith("__", StringComparison.Ordinal);
 
     /// <summary>Whether a <c>__lt__</c> takes one parameter of an accepted type and returns bool.</summary>
     private static bool IsLessThan(FunctionSymbol method, Func<TaipanType, bool> accepts) =>
@@ -1030,7 +1054,7 @@ public sealed partial class Binder
                 _diagnostics.ReportDuplicateDefinition(method.Name.Span, name);
             else if (name == "__lt__" && !IsLessThan(methodSymbol, other => other == symbol.SelfParameter!.Type))
                 _diagnostics.ReportLessThanSignature(method.Name.Span, "Self");
-            else if (name != "__lt__" && IsSpecialName(name))
+            else if (name != "__lt__" && SpecialMethods.IsSpecialName(name))
                 _diagnostics.ReportSpecialMethod(method.Name.Span, name);
             else
                 symbol.Methods[name] = methodSymbol;
@@ -1155,14 +1179,15 @@ public sealed partial class Binder
         var baseClass = symbol.Base;
         foreach (var field in classDef.Fields)
         {
-            if (baseClass?.FindField(field.Name.Text) is not null || baseClass?.FindMethod(field.Name.Text) is not null)
-                _diagnostics.ReportDuplicateDefinition(field.Name.Span, field.Name.Text);
+            var name = field.Name.Text;
+            if (baseClass?.FindField(name) is not null || baseClass?.FindMethod(name) is not null || baseClass?.FindClassAttribute(name) is not null)
+                _diagnostics.ReportDuplicateDefinition(field.Name.Span, name);
         }
         foreach (var (syntax, method) in methods)
         {
             if (symbol.Methods.GetValueOrDefault(method.Name) != method)
                 continue;
-            if (baseClass?.FindField(method.Name) is not null)
+            if (baseClass?.FindField(method.Name) is not null || baseClass?.FindClassAttribute(method.Name) is not null)
             {
                 _diagnostics.ReportDuplicateDefinition(syntax.Name.Span, method.Name);
                 continue;
@@ -1174,18 +1199,21 @@ public sealed partial class Binder
                     _diagnostics.ReportNothingToOverride(syntax.Name.Span, method.Name, baseClass?.Name);
                 continue;
             }
-            if (method.IsMarkedOverride)
-                CheckOverride(syntax, method, overridden);
-            else
+            if (!method.IsMarkedOverride)
                 _diagnostics.ReportMissingOverride(syntax.Name.Span, method.Name, overridden.Owner!.Name);
+            else if (overridden.Kind != method.Kind)
+                _diagnostics.ReportMemberKind(syntax.Name.Span, method.Name, KindName(overridden.Kind), overridden.Owner!.Name);
+            else
+                CheckOverride(syntax, method, overridden);
             method.Overrides = overridden;
         }
+        CheckSpecialInheritance(classDef, symbol, methods);
 
         if (symbol.IsDataclass)
         {
             // The fields are the constructor's parameters, inherited ones first (SPEC §4.3).
             var sawDefault = baseClass?.AllFields.Any(f => f.HasDefault) == true;
-            foreach (var field in classDef.Fields)
+            foreach (var field in classDef.Fields.Where(f => f.Type is not GenericType { Name.Text: "ClassVar" }))
             {
                 if (field.Default is not null)
                     sawDefault = true;
@@ -1195,7 +1223,7 @@ public sealed partial class Binder
         }
         else if (symbol.Init is null)
         {
-            foreach (var field in classDef.Fields.Where(f => f.Default is null))
+            foreach (var field in classDef.Fields.Where(f => f.Default is null && f.Type is not GenericType { Name.Text: "ClassVar" }))
                 _diagnostics.ReportFieldWithoutInit(field.Name.Span, field.Name.Text, symbol.Name);
         }
     }
@@ -1234,11 +1262,14 @@ public sealed partial class Binder
             if (result is not NothingType)
                 _diagnostics.ReportOverrideReturn(span, name, null, owner);
         }
+        // A property with a setter is also assigned, so it keeps its type (SPEC §4.8).
         else if (result != expectedResult && !result.ContainsError
-            && !(IsClass(result) && IsClass(expectedResult) && TypeChecker.IsAssignable(result, expectedResult)))
+            && (overridden.Setter is not null || !(IsClass(result) && IsClass(expectedResult) && TypeChecker.IsAssignable(result, expectedResult))))
         {
             _diagnostics.ReportOverrideReturn(span, name, expectedResult, owner);
         }
+        if (overridden.Setter is not null && method.Setter is null)
+            _diagnostics.ReportSetterRequired(syntax.Name.Span, name, owner);
     }
 
     /// <summary>
@@ -1255,8 +1286,17 @@ public sealed partial class Binder
         (_function, _outerFunction, _scope) = (context, context, new Scope(_global));
         foreach (var field in classDef.Fields)
         {
-            if (field.Default is { } value && symbol.Fields.FirstOrDefault(f => f.Name == field.Name.Text) is { } fieldSymbol)
+            if (field.Default is not { } value)
+                continue;
+            if (field.Type is GenericType { Name.Text: "ClassVar" })
+            {
+                if (symbol.ClassAttributes.FirstOrDefault(a => a.Name == field.Name.Text) is { } attribute)
+                    attribute.Value = BindClassAttributeValue(value, attribute.Type);
+            }
+            else if (symbol.Fields.FirstOrDefault(f => f.Name == field.Name.Text) is { } fieldSymbol)
+            {
                 fieldSymbol.Default = BindExpected(value, fieldSymbol.Type);
+            }
         }
         (_function, _outerFunction, _scope) = (null, null, _global);
         _typeParameters = outerTypeParameters;
@@ -1265,6 +1305,9 @@ public sealed partial class Binder
     /// <summary>A method's body; an <c>__init__</c>'s is also checked for strict initialization (SPEC §4.3).</summary>
     private BoundFunction BindMethodBody(ClassSymbol owner, MethodDef syntax, FunctionSymbol method)
     {
+        // An abstract method has no body to run (SPEC §4.8).
+        if (method.IsAbstract || _stubs.Contains(method))
+            return new BoundFunction(method, new BoundBlock([], syntax.Body.Span), syntax.Span) { Source = _source };
         var body = BindBody(method, syntax.Params, syntax.Name, syntax.Body, syntax.Span);
         if (method == owner.Init)
             InitChecker.Check(owner, method.Self!, body.Body, syntax.Name.Span, _diagnostics);
@@ -1323,8 +1366,7 @@ public sealed partial class Binder
         ImmutableArray<VariableSymbol>? specializedParameters = null)
     {
         // A method sees its class's type parameters; a function its own.
-        var outerTypeParameters = EnterTypeParameters(
-            symbol.Self?.Type is ClassType { Symbol: var owner } ? owner.TypeParameters : symbol.TypeParameters);
+        var outerTypeParameters = EnterTypeParameters(symbol.Owner is { } owner ? owner.TypeParameters : symbol.TypeParameters);
         _function = symbol;
         _outerFunction = symbol;
         _loopDepth = 0;
@@ -1332,6 +1374,8 @@ public sealed partial class Binder
         _scope = new Scope(_global);
         if (symbol.Self is { } self)
             _scope.Declare(self);
+        if (symbol.Cls is { } cls)
+            _scope.Declare(cls);
         var parameterSymbols = specializedParameters ?? symbol.Parameters;
         for (var i = 0; i < parameterSymbols.Length; i++)
             DeclareLocal(parameters[i].Name, parameterSymbols[i]);
@@ -1490,6 +1534,10 @@ public sealed partial class Binder
             case NamedType named when ResolveTypeName(named.Name.Text) is { } typeSymbol:
                 Index(named.Name.Span, typeSymbol);
                 return BindGenericType(named.Name, [], named.Span, typeSymbol);
+            // ClassVar only declares a class attribute (SPEC §4.8).
+            case GenericType { Name.Text: "ClassVar", Arguments: [var held] } classVar:
+                _diagnostics.ReportClassVarMisplaced(classVar.Span);
+                return BindType(held);
             case GenericType generic:
                 return BindGenericType(generic.Name, generic.Arguments, generic.Span, ResolveTypeName(generic.Name.Text));
             case QualifiedType qualified:
@@ -1501,8 +1549,7 @@ public sealed partial class Binder
                 return new ListOfType(BindType(list.Element));
             case DictType dict:
                 var key = BindType(dict.Key);
-                if (!DictOfType.IsValidKey(key))
-                    _diagnostics.ReportInvalidDictKey(dict.Key.Span, key, key is ClassType { Symbol.IsDataclass: true });
+                CheckDictKey(dict.Key.Span, key);
                 return new DictOfType(key, BindType(dict.Value));
             case OptionalType optional:
                 var inner = BindType(optional.Inner);
@@ -1594,6 +1641,41 @@ public sealed partial class Binder
             ? new ClassType(s, arguments)
             : new EnumType((EnumSymbol)symbol!, arguments);
     }
+
+    /// <summary>
+    /// A dict key type must be hashable (SPEC §3.1, §4.8). A class's hashability depends on its
+    /// methods, so until every class's members are declared the check waits.
+    /// </summary>
+    private void CheckDictKey(TextSpan span, TaipanType key)
+    {
+        if (!_membersDeclared && Mentions(key, t => t is ClassType))
+            _pendingKeys.Add((_module!, span, key));
+        else if (!DictOfType.IsValidKey(key))
+            ReportInvalidKey(span, key);
+    }
+
+    private void ReportInvalidKey(TextSpan span, TaipanType key)
+    {
+        if (Unhashable(key) is { } unhashable)
+            _diagnostics.ReportUnhashableKey(span, unhashable, unhashable.Symbol.IsDataclass ? null : EqualityDefiner(unhashable.Symbol));
+        else
+            _diagnostics.ReportInvalidDictKey(span, key, isDataclass: false);
+    }
+
+    // The class whose __eq__ without __hash__ makes a class unhashable: it, or a base (SPEC §4.8).
+    private static string EqualityDefiner(ClassSymbol symbol) =>
+        symbol.Methods.ContainsKey("__eq__") || symbol.Base is null ? symbol.Name : EqualityDefiner(symbol.Base);
+
+    // The class in a key type that isn't hashable, if that's why it isn't a valid key.
+    private static ClassType? Unhashable(TaipanType key) => key switch
+    {
+        ClassType { Symbol.IsHashable: false } classType => classType,
+        TupleOfType tuple => tuple.Elements.Select(Unhashable).FirstOrDefault(c => c is not null),
+        _ => null,
+    };
+
+    private static bool Mentions(TaipanType type, Func<TaipanType, bool> test) =>
+        test(type) || type is TupleOfType tuple && tuple.Elements.Any(e => Mentions(e, test));
 
     private TaipanType Unsupported(string feature)
     {
@@ -2219,6 +2301,11 @@ public sealed partial class Binder
     {
         if (DotNetTypeNamed(member.Target) is { } owner)
             return BindDotNetAssign(assign, null, owner, member, preset);
+        // A class attribute through its class (SPEC §4.8).
+        if (ClassNamed(member.Target) is { } named)
+            return BindMemberAssign(assign, member, null, named, named.Name, preset) ?? NotAnAttribute(assign, member, named, preset);
+        if (IsCls(member.Target))
+            return BindMemberAssign(assign, member, null, _outerFunction!.Owner!, "cls", preset) ?? NotAnAttribute(assign, member, _outerFunction!.Owner!, preset);
         var target = BindValue(member.Target);
         if (target.Type.ContainsError || ReportIfOptional(target, member.Target.Span))
             return OrphanAssign(assign, preset);
@@ -2241,6 +2328,8 @@ public sealed partial class Binder
                 EndPathsThrough(field, assign.Span);
                 return new BoundFieldAssign(target, field, value, assign.Op != AssignOp.Assign, assign.Span);
             }
+            if (BindMemberAssign(assign, member, target, classSymbol, null, preset) is { } memberAssign)
+                return memberAssign;
             if (classSymbol.FindMethod(member.Member.Text) is not null || member.Member.Text == "__init__")
                 _diagnostics.ReportCannotAssign(member.Member.Span, member.Member.Text, "method", null);
             else
@@ -3160,6 +3249,9 @@ public sealed partial class Binder
     {
         switch (symbol)
         {
+            case VariableSymbol variable when variable == _outerFunction?.Cls:
+                _diagnostics.ReportClsMisuse(span);
+                return new BoundErrorExpr(span);
             case VariableSymbol variable when _narrowing.Types.TryGetValue(variable, out var narrowed):
                 return new BoundNarrowed(new BoundVariable(variable, span), narrowed, span);
             case VariableSymbol variable:
@@ -3214,9 +3306,13 @@ public sealed partial class Binder
 
         if (operand.Type == TaipanType.Py)
             return new BoundUnary(unary.Op, operand, TaipanType.Py, unary.Span);
+        // -x on a class calls its __neg__ (SPEC §4.8).
+        if (operand.Type is ClassType && NegatedType(operand.Type) is { } negated)
+            return new BoundUnary(unary.Op, operand, negated, unary.Span);
         if (!operand.Type.IsNumeric)
         {
-            _diagnostics.ReportUnaryOperatorType(unary.Span, "-", operand.Type);
+            _diagnostics.ReportUnaryOperatorType(unary.Span, "-", operand.Type,
+                operand.Type is ClassType { Symbol.Name: var className } ? $"define '__neg__' on '{className}'" : null);
             return new BoundUnary(unary.Op, operand, TaipanType.Error, unary.Span);
         }
         return new BoundUnary(unary.Op, operand, operand.Type, unary.Span);
@@ -3232,6 +3328,16 @@ public sealed partial class Binder
         if (op is not (BinaryOp.Equal or BinaryOp.NotEqual)
             && (ReportIfOptional(left, left.Span) | ReportIfOptional(right, right.Span)))
             return new BoundBinary(left, op, right, TaipanType.Error, span);
+
+        // An operator on a class value calls a special method (SPEC §4.8).
+        if (SpecialMethods.Forward(op) is { } forward && (left.Type is ClassType || right.Type is ClassType))
+        {
+            if (BindSpecialBinary(left, op, right, span) is { } special)
+                return special;
+            var help = left.Type is ClassType { Symbol.Name: var className } ? $"define '{forward}' on '{className}'" : null;
+            _diagnostics.ReportBinaryOperatorTypes(span, TypeChecker.Display(op), left.Type, right.Type, help);
+            return new BoundBinary(left, op, right, TaipanType.Error, span);
+        }
 
         var type = op switch
         {
@@ -3463,7 +3569,7 @@ public sealed partial class Binder
             var pyKeys = dict.Entries.Select(e => BindValue(e.Key)).ToImmutableArray();
             var pyKeyType = InferElementType(pyKeys);
             if (!DictOfType.IsValidKey(pyKeyType))
-                _diagnostics.ReportInvalidDictKey(dict.Entries[0].Key.Span, pyKeyType, pyKeyType is ClassType { Symbol.IsDataclass: true });
+                ReportInvalidKey(dict.Entries[0].Key.Span, pyKeyType);
             var pyValues = dict.Entries.Select(e => BindExpected(e.Value, TaipanType.Py)).ToImmutableArray();
             return new BoundDictLiteral([.. pyKeys.Zip(pyValues)], new DictOfType(pyKeyType, TaipanType.Py), dict.Span);
         }
@@ -3486,7 +3592,7 @@ public sealed partial class Binder
         var keyType = InferElementType([.. entries.Select(e => e.Key)]);
         if (!DictOfType.IsValidKey(keyType))
         {
-            _diagnostics.ReportInvalidDictKey(dict.Entries[0].Key.Span, keyType, keyType is ClassType { Symbol.IsDataclass: true });
+            ReportInvalidKey(dict.Entries[0].Key.Span, keyType);
             keyType = TaipanType.Error;
         }
         var valueType = InferElementType([.. entries.Select(e => e.Value)]);
@@ -3546,6 +3652,11 @@ public sealed partial class Binder
             return BindSymbolValue(definition, member.Member.Text, member.Span, expected);
         if (DotNetTypeNamed(member.Target) is { } owner)
             return BindDotNetMember(null, owner, member);
+        // A class attribute through a class or cls (SPEC §4.8).
+        if (ClassNamed(member.Target) is { } named)
+            return BindClassMember(member, named);
+        if (IsCls(member.Target))
+            return BindClassMember(member, _outerFunction!.Owner!);
 
         var target = BindValue(member.Target);
         var name = member.Member.Text;
@@ -3563,6 +3674,8 @@ public sealed partial class Binder
                 Index(member.Member.Span, field);
                 return NarrowedField(new BoundFieldAccess(target, field, FieldType(target.Type, field), member.Span));
             }
+            if (BindInstanceMember(target, classSymbol, member) is { } instanceMember)
+                return instanceMember is BoundClassAttribute attribute ? NarrowedAttribute(attribute) : instanceMember;
             if (name == "__init__")
                 _diagnostics.ReportInitCalled(member.Member.Span);
             else if (classSymbol.FindMethod(name) is not null)
@@ -3653,6 +3766,8 @@ public sealed partial class Binder
             return BindIsInstance(call, nameSpan);
         switch (symbol)
         {
+            case VariableSymbol variable when variable == _outerFunction?.Cls:
+                return BindClsNew(call, nameSpan, expected);
             case VariableSymbol variable when _localFunctions.TryGetValue(variable, out var local):
                 return BindLocalCall(call, new BoundVariable(variable, nameSpan), local, nameSpan);
             case VariableSymbol variable when TypeChecker.Unwrap(variable.Type) is FunctionType:
@@ -3672,6 +3787,9 @@ public sealed partial class Binder
                 return new BoundErrorExpr(call.Span);
             case DotNetTypeSymbol dotnet:
                 return BindDotNetConstruct(call, dotnet.Type, nameSpan);
+            case FunctionSymbol { Builtin: BuiltinFunction.Repr or BuiltinFunction.Hash } function:
+                ReportKeywordArguments(call, function.Name);
+                return BindReprOrHash(call, function, function.Builtin!.Value);
             case FunctionSymbol { Builtin: { } builtin } function:
                 ReportKeywordArguments(call, function.Name);
                 return BindBuiltinCall(call, function, builtin, expected);
@@ -4069,7 +4187,7 @@ public sealed partial class Binder
     /// A dataclass's constructor takes its fields; a plain class's takes its <c>__init__</c>'s
     /// parameters, matched like a function's (SPEC §4.3).
     /// </summary>
-    private BoundExpr BindConstruct(CallExpr call, ClassSymbol classSymbol, TaipanType? expected, TextSpan nameSpan)
+    private BoundExpr BindConstruct(CallExpr call, ClassSymbol classSymbol, TaipanType? expected, TextSpan nameSpan, bool checkAbstract = true)
     {
         if (classSymbol.IsProtocol)
         {
@@ -4077,6 +4195,9 @@ public sealed partial class Binder
             _diagnostics.ReportProtocolAsType(nameSpan, classSymbol.Name);
             return new BoundErrorExpr(call.Span);
         }
+        // An abstract class has no instances of its own (SPEC §4.8).
+        if (checkAbstract && classSymbol.IsAbstract)
+            _diagnostics.ReportAbstractInstantiation(nameSpan, classSymbol.Name, classSymbol.AbstractMethods.Select(m => $"{m.Owner!.Name}.{m.Name}"));
         if (classSymbol.IsDataclass)
         {
             var (arguments, isKeyword, map) = BindFieldArguments(
@@ -4219,6 +4340,8 @@ public sealed partial class Binder
             _diagnostics.ReportNoMethod(member.Member.Span, baseClass.Type, name);
             return new BoundErrorExpr(call.Span);
         }
+        if (method.IsAbstract)
+            _diagnostics.ReportAbstractSuper(member.Member.Span, method.Owner!.Name, name);
         if (MatchArguments(call, method, name, member.Member.Span) is not { } shape)
             return new BoundSuperCall(method, self, BindArguments(call), method.ReturnType, call.Span);
         var arguments = call.Arguments.Select((a, i) => BindExpected(a.Value, method.Parameters[shape.Parameters[i]].Type)).ToImmutableArray();
@@ -4386,6 +4509,11 @@ public sealed partial class Binder
 
         if (DotNetTypeNamed(member.Target) is { } owner)
             return BindDotNetCall(call, null, owner, member.Member);
+        // Static and class methods through a class or cls (SPEC §4.8).
+        if (ClassNamed(member.Target) is { } named)
+            return BindClassMethodCall(call, member, named, viaCls: false);
+        if (IsCls(member.Target))
+            return BindClassMethodCall(call, member, _outerFunction!.Owner!, viaCls: true);
 
         var target = BindValue(member.Target);
         var name = member.Member.Text;
@@ -4402,11 +4530,11 @@ public sealed partial class Binder
         if (target.Type is DotNetType net)
             return BindDotNetCall(call, target, net.Symbol, member.Member);
 
-        // __lt__ is reached through '<' and '>' (SPEC §3.11).
-        if (name == "__lt__" && target.Type is ClassType or TypeParameterType)
+        // Special methods are reached through operators and built-ins (SPEC §3.11, §4.8).
+        if (SpecialMethods.IsSupported(name) && target.Type is ClassType or TypeParameterType)
         {
             BindArguments(call);
-            _diagnostics.ReportSpecialMethodCalled(member.Member.Span, name);
+            _diagnostics.ReportSpecialMethodCalled(member.Member.Span, name, SpecialMethods.Form(name, _source.ToString(member.Target.Span)));
             return new BoundErrorExpr(call.Span);
         }
 
@@ -4436,6 +4564,19 @@ public sealed partial class Binder
             {
                 BindArguments(call);
                 _diagnostics.ReportInitCalled(member.Member.Span);
+                return new BoundErrorExpr(call.Span);
+            }
+            if (classSymbol.FindMethod(name) is { IsClassLevel: true } classLevel)
+                return BindStaticCall(call, member, classSymbol, target, viaCls: false, classLevel);
+            if (classSymbol.FindMethod(name) is { Kind: MemberKind.Property } && BindInstanceMember(target, classSymbol, member) is { } property)
+            {
+                if (TypeChecker.Unwrap(property.Type) is FunctionType)
+                {
+                    ReportKeywordArguments(call, function: null);
+                    return BindInvoke(call, property, name, member.Member.Span);
+                }
+                BindArguments(call);
+                _diagnostics.ReportCannotCall(member.Span, property.Type);
                 return new BoundErrorExpr(call.Span);
             }
             if (classSymbol.FindMethod(name) is { } method)

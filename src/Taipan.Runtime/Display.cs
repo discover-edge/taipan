@@ -34,9 +34,9 @@ public static class Display
         IFunction f => $"<function {f.Name}>",
         ITuple t => "(" + string.Join(", ", Enumerable.Range(0, t.Length).Select(i => Repr(t[i]))) + ")",
         IVariant { Fields.Count: 0 } v => v.TypeName,
-        IStruct s => $"{s.TypeName}({string.Join(", ", s.Fields.Select(f => $"{f.Name}={Repr(f.Value)}"))})",
-        TaipanException e => e.message,
-        IObject o => $"<{o.TypeName} object>",
+        // A class's __str__ (SPEC §4.8).
+        IClass c => c.__str__(),
+        IStruct s => StructForm(s),
         IDictionary d => "{" + string.Join(", ", d.Keys.Cast<object>().Select(k => $"{Repr(k)}: {Repr(d[k])}")) + "}",
         IList l => "[" + string.Join(", ", l.Cast<object?>().Select(Repr)) + "]",
         // Python objects (SPEC §10.2), else a .NET value's own ToString (SPEC §13.3).
@@ -58,10 +58,22 @@ public static class Display
     {
         string s => "\"" + s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\t", "\\t") + "\"",
         null => Format(value),
-        // Inside a container, an exception shows its class too, as Python's repr does (SPEC §6).
-        TaipanException e => $"{((IObject)e).TypeName}({Repr(e.message)})",
+        // A class's __repr__ (SPEC §4.8); an exception's shows its class and message, as Python's does (SPEC §6).
+        IClass c => c.__repr__(),
         _ => ExternalFormat?.Invoke(value, true) ?? Format(value),
     };
+
+    /// <summary>A class's form without <c>__repr__</c>: a dataclass's fields, or <c>&lt;Dog object&gt;</c> (SPEC §4.3).</summary>
+    public static string DefaultRepr(IClass value) => value switch
+    {
+        IStruct s => StructForm(s),
+        IObject o => $"<{o.TypeName} object>",
+        _ => value.ToString() ?? "",
+    };
+
+    /// <summary>A dataclass's or variant's generated form: <c>Point(x=1, y=2)</c>.</summary>
+    public static string StructForm(IStruct value) =>
+        $"{value.TypeName}({string.Join(", ", value.Fields.Select(f => $"{f.Name}={Repr(f.Value)}"))})";
 
     /// <summary>Python's <c>repr(float)</c>: shortest round-trip digits, fixed notation for decimal exponents in [-4, 16).</summary>
     public static string Format(double value)

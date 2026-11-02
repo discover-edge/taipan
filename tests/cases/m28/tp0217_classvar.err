@@ -1,0 +1,2 @@
+tests/cases/m28/tp0217_classvar.tpn:9:26: error TP0217: class attribute value must be a constant expression
+tests/cases/m28/tp0217_classvar.tpn:10:28: error TP0217: class attribute value must be a constant expression

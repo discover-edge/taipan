@@ -1,0 +1,1 @@
+tests/cases/m28/tp0226_property.tpn:8:15: error TP0226: 'self' is used before 'height' is set

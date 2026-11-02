@@ -92,6 +92,13 @@ public sealed record BoundAssign(VariableSymbol Target, BoundExpr Value, TextSpa
 public sealed record BoundFieldAssign(BoundExpr Target, FieldSymbol Field, BoundExpr Value, bool IsCompound, TextSpan Span)
     : BoundStmt(Span);
 
+/// <summary><c>x.p = v</c> through a property's setter (SPEC §4.8, M28).</summary>
+public sealed record BoundPropertySet(BoundExpr Target, FunctionSymbol Property, BoundExpr Value, bool IsCompound, TextSpan Span)
+    : BoundStmt(Span);
+
+/// <summary><c>C.a = v</c> on a class attribute, through the class that declares it (SPEC §4.8, M28).</summary>
+public sealed record BoundClassAttributeAssign(ClassAttributeSymbol Attribute, BoundExpr Value, TextSpan Span) : BoundStmt(Span);
+
 /// <summary><c>x.P = v</c> on a .NET property or field (SPEC §13.4), <see cref="Target"/> null for a static one.</summary>
 public sealed record BoundDotNetAssign(BoundExpr? Target, Microsoft.CodeAnalysis.ISymbol Member, BoundExpr Value, bool IsCompound, TextSpan Span)
     : BoundStmt(Span);
@@ -269,6 +276,33 @@ public sealed record BoundConstructVariant(VariantSymbol Variant, EnumType EnumT
 
 /// <summary><see cref="BoundExpr.Type"/> is the field's type with the target's type arguments substituted.</summary>
 public sealed record BoundFieldAccess(BoundExpr Target, FieldSymbol Field, TaipanType Type, TextSpan Span) : BoundExpr(Type, Span);
+
+/// <summary>Reading a property (SPEC §4.8, M28): a call to its getter.</summary>
+public sealed record BoundPropertyGet(BoundExpr Target, FunctionSymbol Property, TaipanType Type, TextSpan Span) : BoundExpr(Type, Span);
+
+/// <summary>
+/// A class attribute (SPEC §4.8, M28), reached through a class, <c>cls</c>, or an instance, which
+/// is <see cref="Instance"/> and evaluated first.
+/// </summary>
+public sealed record BoundClassAttribute(ClassAttributeSymbol Attribute, BoundExpr? Instance, TextSpan Span) : BoundExpr(Attribute.Type, Span);
+
+/// <summary>
+/// A call to a static or class method (SPEC §4.8, M28): through <see cref="Through"/>'s class, an
+/// <see cref="Instance"/>, or <c>cls</c> when <see cref="ViaCls"/>. Through an instance or <c>cls</c>
+/// it dispatches on the runtime class.
+/// </summary>
+public sealed record BoundClassMethodCall(ClassSymbol Through, BoundExpr? Instance, bool ViaCls, FunctionSymbol Method,
+    ImmutableArray<BoundExpr> Arguments, TaipanType Type, TextSpan Span) : BoundExpr(Type, Span)
+{
+    /// <inheritdoc cref="BoundCall.Shape"/>
+    public ArgumentShape? Shape { get; init; }
+}
+
+/// <summary>
+/// <c>cls(…)</c> in a class method (SPEC §4.8, M28): <see cref="Construction"/> is the same
+/// construction of the method's own class, which the class <c>cls</c> is at run time replaces.
+/// </summary>
+public sealed record BoundClsNew(BoundExpr Construction, TextSpan Span) : BoundExpr(Construction.Type, Span);
 
 /// <summary>Indexing a list, dict or str; <see cref="Target"/>'s type says which.</summary>
 public sealed record BoundIndex(BoundExpr Target, BoundExpr Index, TaipanType Type, TextSpan Span) : BoundExpr(Type, Span);

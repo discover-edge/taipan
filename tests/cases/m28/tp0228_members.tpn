@@ -1,0 +1,72 @@
+# Incompatible overrides of members (SPEC §4.8).
+class Base:
+    @property
+    def size(self) -> int:
+        return 0
+
+    @size.setter
+    def size(self, value: int):
+        pass
+
+    @staticmethod
+    def make() -> int:
+        return 0
+
+    @classmethod
+    def build(cls) -> int:
+        return 0
+
+    def run(self) -> int:
+        return 0
+
+    def __add__(self, other: Base) -> int:
+        return 0
+
+class Derived(Base):
+    @override
+    @property
+    def size(self) -> int:
+        return 1
+
+    @override
+    def make(self) -> int:
+        return 1
+
+    @override
+    @staticmethod
+    def build() -> int:
+        return 1
+
+    @override
+    @property
+    def run(self) -> int:
+        return 1
+
+    def __radd__(self, other: Base) -> str:
+        return ""
+
+class Factory:
+    name: str
+
+    def __init__(self, name: str):
+        self.name = name
+
+    @classmethod
+    def create(cls) -> Factory:
+        return cls("x")
+
+class Special(Factory):
+    def __init__(self):
+        super().__init__("special")
+
+@dataclass
+class Record:
+    id: int
+
+    @classmethod
+    def first(cls) -> Record:
+        return cls(1)
+
+@dataclass
+class Extended(Record):
+    extra: int

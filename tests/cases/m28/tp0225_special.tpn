@@ -1,0 +1,53 @@
+# Special methods need their signatures (SPEC §4.8); others are still unsupported.
+class Wrong:
+    def __str__(self, extra: int) -> str:
+        return ""
+
+    def __repr__(self) -> int:
+        return 0
+
+    def __eq__(self, other: int) -> bool:
+        return False
+
+    def __hash__(self) -> str:
+        return ""
+
+    def __lt__(self, other: Wrong) -> int:
+        return 0
+
+    def __add__(self, a: int, b: int) -> int:
+        return 0
+
+    def __sub__(self, other: int = 1) -> int:
+        return 0
+
+    def __neg__(self, other: int) -> int:
+        return 0
+
+    def __mul__(self, other: int):
+        pass
+
+    def __bool__(self) -> bool:
+        return True
+
+    def __len__(self) -> int:
+        return 0
+
+# A subclass of a hashable class must stay hashable.
+class Key:
+    pass
+
+class EqOnly(Key):
+    def __eq__(self, other: Key) -> bool:
+        return True
+
+@dataclass
+class Point:
+    x: int
+
+    def __hash__(self) -> int:
+        return self.x
+
+@dataclass
+class Point3(Point):
+    z: int

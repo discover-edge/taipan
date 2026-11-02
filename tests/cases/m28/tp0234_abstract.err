@@ -1,0 +1,6 @@
+tests/cases/m28/tp0234_abstract.tpn:11:16: error TP0234: 'cls(…)' may construct the abstract class 'Shape'
+tests/cases/m28/tp0234_abstract.tpn:23:9: error TP0234: cannot instantiate abstract class 'Shape'
+  help: it does not implement 'Shape.area' and 'Shape.perimeter'
+tests/cases/m28/tp0234_abstract.tpn:24:9: error TP0234: cannot instantiate abstract class 'Square'
+  help: it does not implement 'Shape.perimeter'
+tests/cases/m28/tp0234_abstract.tpn:37:9: error TP0234: 'Late' cannot add abstract method 'run', since 'Maker.make' calls 'cls(…)'

@@ -36,7 +36,7 @@ public static class TaipanProgram
     }
 }
 
-public sealed class @Service : global::Taipan.Runtime.IStruct
+public sealed class @Service : global::Taipan.Runtime.IDataclass
 {
     public string @name { get; set; }
     public long @replicas { get; set; }

@@ -69,3 +69,41 @@ def apply(f: Callable[[int], int], x: int) -> int:
 
 def _helper() -> int:
     return 1
+
+# Special methods, properties, static and class methods and class attributes (SPEC §4.8, §14).
+class Money:
+    cents: int
+    made: ClassVar[int] = 0
+
+    def __init__(self, cents: int):
+        self.cents = cents
+        Money.made += 1
+
+    @property
+    def dollars(self) -> float:
+        return self.cents / 100
+
+    @dollars.setter
+    def dollars(self, value: float):
+        self.cents = int(value * 100)
+
+    @staticmethod
+    def zero() -> Money:
+        return Money(0)
+
+    @classmethod
+    def of(cls, cents: int) -> Money:
+        return cls(cents)
+
+    def __eq__(self, other: Money) -> bool:
+        return self.cents == other.cents
+
+    def __hash__(self) -> int:
+        return self.cents
+
+    def __str__(self) -> str:
+        return f"${self.dollars}"
+
+class Polygon(ABC):
+    @abstractmethod
+    def sides(self) -> int: ...
