@@ -2,7 +2,7 @@
 
 Each milestone is done when **all** of its acceptance criteria pass as golden tests (see CLAUDE.md). Milestones are sequential. Don't start the next one early.
 
-M0–M10 (with M8.1) make up v0.1 and are complete. M11 through M25 are complete.
+M0–M10 (with M8.1) make up v0.1 and are complete. M11 through M25 are complete; M26 onward are planned.
 
 ## M0 — Scaffold
 - Create the solution layout from CLAUDE.md, the `taipan` CLI with `check | emit | build | run` stubs, and the golden-test harness.
@@ -197,3 +197,74 @@ M0–M10 (with M8.1) make up v0.1 and are complete. M11 through M25 are complete
 - **Accept:**
   - `python -c "import geometry; print(geometry.area(2.0))"` works against a built module.
   - A Taipan exception raised in an exported function arrives in Python as an exception with the same message.
+
+## M26 — Everyday gaps
+- Format specs in f-strings (`f"{x:.2f}"`, `f"{n:>5}"`, `f"{n:,}"`), as Python's format mini-language for `int`, `float` and `str`.
+- `-> None` as an explicit "returns nothing" annotation, `zip` of more than two lists, `isinstance(x, (A, B))` with a tuple of classes, defaults on lambda parameters, and slice assignment and `del` on lists and dicts.
+- Update SPEC first: which format specs are supported and the error for one that isn't, and how `del` and slice assignment behave on out-of-range indices.
+- **Accept:**
+  - Golden cases print the same text as Python for a table of format specs, and an unsupported spec is a compile-time error at the spec.
+  - `del xs[1]`, `del d["k"]`, `xs[1:3] = [9]`, and a three-way `zip` each give Python's results.
+
+## M27 — Flow narrowing
+- Narrowing that follows control flow: after `if x is None: return` (or `raise`, `break`, `continue`), `x` is narrowed for the rest of the block, and likewise for `isinstance`.
+- Narrowing `var`s until they're reassigned, and fields read through a `let`, where nothing in between can change them.
+- Update SPEC first: exactly which statements end narrowing (assignments, calls that could change a field), so the rules stay predictable.
+- **Accept:**
+  - The early-return pattern type-checks without `??` or `is some`, and assigning the variable afterwards ends the narrowing (`TP0203` at a later use).
+  - Narrowing a field is rejected where a method call in between could change it.
+
+## M28 — Classes II
+- Special methods: `__str__` (used by `print`, `str()` and f-strings), `__eq__` and `__hash__` (used by `==`, `in` and dict keys), `__le__`, `__gt__` and `__ge__`, and the arithmetic operators (`__add__`, `__sub__`, `__mul__`, `__neg__`, …).
+- `@property`, `@staticmethod`, `@classmethod`, class attributes, and abstract classes with `@abstractmethod`.
+- Update SPEC first: the signatures each special method must have, how `__eq__` and `__hash__` interact with dict keys, and what's checked at compile time for abstract classes.
+- **Accept:**
+  - A `Money` class with `__add__`, `__eq__`, `__hash__` and `__str__` works with `+`, `==`, as a dict key, and in f-strings, matching Python's output.
+  - Instantiating an abstract class, or a subclass missing an abstract method, is a compile-time error.
+
+## M29 — Destructuring
+- Tuple patterns in `match` (`case (0, y):`), sub-patterns inside class and variant patterns (`Dog(name="rex")`, `Some(Circle(r))`), nested unpacking (`let (a, b), c = …`) and unpacking lists.
+- `match` expressions anywhere an expression may appear, and match-expression arms with indented blocks.
+- Update SPEC first: exhaustiveness checking with nested patterns, and what unpacking a list of the wrong length does at run time.
+- **Accept:**
+  - A nested-pattern `match` over an enum of tuples is checked for exhaustiveness, with the missing cases listed in `TP0204`.
+  - Unpacking a list of the wrong length raises `ValueError` with Python's message.
+
+## M30 — Parameters
+- Keyword-only (`*`) and positional-only (`/`) parameters, `*args` (as a `list`), and `**kwargs` (as a `dict[str, T]`), for functions, methods and constructors.
+- Carried through to libraries (M22) and extension modules (M25) where they can be expressed.
+- Update SPEC first: how `*args` and `**kwargs` are typed, how they combine with defaults, and how they appear in a library's .NET signature.
+- **Accept:**
+  - Calls mixing positional, keyword, `*args` and `**kwargs` arguments bind as Python binds them, with Python's errors for a wrong call reported at compile time.
+  - An extension module function with keyword-only parameters rejects them positionally, with Python's `TypeError`.
+
+## M31 — Iterators and generators
+- Generator functions with `yield`, `Iterator[T]` and `Iterable[T]` types, `for` over user iterators, and lazy `map` and `filter`.
+- Update SPEC first: the iterator protocol (`__iter__`, `__next__`), how generators compile, and the change to `map` and `filter` (they returned lists until now), with how existing code that indexes their results is reported.
+- **Accept:**
+  - An infinite generator consumed by `zip` with a finite list terminates, printing Python's output.
+  - Code that indexes the result of `map` gets a compile-time error suggesting `list(…)`.
+
+## M32 — Editor experience
+- Language server features beyond M24: completion (names in scope, members after `.`, imports), signature help, find references and rename (across modules), and semantic tokens.
+- A VS Code extension in the repository that starts `taipan lsp`, with a TextMate grammar for `.tpn` files.
+- Update SPEC first: what completion offers in each context, and what rename refuses (built-in names, .NET and Python names).
+- **Accept:**
+  - Scripted LSP sessions get completions for a local, a field after `.`, and a module's names, and a rename across two modules edits every reference.
+  - The VS Code extension packages with `vsce`, and highlights a sample file as its golden token list says.
+
+## M33 — .NET interop II
+- Delegates: passing Taipan functions and lambdas where .NET expects `Func<…>` or `Action<…>`, which unlocks LINQ (`Enumerable.Where`) and callbacks.
+- Generic .NET methods with inferred type arguments, `Dictionary<K, V>` as `dict[K, V]`, indexers, operators, and `async` methods (`Task<T>`) awaited with `await`.
+- Update SPEC first: how generic methods' type arguments are inferred, how a `Task` is awaited (and whether `async` comes to Taipan functions), and how a Taipan function converts to a delegate.
+- **Accept:**
+  - `Enumerable.Where(xs, lambda x: x > 2)` and a `Dictionary<string, int>` round trip give the right results.
+  - `await HttpClient().GetStringAsync(url)` against a local test server prints the response.
+
+## M34 — Build integration
+- An MSBuild project SDK, `TaipanLang.Sdk`, so `.tpn` files build with `dotnet build` as part of a .NET solution, with project references in both directions.
+- Libraries packed as NuGet packages (`taipan pack`), with a namespace, assembly name and version set in `taipan.json`.
+- Update SPEC first: the SDK's project format, which `taipan.json` keys it reads, and how a Taipan project references a C# project.
+- **Accept:**
+  - A solution with a Taipan project and a C# project referencing each other builds and tests with `dotnet test`.
+  - A packed Taipan library installs from a local feed into a fresh C# project and is called from it.
