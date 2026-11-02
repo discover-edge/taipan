@@ -1,4 +1,4 @@
-# Members are looked up on the static type, and fields must be declared (SPEC §3.9, §4.3).
+# Members are looked up on the static type, and fields must be declared (SPEC §3.9, §4.3). Since M27, vars and field paths narrow too.
 class Animal:
     name: str
 

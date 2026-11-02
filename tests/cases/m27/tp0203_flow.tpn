@@ -1,0 +1,80 @@
+# What ends narrowing, and the help that says why (SPEC §3.9).
+class Box:
+    value: int?
+    other: int?
+
+    def __init__(self, value: int?):
+        self.value = value
+        self.other = None
+
+    def clear(self):
+        self.value = None
+
+def lookup() -> int?:
+    return None
+
+def reassigned(x: int?) -> int:
+    var y = x
+    if y is None:
+        return 0
+    y = lookup()
+    return y + 1
+
+def ended_by_call(b: Box) -> int:
+    if b.value is None:
+        return 0
+    b.clear()
+    return b.value + 1
+
+def ended_by_assignment(b: Box, c: Box) -> int:
+    if b.value is None:
+        return 0
+    c.value = None
+    return b.value + 1
+
+def ended_in_condition(b: Box) -> int:
+    if b.value is not None and lookup() is None:
+        return b.value + 1
+    return 0
+
+def assigned_in_loop(x: int?):
+    var y = x
+    if y is None:
+        return
+    while True:
+        print(y + 1)
+        y = lookup()
+
+def assigned_by_nested(x: int?) -> int:
+    var y = x
+    def reset():
+        y = None
+    if y is None:
+        return 0
+    return y + 1
+
+def seen_by_lambda(x: int?) -> int:
+    var y = x
+    if y is None:
+        return 0
+    let f: Callable[[], int] = lambda: y + 1
+    return f()
+
+def rooted_at_var(b: Box) -> int:
+    var c = b
+    if c.value is None:
+        return 0
+    return c.value + 1
+
+class Animal:
+    pass
+
+class Dog(Animal):
+    def fetch(self):
+        pass
+
+def reassigned_class(a: Animal):
+    var pet = a
+    if isinstance(pet, Dog):
+        pet = Animal()
+        pet.fetch()

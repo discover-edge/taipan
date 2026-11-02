@@ -49,7 +49,7 @@ public sealed class InitChecker
 
     private bool IsSelf(BoundExpr expr) =>
         expr is BoundVariable { Symbol: var symbol } && symbol == _self
-        || expr is BoundNarrowed { Value.Symbol: var narrowed } && narrowed == _self;
+        || expr is BoundNarrowed { Value: BoundVariable { Symbol: var narrowed } } && narrowed == _self;
 
     private State Block(IEnumerable<BoundStmt> statements, State state, bool topLevel)
     {

@@ -368,7 +368,8 @@ public sealed record BoundIsInstance(BoundExpr Operand, ClassType Class, TextSpa
 }
 
 /// <summary>A name read where a condition has narrowed it (SPEC §3.9): <see cref="Value"/> is the variable.</summary>
-public sealed record BoundNarrowed(BoundVariable Value, TaipanType Type, TextSpan Span) : BoundExpr(Type, Span);
+/// <summary>A name or field path read where it's narrowed (SPEC §3.9): <see cref="Value"/> is the read, a variable or field access.</summary>
+public sealed record BoundNarrowed(BoundExpr Value, TaipanType Type, TextSpan Span) : BoundExpr(Type, Span);
 
 /// <summary><c>x as C</c> or <c>x as C?</c> between classes; <see cref="BoundExpr.Type"/> is the target.</summary>
 public sealed record BoundClassCast(BoundExpr Value, TaipanType Type, TextSpan Span) : BoundExpr(Type, Span);

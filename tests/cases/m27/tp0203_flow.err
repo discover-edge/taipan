@@ -1,0 +1,18 @@
+tests/cases/m27/tp0203_flow.tpn:21:12: error TP0203: int? must be narrowed before use
+  help: it can be None again after the assignment on line 20
+tests/cases/m27/tp0203_flow.tpn:27:12: error TP0203: int? must be narrowed before use
+  help: the call on line 26 could have changed it; copy it to a 'let' first
+tests/cases/m27/tp0203_flow.tpn:33:12: error TP0203: int? must be narrowed before use
+  help: the assignment to '.value' on line 32 could have changed it; copy it to a 'let' first
+tests/cases/m27/tp0203_flow.tpn:37:16: error TP0203: int? must be narrowed before use
+  help: the call on line 36 could have changed it; copy it to a 'let' first
+tests/cases/m27/tp0203_flow.tpn:45:15: error TP0203: int? must be narrowed before use
+  help: it can be None again after the assignment on line 46
+tests/cases/m27/tp0203_flow.tpn:54:12: error TP0203: int? must be narrowed before use
+  help: a nested function assigns it, so it isn't narrowed
+tests/cases/m27/tp0203_flow.tpn:60:40: error TP0203: int? must be narrowed before use
+  help: a lambda or nested function runs later, when it may have changed; copy it to a 'let' first
+tests/cases/m27/tp0203_flow.tpn:67:12: error TP0203: int? must be narrowed before use
+  help: copy it to a 'let' first
+tests/cases/m27/tp0203_flow.tpn:80:13: error TP0210: Animal has no method 'fetch'
+  help: it was assigned again on line 79
