@@ -27,7 +27,9 @@ public class PackageTests
             Succeed("dotnet", ["pack", "-c", "Release", "-o", packages], RepoPaths.Root, freshCache: false);
             Assert.True(File.Exists(Path.Combine(packages, $"TaipanLang.{version}.nupkg")));
             Assert.True(File.Exists(Path.Combine(packages, $"TaipanLang.Runtime.{version}.nupkg")));
-            Assert.Equal(2, Directory.GetFiles(packages, "*.nupkg").Length);
+            // The project SDK too, since M34 (SPEC §12.2, §18).
+            Assert.True(File.Exists(Path.Combine(packages, $"TaipanLang.Sdk.{version}.nupkg")));
+            Assert.Equal(3, Directory.GetFiles(packages, "*.nupkg").Length);
 
             // Only the local packages, so nothing comes from nuget.org.
             var config = Path.Combine(work, "nuget.config");
