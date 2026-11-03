@@ -57,6 +57,13 @@ public static class BoundTree
         BoundBinary binary => [binary.Left, binary.Right],
         BoundCall call => call.Arguments,
         BoundSetLiteral set => [.. set.Elements],
+        BoundComprehension comprehension => [.. comprehension.Clauses.SelectMany(c => c switch
+        {
+            BoundComprehensionFor loop => [loop.Iterable],
+            BoundComprehensionIf test => (IEnumerable<BoundExpr>)[test.Condition],
+            _ => [],
+        }), comprehension.Element, .. ((BoundExpr?[])[comprehension.Value]).OfType<BoundExpr>()],
+        BoundRangeValues range => [.. ((BoundExpr?[])[range.Start, range.Stop, range.Step]).OfType<BoundExpr>()],
         BoundRuntimeMethodCall call => [call.Target, .. call.Arguments],
         BoundMinMax minMax => [minMax.Values, .. ((BoundExpr?[])[minMax.Key, minMax.Default]).OfType<BoundExpr>()],
         BoundListLiteral list => list.Elements,
@@ -113,16 +120,38 @@ public static class BoundTree
     /// The lambdas in a statement's own expressions, each once, not counting lambdas inside them.
     /// (A compound assignment's value repeats its target, so the same lambda can be reached twice.)
     /// </summary>
-    public static IEnumerable<BoundLambda> Lambdas(BoundStmt stmt)
+    public static IEnumerable<BoundLambda> Lambdas(BoundStmt stmt) => Nested<BoundLambda>(stmt);
+
+    /// <summary>The comprehensions in a statement's own expressions, not inside lambdas or other comprehensions (SPEC §3.16).</summary>
+    public static IEnumerable<BoundComprehension> Comprehensions(BoundStmt stmt) => Nested<BoundComprehension>(stmt);
+
+    /// <summary>
+    /// A comprehension's parts as statements, a block of their own whose locals are its variables:
+    /// its unpacking, conditions, iterables, element and value.
+    /// </summary>
+    public static IEnumerable<BoundStmt> Parts(BoundComprehension comprehension) =>
+    [
+        .. comprehension.Clauses.SelectMany(c => c switch
+        {
+            BoundComprehensionFor loop => [new BoundExprStmt(loop.Iterable, loop.Iterable.Span), .. loop.Unpack],
+            BoundComprehensionIf test => (IEnumerable<BoundStmt>)[new BoundExprStmt(test.Condition, test.Condition.Span)],
+            _ => [],
+        }),
+        new BoundExprStmt(comprehension.Element, comprehension.Element.Span),
+        .. ((BoundExpr?[])[comprehension.Value]).OfType<BoundExpr>().Select(v => new BoundExprStmt(v, v.Span)),
+    ];
+
+    // Lambdas and comprehensions in a statement's own expressions, each once, without descending into either.
+    private static IEnumerable<T> Nested<T>(BoundStmt stmt) where T : BoundExpr
     {
-        var seen = new HashSet<BoundLambda>(ReferenceEqualityComparer.Instance);
+        var seen = new HashSet<T>(ReferenceEqualityComparer.Instance);
         var pending = new Stack<BoundExpr>(Expressions(stmt));
         while (pending.TryPop(out var expr))
         {
-            if (expr is BoundLambda lambda)
+            if (expr is BoundLambda or BoundComprehension)
             {
-                if (seen.Add(lambda))
-                    yield return lambda;
+                if (expr is T found && seen.Add(found))
+                    yield return found;
                 continue;
             }
             foreach (var child in Children(expr))
@@ -152,5 +181,5 @@ public static class BoundTree
 
     /// <summary>Whether a statement makes a closure anywhere inside it: a lambda or a nested <c>def</c>.</summary>
     public static bool MakesClosures(BoundStmt stmt) =>
-        stmt is BoundLocalFunction || Lambdas(stmt).Any() || Statements(stmt).Any(MakesClosures);
+        stmt is BoundLocalFunction || Lambdas(stmt).Any() || Comprehensions(stmt).Any() || Statements(stmt).Any(MakesClosures);
 }

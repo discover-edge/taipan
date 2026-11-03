@@ -1741,8 +1741,33 @@ public sealed class Parser
     private ImmutableArray<Argument> ParseCall()
     {
         Next();
+        // A generator expression that's the only argument drops its parentheses: sum(x for x in xs) (M36).
+        if (!At(TokenKind.CloseParen))
+        {
+            var start = Current.Span.Start;
+            var first = ParseArg();
+            if (At(TokenKind.ForKeyword) && first is { Name: null, Unpack: ArgumentUnpack.None })
+            {
+                var generator = ParseComprehension(ComprehensionKind.Generator, first.Value, null, TokenKind.CloseParen, start);
+                return [new Argument(null, generator, generator.Span)];
+            }
+            if (At(TokenKind.Comma))
+            {
+                Next();
+                var rest = ParseCommaList(TokenKind.CloseParen, ParseArg);
+                Expect(TokenKind.CloseParen);
+                return CheckArgumentOrder([first, .. rest]);
+            }
+            Expect(TokenKind.CloseParen);
+            return [first];
+        }
         var arguments = ParseCommaList(TokenKind.CloseParen, ParseArg);
         Expect(TokenKind.CloseParen);
+        return CheckArgumentOrder(arguments);
+    }
+
+    private ImmutableArray<Argument> CheckArgumentOrder(ImmutableArray<Argument> arguments)
+    {
 
         // A positional argument after a keyword argument is never valid (SPEC §2); `*e` counts as
         // positional, and `**e` as a keyword (M30).
@@ -1819,6 +1844,8 @@ public sealed class Parser
             {
                 Next();
                 var inner = ParseExpr();
+                if (At(TokenKind.ForKeyword))
+                    return ParseComprehension(ComprehensionKind.Generator, inner, null, TokenKind.CloseParen, token.Span.Start);
                 if (!At(TokenKind.Comma))
                 {
                     Expect(TokenKind.CloseParen);
@@ -1839,6 +1866,20 @@ public sealed class Parser
             case TokenKind.OpenBracket:
             {
                 Next();
+                if (!At(TokenKind.CloseBracket))
+                {
+                    var first = ParseExpr();
+                    if (At(TokenKind.ForKeyword))
+                        return ParseComprehension(ComprehensionKind.List, first, null, TokenKind.CloseBracket, token.Span.Start);
+                    var rest = ImmutableArray<Expr>.Empty;
+                    if (At(TokenKind.Comma))
+                    {
+                        Next();
+                        rest = ParseCommaList(TokenKind.CloseBracket, ParseExpr);
+                    }
+                    Expect(TokenKind.CloseBracket);
+                    return new ListExpr([first, .. rest], SpanFrom(token.Span.Start));
+                }
                 var elements = ParseCommaList(TokenKind.CloseBracket, ParseExpr);
                 Expect(TokenKind.CloseBracket);
                 return new ListExpr(elements, SpanFrom(token.Span.Start));
@@ -1850,6 +1891,8 @@ public sealed class Parser
                 if (!At(TokenKind.CloseBrace))
                 {
                     var first = ParseExpr();
+                    if (At(TokenKind.ForKeyword))
+                        return ParseComprehension(ComprehensionKind.Set, first, null, TokenKind.CloseBrace, token.Span.Start);
                     if (!At(TokenKind.Colon))
                     {
                         var elements = ImmutableArray.CreateBuilder<Expr>();
@@ -1865,7 +1908,10 @@ public sealed class Parser
                         return new SetExpr(elements.ToImmutable(), SpanFrom(token.Span.Start));
                     }
                     Next();
-                    var firstEntry = new DictEntry(first, ParseExpr(), SpanFrom(first.Span.Start));
+                    var firstValue = ParseExpr();
+                    if (At(TokenKind.ForKeyword))
+                        return ParseComprehension(ComprehensionKind.Dict, first, firstValue, TokenKind.CloseBrace, token.Span.Start);
+                    var firstEntry = new DictEntry(first, firstValue, SpanFrom(first.Span.Start));
                     var rest = ImmutableArray<DictEntry>.Empty;
                     if (At(TokenKind.Comma))
                     {
@@ -1884,6 +1930,26 @@ public sealed class Parser
                 ReportExpected("expression");
                 return new ErrorExpr(Here);
         }
+    }
+
+    // comp_for = "for" ( NAME | names ) "in" coalesce { "for" … "in" coalesce | "if" coalesce } (SPEC §3.16, M36)
+    private ComprehensionExpr ParseComprehension(ComprehensionKind kind, Expr element, Expr? value, TokenKind close, int start)
+    {
+        var clauses = ImmutableArray.CreateBuilder<ComprehensionClause>();
+        while (At(TokenKind.ForKeyword) || clauses.Count > 0 && At(TokenKind.IfKeyword))
+        {
+            var clauseStart = Current.Span.Start;
+            if (Next().Kind == TokenKind.IfKeyword)
+            {
+                clauses.Add(new ComprehensionIf(ParseCoalesce(), SpanFrom(clauseStart)));
+                continue;
+            }
+            var variables = ParseNames();
+            Expect(TokenKind.InKeyword);
+            clauses.Add(new ComprehensionFor(variables, ParseCoalesce(), SpanFrom(clauseStart)));
+        }
+        Expect(close);
+        return new ComprehensionExpr(kind, element, value, clauses.ToImmutable(), SpanFrom(start));
     }
 
     private DictEntry ParseDictEntry()

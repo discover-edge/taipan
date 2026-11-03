@@ -322,6 +322,20 @@ public sealed record BoundCall(FunctionSymbol Function, ImmutableArray<BoundExpr
     public ArgumentShape? Shape { get; init; }
 }
 
+/// <summary>A comprehension's <c>for</c>: its variable (a temporary that <see cref="Unpack"/> unpacks, with several targets) and iterable (SPEC §3.16).</summary>
+public abstract record BoundComprehensionClause;
+
+public sealed record BoundComprehensionFor(VariableSymbol Variable, BoundExpr Iterable, ImmutableArray<BoundStmt> Unpack) : BoundComprehensionClause;
+
+public sealed record BoundComprehensionIf(BoundExpr Condition) : BoundComprehensionClause;
+
+/// <summary>A comprehension or generator expression (SPEC §3.16, M36).</summary>
+public sealed record BoundComprehension(ComprehensionKind Kind, ImmutableArray<BoundComprehensionClause> Clauses, BoundExpr Element, BoundExpr? Value,
+    TaipanType Type, TextSpan Span) : BoundExpr(Type, Span);
+
+/// <summary><c>range(…)</c> as a comprehension's iterable (SPEC §3.16).</summary>
+public sealed record BoundRangeValues(BoundExpr? Start, BoundExpr Stop, BoundExpr? Step, TextSpan Span) : BoundExpr(new IterableOfType(TaipanType.Int), Span);
+
 /// <summary>A method M35 adds, called in its runtime class: <c>Taipan.Runtime.&lt;Kind&gt;Methods.&lt;Name&gt;</c> (SPEC §6).</summary>
 public sealed record BoundRuntimeMethodCall(string Kind, string Name, BoundExpr Target, ImmutableArray<BoundExpr> Arguments, TaipanType Type, TextSpan Span)
     : BoundExpr(Type, Span);

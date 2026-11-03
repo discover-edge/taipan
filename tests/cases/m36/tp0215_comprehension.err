@@ -1,0 +1,1 @@
+tests/cases/m36/tp0215_comprehension.tpn:9:15: error TP0215: 'await' can't be inside a comprehension

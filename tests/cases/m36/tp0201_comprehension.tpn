@@ -1,0 +1,3 @@
+# A comprehension's variable isn't visible after it (SPEC §3.16).
+let squares = [n * n for n in [1, 2]]
+print(n)

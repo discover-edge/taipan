@@ -1,0 +1,1 @@
+tests/cases/m36/tp0205_comprehension.tpn:3:25: error TP0205: condition must be bool, found int

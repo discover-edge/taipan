@@ -287,6 +287,19 @@ public sealed record ListExpr(ImmutableArray<Expr> Elements, TextSpan Span) : Ex
 
 public sealed record DictExpr(ImmutableArray<DictEntry> Entries, TextSpan Span) : Expr(Span);
 
+/// <summary>What a comprehension makes (SPEC §3.16, M36).</summary>
+public enum ComprehensionKind { List, Set, Dict, Generator }
+
+/// <summary>A comprehension's <c>for … in …</c> or <c>if …</c> (SPEC §3.16, M36).</summary>
+public abstract record ComprehensionClause(TextSpan Span) : Node(Span);
+
+public sealed record ComprehensionFor(ImmutableArray<Unpacked> Variables, Expr Iterable, TextSpan Span) : ComprehensionClause(Span);
+
+public sealed record ComprehensionIf(Expr Condition, TextSpan Span) : ComprehensionClause(Span);
+
+/// <summary><c>[e for …]</c>, <c>{k: v for …}</c>, <c>{e for …}</c> or <c>(e for …)</c>; <see cref="Value"/> is a dict's (SPEC §3.16, M36).</summary>
+public sealed record ComprehensionExpr(ComprehensionKind Kind, Expr Element, Expr? Value, ImmutableArray<ComprehensionClause> Clauses, TextSpan Span) : Expr(Span);
+
 /// <summary><c>{a, b}</c>, a set literal (SPEC §3.15, M35).</summary>
 public sealed record SetExpr(ImmutableArray<Expr> Elements, TextSpan Span) : Expr(Span);
 

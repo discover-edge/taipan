@@ -1,0 +1,2 @@
+tests/cases/m36/tp0206_comprehension.tpn:2:25: error TP0206: cannot infer the type of an empty list
+  help: add a type annotation
