@@ -1,0 +1,53 @@
+# Async generators' return types, async for over what isn't async, and async with (SPEC §3.20).
+import asyncio
+from types import TracebackType
+
+async def numbers() -> int:
+    yield 1
+
+async def stream() -> AsyncIterator[int]:
+    yield 1
+    return 2
+
+class Plain:
+    def __enter__(self) -> Plain:
+        return self
+
+    def __exit__(self, exc_type: type[BaseException]?, exc: BaseException?, tb: TracebackType?) -> None:
+        pass
+
+class Async:
+    async def __aenter__(self) -> Async:
+        return self
+
+    async def __aexit__(self, exc_type: type[BaseException]?, exc: BaseException?, tb: TracebackType?) -> None:
+        pass
+
+async def main():
+    async for x in [1, 2]:
+        print(x)
+    async for y in 5:
+        print(y)
+    for z in stream():
+        print(z)
+    async with Plain():
+        pass
+    with Async():
+        pass
+    async with 3:
+        pass
+    let s: AsyncIterator[str] = stream()
+    print(await anext(5))
+    print(await anext(stream(), "none"))
+
+async def ints() -> int:
+    return 1
+
+async def strs() -> str:
+    return ""
+
+async def gathered():
+    print(await asyncio.gather(ints(), strs()))
+    print(await asyncio.gather(1, ints()))
+    print(await asyncio.gather())
+    await asyncio.sleep("long")

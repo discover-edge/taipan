@@ -1,0 +1,4 @@
+tests/cases/m42/tp0215_async.tpn:5:5: error TP0215: 'yield from' can't be in an async generator
+tests/cases/m42/tp0215_async.tpn:11:5: error TP0215: 'async for' outside an async function
+tests/cases/m42/tp0215_async.tpn:13:5: error TP0215: 'async with' outside an async function
+tests/cases/m42/tp0215_async.tpn:16:18: error TP0215: 'yield' outside a function

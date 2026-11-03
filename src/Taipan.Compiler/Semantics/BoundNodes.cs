@@ -186,7 +186,11 @@ public sealed record BoundForRange(VariableSymbol Variable, BoundExpr? Start, Bo
 }
 
 /// <summary><c>for v in e</c> over a list (elements), dict (keys) or str (characters).</summary>
-public sealed record BoundForEach(VariableSymbol Variable, BoundExpr Iterable, BoundBlock Body, TextSpan Span) : BoundStmt(Span);
+public sealed record BoundForEach(VariableSymbol Variable, BoundExpr Iterable, BoundBlock Body, TextSpan Span) : BoundStmt(Span)
+{
+    /// <summary><c>async for</c> (SPEC §3.20, M42): <see cref="Iterable"/> is an async iterator, whose values are awaited.</summary>
+    public bool IsAsync { get; init; }
+}
 
 /// <summary>A <c>match</c>; arms marked unreachable (TP0300) are checked but not emitted.</summary>
 public sealed record BoundMatch(BoundExpr Scrutinee, ImmutableArray<BoundArm> Arms, TextSpan Span) : BoundStmt(Span);
@@ -316,6 +320,13 @@ public sealed record BoundUnary(UnaryOp Op, BoundExpr Operand, TaipanType Type, 
 
 /// <summary><c>await e</c>, giving what <c>e</c>'s awaitable gives (SPEC §3.14, M33).</summary>
 public sealed record BoundAwait(BoundExpr Operand, TaipanType Type, TextSpan Span) : BoundExpr(Type, Span);
+
+/// <summary>
+/// <c>asyncio.gather(…)</c> (SPEC §3.20, M42): awaitables, or lists of them to spread, whose results
+/// convert to <see cref="Element"/>, the type they join to.
+/// </summary>
+public sealed record BoundGather(ImmutableArray<(BoundExpr Value, bool Spread)> Items, TaipanType Element, TextSpan Span)
+    : BoundExpr(new AwaitableOfType(new ListOfType(Element)), Span);
 
 public sealed record BoundBinary(BoundExpr Left, BinaryOp Op, BoundExpr Right, TaipanType Type, TextSpan Span)
     : BoundExpr(Type, Span);
@@ -480,8 +491,13 @@ public sealed record BoundToIterable(BoundExpr Value, TaipanType Type, TextSpan 
 /// <summary><c>list(xs)</c> (M31): every value of an iterable, into a new list.</summary>
 public sealed record BoundToList(BoundExpr Values, ListOfType ListType, TextSpan Span) : BoundExpr(ListType, Span);
 
-/// <summary><c>yield e</c>, or <c>yield from e</c> when <see cref="From"/> (SPEC §3.13, M31).</summary>
-public sealed record BoundYield(BoundExpr Value, bool From, TextSpan Span) : BoundStmt(Span);
+/// <summary>
+/// <c>yield e</c>, a bare <c>yield</c> with no <see cref="Value"/>, or <c>yield from e</c> when
+/// <see cref="From"/> (SPEC §3.13, §3.20). Its type is what the generator is resumed with: what it
+/// receives, or for <c>yield from</c> a generator's return value (nothing over any other iterable).
+/// <see cref="Used"/> when its value is, so that <c>next</c> can't resume it without one.
+/// </summary>
+public sealed record BoundYield(BoundExpr? Value, bool From, bool Used, TaipanType Type, TextSpan Span) : BoundExpr(Type, Span);
 
 /// <summary>An element of a list being unpacked (M29): from the start, or for a negative <see cref="Index"/> from the end.</summary>
 public sealed record BoundListElement(BoundExpr List, int Index, TaipanType Type, TextSpan Span) : BoundExpr(Type, Span);
@@ -623,7 +639,11 @@ public sealed record BoundRuntimeProperty(BoundExpr Target, string Name, TaipanT
 /// gives; <see cref="Suppresses"/> is whether <c>__exit__</c> returns bool, and so may swallow an exception.
 /// </summary>
 public sealed record BoundWith(BoundExpr Manager, VariableSymbol? Binding, TaipanType Enter, bool Suppresses, BoundBlock Body, TextSpan Span)
-    : BoundStmt(Span);
+    : BoundStmt(Span)
+{
+    /// <summary><c>async with</c> (SPEC §3.20, M42): <c>__aenter__</c> and <c>__aexit__</c> are awaited.</summary>
+    public bool IsAsync { get; init; }
+}
 
 /// <summary><c>x[k] = v</c> on a class: its <c>__setitem__</c> (SPEC §4.9, M39). A compound one reads through <c>__getitem__</c> first.</summary>
 public sealed record BoundClassIndexAssign(BoundExpr Target, BoundExpr Index, BoundExpr Value, bool IsCompound, TextSpan Span) : BoundStmt(Span);

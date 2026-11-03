@@ -37,6 +37,13 @@ public static class TypeChecker
         // Anything iterable is an Iterable, and iterators are covariant for classes (SPEC §3.13).
         || (to is IterableOfType iterable && ElementOf(from) is { } element && IsElementOf(element, iterable.Element))
         || (to is IteratorOfType iterator && IteratorElementOf(from) is { } produced && IsElementOf(produced, iterator.Element))
+        // Generators are covariant in what they yield and return, as iterators are (SPEC §3.20).
+        || (from is GeneratorOfType fg && to is GeneratorOfType tg && IsElementOf(fg.Yielded, tg.Yielded) && fg.Sent == tg.Sent && IsElementOf(fg.Returned, tg.Returned))
+        || (from is AsyncGeneratorOfType fa && to is AsyncGeneratorOfType ta && IsElementOf(fa.Yielded, ta.Yielded) && fa.Sent == ta.Sent)
+        || (to is AsyncIterableOfType asyncIterable && AsyncElementOf(from) is { } asyncElement && IsElementOf(asyncElement, asyncIterable.Element))
+        || (to is AsyncIteratorOfType asyncIterator && AsyncIteratorElementOf(from) is { } asyncProduced && IsElementOf(asyncProduced, asyncIterator.Element))
+        // Any value is an object (SPEC §3.20).
+        || (to is ObjectType && from is not NothingType)
         || (from is FunctionType f && to is FunctionType t && f.Parameters.Length == t.Parameters.Length
             && t.Parameters.Zip(f.Parameters).All(pair => IsSubtype(pair.First, pair.Second))
             && (f.Result == t.Result || (f.Result is not NothingType && t.Result is not NothingType && IsSubtype(f.Result, t.Result))));
@@ -62,6 +69,7 @@ public static class TypeChecker
         PrimitiveType { Name: "str" } => TaipanType.Str,
         IteratorOfType iterator => iterator.Element,
         IterableOfType iterable => iterable.Element,
+        GeneratorOfType generator => generator.Yielded,
         OpaqueType { Name: "TextIO" } => TaipanType.Str,
         ClassType classType when classType.Symbol.FindMethod("__iter__") is { ReturnType: var result } => Substitute(result, MapOf(classType)) is IteratorOfType iterator ? iterator.Element : null,
         ClassType => IteratorElementOf(type),
@@ -72,9 +80,33 @@ public static class TypeChecker
     public static TaipanType? IteratorElementOf(TaipanType type) => type switch
     {
         IteratorOfType iterator => iterator.Element,
+        GeneratorOfType generator => generator.Yielded,
         // A file is an iterator over its lines (SPEC §6.1).
         OpaqueType { Name: "TextIO" } => TaipanType.Str,
         ClassType classType when classType.Symbol.FindMethod("__next__") is { ReturnType: var result } => Substitute(result, MapOf(classType)),
+        _ => null,
+    };
+
+    /// <summary>
+    /// The values <c>async for</c> takes from a value of this type (SPEC §3.20): an async iterator's,
+    /// iterable's or generator's, or a class's through its <c>__aiter__</c> or <c>__anext__</c>. Null
+    /// if it isn't async iterable.
+    /// </summary>
+    public static TaipanType? AsyncElementOf(TaipanType type) => type switch
+    {
+        AsyncIterableOfType iterable => iterable.Element,
+        ClassType classType when classType.Symbol.FindMethod("__aiter__") is { ReturnType: var result } =>
+            Substitute(result, MapOf(classType)) is AsyncIteratorOfType iterator ? iterator.Element : null,
+        _ => AsyncIteratorElementOf(type),
+    };
+
+    /// <summary>The values a type gives as an async iterator: an async iterator's or generator's, or a class's async <c>__anext__</c>'s.</summary>
+    public static TaipanType? AsyncIteratorElementOf(TaipanType type) => type switch
+    {
+        AsyncIteratorOfType iterator => iterator.Element,
+        AsyncGeneratorOfType generator => generator.Yielded,
+        ClassType classType when classType.Symbol.FindMethod("__anext__") is { IsAsync: true, ReturnType: AwaitableOfType result } =>
+            Substitute(result.Result, MapOf(classType)),
         _ => null,
     };
 
@@ -151,6 +183,10 @@ public static class TypeChecker
             SetOfType set => new SetOfType(Substitute(set.Element, map)),
             AwaitableOfType awaitable => new AwaitableOfType(Substitute(awaitable.Result, map)),
             IterableOfType iterable => new IterableOfType(Substitute(iterable.Element, map)),
+            GeneratorOfType generator => new GeneratorOfType(Substitute(generator.Yielded, map), Substitute(generator.Sent, map), Substitute(generator.Returned, map)),
+            AsyncIteratorOfType iterator => new AsyncIteratorOfType(Substitute(iterator.Element, map)),
+            AsyncIterableOfType iterable => new AsyncIterableOfType(Substitute(iterable.Element, map)),
+            AsyncGeneratorOfType generator => new AsyncGeneratorOfType(Substitute(generator.Yielded, map), Substitute(generator.Sent, map)),
             DictOfType dict => new DictOfType(Substitute(dict.Key, map), Substitute(dict.Value, map)),
             ClassType classType => classType with { TypeArguments = [.. classType.TypeArguments.Select(a => Substitute(a, map))] },
             EnumType enumType => enumType with { TypeArguments = [.. enumType.TypeArguments.Select(a => Substitute(a, map))] },
@@ -173,6 +209,11 @@ public static class TypeChecker
             SetOfType set => Same(set.Element, out var element) ? plain : new SetOfType(element),
             AwaitableOfType awaitable => Same(awaitable.Result, out var result) ? plain : new AwaitableOfType(result),
             IterableOfType iterable => Same(iterable.Element, out var element) ? plain : new IterableOfType(element),
+            GeneratorOfType generator => Same(generator.Yielded, out var yielded) & Same(generator.Sent, out var sent) & Same(generator.Returned, out var returned)
+                ? plain : new GeneratorOfType(yielded, sent, returned),
+            AsyncIteratorOfType iterator => Same(iterator.Element, out var element) ? plain : new AsyncIteratorOfType(element),
+            AsyncIterableOfType iterable => Same(iterable.Element, out var element) ? plain : new AsyncIterableOfType(element),
+            AsyncGeneratorOfType generator => Same(generator.Yielded, out var yielded) & Same(generator.Sent, out var sent) ? plain : new AsyncGeneratorOfType(yielded, sent),
             DictOfType dict => Same(dict.Key, out var key) & Same(dict.Value, out var value) ? plain : new DictOfType(key, value),
             ClassType classType => classType.TypeArguments.Any(HasAlias) ? classType with { TypeArguments = [.. classType.TypeArguments.Select(Unaliased)] } : plain,
             EnumType enumType => enumType.TypeArguments.Any(HasAlias) ? enumType with { TypeArguments = [.. enumType.TypeArguments.Select(Unaliased)] } : plain,
@@ -316,6 +357,10 @@ public static class TypeChecker
         IteratorOfType iterator => new IteratorOfType(SubstituteSelf(iterator.Element, receiver)),
         IterableOfType iterable => new IterableOfType(SubstituteSelf(iterable.Element, receiver)),
         AwaitableOfType awaitable => new AwaitableOfType(SubstituteSelf(awaitable.Result, receiver)),
+        GeneratorOfType generator => new GeneratorOfType(SubstituteSelf(generator.Yielded, receiver), SubstituteSelf(generator.Sent, receiver), SubstituteSelf(generator.Returned, receiver)),
+        AsyncIteratorOfType iterator => new AsyncIteratorOfType(SubstituteSelf(iterator.Element, receiver)),
+        AsyncIterableOfType iterable => new AsyncIterableOfType(SubstituteSelf(iterable.Element, receiver)),
+        AsyncGeneratorOfType generator => new AsyncGeneratorOfType(SubstituteSelf(generator.Yielded, receiver), SubstituteSelf(generator.Sent, receiver)),
         DictOfType dict => new DictOfType(SubstituteSelf(dict.Key, receiver), SubstituteSelf(dict.Value, receiver)),
         TupleOfType tuple => new TupleOfType([.. tuple.Elements.Select(e => SubstituteSelf(e, receiver))]),
         FunctionType function => new FunctionType([.. function.Parameters.Select(p => SubstituteSelf(p, receiver))], SubstituteSelf(function.Result, receiver)),

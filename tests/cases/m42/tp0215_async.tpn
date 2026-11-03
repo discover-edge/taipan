@@ -1,0 +1,16 @@
+# Where yield from, async for and async with can't be (SPEC §3.20).
+import asyncio
+
+async def delegating() -> AsyncIterator[int]:
+    yield from [1, 2]
+
+async def items() -> AsyncIterator[int]:
+    yield 1
+
+def plain():
+    async for x in items():
+        print(x)
+    async with asyncio.timeout(1.0):
+        pass
+
+let f = lambda: (yield 1)

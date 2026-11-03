@@ -1,0 +1,23 @@
+None
+6 10
+stopped None
+0 5 12
+ask
+got answer
+HI
+THERE
+1
+inner got 7
+2
+inner caught
+3
+inner finally
+outer got inner done
+4
+-1
+inner finally
+-1
+[1, 2, 10, 20, 3] 36
+[1] 1
+value 1
+0

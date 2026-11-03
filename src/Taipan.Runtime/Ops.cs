@@ -398,6 +398,31 @@ public static class Ops
         throw NotSupported(op, left, right);
     }
 
+    /// <summary><c>x as T</c> on an object (SPEC §3.20): its value, if it's a <c>T</c>.</summary>
+    public static T Unbox<T>(object? value, string type) =>
+        value is T typed ? typed : throw new TypeError($"cannot convert {TypeOf(value)} to {type}");
+
+    /// <summary><c>x as T?</c> on an object: None if it isn't a <c>T</c>.</summary>
+    public static T? UnboxValueOrNone<T>(object? value) where T : struct => value is T typed ? typed : null;
+
+    public static T? UnboxOrNone<T>(object? value) where T : class => value as T;
+
+    // A value's Taipan type, as a message names it.
+    private static string TypeOf(object? value) => value switch
+    {
+        null => "None",
+        long => "int",
+        double => "float",
+        bool => "bool",
+        string => "str",
+        IStruct s => s.TypeName,
+        IObject o => o.TypeName,
+        System.Collections.IList => "list",
+        System.Collections.IDictionary => "dict",
+        System.Runtime.CompilerServices.ITuple => "tuple",
+        _ => value.GetType().Name,
+    };
+
     private static TypeError NotSupported(int op, object left, object right)
     {
         var symbol = op switch { IClass.Lt => "<", IClass.Le => "<=", IClass.Gt => ">", _ => ">=" };

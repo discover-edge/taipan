@@ -1,4 +1,3 @@
-# yield needs a value, and is a statement (SPEC §2).
+# A yield is an expression since M42, which needs parentheses inside another (SPEC §2, §3.20).
 def gen() -> Iterator[int]:
-    yield
-    let x = yield 1
+    let xs = [yield 1]

@@ -1,0 +1,17 @@
+# asyncio.run runs the event loop from code that doesn't await (SPEC §3.20).
+import asyncio
+
+async def add(a: int, b: int) -> int:
+    await asyncio.sleep(0)
+    return a + b
+
+async def main() -> int:
+    let total = await add(1, 2)
+    try:
+        asyncio.run(add(3, 4))
+    except RuntimeError as e:
+        print(e)
+    return total
+
+print(asyncio.run(main()))
+print(asyncio.run(add(5, 6)))

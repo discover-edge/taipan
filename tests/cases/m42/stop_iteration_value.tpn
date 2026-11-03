@@ -1,0 +1,43 @@
+# StopIteration.value is an object, read with 'as' (SPEC §3.20).
+def answer() -> Generator[int, None, int]:
+    yield 1
+    return 42
+
+let g = answer()
+next(g)
+try:
+    next(g)
+except StopIteration as e:
+    let v = e.value
+    print(v, v is None, v is not None)
+    print((v as int) + 1)
+    print(v as str?)
+    try:
+        print(v as str)
+    except TypeError as err:
+        print(err)
+
+def names() -> Generator[str, None, list[str]]:
+    yield "a"
+    return ["x", "y"]
+
+let n = names()
+for name in n:
+    print(name)
+try:
+    next(n)
+except StopIteration as e:
+    print(e.value, e.value is None)
+
+let stop = StopIteration("message")
+print(stop.value is None, stop)
+
+def nothing() -> Iterator[int]:
+    yield 1
+
+let it = nothing()
+next(it)
+try:
+    next(it)
+except StopIteration as e:
+    print(e.value, e.value as int?)

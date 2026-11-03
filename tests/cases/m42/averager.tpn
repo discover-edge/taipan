@@ -1,0 +1,57 @@
+# M42 acceptance: a coroutine-style generator driven with send prints CPython's output (SPEC §3.20).
+def averager() -> Generator[float, float, int]:
+    var total = 0.0
+    var count = 0
+    var average = 0.0
+    while count < 3:
+        let value = yield average
+        total += value
+        count += 1
+        average = total / count
+    return count
+
+let avg = averager()
+print(next(avg))
+print(avg.send(10.0), avg.send(20.0))
+try:
+    avg.send(45.0)
+except StopIteration as e:
+    print("averaged", e.value)
+print(next(avg, -1.0))
+
+def accumulate() -> Generator[int, int, str]:
+    var total = 0
+    var n = yield total
+    while n >= 0:
+        total += n
+        n = yield total
+    return f"total {total}"
+
+let acc = accumulate()
+print(acc)
+next(acc)
+for n in [5, 10, 20]:
+    print(acc.send(n))
+try:
+    acc.send(-1)
+except StopIteration as e:
+    print(e.value)
+
+def collect(n: int) -> Generator[int, int, list[int]]:
+    var items: list[int] = []
+    for i in range(n):
+        items.append((yield i))
+    return items
+
+def pairs() -> Generator[int, int, list[int]]:
+    let a = yield from collect(2)
+    let b = yield from collect(2)
+    return a + b
+
+let p = pairs()
+print(next(p))
+print(p.send(10), p.send(11), p.send(12))
+try:
+    p.send(13)
+except StopIteration as e:
+    print(e.value)

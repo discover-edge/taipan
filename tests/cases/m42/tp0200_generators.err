@@ -1,0 +1,13 @@
+tests/cases/m42/tp0200_generators.tpn:3:5: error TP0200: 'yield' needs a value: 'bare' yields int
+tests/cases/m42/tp0200_generators.tpn:7:12: error TP0200: a generator declared 'Iterator[int]' can't return a value
+  help: declare it 'Generator[Y, S, R]'
+tests/cases/m42/tp0200_generators.tpn:9:5: error TP0200: 'unfinished' can end without returning a str
+tests/cases/m42/tp0200_generators.tpn:13:16: error TP0200: 'yield from' over list[int] gives no value
+tests/cases/m42/tp0200_generators.tpn:21:16: error TP0200: expected Generator[int, int, None], found Generator[int, str, None]
+tests/cases/m42/tp0200_generators.tpn:24:18: error TP0200: expected str, found int
+tests/cases/m42/tp0200_generators.tpn:28:8: error TP0200: expected int, found str
+tests/cases/m42/tp0200_generators.tpn:29:14: error TP0200: expected str, found int
+tests/cases/m42/tp0200_generators.tpn:39:11: error TP0200: operator '+' cannot be applied to object and int
+tests/cases/m42/tp0200_generators.tpn:40:19: error TP0200: object has no attribute 'real'
+  help: convert it with 'as'
+tests/cases/m42/tp0200_generators.tpn:41:15: error TP0200: expected str, list, dict or set, found object

@@ -22,7 +22,6 @@ public static class BoundTree
         BoundDelete delete => delete.Targets,
         BoundReturn { Value: { } value } => [value],
         BoundRaise { Value: { } value } raise => raise.Cause is { } cause ? [value, cause] : [value],
-        BoundYield yield => [yield.Value],
         BoundTry tryStmt => tryStmt.Handlers.SelectMany(h => h.PythonClasses),
         BoundExprStmt exprStmt => [exprStmt.Expr],
         BoundIf ifStmt => ifStmt.Clauses.Select(c => c.Condition),
@@ -57,6 +56,8 @@ public static class BoundTree
     {
         BoundUnary unary => [unary.Operand],
         BoundAwait awaited => [awaited.Operand],
+        BoundYield { Value: { } yielded } => [yielded],
+        BoundGather gather => gather.Items.Select(i => i.Value),
         BoundBinary binary => [binary.Left, binary.Right],
         BoundCall call => call.Arguments,
         BoundSetLiteral set => [.. set.Elements],

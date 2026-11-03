@@ -22,6 +22,8 @@ public static class Panic
     public static int Run(Action topLevel, string[] arguments)
     {
         Sys.Start(arguments);
+        // Async code runs on this thread's event loop (SPEC §3.20).
+        EventLoop.Start();
         try
         {
             topLevel();

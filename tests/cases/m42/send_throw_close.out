@@ -1,0 +1,29 @@
+open log
+ready
+job a
+step done
+ready
+handled bad
+step done
+ready
+step done
+close log False
+handled 1
+0 1
+ticker closed
+-1
+-1
+ignoring
+generator ignored GeneratorExit
+propagated thrown
+99
+finished again
+early early
+99
+caught KeyError
+waiting
+caught TypeError
+waiting
+exit
+can't send non-None value to a just-started generator
+generator already executing

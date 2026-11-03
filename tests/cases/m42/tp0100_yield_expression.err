@@ -1,0 +1,2 @@
+tests/cases/m42/tp0100_yield_expression.tpn:3:11: error TP0100: expected expression, found 'yield'
+tests/cases/m42/tp0100_yield_expression.tpn:4:17: error TP0100: expected expression, found 'yield'

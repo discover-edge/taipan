@@ -1,0 +1,32 @@
+# M42 acceptance: two async generators consumed with async for, run together with gather,
+# interleave as in Python (SPEC §3.20).
+import asyncio
+
+async def ticks(name: str, n: int) -> AsyncIterator[str]:
+    for i in range(n):
+        await asyncio.sleep(0)
+        yield f"{name}{i}"
+
+async def letters(word: str) -> AsyncIterator[str]:
+    for c in word:
+        await asyncio.sleep(0)
+        yield c.upper()
+
+async def consume(name: str, n: int) -> int:
+    var count = 0
+    async for t in ticks(name, n):
+        print(t)
+        count += 1
+    return count
+
+async def spell(word: str) -> str:
+    var out = ""
+    async for c in letters(word):
+        print("letter", c)
+        out += c
+    return out
+
+print(await asyncio.gather(consume("a", 2), consume("b", 3)))
+print(await asyncio.gather(spell("hi"), spell("yo")))
+let none: list[int] = await asyncio.gather()
+print(none)

@@ -1,0 +1,11 @@
+# Resuming a generator waiting for a value with next() is a TypeError when S doesn't accept None (SPEC §3.20).
+def echo() -> Generator[str, str, None]:
+    while True:
+        let line = yield "> "
+        print(line)
+
+let e = echo()
+print(next(e))
+print(e.send("hello"))
+for prompt in e:
+    print("never", prompt)

@@ -1,0 +1,28 @@
+finished quick
+cleanup quick
+quick
+cancelled inner
+cleanup inner
+outer cleanup
+timed out
+ignoring cancel
+kept going
+cancelled block
+cleanup block
+timeout block True
+finished in time
+cleanup in time
+in time
+c 0
+c 1
+c 2
+gather raised failed after 0.01
+cancelled g1
+cleanup g1
+cancelled g2
+cleanup g2
+gather timed out
+slept
+early
+middle
+late

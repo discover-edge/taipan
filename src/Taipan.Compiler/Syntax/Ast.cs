@@ -140,8 +140,11 @@ public sealed record ReturnStmt(Expr? Value, TextSpan Span) : Stmt(Span);
 /// <summary><c>raise e</c>, or a bare <c>raise</c> when <see cref="Value"/> is null (SPEC §3.10).</summary>
 public sealed record RaiseStmt(Expr? Value, Expr? Cause, TextSpan Span) : Stmt(Span);
 
-/// <summary><c>yield e</c>, or <c>yield from e</c> when <see cref="From"/> (SPEC §3.13, M31).</summary>
-public sealed record YieldStmt(Expr Value, bool From, TextSpan Span) : Stmt(Span);
+/// <summary>
+/// <c>yield e</c>, or <c>yield from e</c> when <see cref="From"/> (SPEC §3.13, M31); a bare
+/// <c>yield</c> has no <see cref="Value"/> (M42).
+/// </summary>
+public sealed record YieldStmt(Expr? Value, bool From, TextSpan Span) : Stmt(Span);
 
 /// <summary><c>del a[i], d[k]</c>: its targets, deleted left to right (SPEC §5.5, M26).</summary>
 public sealed record DelStmt(ImmutableArray<Expr> Targets, TextSpan Span) : Stmt(Span);
@@ -165,7 +168,11 @@ public sealed record IfClause(Condition Condition, Block Body, TextSpan Span) : 
 public sealed record WhileStmt(Condition Condition, Block Body, TextSpan Span) : Stmt(Span);
 
 /// <summary>One plain name is the loop variable; anything else unpacks each element (SPEC §5.2).</summary>
-public sealed record ForStmt(ImmutableArray<Unpacked> Variables, Expr Iterable, Block Body, TextSpan Span) : Stmt(Span);
+public sealed record ForStmt(ImmutableArray<Unpacked> Variables, Expr Iterable, Block Body, TextSpan Span) : Stmt(Span)
+{
+    /// <summary><c>async for</c> (SPEC §3.20, M42).</summary>
+    public bool IsAsync { get; init; }
+}
 
 public sealed record MatchStmt(Expr Scrutinee, ImmutableArray<MatchArm> Arms, TextSpan Span) : Stmt(Span);
 
@@ -173,7 +180,11 @@ public sealed record MatchStmt(Expr Scrutinee, ImmutableArray<MatchArm> Arms, Te
 public sealed record TryStmt(Block Body, ImmutableArray<ExceptClause> Handlers, Block? Else, Block? Finally, TextSpan Span) : Stmt(Span);
 
 /// <summary><c>with</c> and its items, which nest left to right (SPEC §3.17).</summary>
-public sealed record WithStmt(ImmutableArray<WithItem> Items, Block Body, TextSpan Span) : Stmt(Span);
+public sealed record WithStmt(ImmutableArray<WithItem> Items, Block Body, TextSpan Span) : Stmt(Span)
+{
+    /// <summary><c>async with</c> (SPEC §3.20, M42).</summary>
+    public bool IsAsync { get; init; }
+}
 
 /// <summary>One <c>with</c> item: a context manager and the name its <c>__enter__</c> result is bound to, if any.</summary>
 public sealed record WithItem(Expr Manager, Identifier? Binding, TextSpan Span) : Node(Span);
@@ -280,6 +291,9 @@ public sealed record VarTupleType(TypeSyntax Element, TextSpan Span) : TypeSynta
 /// <summary><c>Callable[[A, B], R]</c>; <see cref="Result"/> is null for a result of <c>None</c> (SPEC §3.7).</summary>
 public sealed record CallableType(ImmutableArray<TypeSyntax> Parameters, TypeSyntax? Result, TextSpan Span) : TypeSyntax(Span);
 
+/// <summary><c>None</c> as a type argument of <c>Generator</c> or <c>AsyncGenerator</c> (SPEC §3.20, M42).</summary>
+public sealed record NoneTypeSyntax(TextSpan Span) : TypeSyntax(Span);
+
 /// <summary><c>Awaitable[T]</c>, or <c>Awaitable[None]</c> with no <see cref="Result"/> (SPEC §3.14, M33).</summary>
 public sealed record AwaitableType(TypeSyntax? Result, TextSpan Span) : TypeSyntax(Span);
 
@@ -349,6 +363,12 @@ public sealed record DictEntry(Expr Key, Expr Value, TextSpan Span) : Node(Span)
 public enum UnaryOp { Negate, Not }
 
 public sealed record UnaryExpr(UnaryOp Op, Expr Operand, TextSpan Span) : Expr(Span);
+
+/// <summary>
+/// A <c>yield</c> whose value is used (SPEC §3.20, M42): the right side of <c>let</c>, <c>var</c> or
+/// an assignment, or in parentheses. A bare <c>yield</c> has no <see cref="Value"/>.
+/// </summary>
+public sealed record YieldExpr(Expr? Value, bool From, TextSpan Span) : Expr(Span);
 
 /// <summary><c>await e</c> (SPEC §3.14, M33).</summary>
 public sealed record AwaitExpr(Expr Operand, TextSpan Span) : Expr(Span);

@@ -25,7 +25,9 @@ public sealed class VariableSymbol(string name, TaipanType type, VariableKind ki
     public string? RuntimePath { get; init; }
 }
 
-public enum BuiltinFunction { Print, Len, Str, Int, Float, Range, Sorted, Map, Filter, Enumerate, Zip, IsInstance, Super, Repr, Hash, List, Iter, Next, Abs, Min, Max, Sum, Any, All, Round, DivMod, Set, Tuple, Input, Open, Exit, GetEnv }
+public enum BuiltinFunction { Print, Len, Str, Int, Float, Range, Sorted, Map, Filter, Enumerate, Zip, IsInstance, Super, Repr, Hash, List, Iter, Next, Abs, Min, Max, Sum, Any, All, Round, DivMod, Set, Tuple, Input, Open, Exit, GetEnv,
+    // M42 (SPEC §3.20): anext, and asyncio's functions.
+    Anext, Gather, Sleep, WaitFor, Timeout, Run }
 
 /// <summary>What kind of method a function is (SPEC §4.8, M28); <see cref="Instance"/> for a function.</summary>
 public enum MemberKind { Instance, Property, Static, Class }
@@ -174,6 +176,8 @@ public sealed class FunctionSymbol(
         new("tuple", [], TaipanType.Error, BuiltinFunction.Tuple),
         new("input", [], TaipanType.Str, BuiltinFunction.Input),
         new("open", [], TaipanType.TextIO, BuiltinFunction.Open),
+        // M42 (SPEC §3.20).
+        new("anext", [], TaipanType.Error, BuiltinFunction.Anext),
     ];
 }
 
@@ -401,6 +405,11 @@ public static class BuiltinClasses
 
     public static ClassSymbol OverflowError => All.First(c => c.Name == "OverflowError");
 
+    public static ClassSymbol TimeoutError => All.First(c => c.Name == "TimeoutError");
+
+    /// <summary><c>asyncio.CancelledError</c> (SPEC §3.20, M42): a <c>BaseException</c> that isn't a global name.</summary>
+    public static ClassSymbol CancelledError { get; } = Builtin("CancelledError", BaseException);
+
     public static ImmutableArray<ClassSymbol> All { get; } = CreateAll();
 
     /// <summary>Whether only the runtime makes exceptions of this class, so it can't be constructed or derived from.</summary>
@@ -455,6 +464,14 @@ public static class BuiltinClasses
         return error;
     }
 
+    // StopIteration's value, the generator's return value (SPEC §3.20, M42).
+    private static ClassSymbol CreateStopIteration()
+    {
+        var stop = Builtin("StopIteration", Exception);
+        stop.Fields = [new FieldSymbol("value", TaipanType.Object) { Owner = stop }];
+        return stop;
+    }
+
     private static ClassSymbol CreatePythonError()
     {
         var error = Builtin("PythonError", "PythonError", Exception);
@@ -494,7 +511,10 @@ public static class BuiltinClasses
             value,
             Builtin("TypeError", Exception),
             Builtin("RuntimeError", Exception),
-            Builtin("StopIteration", Exception),
+            CreateStopIteration(),
+            // M42 (SPEC §3.20).
+            Builtin("GeneratorExit", BaseException),
+            Builtin("StopAsyncIteration", Exception),
             PythonError,
             DotNetError,
             Builtin("EOFError", Exception),
@@ -503,6 +523,7 @@ public static class BuiltinClasses
             Builtin("FileExistsError", os),
             Builtin("PermissionError", os),
             Builtin("IsADirectoryError", os),
+            Builtin("TimeoutError", os),
             unicode,
             Builtin("UnicodeDecodeError", unicode),
             Builtin("UnicodeEncodeError", unicode),
@@ -647,11 +668,18 @@ public sealed class BuiltinTypeSymbol(string name, TaipanType type) : Symbol(nam
 /// <summary>The built-in modules <c>sys</c>, <c>os</c> and <c>types</c> (SPEC §4.7, §6.1, M37).</summary>
 public static class BuiltinModules
 {
-    public static bool IsBuiltin(string name) => name is "sys" or "os" or "types";
+    public static bool IsBuiltin(string name) => name is "sys" or "os" or "types" or "asyncio";
 
     /// <summary>The module's names; a new symbol each time, as a file's own import is (SPEC §4.7).</summary>
     public static ModuleSymbol Symbol(string module, string boundName) =>
-        new(boundName, Definitions[module], new Dictionary<string, ClassSymbol>(), new Dictionary<string, EnumSymbol>());
+        new(boundName, Definitions[module], module == "asyncio" ? AsyncioClasses() : new Dictionary<string, ClassSymbol>(), new Dictionary<string, EnumSymbol>());
+
+    // asyncio's exception classes (SPEC §3.20, M42); its TimeoutError is the built-in one.
+    private static Dictionary<string, ClassSymbol> AsyncioClasses() => new()
+    {
+        ["CancelledError"] = BuiltinClasses.CancelledError,
+        ["TimeoutError"] = BuiltinClasses.TimeoutError,
+    };
 
     private static readonly Dictionary<string, IReadOnlyDictionary<string, Symbol>> Definitions = new()
     {
@@ -671,6 +699,18 @@ public static class BuiltinModules
         ["types"] = new Dictionary<string, Symbol>
         {
             ["TracebackType"] = new BuiltinTypeSymbol("TracebackType", TaipanType.Traceback),
+        },
+        // M42 (SPEC §3.20).
+        ["asyncio"] = new Dictionary<string, Symbol>
+        {
+            ["gather"] = new FunctionSymbol("gather", [], TaipanType.Error, BuiltinFunction.Gather),
+            ["sleep"] = new FunctionSymbol("sleep", [], TaipanType.Error, BuiltinFunction.Sleep),
+            ["wait_for"] = new FunctionSymbol("wait_for", [], TaipanType.Error, BuiltinFunction.WaitFor),
+            ["timeout"] = new FunctionSymbol("timeout", [], TaipanType.Error, BuiltinFunction.Timeout),
+            ["run"] = new FunctionSymbol("run", [], TaipanType.Error, BuiltinFunction.Run),
+            ["CancelledError"] = BuiltinClasses.CancelledError,
+            ["TimeoutError"] = BuiltinClasses.TimeoutError,
+            ["Timeout"] = new BuiltinTypeSymbol("Timeout", TaipanType.Timeout),
         },
     };
 

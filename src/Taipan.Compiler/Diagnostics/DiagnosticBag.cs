@@ -833,8 +833,6 @@ public sealed class DiagnosticBag
 
     // ---- Iterators and generators (SPEC §3.13, M31) ----
 
-    public void ReportBareYield(TextSpan span) =>
-        Add("TP0100", span, "'yield' needs a value");
 
     public void ReportYieldOutsideFunction(TextSpan span) =>
         Add("TP0215", span, "'yield' outside a function");
@@ -845,8 +843,12 @@ public sealed class DiagnosticBag
     public void ReportAwaitInComprehension(TextSpan span) =>
         Add("TP0215", span, "'await' can't be inside a comprehension");
 
-    public void ReportYieldInAsync(TextSpan span) =>
-        Add("TP0215", span, "'yield' in an async function");
+    public void ReportYieldFromInAsync(TextSpan span) =>
+        Add("TP0215", span, "'yield from' can't be in an async generator");
+
+    /// <summary><c>async for</c> or <c>async with</c> where <c>await</c> can't be (SPEC §3.20).</summary>
+    public void ReportAsyncOutsideAsync(TextSpan span, string statement) =>
+        Add("TP0215", span, $"'{statement}' outside an async function");
 
     public void ReportUnmetConstraint(TextSpan span, Semantics.TaipanType argument, string constraint, string parameter, string member) =>
         Add("TP0200", span, $"'{argument}' doesn't satisfy the constraint '{constraint}' on '{parameter}' of '{member}'");
@@ -857,14 +859,24 @@ public sealed class DiagnosticBag
     public void ReportAwaitableDiscarded(TextSpan span) =>
         Add("TP0235", span, "this awaitable is never awaited", "write 'await …'");
 
-    public void ReportYieldInWith(TextSpan span) =>
-        Add("TP0215", span, "'yield' can't be inside a 'with'");
 
     public void ReportHalfContextManager(TextSpan span, string className, string has, string lacks) =>
         Add("TP0225", span, $"'{className}' defines '{has}' but not '{lacks}'");
 
-    public void ReportNotContextManager(TextSpan span, Semantics.TaipanType type) =>
-        Add("TP0200", span, $"{type} is not a context manager", "define '__enter__' and '__exit__'");
+    /// <summary>Not a context manager; an async one gets help to use <c>async with</c> (SPEC §3.20).</summary>
+    public void ReportNotContextManager(TextSpan span, Semantics.TaipanType type, bool isAsync = false) =>
+        Add("TP0200", span, $"{type} is not a context manager", isAsync ? "use 'async with'" : "define '__enter__' and '__exit__'");
+
+    /// <summary>Not an async context manager; a plain one gets help to use <c>with</c> (SPEC §3.20).</summary>
+    public void ReportNotAsyncContextManager(TextSpan span, Semantics.TaipanType type, bool isPlain) =>
+        Add("TP0200", span, $"{type} is not an async context manager", isPlain ? "use 'with'" : "define '__aenter__' and '__aexit__'");
+
+    /// <summary><c>async for</c> over what isn't async iterable; a plain iterable gets help to use <c>for</c> (SPEC §3.20).</summary>
+    public void ReportCannotAsyncIterate(TextSpan span, Semantics.TaipanType type, bool isPlain) =>
+        Add("TP0200", span, $"cannot iterate over {type} with 'async for'", isPlain ? "use 'for'" : null);
+
+    public void ReportObjectAttribute(TextSpan span, string name) =>
+        Add("TP0200", span, $"object has no attribute '{name}'", "convert it with 'as'");
 
     public void ReportInvalidMode(TextSpan span, string mode)
     {
@@ -884,14 +896,28 @@ public sealed class DiagnosticBag
     public void ReportTypeOfNonClass(TextSpan span, object found) =>
         Add("TP0200", span, $"'type[…]' needs a class, found {found}");
 
-    public void ReportYieldInTry(TextSpan span) =>
-        Add("TP0215", span, "'yield' can't be inside a 'try' with 'except', or in 'finally'");
 
     public void ReportGeneratorReturnType(TextSpan span, string function) =>
         Add("TP0200", span, $"'{function}' yields, so it must return 'Iterator[T]'");
 
-    public void ReportGeneratorReturnValue(TextSpan span) =>
-        Add("TP0200", span, "a generator can't return a value");
+    public void ReportGeneratorReturnValue(TextSpan span, Semantics.TaipanType declared) =>
+        Add("TP0200", span, $"a generator declared '{declared}' can't return a value", "declare it 'Generator[Y, S, R]'");
+
+    // Generators and async generators since M42 (SPEC §3.20).
+    public void ReportBareYieldValue(TextSpan span, string function, Semantics.TaipanType yielded) =>
+        Add("TP0200", span, $"'yield' needs a value: '{function}' yields {yielded}");
+
+    public void ReportGeneratorCanEnd(TextSpan span, string function, Semantics.TaipanType returned) =>
+        Add("TP0200", span, $"'{function}' can end without returning a {returned}");
+
+    public void ReportYieldFromNoValue(TextSpan span, Semantics.TaipanType type) =>
+        Add("TP0200", span, $"'yield from' over {type} gives no value");
+
+    public void ReportAsyncGeneratorReturnType(TextSpan span, string function) =>
+        Add("TP0200", span, $"'{function}' is an async generator, so it must return 'AsyncIterator[T]'");
+
+    public void ReportAsyncGeneratorReturnValue(TextSpan span) =>
+        Add("TP0200", span, "an async generator can't return a value");
 
     public void ReportNotIterableFromList(TextSpan span, string message) =>
         Add("TP0200", span, message, "convert it with 'list(…)' first");

@@ -1,0 +1,24 @@
+# Async code runs on one thread, resuming in the order things finish; an async function starts
+# when it's called (SPEC §3.20).
+import asyncio
+from dotnet.System.Threading import Thread
+from dotnet.System.Threading.Tasks import Task
+
+async def worker(name: str, steps: int) -> str:
+    for i in range(steps):
+        print(name, "step", i)
+        await asyncio.sleep(0)
+    return name
+
+async def same_thread(main: int) -> bool:
+    await Task.Delay(10)
+    await asyncio.sleep(0.01)
+    return Thread.CurrentThread.ManagedThreadId == main
+
+print(await asyncio.gather(worker("x", 2), worker("y", 3), worker("z", 1)))
+let pending = worker("w", 2)
+print("created")
+print(await pending)
+print(await same_thread(Thread.CurrentThread.ManagedThreadId))
+let checks = [same_thread(Thread.CurrentThread.ManagedThreadId), same_thread(Thread.CurrentThread.ManagedThreadId)]
+print(await asyncio.gather(*checks))

@@ -1,0 +1,4 @@
+Traceback (most recent call last):
+  File "tests/cases/m42/next_needs_send.tpn", line 10, in <module>
+    for prompt in e:
+TypeError: a generator waiting for a str can't be resumed with next(); use send()

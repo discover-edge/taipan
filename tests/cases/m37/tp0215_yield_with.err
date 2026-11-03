@@ -1,1 +1,0 @@
-tests/cases/m37/tp0215_yield_with.tpn:4:13: error TP0215: 'yield' can't be inside a 'with'

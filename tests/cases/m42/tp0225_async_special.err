@@ -1,0 +1,5 @@
+tests/cases/m42/tp0225_async_special.tpn:5:9: error TP0225: '__aenter__' must be 'async def __aenter__(self) -> T'
+tests/cases/m42/tp0225_async_special.tpn:8:9: error TP0225: '__aexit__' must be 'async def __aexit__(self, exc_type: type[BaseException]?, exc: BaseException?, tb: TracebackType?) -> bool'
+tests/cases/m42/tp0225_async_special.tpn:11:7: error TP0225: 'Half' defines '__aenter__' but not '__aexit__'
+tests/cases/m42/tp0225_async_special.tpn:16:9: error TP0225: '__aiter__' must be 'def __aiter__(self) -> AsyncIterator[T]'
+tests/cases/m42/tp0225_async_special.tpn:19:9: error TP0225: '__anext__' must be 'async def __anext__(self) -> T'

@@ -31,6 +31,12 @@ public abstract record TaipanType
     /// <summary><c>types.TracebackType</c> (SPEC §3.17, M37).</summary>
     public static readonly TaipanType Traceback = new OpaqueType("TracebackType", "Taipan.Runtime.Traceback");
 
+    /// <summary><c>asyncio.Timeout</c>, <c>asyncio.timeout</c>'s async context manager (SPEC §3.20, M42).</summary>
+    public static readonly TaipanType Timeout = new OpaqueType("Timeout", "Taipan.Runtime.Timeout");
+
+    /// <summary><c>object</c>: any value, which only <c>StopIteration.value</c> gives (SPEC §3.20, M42).</summary>
+    public static readonly TaipanType Object = new ObjectType();
+
     /// <summary>
     /// The alias this type was written with, as diagnostics show it (SPEC §3.18, M40): <c>Handler</c>,
     /// <c>Pair[int]</c>. It isn't part of the type, so equality ignores it.
@@ -57,6 +63,10 @@ public abstract record TaipanType
         SetOfType set => set.Element.ContainsError,
         IteratorOfType iterator => iterator.Element.ContainsError,
         IterableOfType iterable => iterable.Element.ContainsError,
+        GeneratorOfType generator => generator.Yielded.ContainsError || generator.Sent.ContainsError || generator.Returned.ContainsError,
+        AsyncIteratorOfType iterator => iterator.Element.ContainsError,
+        AsyncIterableOfType iterable => iterable.Element.ContainsError,
+        AsyncGeneratorOfType generator => generator.Yielded.ContainsError || generator.Sent.ContainsError,
         AwaitableOfType awaitable => awaitable.Result.ContainsError,
         DictOfType dict => dict.Key.ContainsError || dict.Value.ContainsError,
         OptionalOf optional => optional.Inner.ContainsError,
@@ -151,6 +161,39 @@ public sealed record ErrorType : TaipanType
 public sealed record IteratorOfType(TaipanType Element) : TaipanType
 {
     protected override string Describe() => $"Iterator[{Element}]";
+}
+
+/// <summary>
+/// <c>Generator[Y, S, R]</c> (SPEC §3.20, M42): a generator that yields <c>Y</c>s, receives <c>S</c>s
+/// from <c>send</c>, and returns an <c>R</c>. Each may be <c>None</c>.
+/// </summary>
+public sealed record GeneratorOfType(TaipanType Yielded, TaipanType Sent, TaipanType Returned) : TaipanType
+{
+    protected override string Describe() => $"Generator[{Yielded}, {Sent}, {Returned}]";
+}
+
+/// <summary><c>AsyncIterator[T]</c>: what <c>async for</c> takes values from (SPEC §3.20, M42).</summary>
+public sealed record AsyncIteratorOfType(TaipanType Element) : TaipanType
+{
+    protected override string Describe() => $"AsyncIterator[{Element}]";
+}
+
+/// <summary><c>AsyncIterable[T]</c>: anything <c>async for</c> goes over (SPEC §3.20, M42).</summary>
+public sealed record AsyncIterableOfType(TaipanType Element) : TaipanType
+{
+    protected override string Describe() => $"AsyncIterable[{Element}]";
+}
+
+/// <summary><c>AsyncGenerator[Y, S]</c>: an async generator that yields <c>Y</c>s and receives <c>S</c>s (SPEC §3.20, M42).</summary>
+public sealed record AsyncGeneratorOfType(TaipanType Yielded, TaipanType Sent) : TaipanType
+{
+    protected override string Describe() => $"AsyncGenerator[{Yielded}, {Sent}]";
+}
+
+/// <summary><c>object</c> (SPEC §3.20, M42): holds a value of any type, converted back with <c>as</c>.</summary>
+public sealed record ObjectType : TaipanType
+{
+    protected override string Describe() => "object";
 }
 
 /// <summary><c>Awaitable[T]</c>: a value that will give a <c>T</c>, or nothing for <c>Awaitable[None]</c> (SPEC §3.14, M33).</summary>

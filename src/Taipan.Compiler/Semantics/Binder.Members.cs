@@ -120,7 +120,7 @@ public sealed partial class Binder
         if (isAbstract && !stub)
             _diagnostics.ReportAbstractBody(method.Body.Statements.FirstOrDefault()?.Span ?? method.Name.Span);
         var symbol = new FunctionSymbol(
-            name, parameters, AsyncResult(method.IsAsync, returnType),
+            name, parameters, AsyncResult(method.IsAsync && !Yields(method.Body), returnType),
             self: kind is MemberKind.Instance or MemberKind.Property ? new VariableSymbol("self", owner.Type, VariableKind.Parameter) : null)
         {
             Defaults = PendingDefaults(method.Params),
@@ -252,10 +252,13 @@ public sealed partial class Binder
         if (symbol.Base is { } baseClass && baseClass.IsHashable && !symbol.IsHashable && !(symbol.IsDataclass && BuiltinClasses.IsDataclassBase(baseClass)))
             _diagnostics.ReportUnhashableSubclass(classDef.Name.Span, symbol.Name, baseClass.Name);
         // A context manager has both methods (SPEC §4.8, M37); one with a wrong signature was reported already.
-        var hasEnter = symbol.FindMethod("__enter__") is not null || methods.Any(m => m.Symbol.Name == "__enter__");
-        var hasExit = symbol.FindMethod("__exit__") is not null || methods.Any(m => m.Symbol.Name == "__exit__");
-        if (hasEnter != hasExit)
-            _diagnostics.ReportHalfContextManager(classDef.Name.Span, symbol.Name, hasEnter ? "__enter__" : "__exit__", hasEnter ? "__exit__" : "__enter__");
+        foreach (var (enter, exit) in new[] { ("__enter__", "__exit__"), ("__aenter__", "__aexit__") })
+        {
+            var hasEnter = symbol.FindMethod(enter) is not null || methods.Any(m => m.Symbol.Name == enter);
+            var hasExit = symbol.FindMethod(exit) is not null || methods.Any(m => m.Symbol.Name == exit);
+            if (hasEnter != hasExit)
+                _diagnostics.ReportHalfContextManager(classDef.Name.Span, symbol.Name, hasEnter ? enter : exit, hasEnter ? exit : enter);
+        }
         // A class that's both iterable and an iterator gives one element type (SPEC §3.13).
         if (symbol.FindMethod("__iter__") is { ReturnType: IteratorOfType iterated } iter && symbol.FindMethod("__next__") is { } next
             && iterated.Element != next.ReturnType && !iterated.ContainsError && !next.ReturnType.ContainsError

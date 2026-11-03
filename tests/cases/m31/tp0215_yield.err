@@ -1,6 +1,3 @@
-tests/cases/m31/tp0215_yield.tpn:4:9: error TP0215: 'yield' can't be inside a 'try' with 'except', or in 'finally'
-tests/cases/m31/tp0215_yield.tpn:6:9: error TP0215: 'yield' can't be inside a 'try' with 'except', or in 'finally'
-tests/cases/m31/tp0215_yield.tpn:8:9: error TP0215: 'yield' can't be inside a 'try' with 'except', or in 'finally'
-tests/cases/m31/tp0215_yield.tpn:19:13: error TP0215: 'yield' can't leave a 'match' expression
+tests/cases/m31/tp0215_yield.tpn:5:13: error TP0215: 'yield' can't leave a 'match' expression
   help: use a 'match' statement
-tests/cases/m31/tp0215_yield.tpn:24:1: error TP0215: 'yield' outside a function
+tests/cases/m31/tp0215_yield.tpn:10:1: error TP0215: 'yield' outside a function

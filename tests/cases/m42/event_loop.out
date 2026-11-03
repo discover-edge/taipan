@@ -1,0 +1,13 @@
+x step 0
+y step 0
+z step 0
+x step 1
+y step 1
+y step 2
+["x", "y", "z"]
+w step 0
+created
+w step 1
+w
+True
+[True, True]
