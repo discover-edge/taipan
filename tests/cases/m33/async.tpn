@@ -1,0 +1,58 @@
+# Async functions and await (SPEC §3.14): an async function starts when it's called.
+from dotnet.System.Threading.Tasks import Task
+
+async def double_later(n: int) -> int:
+    await Task.Delay(5)
+    return n * 2
+
+async def noisy() -> str:
+    print("running")
+    await Task.Delay(5)
+    print("resumed")
+    return "done"
+
+async def greet(name: str):
+    print("hello", name)
+
+async def total(xs: list[int]) -> int:
+    var sum = 0
+    for x in xs:
+        sum += await double_later(x)
+    return sum
+
+async def fails() -> int:
+    await Task.Delay(1)
+    raise ValueError("bad")
+
+class Counter:
+    count: int
+
+    def __init__(self):
+        self.count = 0
+
+    async def bump(self) -> int:
+        await Task.Delay(1)
+        self.count += 1
+        return self.count
+
+let pending = noisy()
+print("after the call")
+print(await pending)
+print(pending)
+print(await double_later(21))
+await greet("async")
+print(await total([1, 2, 3]))
+
+try:
+    print(await fails())
+except ValueError as e:
+    print("caught", e)
+
+let later: Callable[[int], Awaitable[int]] = double_later
+print(await later(5))
+
+let c = Counter()
+await c.bump()
+print(await c.bump())
+print(await Task.WhenAll([double_later(1), double_later(2)]))
+print((await total([4])) + 1)

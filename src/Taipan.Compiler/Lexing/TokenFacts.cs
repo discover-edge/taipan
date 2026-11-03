@@ -39,6 +39,8 @@ public static class TokenFacts
         ["raise"] = TokenKind.RaiseKeyword,
         ["del"] = TokenKind.DelKeyword,
         ["yield"] = TokenKind.YieldKeyword,
+        ["async"] = TokenKind.AsyncKeyword,
+        ["await"] = TokenKind.AwaitKeyword,
     };
 
     private static readonly Dictionary<TokenKind, string> KeywordText =

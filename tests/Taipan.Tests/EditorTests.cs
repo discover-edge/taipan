@@ -166,6 +166,17 @@ public class EditorTests
         Assert.DoesNotContain("Combine", labels);
     }
 
+    [Fact]
+    public void HoverShowsAsyncFunctions()
+    {
+        var path = Path.Combine(RepoPaths.Root, "tests", "cases", "m33", "async.tpn");
+        var text = File.ReadAllText(path);
+        var session = new LspSession().Open(path, text).Hover(path, text, "double_later(21)").Hover(path, text, "pending = ").Run();
+        Assert.Equal(
+            ["async def double_later(n: int) -> int", "let pending: Awaitable[str]"],
+            session.Responses().Select(r => r["result"]!["contents"]!["value"]!.GetValue<string>().Split('\n')[1]));
+    }
+
     // ---- References and rename (SPEC §16.6) ----
 
     // Each location as `file:line:column text`, columns from 1.

@@ -221,7 +221,7 @@
           "name": "constant.language.taipan"
         },
         {
-          "match": "\\b(if|elif|else|while|match|return|pass|break|continue|try|except|finally|raise|yield)\\b",
+          "match": "\\b(if|elif|else|while|match|return|pass|break|continue|try|except|finally|raise|yield|await)\\b",
           "name": "keyword.control.flow.taipan"
         },
         {
@@ -233,7 +233,7 @@
           "name": "keyword.operator.logical.taipan"
         },
         {
-          "match": "\\b(def|lambda)\\b",
+          "match": "\\b(def|lambda|async)\\b",
           "name": "storage.type.function.taipan"
         },
         {

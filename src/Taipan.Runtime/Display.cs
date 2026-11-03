@@ -32,6 +32,8 @@ public static class Display
         bool b => Format(b),
         string s => s,
         IFunction f => $"<function {f.Name}>",
+        // An async function's result, or a .NET task (SPEC §3.14).
+        System.Threading.Tasks.Task => "<awaitable>",
         ITuple t => "(" + string.Join(", ", Enumerable.Range(0, t.Length).Select(i => Repr(t[i]))) + ")",
         IVariant { Fields.Count: 0 } v => v.TypeName,
         // A class's __str__ (SPEC §4.8).

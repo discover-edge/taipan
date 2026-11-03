@@ -1,0 +1,14 @@
+# Indexers and operators on .NET values (SPEC §13.10).
+from dotnet.System import TimeSpan
+from dotnet.System.Text import StringBuilder
+
+let a = TimeSpan.FromMinutes(1)
+let b = TimeSpan.FromSeconds(30)
+print(a + b, a - b, -b)
+print(a > b, a <= b, a == TimeSpan.FromSeconds(60))
+print((a + b).TotalSeconds)
+
+let sb = StringBuilder("taipan")
+print(sb[0], sb[5])
+sb[0] = "T"
+print(sb)

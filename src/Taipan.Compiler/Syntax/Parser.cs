@@ -173,7 +173,7 @@ public sealed class Parser
         TokenKind.Name when AtTypeAlias() => ParseTypeAlias(),
         TokenKind.ImportKeyword => ParseImportStmt(),
         TokenKind.FromKeyword => ParseFromImportStmt(),
-        TokenKind.DefKeyword or TokenKind.ClassKeyword or TokenKind.At => ParseDecoratedDef(),
+        TokenKind.DefKeyword or TokenKind.ClassKeyword or TokenKind.At or TokenKind.AsyncKeyword => ParseDecoratedDef(),
         TokenKind.EnumKeyword => ParseEnumDef(),
         TokenKind.ConstKeyword => ParseConstDef(),
         _ => ParseStmt(),
@@ -282,7 +282,7 @@ public sealed class Parser
         var decorators = ParseDecorators();
         if (At(TokenKind.ClassKeyword))
             return ParseClassDef(start, decorators);
-        if (At(TokenKind.DefKeyword))
+        if (At(TokenKind.DefKeyword) || At(TokenKind.AsyncKeyword))
             return ParseFuncDef(start, decorators);
         ReportExpected("'def' or 'class'");
         return new ExprStmt(new ErrorExpr(Here), Here);
@@ -309,9 +309,10 @@ public sealed class Parser
         return decorators.ToImmutable();
     }
 
-    // func_def = { decorator } "def" NAME [ type_params ] "(" [ params ] ")" [ "->" type ] ":" block
+    // func_def = { decorator } [ "async" ] "def" NAME [ type_params ] "(" [ params ] ")" [ "->" type ] ":" block
     private FuncDef ParseFuncDef(int start, ImmutableArray<Decorator> decorators)
     {
+        var isAsync = ParseAsync();
         Expect(TokenKind.DefKeyword);
         var name = ExpectIdentifier();
         var typeParams = ParseTypeParams();
@@ -332,7 +333,16 @@ public sealed class Parser
 
         Expect(TokenKind.Colon);
         var body = ParseBlock();
-        return new FuncDef(decorators, name, typeParams, parameters, returnType, body, SpanFrom(start));
+        return new FuncDef(decorators, name, typeParams, parameters, returnType, body, SpanFrom(start)) { IsAsync = isAsync };
+    }
+
+    // The "async" before "def" (SPEC §3.14, M33).
+    private bool ParseAsync()
+    {
+        if (!At(TokenKind.AsyncKeyword))
+            return false;
+        Next();
+        return true;
     }
 
     // type_params = "[" type_param { "," type_param } "]"
@@ -489,7 +499,7 @@ public sealed class Parser
     {
         if (AtTypeAlias())
             return ParseMisplacedTypeAlias();
-        if (At(TokenKind.DefKeyword) || At(TokenKind.At))
+        if (At(TokenKind.DefKeyword) || At(TokenKind.At) || At(TokenKind.AsyncKeyword))
         {
             var start = Current.Span.Start;
             var decorators = ParseDecorators();
@@ -520,6 +530,7 @@ public sealed class Parser
     // Which receiver a method needs depends on its decorators, so the binder checks it (SPEC §2, M28).
     private MethodDef ParseMethodDef(int start, ImmutableArray<Decorator> decorators)
     {
+        var isAsync = ParseAsync();
         Expect(TokenKind.DefKeyword);
         var name = ExpectIdentifier();
         Expect(TokenKind.OpenParen);
@@ -555,7 +566,7 @@ public sealed class Parser
 
         Expect(TokenKind.Colon);
         var body = At(TokenKind.Ellipsis) ? ParseEllipsisBody() : ParseBlock();
-        return new MethodDef(decorators, name, receiver, receiverSpan, parameters, returnType, body, SpanFrom(start));
+        return new MethodDef(decorators, name, receiver, receiverSpan, parameters, returnType, body, SpanFrom(start)) { IsAsync = isAsync };
     }
 
     // enum_def = "enum" NAME [ type_params ] ":" NEWLINE INDENT variant { variant } DEDENT
@@ -672,7 +683,7 @@ public sealed class Parser
                 return ParseMatchStmt();
             case TokenKind.TryKeyword:
                 return ParseTryStmt();
-            case TokenKind.DefKeyword or TokenKind.At:
+            case TokenKind.DefKeyword or TokenKind.At or TokenKind.AsyncKeyword:
                 var start = Current.Span.Start;
                 var decorators = ParseDecorators();
                 return new FuncDefStmt(ParseFuncDef(start, decorators), SpanFrom(start));
@@ -1374,6 +1385,18 @@ public sealed class Parser
                 Expect(TokenKind.CloseBracket);
                 return new CallableType(parameters, result, SpanFrom(start));
             }
+            // Awaitable[T], or Awaitable[None] (SPEC §3.14, M33).
+            case "Awaitable" when At(TokenKind.OpenBracket):
+            {
+                Next();
+                TypeSyntax? result = null;
+                if (At(TokenKind.NoneKeyword))
+                    Next();
+                else
+                    result = ParseType();
+                Expect(TokenKind.CloseBracket);
+                return new AwaitableType(result, SpanFrom(start));
+            }
             default:
                 if (At(TokenKind.Dot))
                 {
@@ -1581,9 +1604,15 @@ public sealed class Parser
         }
     }
 
-    // unary = "-" unary | cast; `*x` is parsed here too, only to be an unpacking target (M29)
+    // unary = "-" unary | "await" unary | cast; `*x` is parsed here too, only to be an unpacking target (M29)
     private Expr ParseUnary()
     {
+        if (At(TokenKind.AwaitKeyword))
+        {
+            var awaitStart = Next().Span.Start;
+            var awaited = ParseUnary();
+            return new AwaitExpr(awaited, SpanFrom(awaitStart));
+        }
         if (At(TokenKind.Star))
         {
             var starStart = Next().Span.Start;
@@ -1643,6 +1672,20 @@ public sealed class Parser
     private Expr ParseSubscript(Expr target, int start)
     {
         var first = At(TokenKind.Colon) ? null : ParseExpr();
+        if (first is not null && At(TokenKind.Comma))
+        {
+            // `x[a, b]` indexes with the tuple (a, b), as in Python (M33).
+            var elements = ImmutableArray.CreateBuilder<Expr>();
+            elements.Add(first);
+            while (At(TokenKind.Comma))
+            {
+                Next();
+                if (At(TokenKind.CloseBracket))
+                    break;
+                elements.Add(ParseExpr());
+            }
+            first = new TupleExpr(elements.ToImmutable(), SpanFrom(first.Span.Start));
+        }
         if (first is not null && !At(TokenKind.Colon))
         {
             Expect(TokenKind.CloseBracket);
@@ -1841,5 +1884,5 @@ public sealed class Parser
         or TokenKind.TrueKeyword or TokenKind.FalseKeyword or TokenKind.NoneKeyword
         or TokenKind.Name or TokenKind.OpenParen or TokenKind.OpenBracket or TokenKind.OpenBrace
         or TokenKind.Minus or TokenKind.NotKeyword or TokenKind.LambdaKeyword or TokenKind.Ellipsis
-        or TokenKind.MatchKeyword or TokenKind.Star;
+        or TokenKind.MatchKeyword or TokenKind.Star or TokenKind.AwaitKeyword;
 }

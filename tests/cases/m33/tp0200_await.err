@@ -1,0 +1,3 @@
+tests/cases/m33/tp0200_await.tpn:6:18: error TP0200: cannot await int
+tests/cases/m33/tp0200_await.tpn:8:12: error TP0200: 'int' doesn't satisfy the constraint 'Enum' on 'TEnum' of 'Enum.IsDefined'
+tests/cases/m33/tp0200_await.tpn:9:33: error TP0200: 'TSource' is inferred as both int and str

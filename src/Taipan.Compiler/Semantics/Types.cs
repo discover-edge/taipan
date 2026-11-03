@@ -31,6 +31,7 @@ public abstract record TaipanType
         ListOfType list => list.Element.ContainsError,
         IteratorOfType iterator => iterator.Element.ContainsError,
         IterableOfType iterable => iterable.Element.ContainsError,
+        AwaitableOfType awaitable => awaitable.Result.ContainsError,
         DictOfType dict => dict.Key.ContainsError || dict.Value.ContainsError,
         OptionalOf optional => optional.Inner.ContainsError,
         ClassType classType => classType.TypeArguments.Any(a => a.ContainsError),
@@ -103,6 +104,12 @@ public sealed record ErrorType : TaipanType
 public sealed record IteratorOfType(TaipanType Element) : TaipanType
 {
     public override string ToString() => $"Iterator[{Element}]";
+}
+
+/// <summary><c>Awaitable[T]</c>: a value that will give a <c>T</c>, or nothing for <c>Awaitable[None]</c> (SPEC §3.14, M33).</summary>
+public sealed record AwaitableOfType(TaipanType Result) : TaipanType
+{
+    public override string ToString() => $"Awaitable[{(Result is NothingType ? "None" : Result)}]";
 }
 
 /// <summary><c>Iterable[T]</c>: anything a <c>for</c> loop goes over (SPEC §3.13, M31).</summary>

@@ -94,6 +94,15 @@ public sealed class FunctionSymbol(
     /// <summary>Whether the function's body yields, which makes it a generator (SPEC §3.13, M31).</summary>
     public bool IsGenerator { get; init; }
 
+    /// <summary>
+    /// Whether it's an <c>async def</c> (SPEC §3.14, M33). Its <see cref="ReturnType"/> is then the
+    /// <c>Awaitable</c> a call gives, and <see cref="BodyResult"/> what its body returns.
+    /// </summary>
+    public bool IsAsync { get; init; }
+
+    /// <summary>What the body's <c>return</c> gives: the declared return type, inside an async function's awaitable.</summary>
+    public TaipanType BodyResult => IsAsync && ReturnType is AwaitableOfType awaitable ? awaitable.Result : ReturnType;
+
     /// <summary>Whether the method is marked <c>@abstractmethod</c> (SPEC §4.8).</summary>
     public bool IsAbstract { get; init; }
 

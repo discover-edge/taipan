@@ -1,8 +1,7 @@
 # .NET members using types Taipan can't use yet (SPEC §13.3).
 from dotnet.System.Collections.Generic import List
 from dotnet.System.IO import File
-from dotnet.System import Array, AppDomain
+from dotnet.System import Array, AppDomain, Convert
 
-let text = File.ReadAllTextAsync("a.txt")
-print(Array.Empty())
+let amount = Convert.ToDecimal(5)
 print(len(AppDomain.CurrentDomain.GetAssemblies()) > 0)

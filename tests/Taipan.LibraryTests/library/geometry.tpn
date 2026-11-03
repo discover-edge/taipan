@@ -7,3 +7,7 @@ def total_area(items: list[shapes.Shape]) -> float:
     for item in items:
         total += shapes.area(item)
     return total
+
+# An async function is a C# async method (SPEC §14.2, M33).
+async def area_later(items: list[shapes.Shape]) -> float:
+    return total_area(items)

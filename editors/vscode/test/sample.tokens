@@ -274,3 +274,15 @@
 53:54 "}" string.interpolated.taipan meta.interpolation.taipan punctuation.section.interpolation.end.taipan
 53:55 "\"" string.interpolated.taipan
 53:56 ")" -
+55:1 "async" storage.type.function.taipan
+55:7 "def" storage.type.function.taipan
+55:11 "fetch" entity.name.function.taipan
+55:16 "(url: " -
+55:22 "str" support.type.builtin.taipan
+55:25 ") " -
+55:27 "->" punctuation.separator.annotation.result.taipan
+55:30 "str" support.type.builtin.taipan
+55:33 ":" -
+56:5 "return" keyword.control.flow.taipan
+56:12 "await" keyword.control.flow.taipan
+56:17 " load(url)" -

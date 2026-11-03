@@ -109,12 +109,13 @@ public sealed partial class Binder
         if (isAbstract && !stub)
             _diagnostics.ReportAbstractBody(method.Body.Statements.FirstOrDefault()?.Span ?? method.Name.Span);
         var symbol = new FunctionSymbol(
-            name, BindParams(method.Params), returnType,
+            name, BindParams(method.Params), AsyncResult(method.IsAsync, returnType),
             self: kind is MemberKind.Instance or MemberKind.Property ? new VariableSymbol("self", owner.Type, VariableKind.Parameter) : null)
         {
             Defaults = PendingDefaults(method.Params),
             Kinds = KindsOf(method.Params),
             IsGenerator = Yields(method.Body),
+            IsAsync = method.IsAsync,
             IsMarkedOverride = marks.Written.Contains("override"),
             DeclaredIn = owner,
             Kind = kind,

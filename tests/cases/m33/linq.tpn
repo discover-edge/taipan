@@ -1,0 +1,34 @@
+# Generic .NET methods with inferred type arguments, and delegates (SPEC §13.8, §13.9).
+from dotnet.System.Linq import Enumerable
+from dotnet.System import Array, Enum, StringComparison
+
+let xs = [5, 1, 4, 2, 3]
+print(Enumerable.Where(xs, lambda x: x > 2))
+print(Enumerable.Select(xs, lambda x: str(x * 10)))
+print(Enumerable.Select(xs, lambda x, i: x * i))
+print(Enumerable.Max(xs), Enumerable.Sum(xs))
+print(Enumerable.OrderBy(xs, lambda x: -x))
+print(Enumerable.Count(xs, lambda x: x % 2 == 0))
+print(Enumerable.Any(xs, lambda x: x > 4), Enumerable.All(xs, lambda x: x > 1))
+print(Enumerable.First(xs, lambda x: x < 3))
+print(Enumerable.Reverse(["a", "b"]), Enumerable.Distinct([1, 2, 1, 3]))
+print(Enumerable.Range(1, 3))
+
+@dataclass
+class Shape:
+    name: str
+    size: float
+
+let shapes = [Shape("a", 2.0), Shape("b", 5.0), Shape("c", 1.0)]
+print(Enumerable.Max(shapes, lambda s: s.size))
+print(Enumerable.Where(shapes, lambda s: s.size > 1.5))
+print(Enumerable.MaxBy(shapes, lambda s: s.size))
+print(Enumerable.Select(shapes, lambda s: s.name))
+
+def is_big(n: int) -> bool:
+    return n > 3
+
+print(Enumerable.Where(xs, is_big))
+print(Array.Find([3, 8, 12], lambda n: n > 5))
+print(Array.ConvertAll([1, 2], lambda n: n * 1.5))
+print(Enum.IsDefined(StringComparison.Ordinal), Enum.GetName(StringComparison.Ordinal))

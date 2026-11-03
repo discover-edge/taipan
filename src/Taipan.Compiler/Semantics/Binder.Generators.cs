@@ -26,7 +26,7 @@ public sealed partial class Binder
     /// <summary>A generator is declared to return <c>Iterator[T]</c> or <c>Iterable[T]</c> (SPEC §3.13).</summary>
     private void CheckGeneratorReturn(FunctionSymbol function, Identifier name)
     {
-        if (function.IsGenerator && function.ReturnType is not (IteratorOfType or IterableOfType) && !function.ReturnType.ContainsError)
+        if (function.IsGenerator && !function.IsAsync && function.ReturnType is not (IteratorOfType or IterableOfType) && !function.ReturnType.ContainsError)
             _diagnostics.ReportGeneratorReturnType(name.Span, function.Name);
     }
 
@@ -42,7 +42,9 @@ public sealed partial class Binder
             _diagnostics.ReportYieldOutsideFunction(keyword);
             return new BoundExprStmt(BindValue(yield.Value), yield.Span);
         }
-        if (_noYield > 0)
+        if (_function.IsAsync)
+            _diagnostics.ReportYieldInAsync(keyword);
+        else if (_noYield > 0)
             _diagnostics.ReportYieldInTry(keyword);
         else if (_matchExpressionArm is var (function, _) && function == _function)
             _diagnostics.ReportLeavesMatchExpression(keyword, "yield");

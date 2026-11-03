@@ -8,3 +8,5 @@ tests/cases/m25/tp0302_extension.tpn:23:5: warning TP0302: 'pick' is not exporte
   help: rename it '_pick' to keep it private
 tests/cases/m25/tp0302_extension.tpn:26:5: warning TP0302: 'identity' is not exported: it's generic
   help: rename it '_identity' to keep it private
+tests/cases/m25/tp0302_extension.tpn:29:11: warning TP0302: 'later' is not exported: it's async
+  help: rename it '_later' to keep it private

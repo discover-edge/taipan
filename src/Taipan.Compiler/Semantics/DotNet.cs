@@ -67,6 +67,9 @@ public sealed class DotNetLibrary
     /// <summary>Every assembly's path, to compile and load the program against.</summary>
     public ImmutableArray<string> References { get; }
 
+    /// <summary>A .NET type built in to C#, such as <c>long</c>, to check constraints against (SPEC §13.8).</summary>
+    public INamedTypeSymbol Special(SpecialType type) => _compilation.GetSpecialType(type);
+
     /// <summary>A namespace, by its dotted name (<c>System.Text</c>); null if no assembly defines it.</summary>
     public INamespaceSymbol? Namespace(string dotted)
     {
@@ -113,6 +116,12 @@ public sealed record DotNetType(INamedTypeSymbol Symbol) : TaipanType
     public override string ToString() => IsObject ? "object" : Symbol.ToDisplayString(Format);
 }
 
+/// <summary>A generic method's type parameters, as Taipan types (SPEC §13.8).</summary>
+public sealed class TypeArguments(IEnumerable<KeyValuePair<ITypeParameterSymbol, TaipanType>> pairs)
+    : Dictionary<ITypeParameterSymbol, TaipanType>(pairs, SymbolEqualityComparer.Default)
+{
+}
+
 /// <summary>How well an argument fits a .NET parameter, best last (SPEC §13.5).</summary>
 public enum DotNetFit { None, Object, Float, Conversion, Exact }
 
@@ -124,12 +133,14 @@ public static class DotNetTypes
 
     /// <summary>
     /// A .NET type's Taipan type, as a result (<paramref name="result"/>) or as a parameter. Null if
-    /// Taipan can't use it, with the type at fault in <paramref name="unsupported"/>.
+    /// Taipan can't use it, with the type at fault in <paramref name="unsupported"/>. A generic
+    /// method's type parameters are the Taipan types in <paramref name="typeArguments"/> (SPEC §13.8):
+    /// what was inferred, or type parameters standing for them while it's inferred.
     /// </summary>
-    public static TaipanType? Map(ITypeSymbol type, bool result, out ITypeSymbol? unsupported)
+    public static TaipanType? Map(ITypeSymbol type, bool result, out ITypeSymbol? unsupported, TypeArguments? typeArguments = null)
     {
         unsupported = null;
-        var mapped = MapInner(type, result, ref unsupported);
+        var mapped = MapInner(type, result, ref unsupported, typeArguments);
         if (mapped is null)
             return null;
         // A reference type is optional when it's annotated so, or as a result without annotations.
@@ -138,8 +149,15 @@ public static class DotNetTypes
         return optional ? new OptionalOf(mapped) : mapped;
     }
 
-    private static TaipanType? MapInner(ITypeSymbol type, bool result, ref ITypeSymbol? unsupported)
+    private static TaipanType? MapInner(ITypeSymbol type, bool result, ref ITypeSymbol? unsupported, TypeArguments? typeArguments)
     {
+        if (type is ITypeParameterSymbol parameter)
+        {
+            if (typeArguments?.GetValueOrDefault(parameter) is { } argument)
+                return argument;
+            unsupported = type;
+            return null;
+        }
         switch (type.SpecialType)
         {
             case SpecialType.System_Int64 or SpecialType.System_Int32 or SpecialType.System_Int16 or SpecialType.System_SByte
@@ -161,7 +179,9 @@ public static class DotNetTypes
         }
 
         if (type is IArrayTypeSymbol { Rank: 1 } array)
-            return Element(array.ElementType, result, ref unsupported);
+            return Element(array.ElementType, result, ref unsupported, typeArguments);
+        if (type is INamedTypeSymbol { TypeKind: TypeKind.Delegate } callable)
+            return Delegate(callable, result, ref unsupported, typeArguments);
         if (type is not INamedTypeSymbol named || named.DeclaredAccessibility != Accessibility.Public
             || named.TypeKind is not (TypeKind.Class or TypeKind.Struct or TypeKind.Interface or TypeKind.Enum)
             || named.IsRefLikeType || IsUnsupportedStruct(named))
@@ -170,10 +190,52 @@ public static class DotNetTypes
             return null;
         }
         if (named.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T)
-            return MapInner(named.TypeArguments[0], result, ref unsupported) is { } inner ? new OptionalOf(inner) : null;
+            return MapInner(named.TypeArguments[0], result, ref unsupported, typeArguments) is { } inner ? new OptionalOf(inner) : null;
+        if (IsTask(named))
+        {
+            if (named.TypeArguments.IsEmpty)
+                return new AwaitableOfType(TaipanType.Nothing);
+            var awaited = Map(named.TypeArguments[0], result, out var inner, typeArguments);
+            unsupported ??= inner;
+            return awaited is null or NothingType or DotNetType { IsObject: true } ? Unsupported(named.TypeArguments[0], ref unsupported) : new AwaitableOfType(awaited);
+        }
         if (named.IsGenericType)
-            return IsListLike(named) ? Element(named.TypeArguments[0], result, ref unsupported) : Unsupported(type, ref unsupported);
+        {
+            if (IsListLike(named) || result && IsOrdered(named))
+                return Element(named.TypeArguments[0], result, ref unsupported, typeArguments);
+            if (IsDictionary(named))
+            {
+                var key = Map(named.TypeArguments[0], result, out var keyFault, typeArguments);
+                var value = Map(named.TypeArguments[1], result, out var valueFault, typeArguments);
+                unsupported ??= keyFault ?? valueFault;
+                return key is null or NothingType or DotNetType { IsObject: true } || !DictOfType.IsValidKey(key) && key is not TypeParameterType ? Unsupported(named.TypeArguments[0], ref unsupported)
+                    : value is null or NothingType or DotNetType { IsObject: true } ? Unsupported(named.TypeArguments[1], ref unsupported)
+                    : new DictOfType(key, value);
+            }
+            return Unsupported(type, ref unsupported);
+        }
         return new DotNetType(named);
+    }
+
+    /// <summary>
+    /// A delegate type as a function type (SPEC §13.9). A Taipan function given to .NET receives its
+    /// parameters as results and returns its result as an argument; a delegate .NET gives is the reverse.
+    /// </summary>
+    private static TaipanType? Delegate(INamedTypeSymbol type, bool result, ref ITypeSymbol? unsupported, TypeArguments? typeArguments)
+    {
+        if (type.DelegateInvokeMethod is not { } invoke || type.DeclaredAccessibility != Accessibility.Public || invoke.ReturnsByRef || invoke.ReturnsByRefReadonly)
+            return Unsupported(type, ref unsupported);
+        var parameters = ImmutableArray.CreateBuilder<TaipanType>();
+        foreach (var parameter in invoke.Parameters)
+        {
+            var mapped = parameter.RefKind == RefKind.None ? Map(TypeOf(parameter), !result, out var fault, typeArguments) : null;
+            if (mapped is null or NothingType)
+                return Unsupported(parameter.Type, ref unsupported);
+            parameters.Add(mapped);
+        }
+        var returned = Map(ResultOf(invoke), result, out var resultFault, typeArguments);
+        unsupported ??= resultFault;
+        return returned is null ? Unsupported(invoke.ReturnType, ref unsupported) : new FunctionType(parameters.ToImmutable(), returned);
     }
 
     private static TaipanType? Unsupported(ITypeSymbol type, ref ITypeSymbol? unsupported)
@@ -182,9 +244,9 @@ public static class DotNetTypes
         return null;
     }
 
-    private static TaipanType? Element(ITypeSymbol element, bool result, ref ITypeSymbol? unsupported)
+    private static TaipanType? Element(ITypeSymbol element, bool result, ref ITypeSymbol? unsupported, TypeArguments? typeArguments)
     {
-        var mapped = Map(element, result, out var inner);
+        var mapped = Map(element, result, out var inner, typeArguments);
         unsupported ??= inner;
         return mapped is null or NothingType or DotNetType { IsObject: true } ? Unsupported(element, ref unsupported) : new ListOfType(mapped);
     }
@@ -200,6 +262,20 @@ public static class DotNetTypes
     /// <summary><c>List&lt;T&gt;</c> or one of the interfaces a Taipan list is given as (SPEC §13.3).</summary>
     public static bool IsListLike(INamedTypeSymbol type) =>
         type.Arity == 1 && ListLike.Contains(type.Name) && type.ContainingNamespace?.ToDisplayString() == "System.Collections.Generic";
+
+    /// <summary><c>IOrderedEnumerable&lt;T&gt;</c>, a list as a result (SPEC §13.3, M33).</summary>
+    public static bool IsOrdered(INamedTypeSymbol type) =>
+        type.Arity == 1 && type.Name == "IOrderedEnumerable" && type.ContainingNamespace?.ToDisplayString() == "System.Linq";
+
+    private static readonly HashSet<string> DictionaryLike = ["Dictionary", "IDictionary", "IReadOnlyDictionary"];
+
+    /// <summary><c>Dictionary&lt;K, V&gt;</c> or an interface a Taipan dict is given as (SPEC §13.3, M33).</summary>
+    public static bool IsDictionary(INamedTypeSymbol type) =>
+        type.Arity == 2 && DictionaryLike.Contains(type.Name) && type.ContainingNamespace?.ToDisplayString() == "System.Collections.Generic";
+
+    /// <summary><c>Task</c>, <c>Task&lt;T&gt;</c>, <c>ValueTask</c> or <c>ValueTask&lt;T&gt;</c>: an awaitable (SPEC §13.11, M33).</summary>
+    public static bool IsTask(INamedTypeSymbol type) =>
+        type.Arity <= 1 && type.Name is "Task" or "ValueTask" && type.ContainingNamespace?.ToDisplayString() == "System.Threading.Tasks";
 
     /// <summary>A parameter's type with its own nullability, which Roslyn keeps on the parameter.</summary>
     public static ITypeSymbol TypeOf(IParameterSymbol parameter) => parameter.Type.WithNullableAnnotation(parameter.NullableAnnotation);
@@ -221,18 +297,25 @@ public static class DotNetTypes
     /// How an argument of Taipan type <paramref name="argument"/> fits a parameter of .NET type
     /// <paramref name="parameter"/> (SPEC §13.5).
     /// </summary>
-    public static DotNetFit Fit(TaipanType argument, ITypeSymbol parameter)
+    public static DotNetFit Fit(TaipanType argument, ITypeSymbol parameter, TypeArguments? typeArguments = null)
     {
         if (argument.ContainsError)
             return DotNetFit.Exact;
-        if (Map(parameter, result: false, out _) is not { } mapped)
+        if (Map(parameter, result: false, out _, typeArguments) is not { } mapped)
             return DotNetFit.None;
+        // A type parameter stands for the argument's own type (SPEC §13.8).
+        if (parameter is ITypeParameterSymbol)
+            return argument == mapped ? DotNetFit.Exact : DotNetFit.None;
+        // A value that isn't optional takes a Nullable<T> by conversion, as in C#; a nullable reference is only annotated (SPEC §13.5).
+        var widened = false;
         if (mapped is OptionalOf optional)
         {
             if (argument is NoneType)
                 return DotNetFit.Exact;
             if (argument is OptionalOf inner)
                 argument = inner.Inner;
+            else
+                widened = parameter is INamedTypeSymbol { OriginalDefinition.SpecialType: SpecialType.System_Nullable_T };
             mapped = optional.Inner;
             parameter = parameter is INamedTypeSymbol { OriginalDefinition.SpecialType: SpecialType.System_Nullable_T } nullable
                 ? nullable.TypeArguments[0]
@@ -243,6 +326,12 @@ public static class DotNetTypes
             return DotNetFit.None;
         }
 
+        var fit = FitValue(argument, mapped, parameter, typeArguments);
+        return widened && fit == DotNetFit.Exact ? DotNetFit.Conversion : fit;
+    }
+
+    private static DotNetFit FitValue(TaipanType argument, TaipanType mapped, ITypeSymbol parameter, TypeArguments? typeArguments)
+    {
         switch (mapped)
         {
             case DotNetType { IsObject: true }:
@@ -252,8 +341,20 @@ public static class DotNetTypes
                     : Derives(value.Symbol, target.Symbol) ? DotNetFit.Conversion : DotNetFit.None;
             case ListOfType when argument is ListOfType list:
                 var element = parameter is IArrayTypeSymbol array ? array.ElementType : ((INamedTypeSymbol)parameter).TypeArguments[0];
-                var fit = Fit(list.Element, element);
-                return fit == DotNetFit.None ? fit : parameter is IArrayTypeSymbol || fit != DotNetFit.Exact ? DotNetFit.Conversion : fit;
+                // A list is passed as is only if its elements are already the parameter's.
+                var fit = Fit(list.Element, element, typeArguments);
+                return fit == DotNetFit.None ? fit
+                    : parameter is IArrayTypeSymbol || fit != DotNetFit.Exact || ((ListOfType)mapped).Element != list.Element ? DotNetFit.Conversion
+                    : fit;
+            // A Dictionary is always a copy; an interface takes the dict itself if nothing converts (SPEC §13.3).
+            case DictOfType when argument is DictOfType dict && parameter is INamedTypeSymbol dictionary:
+                var keyFit = Fit(dict.Key, dictionary.TypeArguments[0], typeArguments);
+                var valueFit = Fit(dict.Value, dictionary.TypeArguments[1], typeArguments);
+                return keyFit == DotNetFit.None || valueFit == DotNetFit.None ? DotNetFit.None
+                    : keyFit == DotNetFit.Exact && valueFit == DotNetFit.Exact && dictionary.Name != "Dictionary" ? DotNetFit.Exact
+                    : DotNetFit.Conversion;
+            case AwaitableOfType when argument is AwaitableOfType:
+                return argument != mapped ? DotNetFit.None : parameter.Name == "Task" ? DotNetFit.Exact : DotNetFit.Conversion;
         }
 
         if (argument == TaipanType.Int)

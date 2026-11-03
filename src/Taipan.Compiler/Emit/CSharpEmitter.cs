@@ -21,6 +21,7 @@ public sealed partial class CSharpEmitter
 {
     private const string Runtime = "global::Taipan.Runtime";
     private const string Collections = "global::System.Collections.Generic";
+    private const string Tasks = "global::System.Threading.Tasks.Task";
     private const string Interop = "global::Taipan.Runtime.Interop";
     private const string PyObject = "global::Python.Runtime.PyObject";
 
@@ -214,7 +215,10 @@ public sealed partial class CSharpEmitter
             return code.ToString();
         }
         code.Append($"\npublic static class {_entryClass}\n{{\n");
-        code.Append($"    public static int Main() => {Runtime}.Panic.Run({_programClass}.{_topLevelMethod});\n");
+        // An awaiting top level runs to its end before the program exits (SPEC §3.14).
+        code.Append(_program.IsAsync
+            ? $"    public static int Main() => {Runtime}.Panic.Run(() => {_programClass}.{_topLevelMethod}().GetAwaiter().GetResult());\n"
+            : $"    public static int Main() => {Runtime}.Panic.Run({_programClass}.{_topLevelMethod});\n");
         code.Append("}\n");
         return code.ToString();
     }
@@ -329,6 +333,7 @@ public sealed partial class CSharpEmitter
         PrimitiveType primitive => primitive.Name,
         ListOfType list => $"list_{Mangle(list.Element)}",
         IteratorOfType iterator => $"iterator_{Mangle(iterator.Element)}",
+        AwaitableOfType awaitable => $"awaitable_{Mangle(awaitable.Result)}",
         IterableOfType iterable => $"iterable_{Mangle(iterable.Element)}",
         DictOfType dict => $"dict_{Mangle(dict.Key)}_{Mangle(dict.Value)}",
         OptionalOf optional => $"{Mangle(optional.Inner)}_opt",
@@ -346,7 +351,7 @@ public sealed partial class CSharpEmitter
     private void EmitTopLevel()
     {
         _locals = LocalNames.For([], _program.TopLevel, _globalNames);
-        Line($"public static void {_topLevelMethod}()");
+        Line($"public static {(_program.IsAsync ? $"async {Tasks}" : "void")} {_topLevelMethod}()");
         Line("{");
         _indent++;
         EmitTracked(_program.TopLevel.Span, () =>
@@ -396,7 +401,8 @@ public sealed partial class CSharpEmitter
         name ??= owner is null ? symbol.Name : MethodName(symbol);
         // In a library, a property's getter and setter are behind a C# property (SPEC §14).
         var access = symbol.Kind == MemberKind.Property || symbol.SetterOf is not null ? HelperAccess : MemberAccess(symbol.Name);
-        var signature = $"{access} {modifier}{TypeName(symbol.ReturnType)} @{name}{typeParameters}({parameters})";
+        var async = symbol.IsAsync && !symbol.IsAbstract ? "async " : "";
+        var signature = $"{access} {modifier}{async}{TypeName(symbol.ReturnType)} @{name}{typeParameters}({parameters})";
         if (symbol.IsAbstract)
         {
             // An abstract method has no body (SPEC §8); its defaults are still helpers.
@@ -760,6 +766,10 @@ public sealed partial class CSharpEmitter
                 LineDirective(assign.Span);
                 EmitCompound(assign.IsCompound, assign.Target is null ? [] : [assign.Target], () => Line($"{DotNetAssignment(assign)};"));
                 break;
+            case BoundDotNetIndexAssign assign:
+                LineDirective(assign.Span);
+                EmitCompound(assign.IsCompound, [assign.Index.Target, .. assign.Index.Arguments.Select(a => a.Value)], () => Line($"{DotNetIndexAssignment(assign)};"));
+                break;
             case BoundIndexAssign assign:
                 LineDirective(assign.Span);
                 EmitCompound(assign.IsCompound, [assign.Target, assign.Index],
@@ -820,6 +830,10 @@ public sealed partial class CSharpEmitter
             case BoundExprStmt { Expr: BoundCall or BoundMethodCall or BoundBuiltinMethodCall or BoundPyCall or BoundInvoke or BoundSort or BoundSuperCall or BoundClassMethodCall or BoundDotNetCall { Method.ReturnsVoid: true } } exprStmt:
                 LineDirective(exprStmt.Span);
                 Line($"{Expr(exprStmt.Expr)};");
+                break;
+            case BoundExprStmt { Expr: BoundAwait awaited } exprStmt:
+                LineDirective(exprStmt.Span);
+                Line($"{(awaited.Type is NothingType ? "" : "_ = ")}await {Operand(awaited.Operand)};");
                 break;
             case BoundExprStmt exprStmt:
                 LineDirective(exprStmt.Span);
@@ -1057,7 +1071,7 @@ public sealed partial class CSharpEmitter
         var name = $"@{_locals[function.Symbol]}";
         LineDirective(function.Span);
         Line($"{type} {name} = null!;");
-        Line($"{name} = new {type}(\"{function.Function.Name}\", ({LambdaParameters(function.Parameters)}) =>");
+        Line($"{name} = new {type}(\"{function.Function.Name}\", {(function.Function.IsAsync ? "async " : "")}({LambdaParameters(function.Parameters)}) =>");
         var outerLoops = _loops;
         _loops = new Stack<LoopContext>();
         Line("{");
@@ -1340,6 +1354,7 @@ public sealed partial class CSharpEmitter
             BoundUnary { Op: UnaryOp.Negate } unary when OverflowsAtCompileTime(unary) =>
                 $"{Runtime}.Ops.Negate({Expr(unary.Operand)})",
             BoundUnary unary => $"{(unary.Op == UnaryOp.Negate ? "-" : "!")}{Operand(unary.Operand)}",
+            BoundAwait awaited => $"(await {Operand(awaited.Operand)})",
             BoundBinary binary => Binary(binary),
             BoundCall call => Call(call),
             BoundFString fstring => FString(fstring),
@@ -1389,6 +1404,8 @@ public sealed partial class CSharpEmitter
             BoundSlice slice => Slice(slice),
             BoundMatchExpr match => MatchExpr(match),
             BoundDotNetCall call => DotNetCall(call),
+            BoundDotNetIndex index => DotNetIndex(index),
+            BoundDotNetOperator op => DotNetOperator(op),
             BoundDotNetNew created => DotNetNew(created),
             BoundDotNetMember member => DotNetMember(member),
             _ => throw new InvalidOperationException($"unexpected bound expression {expr.GetType().Name}"),
@@ -1850,6 +1867,8 @@ public sealed partial class CSharpEmitter
         NothingType => "void",
         ListOfType list => $"{Collections}.List<{TypeName(list.Element)}>",
         IteratorOfType iterator => $"{Runtime}.IIterator<{TypeName(iterator.Element)}>",
+        AwaitableOfType { Result: NothingType } => Tasks,
+        AwaitableOfType awaitable => $"{Tasks}<{TypeName(awaitable.Result)}>",
         IterableOfType iterable => $"{Collections}.IEnumerable<{TypeName(iterable.Element)}>",
         DictOfType dict => $"{Collections}.OrderedDictionary<{TypeName(dict.Key)}, {TypeName(dict.Value)}>",
         ClassType { TypeArguments.IsEmpty: true } classType => TypePath(classType.Symbol),

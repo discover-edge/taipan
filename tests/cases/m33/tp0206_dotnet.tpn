@@ -1,0 +1,4 @@
+# A generic method whose type arguments can't be inferred (SPEC §13.8).
+from dotnet.System import Array
+
+print(Array.Empty())

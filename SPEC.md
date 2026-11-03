@@ -34,8 +34,8 @@ Taipan is a statically typed, compiled language with Python's surface syntax. Th
 - **Comments:** `#` to end of line.
 - **Identifiers:** `[A-Za-z_][A-Za-z0-9_]*`. A lone `_` is the wildcard pattern only.
 - **Keywords:**
-  `def class enum let var const if elif else while for in match return pass break continue and or not is some None True False as from import lambda try except finally raise del yield`
-  - `yield` is a keyword since M31 (§3.13).
+  `def class enum let var const if elif else while for in match return pass break continue and or not is some None True False as from import lambda try except finally raise del yield async await`
+  - `yield` is a keyword since M31 (§3.13), and `async` and `await` since M33 (§3.14).
   - `struct` was a keyword before M15. It's now an ordinary name, and records are declared with `@dataclass class` (§4.3).
   - `type` is a *soft keyword* (M18), as in Python 3.12: it starts a type alias (§3.12) only at the start of a line, followed by a name and then `=` or `[`. Anywhere else it's an ordinary name, so `type = "json"` and `e.type` still work.
   - `isinstance` and `super` are built-in functions (§6), not keywords. `Protocol`, `Self` and `Comparable` are built-in names (M17, §3.11), not keywords.
@@ -95,7 +95,7 @@ import_name   = NAME [ "as" NAME ] ;
 
 const_def     = "const" NAME [ ":" type ] "=" expr NEWLINE ;
 
-func_def      = { decorator } "def" NAME [ type_params ] "(" [ params ] ")" [ "->" type ] ":" block ;
+func_def      = { decorator } [ "async" ] "def" NAME [ type_params ] "(" [ params ] ")" [ "->" type ] ":" block ;   (* async: M33, §3.14 *)
 decorator     = "@" NAME [ "." NAME ] NEWLINE ;                      (* M15: @dataclass, @override; §4.3. M28: §4.8 *)
 params        = param_item { "," param_item } [ "," ] ;
 param_item    = param | "/" | "*" [ NAME ":" type ] | "**" NAME ":" type ;   (* M30, §4.2 *)
@@ -108,7 +108,7 @@ class_def     = { decorator } "class" NAME [ type_params ] [ "(" base { "," base
                 NEWLINE INDENT class_member { class_member } DEDENT ;
 base          = NAME [ "." NAME ] [ "[" type { "," type } "]" ] ;   (* more than one class base is TP0225; protocols may be added: M17 *)
 class_member  = NAME ":" type [ "=" expr ] NEWLINE | method_def | "pass" NEWLINE ;
-method_def    = { decorator } "def" NAME "(" [ method_params ] ")" [ "->" type ] ":" ( block | "..." NEWLINE ) ;   (* M5; "...": M17 *)
+method_def    = { decorator } [ "async" ] "def" NAME "(" [ method_params ] ")" [ "->" type ] ":" ( block | "..." NEWLINE ) ;   (* M5; "...": M17; async: M33 *)
 method_params = ( "self" | "cls" ) { "," param } [ "," ] | params ;  (* M28: "cls", or neither, for class and static methods, §4.8 *)
 
 enum_def      = "enum" NAME [ type_params ] ":" NEWLINE INDENT variant { variant } DEDENT ;
@@ -176,10 +176,10 @@ comparison    = additive [ comp_op additive | "is" [ "not" ] "None" ] ;   (* no 
 comp_op       = "==" | "!=" | "<" | "<=" | ">" | ">=" | "in" | "not" "in" ;
 additive      = term { ( "+" | "-" ) term } ;
 term          = unary { ( "*" | "/" | "//" | "%" ) unary } ;
-unary         = "-" unary | cast ;
+unary         = "-" unary | "await" unary | cast ;                 (* await: M33, §3.14 *)
 cast          = postfix [ "as" type ] ;                            (* M10 *)
 postfix       = atom { call | "." NAME | "[" subscript "]" } ;
-subscript     = expr | [ expr ] ":" [ expr ] [ ":" [ expr ] ] ;      (* a slice: M12, §5.4 *)
+subscript     = expr { "," expr } [ "," ] | [ expr ] ":" [ expr ] [ ":" [ expr ] ] ;   (* a slice: M12, §5.4; "x[a, b]" indexes with the tuple (a, b): M33 *)
 call          = "(" [ arg { "," arg } [ "," ] ] ")" ;
 arg           = expr | NAME "=" expr | "*" expr | "**" expr ;        (* "*" and "**": M30, §4.2 *)
 atom          = INT | FLOAT | STRING | FSTRING | "True" | "False" | "None"
@@ -714,6 +714,28 @@ for i, name in zip(naturals(1), ["a", "b", "c"]):
 - A class's `__iter__` result and `__next__` result types give `T`. A class with both must give the same `T` (`TP0225`).
 
 ---
+
+### 3.14 Async functions (M33)
+```python
+from dotnet.System.Net.Http import HttpClient
+
+async def fetch(url: str) -> str:
+    let body = await HttpClient().GetStringAsync(url)
+    return body.strip()
+
+let first = fetch("http://localhost:8080/a")
+let second = fetch("http://localhost:8080/b")
+print(await first, await second)
+```
+
+- **`Awaitable[T]`** is a value that will give a `T`: a running async function's result, or a .NET `Task<T>` (§13.11). `Awaitable[None]` gives no value, as a .NET `Task` does.
+- **`async def`** declares an async function or method. Its declared return type is what `await` gives, so `async def fetch(url: str) -> str` is called as `fetch(url)`, of type `Awaitable[str]`, and `await fetch(url)` is a `str`. Without a return type, it's `Awaitable[None]`. A function value of it has type `Callable[[str], Awaitable[str]]`.
+- **Calling an async function starts it**, as in C#, unlike Python, where a coroutine waits to be awaited: its body runs until its first `await` of something not yet finished, and the call returns then. The rest runs when what it awaits finishes. So above, both requests are in flight before either is awaited.
+- **`await e`** waits for `e`, an `Awaitable[T]`, and gives its `T`, or raises the exception it ended with. Awaiting anything else is `TP0200`, `cannot await <T>`. `await` binds like unary `-`, so `await f(x).y` awaits `f(x).y`; write `(await f(x)).y` for the field of the result.
+- **Where `await` may appear:** in the body of an `async def`, and at the main file's top level, whose statements then run as an async entry point. Anywhere else, including a lambda, a generator, a nested `def` that isn't `async`, and a `const`, is `TP0215`, `'await' outside an async function`.
+- **Display:** an awaitable displays as `<awaitable>`, and equality is identity.
+- **An awaitable is awaited.** An expression statement whose value is an `Awaitable` is `TP0235`, `this awaitable is never awaited`, with help `write 'await …'`, since its exceptions would be lost. Store it to await it later (`let pending = fetch(url)`).
+- **Deferred:** async generators, `async for`, `async with`, async lambdas, and helpers such as `asyncio.gather`. A `yield` in an `async def` is `TP0215`.
 
 ## 4. Declarations
 
@@ -1359,6 +1381,7 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 | abstract classes (M28) | `public abstract class`, with `public abstract` methods. An abstract class has no `@__new__`, since nothing constructs it. |
 | `Iterable[T]` / `Iterator[T]` (M31) | `IEnumerable<T>`, and the covariant interface `Taipan.Runtime.IIterator<T>`, an `IEnumerable<T>` over one stream: a second loop over it continues where the first stopped. A list, dict, str or class converts to `Iterable[T]` through a runtime wrapper that starts a fresh pass each time, and keeps the mutation check (§5.2). |
 | generators (M31) | A C# iterator method returning `IEnumerable<T>`, with `yield return` and `yield break`; the generator function calls it and wraps the result in an `Iterator<T>`, so its body starts at the first value asked for. `yield from e` is a `foreach` that yields each value. |
+| async functions (M33) | A C# `async` method returning `Task<T>` (`Task` for `Awaitable[None]`); `await` is C#'s. `Awaitable[T]` is `Task<T>`. A main file with a top-level `await` gets an `async Task Main`. |
 | `map`, `filter`, `zip`, `enumerate` (M31) | Runtime iterators over `IEnumerable<T>`, which call their function or take from their sources only when asked for a value. |
 | `isinstance(x, C)` / narrowed `x` | `x is C`. A narrowed read is `((C)x)`, or `x!` / `x.Value` for `x is not None` on a reference / value type. |
 | `x as C` / `x as C?` | `Taipan.Runtime.Ops.Cast<C>(x)`, which panics as §7 says / `x as C` |
@@ -1440,7 +1463,7 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 | TP0212 | chained comparison not supported |
 | TP0213 | nested optional |
 | TP0214 | duplicate definition |
-| TP0215 | `break`/`continue` outside loop, `return` outside function, a bare `raise` outside `except`, or `return`/`break`/`continue` in `finally` |
+| TP0215 | `break`/`continue` outside loop, `return` outside function, a bare `raise` outside `except`, `return`/`break`/`continue` in `finally`, or a misplaced `yield` or `await` |
 | TP0216 | ambiguous enum variant; qualify it |
 | TP0217 | `const` initializer is not a constant expression |
 | TP0218 | keyword argument not accepted |
@@ -1460,6 +1483,7 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 | TP0232 | ambiguous .NET overload |
 | TP0233 | can't be used in a native program (M23) |
 | TP0234 | abstract class instantiated (M28) |
+| TP0235 | awaitable never awaited (M33) |
 | TP0300 | warning: unreachable code (a statement, `match` arm or `except` clause) |
 | TP0301 | warning: broad `except` clause discards the exception |
 | TP0302 | warning: a library's or extension module's definition can't be exported (M22, M25) |
@@ -1517,7 +1541,7 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0211 | `'<f>' cannot use top-level variable '<x>'`, with help `pass it as a parameter, or make it a const` |
 | TP0213 | `optional types cannot be nested` |
 | TP0214 | `duplicate definition of '<x>'` |
-| TP0215 | `'yield' outside a function` / `'yield' can't be inside a 'try' with 'except', or in 'finally'` (M31) / `'<k>' can't leave a 'match' expression`, with help `use a 'match' statement` (M29) / `'break' outside a loop` / `'continue' outside a loop` / `'return' outside a function` / `'raise' without an exception outside an except block` / `'return' cannot be used in a finally block` (and `'break'`, `'continue'`) (M16) |
+| TP0215 | `'await' outside an async function` / `'yield' in an async function` (M33) / `'yield' outside a function` / `'yield' can't be inside a 'try' with 'except', or in 'finally'` (M31) / `'<k>' can't leave a 'match' expression`, with help `use a 'match' statement` (M29) / `'break' outside a loop` / `'continue' outside a loop` / `'return' outside a function` / `'raise' without an exception outside an except block` / `'return' cannot be used in a finally block` (and `'break'`, `'continue'`) (M16) |
 | TP0216 | `'<v>' is ambiguous: it is a variant of <E1> and <E2>`, with help `qualify it, e.g. '<E1>.<v>'` |
 | TP0217 | `const initializer must be a constant expression` / `class attribute value must be a constant expression` (M28) |
 | TP0218 | `'<p>' is positional-only, so it can't be passed by keyword` (M30) / `'<f>' takes no keyword arguments` (a built-in) / `a function value takes no keyword arguments` / `'<f>' has no parameter '<k>'` (M14; also for `sorted`, `sort` and `enumerate`) |
@@ -1530,6 +1554,7 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0226 | `'__init__' does not set '<f>'` / `'<f>' has no default, and '<C>' has no '__init__'` / `'<f>' is read before it is set` / `'self' is used before '<f>' is set` (or `before 'super().__init__' is called`) / `'<f>' is inherited, so it is set by 'super().__init__'` / `'super().__init__' is called before '<f>' is set` / `'<C>.__init__' must call 'super().__init__(…)'` / `'super().__init__' must be called once, directly in '__init__'` / `'super().__init__' can only be called in '__init__'` / `'__init__' returns before '<f>' is set` (or `before 'super().__init__' is called`) (when several fields are unset, the first in declaration order is named) |
 | TP0227 | `'<m>' overrides '<B>.<m>'; mark it '@override'` / `'<m>' does not override a method of <a base class\|'<B>'>` / `'__init__' cannot be marked '@override'` |
 | TP0228 | `'<m>' must take the same parameters as '<B>.<m>'` / `parameter '<p>' of '<m>' must have type <T>, as in '<B>.<m>'` / `parameter '<p>' of '<m>' needs a default, as in '<B>.<m>'` / `'<m>' must return <T>, as '<B>.<m>' does` (or `return nothing`) / `'<m>' is a <static method\|class method\|method\|property> in '<B>'` / `'<p>' must have a setter, as '<B>.<p>' does` / `'<D>.<m>' must return <R>, since it can run in place of '<B>.<op>'` / `'<D>' must be constructed as '<C>' is, since '<C>.<m>' calls 'cls(…)'` (M28) |
+| TP0235 | `this awaitable is never awaited`, with help `write 'await …'` (M33) |
 | TP0234 | `cannot instantiate abstract class '<C>'`, with help `it does not implement '<B>.<m>'` (`'<B>.<m>' and '<B>.<n>'` for more) / `'cls(…)' may construct the abstract class '<C>'` / `'<C>' cannot add abstract method '<m>', since '<B>.<cm>' calls 'cls(…)'` (M28) |
 | TP0220 | `a constraint needs at least two types` / `'<T>' is listed twice in the constraint` / `a constraint cannot be optional or generic` / `constraints are only supported on functions` / `'<T>' is not a protocol` (with help `class bounds are not supported`, for a class) / `bounds are only supported on functions` (M17) |
 | TP0229 | `'<P>' is a protocol, so it can only be a type parameter bound`, with help `use a bounded type parameter, e.g. 'def f[T: <P>](x: T)'` (M17) |
@@ -1611,7 +1636,7 @@ Types are written as in source: `int`, `str?`, `list[int]`. The type of `None` i
 - `@final`, `Self` outside protocols (so a class method's result is its declared class, not `cls`'s), static and class methods and class attributes on generic classes, abstract static and class methods, property deleters, and static and class methods as values
 - `isinstance` on `py` values, and `is` between two expressions (identity)
 - generic functions, built-ins, methods and constructors as values (wrap them in a lambda)
-- generator `send`, `throw` and `close`, `yield` as an expression, generator return values, `Generator[Y, S, R]`, `yield` inside `try`/`except`, generator expressions and comprehensions, and `async` iterators
+- async generators, `async for`, `async with`, async lambdas and `asyncio`-style helpers (M33), generator `send`, `throw` and `close`, `yield` as an expression, generator return values, `Generator[Y, S, R]`, `yield` inside `try`/`except`, generator expressions and comprehensions, and `async` iterators
 - or-patterns (`A | B`), guards (`case x if …`), `as` patterns, `None` and float literal patterns, mapping patterns, and `*` in tuple patterns (M29 has them in list patterns only)
 - type aliases inside functions and classes, recursive aliases, and showing an alias's name in diagnostics
 - defaults on lambda parameters (not planned, since loop variables are captured per iteration, §3.7), typed `**kwargs` (`Unpack[TypedDict]`), `*args` and `**kwargs` in function types, and `**e` filling named parameters
@@ -1621,7 +1646,7 @@ Types are written as in source: `int`, `str?`, `list[int]`. The type of `None` i
 - nested format specs in f-strings (`{x:{width}}`), the locale-dependent `n` format type, and format specs for other types (`__format__`)
 - language server features beyond §16: formatting, code actions, incremental sync, workspace-wide diagnostics, semantic token deltas and ranges, completion of .NET namespaces and Python modules' names, signature help for built-in functions, references to built-in, Python and .NET names, renaming modules (renaming their files), and editors other than VS Code
 - CPython extension modules beyond §17: classes and enums as Python types, Python functions and objects as arguments, Python interop inside an extension, generic functions, free-threaded CPython, and builds for one exact Python version
-- .NET interop beyond §13: generic methods and generic .NET types (other than the collections of §13.3), delegates and passing Taipan functions to .NET, `async` and `Task`, events, `ref`/`out`/`in` parameters, `params` arrays, indexers, operators, extension methods (LINQ), `object` and `decimal` results, dictionaries, deriving from .NET classes or implementing .NET interfaces, raising .NET exceptions, `isinstance`/`as`/`match` on .NET types, flags enums, namespace imports (`import dotnet.System.IO as io`), and packages with native assets
+- .NET interop beyond §13: generic .NET types other than `Dictionary<K, V>`, `Task<T>` and delegates (`HashSet<T>`, `IGrouping<K, T>`), explicit type arguments on generic methods, extension-method syntax (`xs.Where(f)`), events, `ref`/`out`/`in` parameters, `params` arrays, `object` and `decimal` results, deriving from .NET classes or implementing .NET interfaces, raising .NET exceptions, `isinstance`/`as`/`match` on .NET types, flags enums, namespace imports (`import dotnet.System.IO as io`), cancelling a `Task`, and packages with native assets
 - an MSBuild project SDK (`TaipanLang.Sdk`), for building `.tpn` files with `dotnet build` as part of a .NET solution
 - native builds beyond §15: another architecture (`--runtime <rid>`), Python in native programs, native libraries, and size options such as invariant globalization
 - Taipan libraries beyond §14: a configurable namespace, assembly name and version (in `taipan.json`), PascalCase names, XML documentation, value `Equals` and `GetHashCode` for dataclasses, deriving from Taipan classes in other .NET languages, plain delegates for function types, and packing a library as a NuGet package
@@ -1729,14 +1754,21 @@ def report(path: str) -> str:
 | `T[]` | `list[T]` | copied into a new array | copied into a new list |
 | `List<T>` | `list[T]` | passed as is, so changes are shared | as is |
 | `IEnumerable<T>`, `ICollection<T>`, `IList<T>`, `IReadOnlyCollection<T>`, `IReadOnlyList<T>` | `list[T]` | the list itself, or a copy if its elements convert | enumerated at once into a new list |
+| `IOrderedEnumerable<T>` (M33, as a result only) | `list[T]` | | enumerated at once into a new list |
+| `Dictionary<K, V>` (M33) | `dict[K, V]` | copied into a new `Dictionary` | copied into a new dict, in the order it enumerates |
+| `IDictionary<K, V>`, `IReadOnlyDictionary<K, V>` (M33) | `dict[K, V]` | the dict itself, so changes are shared, or a copy if its keys or values convert | copied into a new dict, in the order it enumerates |
+| `Func<A…, R>`, `Action<A…>`, and other delegate types (M33) | `Callable[[A…], R]`, or `Callable[[A…], None]` for no result | a function value or lambda, as a delegate that calls it (§13.9) | a function value that calls the delegate |
+| `Task<T>`, `ValueTask<T>` (M33) | `Awaitable[T]` | the awaitable itself (`ValueTask<T>`: wrapped) | as is (`ValueTask<T>`: as a `Task<T>`) |
+| `Task`, `ValueTask` (M33) | `Awaitable[None]` | as for `Task<T>` | as for `Task<T>` |
 | `object` | any value | an `int`, `float`, `bool`, `str` or .NET value (not a Taipan list, dict, tuple, class, function, `py` or `None`, whose .NET forms are internal) | `TP0231` |
 | other public, non-generic classes, structs, interfaces and enums | the same type, opaque | | |
 
 - `T` in a row stands for any type in the table, so `string[]` is `list[str]` and `List<int?>` is `list[int?]`. `List<T>` is passed as is only when `T` maps without conversion (`long`, `double`, `bool`, `string` or an opaque type); any other `List<T>` is copied, both ways.
-- **Anything else is `TP0231`**, reported where a member using it is called, read or assigned: other generic types (`Dictionary<K, V>`, `Task<T>`, `Span<T>`), delegates (`Func<…>`, `Action<…>`), `decimal`, `Int128`, `BigInteger`, `nint`, pointers, `ref`, `out` or `in` parameters, and generic methods (named by their type parameter: `'Array.Empty' uses T`). Members that use such types can be present, as long as they aren't used.
+- A dict's keys and values convert as list elements do, and a dict whose key and value types map without conversion is the only kind passed as is. A `Dictionary`'s keys must be valid dict keys (§3.1).
+- **Anything else is `TP0231`**, reported where a member using it is called, read or assigned: other generic types (`HashSet<T>`, `Span<T>`, `IGrouping<K, T>`), delegates with `ref`, `out` or `in` parameters or generic delegates' open types, `decimal`, `Int128`, `BigInteger`, `nint`, pointers, and `ref`, `out` or `in` parameters. Members that use such types can be present, as long as they aren't used. Since M33, generic methods aren't in this list: §13.8 says how they're called.
 - **Nullability.** A reference type annotated as nullable (`string?`) is `T?`, and one annotated as not null is `T`. A result of a not-null type that is null anyway, since annotations aren't checked by .NET, raises `TypeError` (`'<T>.<m>' returned null`) at the boundary, rather than surfacing later as a null in Taipan. Elements of a not-null element type (`string[]`) are checked the same way when the list is copied. In an assembly without nullable annotations, reference-type results are `T?` and reference-type parameters take `T`.
 - **Opaque types** are written by their imported name in annotations and type arguments: `list[FileInfo]`, `Uri?`. A value of a .NET type that wasn't imported (such as a method's result) can still be used. Its type is displayed by its C# name without the namespace (`FileInfo`, `Environment.SpecialFolder`).
-- `==` and `!=` on two values of the same .NET type use .NET's `Equals`. Ordering, arithmetic, `in`, iteration, indexing, `match`, `isinstance` and dict keys don't apply (`TP0200`). `print`, `str()` and f-string holes use .NET's `ToString()`.
+- `==` and `!=` on two values of the same .NET type use .NET's `Equals`. Since M33, the type's operators and indexers apply too (§13.10). Otherwise, ordering, arithmetic, `in`, iteration, indexing, `match`, `isinstance` and dict keys don't apply (`TP0200`). `print`, `str()` and f-string holes use .NET's `ToString()`.
 - A .NET value can't be passed to Python (`TP0200`, §10.3).
 
 ### 13.4 Members
@@ -1755,12 +1787,14 @@ def report(path: str) -> str:
 1. **Candidates** are the public overloads with that name, static or instance as the call requires, skipping any that use a type `TP0231` covers.
 2. A candidate is **applicable** if the arguments match its parameters by position and keyword (§4.2), and each argument converts to its parameter (§13.3).
 3. **Each argument's fit** is, best first:
-   - *exact*: its Taipan type is the parameter's mapped type with no conversion (`int` to `long`, `float` to `double`, `str` to `string`, a value to its own .NET type, a list to `List<T>` or an interface of it, `None` or a `T` to a nullable `T`)
-   - *conversion*: `int` to a narrower integer, `str` to `char`, a .NET value to a base class or interface, a list copied to an array or with its elements converted
+   - *exact*: its Taipan type is the parameter's mapped type with no conversion (`int` to `long`, `float` to `double`, `str` to `string`, a value to its own .NET type, a list to `List<T>` or an interface of it, `None` or a `T?` to a nullable `T`)
+   - *conversion*: `int` to a narrower integer, `str` to `char`, a .NET value to a base class or interface, a list copied to an array or with its elements converted, and since M33, a `T` to a nullable value type (`int` to `long?`, so `Max(IEnumerable<long>)` is better than `Max(IEnumerable<long?>)`, as in C#)
    - *float conversion*: `int` to `double` or `float`, and `float` to `float`
    - *object*: any value to `object`
 4. A candidate is **better** than another if each of its arguments fits at least as well and one fits better, or if they fit the same and it leaves out fewer parameters with defaults.
 5. **The overload chosen** is the applicable candidate no other is better than. If there are several such, the call is `TP0232`, naming two of them.
+
+Since M33, a generic method's candidate has its type arguments inferred first (§13.8), and is applicable only if they can be; a lambda argument fits a delegate parameter whose parameter count matches it, as *exact*. Between two candidates whose arguments fit the same, a non-generic one is better than a generic one, and of two generic ones, the one whose parameters mention fewer of its type parameters (`Func<TSource, double>` over `Func<TSource, TResult>`), as in C#. A lambda argument's fit is its result's fit to the delegate's result type.
 
 So `sb.Append(5)` calls `Append(long)`, `sb.Append("x")` calls `Append(string)` (not `Append(object)`), `Math.Max(1, 2)` calls `Max(long, long)`, and `TimeSpan.FromDays(2)` calls `FromDays(int)`, not `FromDays(double)` or `FromDays(int, int = 0, …)`. These are the overloads C# picks, too.
 
@@ -1775,8 +1809,33 @@ So `sb.Append(5)` calls `Append(long)`, `sb.Append("x")` calls `Append(string)` 
 - **Uncaught**, a .NET exception panics with `.NET <full class name>: <message>`, as a Python exception does (§10.5), and exits with 101.
 - Raising .NET exceptions is deferred.
 
-### 13.7 Deferred
-§11 lists what's deferred: generic methods and most generic types, delegates and passing Taipan functions to .NET, `async`, events, `ref`/`out`/`in`, `params` arrays, indexers, operators, extension methods, dictionaries, deriving from .NET types, raising .NET exceptions, and type tests on .NET types.
+### 13.8 Generic methods (M33)
+- A generic .NET method is called as any other, with its type arguments inferred from the call: `Enumerable.Where(xs, lambda x: x > 2)`, `Enumerable.Max(scores)`, `Array.IndexOf(names, "b")`.
+- **Inference** works as C#'s does, in phases:
+  1. Each argument that isn't a lambda gives its type's .NET form (§8: `int` is `long`, `list[T]` is `List<T>`, a Taipan class is itself) to the parameter it fills, which fixes the type parameters that appear there. `List<long>` against `IEnumerable<TSource>` fixes `TSource` as `long`.
+  2. Then each lambda whose delegate parameter's input types are fixed is bound with those types, as `Callable[[int], …]`, and its result fixes the type parameters in the delegate's result: `Enumerable.Select(xs, lambda x: str(x))` fixes `TResult` as `string`. This repeats until nothing more is fixed.
+  3. A type parameter fixed two different ways is `TP0200`, `'<T>' is inferred as both <A> and <B>`, and one left unfixed is `TP0206`, `cannot infer '<T>' for '<T>.<m>'`.
+- **A type argument may be any Taipan type**, in its .NET form, so `Enumerable.Reverse(shapes)` with `shapes: list[Shape]` is `IEnumerable<Shape>`, a `list[Shape]` again as a result. Results whose type mentions a type parameter are mapped back as §13.3 says, with the type argument's Taipan type: `TSource` fixed as `long` is `int`.
+- **Constraints** (`where T : struct`, `class`, `new()`, a base class or interface such as `IComparable<T>`) are checked against the type argument's .NET form: `TP0200`, `'<A>' doesn't satisfy the constraint '<C>' on '<T>' of '<T>.<m>'`. So `Enum.IsDefined(5)` is `TP0200`, since `TEnum` must be an `Enum`. A Taipan class has no .NET interfaces of its own, so it satisfies only `class` (and `new()` when its constructor takes no arguments) among constraints.
+- A generic method whose type parameters can't all be inferred from its parameters, such as `Array.Empty<T>()`, can't be called yet (`TP0206`), since explicit type arguments are deferred.
+
+### 13.9 Delegates (M33)
+- **A function value or lambda converts to a delegate type** whose `Invoke` maps (§13.3): `Func<long, bool>` is `Callable[[int], bool]`, `Action<string>` is `Callable[[str], None]`, `Predicate<T>` and `Comparison<T>` and any other named delegate type by their `Invoke`. The delegate calls the function, converting each argument from .NET to Taipan and the result back, as a call across the boundary does (§13.3), so `Func<int, int>` takes a `Callable[[int], int]` and checks its results' range.
+- **A lambda** passed where a delegate is expected takes its parameter types from the delegate (after inference, §13.8), as a lambda passed to a `Callable` parameter does (§3.7). Its body is checked as Taipan code, with Taipan's semantics.
+- **A delegate result** (a method's, property's or field's) is a function value that calls it. It displays as `<function <delegate>>`, and equality is identity.
+- An exception escaping the Taipan function while .NET calls it propagates through the .NET code to the Taipan code that called it, as any exception does.
+
+### 13.10 Indexers and operators (M33)
+- **Indexers:** `x[i]` on a .NET value calls its indexer (`this[…]`, the `Item` property), and `x[i] = v` its setter, choosing among overloaded indexers by §13.5's rule. An indexer with several parameters takes them as `x[i, j]`, which elsewhere, as in Python, indexes with the tuple `(i, j)` (a dict with tuple keys, say). A value without one, or one without a setter when assigned, is `TP0200`, `cannot index <T>` / `TP0202`.
+- **Operators:** `+ - * / %`, unary `-`, and `< <= > >=` on .NET values call the operators their types define (`op_Addition`, `op_LessThan`, …), chosen by §13.5's rule among both operand types' operators, so `DateTime.Now - start` is a `TimeSpan` and `span < TimeSpan.FromSeconds(1)` a `bool`. `==` and `!=` still use `Equals` (§13.3). An operator neither type defines is `TP0200`, `operator '<op>' cannot be applied to <S> and <T>`. Taipan's `//` and `??` have no .NET operators.
+
+### 13.11 Tasks and await (M33)
+- A .NET method returning `Task<T>` or `ValueTask<T>` gives an `Awaitable[T]` (§3.14), and one returning `Task` or `ValueTask` an `Awaitable[None]`, so `await HttpClient().GetStringAsync(url)` is a `str` and `await Task.Delay(100)` gives no value.
+- An `Awaitable` passed to a `Task<T>` parameter is the task itself, so `Task.WhenAll(first, second)` works on Taipan async functions' results (and gives an `Awaitable[list[T]]`, since `T[]` is `list[T]`).
+- A .NET exception a task ends with is raised by the `await`, as §13.6 says. `TaskCanceledException` is an ordinary .NET exception class.
+
+### 13.12 Deferred
+§11 lists what's deferred: generic .NET types other than `Dictionary`, `Task` and delegates, explicit type arguments, extension-method syntax, events, `ref`/`out`/`in`, `params` arrays, deriving from .NET types, raising .NET exceptions, and type tests on .NET types.
 
 ---
 
@@ -1827,7 +1886,7 @@ catch (shapes.UnknownShape e) { Console.WriteLine(e.message); }
 | generic definitions | real .NET generics, where they can be (below) |
 | protocols, type aliases | nothing, as in a program (§8) |
 
-- **Types in signatures** are §8's: `int` is `long`, `float` is `double`, `bool`, `str`, `T?` (`long?` or `string?`), `list[T]` is `List<T>`, `dict[K, V]` is `OrderedDictionary<K, V>`, `tuple[A, B]` is a value tuple, a function type is `Taipan.Runtime.Function<D>` (constructed from a delegate: `new Function<Func<long, long>>("twice", x => x * 2)`), `py` is pythonnet's `PyObject`, `Iterable[T]` is `IEnumerable<T>`, which a C# caller may pass any sequence as, and `Iterator[T]` is `Taipan.Runtime.IIterator<T>`, an `IEnumerable<T>` it can loop over once (M31), and .NET types are themselves. Lists and dicts are shared, not copied, both ways.
+- **Types in signatures** are §8's: `int` is `long`, `float` is `double`, `bool`, `str`, `T?` (`long?` or `string?`), `list[T]` is `List<T>`, `dict[K, V]` is `OrderedDictionary<K, V>`, `tuple[A, B]` is a value tuple, a function type is `Taipan.Runtime.Function<D>` (constructed from a delegate: `new Function<Func<long, long>>("twice", x => x * 2)`), `py` is pythonnet's `PyObject`, `Iterable[T]` is `IEnumerable<T>`, which a C# caller may pass any sequence as, and `Iterator[T]` is `Taipan.Runtime.IIterator<T>`, an `IEnumerable<T>` it can loop over once (M31), `Awaitable[T]` is `Task<T>`, so an `async def` is a C# async method (M33), and .NET types are themselves. Lists and dicts are shared, not copied, both ways.
 - **Equality and hashing** are .NET's for the C# caller: a class's `Equals` is reference identity (or, since M28, `==` for a class that defines `__hash__`, §8), and an enum's is the record's (field by field, with C#'s `Equals` on each). `Taipan.Runtime.Equality.Equal(a, b)` compares as Taipan's `==` does.
 - `__init__`, `__new__` and the helpers that evaluate defaults are internal, as names starting with `_` are. So are special methods (M28), though `__str__` gives `ToString`, and a class whose body defines `__hash__` overrides `Equals` and `GetHashCode` with `==` and `hash()`. A property is a C# property, a static or class method a public static method (a class method's `cls` is its own class), and a class attribute a public static property. Classes implement the runtime's `IStruct` or `IObject`, which display and equality use; they aren't meant for callers. Deriving from a Taipan class in another .NET language isn't supported.
 - **Generic definitions.** A generic function, class or enum is exported as a .NET generic (`first<T>`, `Box<T>`) when:
@@ -1929,7 +1988,7 @@ This adds a local store per statement and a filter per method; it's emitted only
   |---|---|
   | variable | `let total: float`, `var count: int`, or `items: list[Shape]` for a parameter |
   | constant | `const LIMIT: int` |
-  | function | `def scale(p: Point, by: float = …) -> Point`, with type parameters (`def first[T](xs: list[T]) -> T?`) and parameter kinds as written (§4.2): `def log(msg: str, /, *args: int, sep: str = …, **kwargs: str)` (M32) |
+  | function | `def scale(p: Point, by: float = …) -> Point`, or `async def fetch(url: str) -> str` (M33), with type parameters (`def first[T](xs: list[T]) -> T?`) and parameter kinds as written (§4.2): `def log(msg: str, /, *args: int, sep: str = …, **kwargs: str)` (M32) |
   | method | `def Point.moved(self, by: float = …) -> Point` |
   | field | `Point.x: float` |
   | class, enum | `class Point`, `@dataclass class Point`, `class Box[T]`, `enum Shape` |
@@ -1963,7 +2022,7 @@ This adds a local store per statement and a filter per method; it's emitted only
   | after `.`, on a .NET value or type | its public instance members, or a type's public static members (§13.4) |
   | after `.`, on anything else (a `py` value, a tuple, a number) | nothing |
   | in a type (after `:` in a binding or parameter, after `->`, inside a type's `[…]`, after `type X =`) | the types in scope: built-in types (§3), classes, enums, protocols, type aliases, type parameters, imported .NET types, and modules (for `m.Point`) |
-  | anywhere else a name may go | the names in scope at the cursor, then keywords: every keyword that starts a statement at a statement's start, and `None`, `True`, `False`, `not`, `lambda` and `match` inside an expression |
+  | anywhere else a name may go | the names in scope at the cursor, then keywords: every keyword that starts a statement at a statement's start, and `None`, `True`, `False`, `not`, `lambda`, `match` and `await` (M33) inside an expression |
 
   The names in scope are the locals and parameters of the enclosing functions bound before the cursor, the file's own definitions and imports, and the built-in functions, types and exceptions (§6).
 - **Items.** Each item's `label` is the name, its `detail` is what hover would show for it (§16.3), and its `kind` is LSP's for what it names:
@@ -2071,10 +2130,10 @@ This adds a local store per statement and a filter per method; it's emitted only
   | `f"…"` | `string.interpolated`, with `{{` and `}}` as escapes; each hole `meta.interpolation`, with its braces `punctuation.section.interpolation.begin` and `.end`, its conversion (`!r`) and format spec (`:>8`) `storage.type.format`, and the expression inside colored as code |
   | integers, floats | `constant.numeric.integer`, `constant.numeric.float` |
   | `True`, `False`, `None` | `constant.language` |
-  | `if elif else while for match return pass break continue try except finally raise yield`, and a `for` header's `in` | `keyword.control.flow` |
+  | `if elif else while for match return pass break continue try except finally raise yield await`, and a `for` header's `in` | `keyword.control.flow` |
   | `import from as` | `keyword.control.import` |
   | `and or not is in some` | `keyword.operator.logical` |
-  | `def`, `lambda` | `storage.type.function` |
+  | `def`, `lambda`, `async` | `storage.type.function` |
   | `class`, `enum` | `storage.type.class` |
   | `let var const`, and `type` starting an alias | `storage.modifier.declaration` |
   | `del` | `keyword.other.del` |
@@ -2131,7 +2190,7 @@ The module file's own definitions whose names don't start with `_` (§14.1), as 
 - **Functions** whose parameter and result types are all *convertible* (§10.3), other than `py`: `int`, `float`, `bool`, `str`, and lists, dicts, tuples and optionals of those, or no result. Each is a Python built-in function (`geometry.area`).
 - **Constants** of convertible types, as attributes holding their values (`geometry.PI`), set when the module is imported.
 - **Exception classes** (§3.10) defined in the file, as Python exception classes named `<name>.<Class>` (`geometry.NegativeRadius`). Each derives from the Python class of its Taipan base: the module's own class for an exported exception class, or the built-in of the same name (§17.4), so `except ValueError` catches a Taipan class deriving from `ValueError`. A base that isn't exported (`_Base`) is skipped for its nearest exported or built-in ancestor.
-- **Not exported (`TP0302`):** a function or constant that uses a type that isn't convertible, such as a class, an enum or a function type, is warning `TP0302`, with `'<T>' can't be passed to Python` as the reason, as is a generic function (`it's generic`). Other classes and enums aren't exported, and aren't warned about.
+- **Not exported (`TP0302`):** a function or constant that uses a type that isn't convertible, such as a class, an enum or a function type, is warning `TP0302`, with `'<T>' can't be passed to Python` as the reason, as is a generic function (`it's generic`) and, since M33, an async function (`it's async`). Other classes and enums aren't exported, and aren't warned about.
 
 ### 17.3 Calls and conversions
 - **Arguments** are passed by position or by keyword, using the Taipan parameter names, and a parameter with a default may be left out; its default is evaluated at each call, as in Taipan (§4.2). Since M30, positional-only and keyword-only parameters, `*args` and `**kwargs` are Python's, so Python callers bind arguments as Taipan does (§4.2), and each collected argument converts to the element type, as a list's or dict's would. Python's own errors for a wrong call are `TypeError`s with Python's messages: `area() takes 1 positional argument but 2 were given`, `area() got an unexpected keyword argument 'radius'`, `area() missing required argument 'r'`, `area() got multiple values for argument 'r'`, and since M30 `area() got some positional-only arguments passed as keyword arguments: 'r'` and `area() missing required keyword-only argument 'k'`. A keyword-only parameter passed by position is one too many positional arguments: `scale() takes 1 positional argument but 2 were given`.
