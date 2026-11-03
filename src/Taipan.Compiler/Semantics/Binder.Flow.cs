@@ -11,16 +11,28 @@ public sealed partial class Binder
 {
     /// <summary>
     /// A field path, <c>p.x</c> or <c>self.config.port</c> (SPEC §3.9), or one rooted at a class
-    /// attribute, <c>C.cache</c> with no fields (§4.8, M28). It can be narrowed when its root can't change.
+    /// attribute, <c>C.cache</c> with no fields (§4.8, M28). Since M40 its steps may be elements,
+    /// <c>xs[0]</c>, and its root a var (§3.18). It can be narrowed when its root is a name and
+    /// each element's key is fixed.
     /// </summary>
-    private sealed record FieldPath(Symbol Root, ImmutableArray<FieldSymbol> Fields)
+    private sealed record FieldPath(Symbol Root, ImmutableArray<object> Steps)
     {
-        public bool Equals(FieldPath? other) => other is not null && other.Root == Root && other.Fields.SequenceEqual(Fields);
+        public bool Equals(FieldPath? other) => other is not null && other.Root == Root && other.Steps.SequenceEqual(Steps);
 
-        public override int GetHashCode() => Fields.Aggregate(Root.GetHashCode(), (hash, field) => HashCode.Combine(hash, field));
+        public override int GetHashCode() => Steps.Aggregate(Root.GetHashCode(), (hash, step) => HashCode.Combine(hash, step));
 
-        public bool CanNarrow => Root is VariableSymbol { Kind: VariableKind.Let or VariableKind.Parameter or VariableKind.LoopVariable } or ClassAttributeSymbol;
+        public IEnumerable<FieldSymbol> Fields => Steps.OfType<FieldSymbol>();
+
+        public bool CanNarrow =>
+            Root is VariableSymbol { Kind: VariableKind.Let or VariableKind.Parameter or VariableKind.LoopVariable or VariableKind.Var } or ClassAttributeSymbol
+            && Steps.All(s => s is not ElementStep { Key: null });
     }
+
+    /// <summary>
+    /// An element of a list, dict or tuple of type <see cref="Container"/> in a path (SPEC §3.18):
+    /// its key, a literal or a name that can't change, or null for any other key.
+    /// </summary>
+    private sealed record ElementStep(object? Key, TaipanType Container);
 
     // Each ending since the binder started, in order, so a nested region's endings can be applied
     // to the state it returns to (SPEC §3.9: ending is ordered as the code runs).
@@ -114,6 +126,7 @@ public sealed partial class Binder
     {
         if (RunsCode(bound) && _narrowing.Types.Keys.Any(k => k is FieldPath))
             EndPaths(_ => true, CallWhy(bound.Span));
+        EndElementsAfter(bound, bound.Span);
         return bound;
     }
 
@@ -148,6 +161,7 @@ public sealed partial class Binder
         if (_declaredIn.TryGetValue(variable, out var owner) && owner != _function)
             _nestedAssigned.Add(variable);
         // Saying why only matters when the assignment ends a narrowing.
+        EndPaths(path => path.Root == variable, RootWhy(variable, span));
         if (_narrowing.Types.ContainsKey(variable))
         {
             End(variable, variable.Type is OptionalOf
@@ -157,6 +171,60 @@ public sealed partial class Binder
         if (!_nestedAssigned.Contains(variable) && Narrower(variable.Type, value.Type) is { } narrower)
             _narrowing = _narrowing with { Types = _narrowing.Types.SetItem(variable, narrower), Why = _narrowing.Why.Remove(variable) };
     }
+
+    private string RootWhy(VariableSymbol variable, TextSpan span) =>
+        $"the assignment to '{variable.Name}' on line {Line(span)} could have changed it";
+
+    // ---- Elements (SPEC §3.18) ----
+
+    /// <summary>The list or dict type a statement or expression itself changes, if it changes one.</summary>
+    private static TaipanType? Changes(object node) => node switch
+    {
+        BoundIndexAssign assign when assign.Target.Type is ListOfType or DictOfType => assign.Target.Type,
+        BoundSliceAssign slice => slice.Slice.Target.Type,
+        BoundDelete delete => delete.Targets.OfType<BoundIndex>().Select(t => t.Target.Type).FirstOrDefault(),
+        BoundBuiltinMethodCall { Method: BuiltinMethod.ListAppend or BuiltinMethod.ListPop or BuiltinMethod.ListInsert or BuiltinMethod.ListSort or BuiltinMethod.DictRemove } call => call.Target.Type,
+        BoundRuntimeMethodCall { Kind: "List", Name: "extend" or "remove" or "reverse" or "clear" or "pop" } call => call.Target.Type,
+        BoundRuntimeMethodCall { Kind: "Dict", Name: "pop" or "setdefault" or "update" or "clear" } call => call.Target.Type,
+        BoundSort { InPlace: true } sort => sort.List.Type,
+        _ => null,
+    };
+
+    private string ChangeWhy(TaipanType container, TextSpan span) =>
+        $"the change to a {container} on line {Line(span)} could have changed it; copy it to a 'let' first";
+
+    /// <summary>After a change to a list or dict, no element of one of its type stays narrowed, through any name.</summary>
+    private void EndElementsAfter(object node, TextSpan span)
+    {
+        if (Changes(node) is { } changed)
+        {
+            var container = TypeChecker.Unwrap(changed);
+            EndPaths(path => path.Steps.Any(s => s is ElementStep e && e.Container == container), ChangeWhy(container, span));
+        }
+    }
+
+    // The key of an element that can be narrowed: an int or str literal, or a name that can't change.
+    private static object? ElementKey(BoundExpr index) => index switch
+    {
+        BoundLiteral { Value: long or string } literal => literal.Value,
+        BoundUnary { Op: UnaryOp.Negate, Operand: BoundLiteral { Value: long value } } => -value,
+        BoundVariable { Symbol: { Kind: VariableKind.Let or VariableKind.Parameter or VariableKind.LoopVariable } symbol } => symbol,
+        _ => null,
+    };
+
+    private static FieldPath? ElementPath(BoundExpr target, object? key) =>
+        (KeyOf(target), new ElementStep(key, TypeChecker.Unwrap(target.Type))) switch
+        {
+            (VariableSymbol root, var step) => new FieldPath(root, [step]),
+            (FieldPath path, var step) => path with { Steps = path.Steps.Add(step) },
+            _ => null,
+        };
+
+    /// <summary>An element read, narrowed if its path is (SPEC §3.18).</summary>
+    private BoundExpr NarrowedElement(BoundExpr element) =>
+        KeyOf(element) is FieldPath path && _narrowing.Types.TryGetValue(path, out var type)
+            ? new BoundNarrowed(element, type, element.Span)
+            : element;
 
     /// <summary>A type narrower than <paramref name="declared"/> that a value of <paramref name="value"/>'s type has: no longer optional, or a subclass.</summary>
     private static TaipanType? Narrower(TaipanType declared, TaipanType value)
@@ -236,10 +304,15 @@ public sealed partial class Binder
         {
             switch (stmt)
             {
-                case BoundAssign assign when state.Types.ContainsKey(assign.Target):
-                    ended.TryAdd(assign.Target, assign.Target.Type is OptionalOf
-                        ? $"it can be None again after the assignment on line {Line(assign.Span)}"
-                        : $"it was assigned again on line {Line(assign.Span)}");
+                case BoundAssign assign:
+                    if (state.Types.ContainsKey(assign.Target))
+                    {
+                        ended.TryAdd(assign.Target, assign.Target.Type is OptionalOf
+                            ? $"it can be None again after the assignment on line {Line(assign.Span)}"
+                            : $"it was assigned again on line {Line(assign.Span)}");
+                    }
+                    foreach (var path in state.Types.Keys.OfType<FieldPath>().Where(p => p.Root == assign.Target))
+                        ended.TryAdd(path, RootWhy(assign.Target, assign.Span));
                     break;
                 case BoundPropertySet propertySet:
                     foreach (var path in state.Types.Keys.OfType<FieldPath>())
@@ -263,7 +336,11 @@ public sealed partial class Binder
                     foreach (var path in state.Types.Keys.OfType<FieldPath>())
                         ended.TryAdd(path, $"the call on line {Line(call.Span)} could have changed it; copy it to a 'let' first");
                 }
+                foreach (var change in Descendants(expr).Where(e => Changes(e) is not null))
+                    EndChanged(change, change.Span);
             }
+            if (Changes(stmt) is not null)
+                EndChanged(stmt, stmt.Span);
             if (stmt is BoundUnpack unpack)
             {
                 foreach (var store in unpack.Stores)
@@ -274,6 +351,12 @@ public sealed partial class Binder
             foreach (var inner in BoundTree.Statements(stmt))
                 Visit(inner);
         }
+        void EndChanged(object node, TextSpan span)
+        {
+            var container = TypeChecker.Unwrap(Changes(node)!);
+            foreach (var path in state.Types.Keys.OfType<FieldPath>().Where(p => p.Steps.Any(s => s is ElementStep e && e.Container == container)))
+                ended.TryAdd(path, ChangeWhy(container, span));
+        }
         foreach (var stmt in statements)
             Visit(stmt);
         // A var a nested function assigns is never narrowed.
@@ -281,6 +364,9 @@ public sealed partial class Binder
             ended.TryAdd(variable, "a nested function assigns it, so it isn't narrowed");
         return [.. ended.Select(pair => (pair.Key, pair.Value))];
     }
+
+    private static IEnumerable<BoundExpr> Descendants(BoundExpr expr) =>
+        expr is BoundLambda ? [] : BoundTree.Children(expr).SelectMany(Descendants).Prepend(expr);
 
     private static BoundExpr? FirstCode(BoundExpr expr) =>
         RunsCode(expr) ? expr : expr is BoundLambda ? null : BoundTree.Children(expr).Select(FirstCode).FirstOrDefault(e => e is not null);
@@ -296,9 +382,11 @@ public sealed partial class Binder
         BoundFieldAccess access => KeyOf(access.Target) switch
         {
             VariableSymbol root => new FieldPath(root, [access.Field]),
-            FieldPath path => path with { Fields = path.Fields.Add(access.Field) },
+            FieldPath path => path with { Steps = path.Steps.Add(access.Field) },
             _ => null,
         },
+        BoundIndex { Target.Type: ListOfType or DictOfType } index => ElementPath(index.Target, ElementKey(index.Index)),
+        BoundTupleElement element => ElementPath(element.Tuple, (long)element.Index),
         _ => null,
     };
 

@@ -1,0 +1,55 @@
+# Class bounds on a function's type parameters (SPEC §3.18).
+class Animal:
+    name: str
+    volume: int
+
+    def __init__(self, name: str, volume: int):
+        self.name = name
+        self.volume = volume
+
+    def speak(self) -> str:
+        return "..."
+
+    def louder(self) -> Self:
+        self.volume += 1
+        return self
+
+    def __lt__(self, other: Animal) -> bool:
+        return self.volume < other.volume
+
+class Dog(Animal):
+    @override
+    def speak(self) -> str:
+        return f"{self.name} woofs"
+
+class Box[T]:
+    value: T
+
+    def __init__(self, value: T):
+        self.value = value
+
+def loudest[A: Animal](xs: list[A]) -> A:
+    var best = xs[0]
+    for x in xs:
+        if best < x:
+            best = x
+    return best
+
+def chorus[A: Animal](xs: list[A]) -> list[str]:
+    return [x.speak() for x in xs]
+
+def boost[A: Animal](a: A) -> A:
+    let b: A = a.louder()
+    let base: Animal = b
+    print(base.name, isinstance(b, Dog))
+    return b
+
+def unbox[B: Box[int]](b: B) -> int:
+    return b.value + 1
+
+let dogs = [Dog("rex", 3), Dog("fido", 7)]
+let top: Dog = loudest(dogs)
+print(top.name, top.speak())
+print(chorus([Animal("cat", 1), Dog("max", 2)]))
+print(boost(Dog("ace", 1)).volume)
+print(unbox(Box(41)))

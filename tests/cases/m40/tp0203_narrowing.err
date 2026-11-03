@@ -1,0 +1,10 @@
+tests/cases/m40/tp0203_narrowing.tpn:14:15: error TP0203: int? must be narrowed before use
+  help: the change to a list[int?] on line 13 could have changed it; copy it to a 'let' first
+tests/cases/m40/tp0203_narrowing.tpn:17:15: error TP0203: int? must be narrowed before use
+  help: the change to a list[int?] on line 16 could have changed it; copy it to a 'let' first
+tests/cases/m40/tp0203_narrowing.tpn:20:15: error TP0203: int? must be narrowed before use
+  help: the call on line 19 could have changed it; copy it to a 'let' first
+tests/cases/m40/tp0203_narrowing.tpn:23:15: error TP0203: int? must be narrowed before use
+  help: copy it to a 'let' first
+tests/cases/m40/tp0203_narrowing.tpn:29:15: error TP0203: int? must be narrowed before use
+  help: the assignment to 'b' on line 28 could have changed it

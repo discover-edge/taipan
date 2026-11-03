@@ -1,0 +1,2 @@
+tests/cases/m40/tp0302_protocol_library.tpn:5:7: warning TP0302: 'Bag' is not exported: it's used as the protocol 'Getter[int]'
+  help: rename it '_Bag' to keep it private

@@ -1,0 +1,29 @@
+# What ends narrowing of elements and of paths rooted at a var (SPEC §3.18).
+class Box:
+    value: int?
+
+    def __init__(self, value: int?):
+        self.value = value
+
+def touch():
+    pass
+
+def elements(xs: list[int?], ys: list[int?], i: int):
+    if xs[0] is not None:
+        ys.append(None)
+        print(xs[0] + 1)
+    if xs[0] is not None:
+        ys[1] = None
+        print(xs[0] + 1)
+    if xs[0] is not None:
+        touch()
+        print(xs[0] + 1)
+    var j = i
+    if xs[j] is not None:
+        print(xs[j] + 1)
+
+def paths(other: Box):
+    var b = Box(1)
+    if b.value is not None:
+        b = other
+        print(b.value + 1)

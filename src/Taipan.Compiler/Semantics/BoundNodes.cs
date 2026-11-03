@@ -493,7 +493,14 @@ public sealed record BoundSlice(BoundExpr Target, BoundExpr? Start, BoundExpr? S
 
 /// <summary>A lambda. A parameter named <c>_</c> is never referred to.</summary>
 public sealed record BoundLambda(ImmutableArray<VariableSymbol> Parameters, BoundExpr Body, FunctionType FunctionType, TextSpan Span)
-    : BoundExpr(FunctionType, Span);
+    : BoundExpr(FunctionType, Span)
+{
+    /// <summary>
+    /// The generic function, built-in, class or variant this lambda stands for as a value (SPEC §3.18,
+    /// M40), which it's displayed as; it's one cached value per type.
+    /// </summary>
+    public Symbol? Shown { get; init; }
+}
 
 /// <summary>A top-level function used as a value.</summary>
 public sealed record BoundFunctionValue(FunctionSymbol Function, FunctionType FunctionType, TextSpan Span) : BoundExpr(FunctionType, Span);
@@ -575,6 +582,16 @@ public sealed record BoundToPy(BoundExpr Value, TextSpan Span) : BoundExpr(Taipa
 /// <summary><c>x as T</c> on a py value (SPEC §10.4); <see cref="BoundExpr.Type"/> is the target.</summary>
 public sealed record BoundCast(BoundExpr Value, TaipanType Type, TextSpan Span) : BoundExpr(Type, Span);
 
+/// <summary>A protocol value as another protocol type it satisfies (SPEC §3.18, M40): a cast between interfaces that can't fail.</summary>
+public sealed record BoundProtocolCast(BoundExpr Value, TaipanType Type, TextSpan Span) : BoundExpr(Type, Span);
+
+/// <summary>
+/// <c>isinstance(v, T)</c> on a py value (SPEC §3.18, M40): with <see cref="Narrows"/> (int, float, str
+/// or bool), whether <c>v as T</c> would succeed; otherwise Python's test against a built-in type's
+/// name (<see cref="Builtin"/>) or a Python class (<see cref="Class"/>).
+/// </summary>
+public sealed record BoundPyIsInstance(BoundExpr Operand, TaipanType? Narrows, string? Builtin, BoundExpr? Class, TextSpan Span) : BoundExpr(TaipanType.Bool, Span);
+
 /// <summary>
 /// <c>x is some v</c> as an <c>if</c> or <c>while</c> condition; <see cref="Binding"/> is
 /// declared in the guarded body (SPEC §3.4).
@@ -583,6 +600,9 @@ public sealed record BoundIsSome(BoundExpr Operand, VariableSymbol Binding, Text
 
 /// <summary><c>x is None</c>, or <c>x is not None</c> when <see cref="Negated"/> (SPEC §3.4).</summary>
 public sealed record BoundIsNone(BoundExpr Operand, bool Negated, TextSpan Span) : BoundExpr(TaipanType.Bool, Span);
+
+/// <summary><c>a is b</c>, or <c>a is not b</c> when <see cref="Negated"/> (SPEC §3.18, M40).</summary>
+public sealed record BoundIs(BoundExpr Left, BoundExpr Right, bool Negated, TextSpan Span) : BoundExpr(TaipanType.Bool, Span);
 
 /// <summary><c>print</c> with keywords (SPEC §6, M37); a keyword left out is null.</summary>
 public sealed record BoundPrint(ImmutableArray<BoundExpr> Values, BoundExpr? Sep, BoundExpr? End, BoundExpr? File, BoundExpr? Flush, TextSpan Span)

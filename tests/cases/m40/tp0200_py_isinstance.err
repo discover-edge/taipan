@@ -1,0 +1,3 @@
+tests/cases/m40/tp0200_py_isinstance.tpn:5:21: error TP0200: isinstance on py takes int, float, str, bool, list, dict, tuple or a Python class, found tuple
+tests/cases/m40/tp0200_py_isinstance.tpn:6:21: error TP0200: isinstance on py takes int, float, str, bool, list, dict, tuple or a Python class, found list[int]
+tests/cases/m40/tp0200_py_isinstance.tpn:7:21: error TP0200: isinstance on py takes int, float, str, bool, list, dict, tuple or a Python class, found set

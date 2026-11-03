@@ -1,0 +1,31 @@
+# Errors with generic bases (SPEC §3.18).
+class Box[T]:
+    value: T
+
+    def __init__(self, value: T):
+        self.value = value
+
+    def get(self) -> T:
+        return self.value
+
+class Bare(Box):
+    pass
+
+class Wrong(Box[int]):
+    @override
+    def get(self) -> str:
+        return "x"
+
+class Failure[T](Exception):
+    pass
+
+def take(b: Box[float]):
+    pass
+
+class Sub[T](Box[T]):
+    pass
+
+take(Sub(1))
+let s: Sub[int] = Sub(1)
+take(s)
+print(isinstance(s, Sub))

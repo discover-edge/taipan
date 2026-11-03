@@ -1,0 +1,7 @@
+tests/cases/m40/tp0200_identity.tpn:9:7: error TP0200: 'is' compares identity, which int doesn't have
+  help: use '=='
+tests/cases/m40/tp0200_identity.tpn:11:7: error TP0200: 'is' compares identity, which str doesn't have
+  help: use '=='
+tests/cases/m40/tp0200_identity.tpn:12:7: error TP0200: 'is' compares identity, which tuple[int, int] doesn't have
+  help: use '=='
+tests/cases/m40/tp0200_identity.tpn:13:7: error TP0200: cannot compare Animal and Car

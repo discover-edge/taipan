@@ -1,0 +1,16 @@
+# How protocol types are emitted: an interface, implemented explicitly by each class that satisfies it (SPEC §8).
+class Named(Protocol):
+    name: str
+    def greet(self, other: str) -> str: ...
+
+class Person:
+    name: str
+
+    def __init__(self, name: str):
+        self.name = name
+
+    def greet(self, other: str) -> str:
+        return f"{self.name} greets {other}"
+
+let n: Named = Person("ann")
+print(n.greet(n.name))

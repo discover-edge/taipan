@@ -20,6 +20,13 @@ public static class TypeChecker
         || (to is OptionalOf optional && (from is NoneType || (from is not OptionalOf && IsSubtype(from, optional.Inner))))
         || (from is OptionalOf { Inner: ClassType fromClass } && to is OptionalOf { Inner: ClassType toClass } && Derives(fromClass, toClass))
         || (from is ClassType fromType && to is ClassType toType && Derives(fromType, toType))
+        // A class, protocol type or class-bounded type parameter that satisfies a protocol is one (SPEC §3.18).
+        || (to is ClassType { Symbol.IsProtocol: true } protocol && IsProtocolValue(from) && Protocols.Unsatisfied(from, protocol) is null)
+        || (from is OptionalOf { Inner: var inner } && to is OptionalOf { Inner: ClassType { Symbol.IsProtocol: true } optionalProtocol }
+            && IsProtocolValue(inner) && Protocols.Unsatisfied(inner, optionalProtocol) is null)
+        // A type parameter bounded by a class is one of its subclasses (SPEC §3.18).
+        || (from is TypeParameterType { Symbol.ClassBound: { } bound } && IsSubtype(bound, to))
+        || (from is OptionalOf { Inner: TypeParameterType { Symbol.ClassBound: { } optionalBound } } && to is OptionalOf && IsSubtype(new OptionalOf(optionalBound), to))
         || (from is ClassOfType fromClassOf && to is ClassOfType toClassOf && Derives(fromClassOf.Class, toClassOf.Class))
         // A class with __call__ is a function value of its shape (SPEC §4.9).
         || (from is ClassType && to is FunctionType && SpecialMethods.CallShape(from) is { } shape && IsSubtype(shape, to))
@@ -33,6 +40,9 @@ public static class TypeChecker
         || (from is FunctionType f && to is FunctionType t && f.Parameters.Length == t.Parameters.Length
             && t.Parameters.Zip(f.Parameters).All(pair => IsSubtype(pair.First, pair.Second))
             && (f.Result == t.Result || (f.Result is not NothingType && t.Result is not NothingType && IsSubtype(f.Result, t.Result))));
+
+    /// <summary>Whether values of a type can be held by a protocol type: objects, not built-in values (SPEC §3.18).</summary>
+    public static bool IsProtocolValue(TaipanType type) => type is ClassType or TypeParameterType { Symbol.ClassBound: not null };
 
     private static bool IsElementOf(TaipanType element, TaipanType expected) =>
         element == expected || element.ContainsError || expected.ContainsError
@@ -67,8 +77,22 @@ public static class TypeChecker
         _ => null,
     };
 
-    // Generic classes can't derive, so a class deriving from another has no type arguments (SPEC §4.3).
-    private static bool Derives(ClassType from, ClassType to) => from.Symbol != to.Symbol && from.Symbol.DerivesFrom(to.Symbol);
+    // A class deriving from a generic one derives from one instantiation of it (SPEC §3.18).
+    private static bool Derives(ClassType from, ClassType to) => from.Symbol != to.Symbol && AsBase(from, to.Symbol) == to;
+
+    /// <summary>
+    /// The instantiation of <paramref name="target"/> that <paramref name="type"/> is or derives
+    /// from, with its type arguments: <c>Box[int]</c> for <c>Labeled[int]</c>. Null if it doesn't derive.
+    /// </summary>
+    public static ClassType? AsBase(ClassType type, ClassSymbol target)
+    {
+        for (var current = type; current is not null; current = current.Symbol.BaseType is { } baseType ? (ClassType)Substitute(baseType, Zip(current.Symbol.TypeParameters, current.TypeArguments)) : null)
+        {
+            if (current.Symbol == target)
+                return current;
+        }
+        return null;
+    }
 
     /// <summary>Whether a value of one class could be a value of the other: one derives from the other.</summary>
     public static bool AreRelated(ClassSymbol a, ClassSymbol b) => a.DerivesFrom(b) || b.DerivesFrom(a);
@@ -85,8 +109,11 @@ public static class TypeChecker
         if (left.ContainsError || right.ContainsError || left == right || (left.IsNumeric && right.IsNumeric))
             return true;
         // A class and a base of it, or function types one of which converts to the other (SPEC §4.3, §3.7).
+        // A protocol value and one assignable to it, or the reverse (SPEC §3.18).
+        if (left is ClassType { Symbol.IsProtocol: true } || right is ClassType { Symbol.IsProtocol: true })
+            return IsSubtype(left, right) || IsSubtype(right, left);
         if (left is ClassType lc && right is ClassType rc)
-            return lc.Symbol != rc.Symbol && AreRelated(lc.Symbol, rc.Symbol);
+            return lc.Symbol != rc.Symbol && (Derives(lc, rc) || Derives(rc, lc));
         if (left is DotNetType ln && right is DotNetType rn)
             return DotNetTypes.Derives(ln.Symbol, rn.Symbol) || DotNetTypes.Derives(rn.Symbol, ln.Symbol);
         if (left is FunctionType && right is FunctionType)
@@ -129,15 +156,63 @@ public static class TypeChecker
         };
     }
 
+    /// <summary>The type without the alias names it was written with (SPEC §3.18), for generated code.</summary>
+    public static TaipanType Unaliased(TaipanType type)
+    {
+        var plain = type.Alias is null ? type : type with { Alias = null };
+        return plain switch
+        {
+            OptionalOf optional => Same(optional.Inner, out var inner) ? plain : new OptionalOf(inner),
+            ListOfType list => Same(list.Element, out var element) ? plain : new ListOfType(element),
+            IteratorOfType iterator => Same(iterator.Element, out var element) ? plain : new IteratorOfType(element),
+            SetOfType set => Same(set.Element, out var element) ? plain : new SetOfType(element),
+            AwaitableOfType awaitable => Same(awaitable.Result, out var result) ? plain : new AwaitableOfType(result),
+            IterableOfType iterable => Same(iterable.Element, out var element) ? plain : new IterableOfType(element),
+            DictOfType dict => Same(dict.Key, out var key) & Same(dict.Value, out var value) ? plain : new DictOfType(key, value),
+            ClassType classType => classType.TypeArguments.Any(HasAlias) ? classType with { TypeArguments = [.. classType.TypeArguments.Select(Unaliased)] } : plain,
+            EnumType enumType => enumType.TypeArguments.Any(HasAlias) ? enumType with { TypeArguments = [.. enumType.TypeArguments.Select(Unaliased)] } : plain,
+            FunctionType function => function.Parameters.Any(HasAlias) || HasAlias(function.Result)
+                ? new FunctionType([.. function.Parameters.Select(Unaliased)], Unaliased(function.Result))
+                : plain,
+            TupleOfType tuple => tuple.Elements.Any(HasAlias) ? new TupleOfType([.. tuple.Elements.Select(Unaliased)]) : plain,
+            ClassOfType classOf => HasAlias(classOf.Class) ? new ClassOfType((ClassType)Unaliased(classOf.Class)) : plain,
+            _ => plain,
+        };
+
+        static bool Same(TaipanType part, out TaipanType unaliased)
+        {
+            unaliased = Unaliased(part);
+            return ReferenceEquals(unaliased, part);
+        }
+    }
+
+    private static bool HasAlias(TaipanType type) => !ReferenceEquals(Unaliased(type), type);
+
     private static TaipanType Flatten(TaipanType inner) => inner is OptionalOf or ErrorType ? inner : new OptionalOf(inner);
 
     /// <summary>The substitution for a generic class or enum type's members.</summary>
     public static Dictionary<TypeParameterSymbol, TaipanType> MapOf(TaipanType type) => type switch
     {
-        ClassType s => Zip(s.Symbol.TypeParameters, s.TypeArguments),
+        // With its bases' type parameters too, so an inherited member's type is right (SPEC §3.18).
+        ClassType s => ClassMap(s),
         EnumType e => Zip(e.Symbol.TypeParameters, e.TypeArguments),
         _ => [],
     };
+
+    private static Dictionary<TypeParameterSymbol, TaipanType> ClassMap(ClassType type)
+    {
+        var map = Zip(type.Symbol.TypeParameters, type.TypeArguments);
+        // On a protocol value, Self is the protocol type (SPEC §3.18).
+        if (type.Symbol.SelfParameter is { } self)
+            map[self] = type;
+        for (var baseType = type.Symbol.BaseType; baseType is not null; baseType = baseType.Symbol.BaseType)
+        {
+            var applied = (ClassType)Substitute(baseType, map);
+            foreach (var (parameter, argument) in applied.Symbol.TypeParameters.Zip(applied.TypeArguments))
+                map[parameter] = argument;
+        }
+        return map;
+    }
 
     public static Dictionary<TypeParameterSymbol, TaipanType> Zip(ImmutableArray<TypeParameterSymbol> parameters, ImmutableArray<TaipanType> arguments) =>
         parameters.Zip(arguments).ToDictionary(pair => pair.First, pair => pair.Second);

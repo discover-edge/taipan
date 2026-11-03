@@ -31,7 +31,7 @@ public static class Display
         double d => Format(d),
         bool b => Format(b),
         string s => s,
-        IFunction f => $"<function {f.Name}>",
+        IFunction f => f.Display,
         // An async function's result, or a .NET task (SPEC §3.14).
         System.Threading.Tasks.Task => "<awaitable>",
         ITuple t => "(" + string.Join(", ", Enumerable.Range(0, t.Length).Select(i => Repr(t[i]))) + ")",

@@ -33,6 +33,22 @@ public sealed partial class Binder
 
     // Dict key types that name classes, checked once every class's members are declared (SPEC §4.8).
     private readonly List<(Module Module, TextSpan Span, TaipanType Key, bool IsSet)> _pendingKeys = [];
+
+    // Generic classes converted to a protocol type, with one such protocol (SPEC §14.2).
+    private readonly Dictionary<ClassSymbol, string> _protocolUses = [];
+
+    // Protocols written as types before every protocol's methods were known (SPEC §3.18).
+    private bool _protocolsDeclared;
+    private readonly List<(Module Module, TextSpan Span, ClassSymbol Protocol)> _pendingProtocolTypes = [];
+
+    /// <summary>A protocol used as a type must use Self only as a whole result (TP0229, SPEC §3.18).</summary>
+    private bool CheckProtocolType(TextSpan span, ClassSymbol protocol)
+    {
+        if (Protocols.SelfProblem(protocol) is not { } method)
+            return true;
+        _diagnostics.ReportProtocolSelf(span, protocol.Name, method);
+        return false;
+    }
     private bool _membersDeclared;
 
     private DiagnosticBag _diagnostics = new();
@@ -65,7 +81,7 @@ public sealed partial class Binder
         public List<TypeAliasSymbol> Aliases { get; } = [];
 
         /// <summary>Each protocol a class declares in its base list, where it's written (SPEC §3.11).</summary>
-        public List<(ClassSymbol Class, ClassSymbol Protocol, TextSpan Span)> DeclaredProtocols { get; } = [];
+        public List<(ClassSymbol Class, ClassType Protocol, TextSpan Span)> DeclaredProtocols { get; } = [];
 
         public List<BoundConstant> Constants { get; } = [];
 
@@ -211,6 +227,19 @@ public sealed partial class Binder
         }
         BreakInheritanceCycles(modules);
 
+        // Protocols' members first, so other declarations can tell which can be types (SPEC §3.18).
+        foreach (var module in modules)
+        {
+            Enter(module);
+            foreach (var (syntax, symbol) in module.ClassDefs.Where(c => c.Symbol.IsProtocol))
+                module.Methods.AddRange(BindClassMembers(syntax, symbol));
+        }
+        _protocolsDeclared = true;
+        foreach (var (module, span, protocol) in _pendingProtocolTypes)
+        {
+            Enter(module);
+            CheckProtocolType(span, protocol);
+        }
         foreach (var module in modules)
         {
             Enter(module);
@@ -334,7 +363,8 @@ public sealed partial class Binder
                     break;
                 case ClassDef classDef:
                     var symbol = module.ClassDefs.First(c => c.Syntax == classDef).Symbol;
-                    module.Methods.AddRange(BindClassMembers(classDef, symbol));
+                    if (!symbol.IsProtocol)
+                        module.Methods.AddRange(BindClassMembers(classDef, symbol));
                     break;
                 case EnumDef enumDef:
                     BindVariantFields(enumDef, module.EnumDefs.First(e => e.Syntax == enumDef).Symbol);
@@ -489,22 +519,55 @@ public sealed partial class Binder
         }
     }
 
-    /// <summary>A function's protocol bounds (SPEC §3.11): anything but a protocol is TP0220.</summary>
+    /// <summary>
+    /// A function's bounds: protocols (SPEC §3.11), and since M40 classes (§3.18), whose type
+    /// arguments can't use type parameters. Anything else is TP0220.
+    /// </summary>
     private void BindBounds(ImmutableArray<TypeParam> syntax, ImmutableArray<TypeParameterSymbol> symbols)
     {
         foreach (var (parameter, symbol) in syntax.Zip(symbols))
         {
             if (parameter.Bound is not { } bound)
                 continue;
-            if (PeekClass(bound) is { IsProtocol: true } protocol)
+            if (PeekClass(bound) is { IsProtocol: true, TypeParameters.IsEmpty: true } protocol)
             {
-                symbol.Bound = protocol;
+                symbol.Bound = protocol.Type;
                 continue;
             }
             var type = BindType(bound);
-            if (!type.ContainsError)
-                _diagnostics.ReportNotProtocol(bound.Span, type, type is ClassType);
+            if (type.ContainsError)
+                continue;
+            if (type is not ClassType classType || BuiltinClasses.IsRuntimeOnly(classType.Symbol))
+                _diagnostics.ReportNotProtocol(bound.Span, type);
+            else if (MentionsTypeParameter(classType))
+                _diagnostics.ReportBoundTypeParameters(bound.Span);
+            else
+                symbol.Bound = classType;
         }
+    }
+
+    /// <summary>
+    /// A protocol in a class's base list, with its type arguments when it's generic (SPEC §3.18),
+    /// which may use the class's type parameters; null if the base isn't a protocol.
+    /// </summary>
+    private ClassType? DeclaredProtocol(TypeSyntax syntax, ClassSymbol owner)
+    {
+        if (PeekClass(syntax) is { IsProtocol: true } protocol)
+        {
+            if (protocol.TypeParameters.IsEmpty)
+                return protocol.Type;
+            _diagnostics.ReportWrongTypeArgumentCount(syntax.Span, protocol.Name, protocol.TypeParameters.Length, 0);
+            return new ClassType(protocol, [TaipanType.Error]);
+        }
+        if (syntax is not GenericType generic || ResolveTypeName(generic.Name.Text) is not ClassSymbol { IsProtocol: true } genericProtocol)
+            return null;
+        var outer = EnterTypeParameters(owner.TypeParameters);
+        var arguments = generic.Arguments.Select(BindType).ToImmutableArray();
+        _typeParameters = outer;
+        if (arguments.Length == genericProtocol.TypeParameters.Length)
+            return new ClassType(genericProtocol, arguments);
+        _diagnostics.ReportWrongTypeArgumentCount(syntax.Span, genericProtocol.Name, genericProtocol.TypeParameters.Length, arguments.Length);
+        return new ClassType(genericProtocol, [TaipanType.Error]);
     }
 
     /// <summary>The class or protocol a plain or qualified type name refers to, without reporting anything.</summary>
@@ -564,6 +627,77 @@ public sealed partial class Binder
         return previous;
     }
 
+    // Aliases declared in the blocks around the code being bound, and the class whose aliases it sees (SPEC §3.18).
+    private ImmutableDictionary<string, TypeAliasSymbol> _localAliases = ImmutableDictionary<string, TypeAliasSymbol>.Empty;
+    private ClassSymbol? _aliasClass;
+
+    /// <summary>The alias a type name refers to: a block's, the class's, or a global one.</summary>
+    private TypeAliasSymbol? LookupAlias(string name) =>
+        _localAliases.GetValueOrDefault(name)
+        ?? (_aliasClass ?? _outerFunction?.Owner)?.Aliases.GetValueOrDefault(name)
+        ?? _global.Lookup(name) as TypeAliasSymbol;
+
+    /// <summary>
+    /// Declares the aliases of a block or class body (SPEC §3.18), all at once, so they can refer to
+    /// each other in any order, then checks each one's right-hand side.
+    /// </summary>
+    private Dictionary<string, TypeAliasSymbol> DeclareLocalAliases(IEnumerable<TypeAliasDef> definitions, ClassSymbol? owner, HashSet<string>? members = null)
+    {
+        var declared = new Dictionary<string, TypeAliasSymbol>();
+        foreach (var definition in definitions)
+        {
+            var name = definition.Name.Text;
+            if (declared.ContainsKey(name) || members?.Contains(name) == true)
+            {
+                _diagnostics.ReportDuplicateDefinition(definition.Name.Span, name);
+                continue;
+            }
+            if (_typeParameters.ContainsKey(name) || BuiltinTypeNames.Contains(name) || ResolveTypeName(name) is not null
+                || LookupAlias(name) is not null || _global.Lookup(name) is DotNetTypeSymbol)
+            {
+                _diagnostics.ReportShadowing(definition.Name.Span, name);
+                continue;
+            }
+            var symbol = new TypeAliasSymbol(name, NewTypeParameters(definition.TypeParams)) { LocalType = definition.Type };
+            _aliases[symbol] = (_module!, definition, _aliases.Count);
+            declared[name] = symbol;
+            Index(definition.Name.Span, symbol);
+        }
+        if (owner is null)
+            _localAliases = _localAliases.SetItems(declared);
+        else
+            foreach (var (name, symbol) in declared)
+                owner.Aliases[name] = symbol;
+        foreach (var symbol in declared.Values)
+        {
+            CheckTypeParameters(_aliases[symbol].Syntax.TypeParams, allowConstraints: false);
+            symbol.Target = LocalAliasTarget(symbol);
+        }
+        return declared;
+    }
+
+    /// <summary>A block's or class's alias's right-hand side, bound with the type parameters in scope here.</summary>
+    private TaipanType LocalAliasTarget(TypeAliasSymbol alias)
+    {
+        if (alias.Target is ErrorType)
+            return TaipanType.Error;
+        var index = _resolving.IndexOf(alias);
+        if (index >= 0)
+        {
+            ReportAliasCycle(_resolving[index..]);
+            return TaipanType.Error;
+        }
+        _resolving.Add(alias);
+        var outer = _typeParameters;
+        _typeParameters = new(outer);
+        foreach (var parameter in alias.TypeParameters)
+            _typeParameters[parameter.Name] = parameter.Type;
+        var bound = BindType(alias.LocalType!);
+        _typeParameters = outer;
+        _resolving.RemoveAt(_resolving.Count - 1);
+        return bound;
+    }
+
     /// <summary>Declares an alias's name; its right-hand side is bound once imports are known (SPEC §3.12).</summary>
     private TypeAliasSymbol DeclareAlias(Module module, TypeAliasDef aliasDef)
     {
@@ -582,6 +716,17 @@ public sealed partial class Binder
     /// </summary>
     private TaipanType AliasTarget(TypeAliasSymbol alias)
     {
+        if (alias.LocalType is not null)
+        {
+            // Errors in its right-hand side are reported once, where it's declared.
+            if (_resolving.Count > 0)
+                return LocalAliasTarget(alias);
+            var diagnostics = _diagnostics;
+            _diagnostics = new DiagnosticBag { Source = _source, FileOrder = diagnostics.FileOrder };
+            var local = LocalAliasTarget(alias);
+            _diagnostics = diagnostics;
+            return local;
+        }
         if (alias.Target is { } target)
             return target;
         var index = _resolving.IndexOf(alias);
@@ -628,14 +773,16 @@ public sealed partial class Binder
             _diagnostics.ReportWrongTypeArgumentCount(span, name.Text, alias.TypeParameters.Length, arguments.Length);
             return TaipanType.Error;
         }
-        return TypeChecker.Substitute(target, alias.TypeParameters.Zip(arguments).ToDictionary(p => p.First, p => p.Second));
+        var expanded = TypeChecker.Substitute(target, alias.TypeParameters.Zip(arguments).ToDictionary(p => p.First, p => p.Second));
+        // Diagnostics show the type by the alias's name (SPEC §3.18).
+        return expanded.ContainsError ? expanded : expanded with { Alias = arguments.IsEmpty ? name.Text : $"{name.Text}[{string.Join(", ", arguments)}]" };
     }
 
     /// <summary>The alias a plain, generic or qualified type name refers to, without reporting anything.</summary>
     private TypeAliasSymbol? PeekAlias(TypeSyntax type) => type switch
     {
-        NamedType named when !_typeParameters.ContainsKey(named.Name.Text) => _global.Lookup(named.Name.Text) as TypeAliasSymbol,
-        GenericType generic => _global.Lookup(generic.Name.Text) as TypeAliasSymbol,
+        NamedType named when !_typeParameters.ContainsKey(named.Name.Text) => LookupAlias(named.Name.Text),
+        GenericType generic => LookupAlias(generic.Name.Text),
         QualifiedType qualified when _scope.Lookup(qualified.Module.Text) is ModuleSymbol module
             => module.Definitions.GetValueOrDefault(TypeName(qualified.Type)) as TypeAliasSymbol,
         _ => null,
@@ -653,7 +800,7 @@ public sealed partial class Binder
     /// <summary>The alias a name or <c>module.Name</c> expression refers to, if it's an alias rather than a value.</summary>
     private TypeAliasSymbol? NamedAlias(Expr expr) => expr switch
     {
-        NameExpr name when !_typeParameters.ContainsKey(name.Name) => _scope.Lookup(name.Name) as TypeAliasSymbol,
+        NameExpr name when !_typeParameters.ContainsKey(name.Name) => _scope.Lookup(name.Name) as TypeAliasSymbol ?? LookupAlias(name.Name),
         MemberExpr { Target: NameExpr module } member when _scope.Lookup(module.Name) is ModuleSymbol symbol
             => symbol.Definitions.GetValueOrDefault(member.Member.Text) as TypeAliasSymbol,
         _ => null,
@@ -665,9 +812,8 @@ public sealed partial class Binder
         if (classDef.Bases.Any(IsProtocolMarker))
         {
             CheckDecorators(classDef.Decorators, allowed: null);
-            if (!classDef.TypeParams.IsEmpty)
-                _diagnostics.ReportGenericProtocol(classDef.TypeParams[0].Span);
-            var protocol = BuiltinClasses.Protocol(classDef.Name.Text);
+            // Generic protocols since M40 (SPEC §3.18).
+            var protocol = BuiltinClasses.Protocol(classDef.Name.Text, NewTypeParameters(classDef.TypeParams));
             if (BuiltinTypeNames.Contains(protocol.Name))
                 _diagnostics.ReportDuplicateDefinition(classDef.Name.Span, protocol.Name);
             else if (DeclareGlobal(classDef.Name, protocol))
@@ -781,7 +927,7 @@ public sealed partial class Binder
                 _diagnostics.ReportProtocolBase(other.Span);
             return;
         }
-        var protocols = ImmutableArray.CreateBuilder<ClassSymbol>();
+        var protocols = ImmutableArray.CreateBuilder<ClassType>();
         var bases = new List<TypeSyntax>();
         foreach (var syntax in classDef.Bases)
         {
@@ -790,14 +936,16 @@ public sealed partial class Binder
                 symbol.IsAbc = true;
                 continue;
             }
-            if (PeekClass(syntax) is not { IsProtocol: true } protocol)
+            if (DeclaredProtocol(syntax, symbol) is not { } protocol)
             {
                 bases.Add(syntax);
                 continue;
             }
-            if (protocols.Contains(protocol))
+            if (protocol.ContainsError)
+                continue;
+            if (protocols.Any(p => p.Symbol == protocol.Symbol))
             {
-                _diagnostics.ReportProtocolRepeated(syntax.Span, protocol.Name, declaredBy: null);
+                _diagnostics.ReportProtocolRepeated(syntax.Span, protocol.Symbol.Name, declaredBy: null);
                 continue;
             }
             protocols.Add(protocol);
@@ -808,28 +956,23 @@ public sealed partial class Binder
             return;
         if (bases.Count > 1)
             _diagnostics.ReportMultipleBases(bases[1].Span);
-        BindBaseClass(bases[0], symbol);
+        BindBaseClass(bases[0], symbol, classDef.Name.Span);
     }
 
-    private void BindBaseClass(TypeSyntax syntax, ClassSymbol symbol)
+    private void BindBaseClass(TypeSyntax syntax, ClassSymbol symbol, TextSpan nameSpan)
     {
-        if (!symbol.TypeParameters.IsEmpty)
-        {
-            _diagnostics.ReportGenericWithBase(syntax.Span);
-            return;
-        }
         if (PeekAlias(syntax) is { } alias)
         {
             _diagnostics.ReportInvalidBase(syntax.Span, TypeName(syntax), aliasOf: alias.TargetName);
             return;
         }
+        // A generic class's base may use its type parameters (SPEC §3.18).
+        var outer = EnterTypeParameters(symbol.TypeParameters);
         var type = BindType(syntax);
+        _typeParameters = outer;
         switch (type)
         {
             case { ContainsError: true }:
-                return;
-            case ClassType { Symbol.TypeParameters.IsEmpty: false }:
-                _diagnostics.ReportGenericBase(syntax.Span);
                 return;
             // Only the runtime makes a PythonError or a DotNetError (SPEC §3.10).
             case ClassType { Symbol: var baseClass } when BuiltinClasses.IsRuntimeOnly(baseClass):
@@ -845,8 +988,11 @@ public sealed partial class Binder
             case ClassType { Symbol: var baseClass } when baseClass.IsFrozen != symbol.IsFrozen:
                 _diagnostics.ReportFrozenBase(syntax.Span, symbol.IsFrozen);
                 return;
-            case ClassType { Symbol: var baseClass }:
-                symbol.Base = baseClass;
+            case ClassType { Symbol: var baseClass } when !symbol.TypeParameters.IsEmpty && BuiltinClasses.IsException(baseClass):
+                _diagnostics.ReportGenericException(nameSpan);
+                return;
+            case ClassType baseType:
+                symbol.BaseType = baseType;
                 return;
             default:
                 _diagnostics.ReportInvalidBase(syntax.Span, type);
@@ -868,7 +1014,7 @@ public sealed partial class Binder
                     if (ancestor != symbol)
                         continue;
                     _diagnostics.ReportInheritanceCycle(syntax.Bases.First(b => !IsAbcMarker(b) && PeekClass(b) is not { IsProtocol: true }).Span, symbol.Name);
-                    symbol.Base = null;
+                    symbol.BaseType = null;
                     break;
                 }
             }
@@ -1086,6 +1232,9 @@ public sealed partial class Binder
             return BindProtocolMembers(classDef, symbol);
         CheckTypeParameters(classDef.TypeParams, allowConstraints: false);
         var outer = EnterTypeParameters(symbol.TypeParameters);
+        var outerAliasClass = _aliasClass;
+        _aliasClass = symbol;
+        DeclareLocalAliases(classDef.Aliases, symbol, [.. classDef.Fields.Select(f => f.Name.Text), .. classDef.Methods.Select(m => m.Name.Text)]);
         var names = new HashSet<string>();
         var fields = ImmutableArray.CreateBuilder<FieldSymbol>();
         var attributes = ImmutableArray.CreateBuilder<ClassAttributeSymbol>();
@@ -1123,6 +1272,7 @@ public sealed partial class Binder
             previous = method;
         }
         _typeParameters = outer;
+        _aliasClass = outerAliasClass;
         return methods;
     }
 
@@ -1137,12 +1287,23 @@ public sealed partial class Binder
     /// </summary>
     private List<(MethodDef, FunctionSymbol)> BindProtocolMembers(ClassDef classDef, ClassSymbol symbol)
     {
+        CheckTypeParameters(classDef.TypeParams, allowConstraints: false);
+        // Fields, without defaults or Self (SPEC §3.18).
+        var outer = EnterTypeParameters(symbol.TypeParameters);
+        var fields = ImmutableArray.CreateBuilder<FieldSymbol>();
         foreach (var field in classDef.Fields)
-            _diagnostics.ReportProtocolMember(field.Span);
-        var outer = EnterTypeParameters([symbol.SelfParameter!]);
-        // A generic protocol was already reported; its type parameters aren't reported again.
-        foreach (var parameter in classDef.TypeParams)
-            _typeParameters.TryAdd(parameter.Name.Text, TaipanType.Error);
+        {
+            if (field.Default is { } value)
+                _diagnostics.ReportProtocolFieldDefault(value.Span);
+            var type = BindType(field.Type);
+            if (fields.Any(f => f.Name == field.Name.Text))
+                _diagnostics.ReportDuplicateDefinition(field.Name.Span, field.Name.Text);
+            else
+                fields.Add(new FieldSymbol(field.Name.Text, type) { Owner = symbol });
+        }
+        symbol.Fields = fields.ToImmutable();
+        _typeParameters = outer;
+        outer = EnterTypeParameters([.. symbol.TypeParameters, symbol.SelfParameter!]);
         var methods = new List<(MethodDef, FunctionSymbol)>();
         foreach (var method in classDef.Methods)
         {
@@ -1154,7 +1315,7 @@ public sealed partial class Binder
                 _diagnostics.ReportProtocolBody(method.Body.Statements.FirstOrDefault()?.Span ?? method.Name.Span);
             var self = new VariableSymbol("self", symbol.Type, VariableKind.Parameter);
             var methodSymbol = new FunctionSymbol(name, BindParams(method.Params), BindReturnType(method.ReturnType), self: self) { Kinds = KindsOf(method.Params) };
-            if (symbol.Methods.ContainsKey(name))
+            if (symbol.Methods.ContainsKey(name) || symbol.Fields.Any(f => f.Name == name))
                 _diagnostics.ReportDuplicateDefinition(method.Name.Span, name);
             else if (name == "__lt__" && !IsLessThan(methodSymbol, other => other == symbol.SelfParameter!.Type))
                 _diagnostics.ReportLessThanSignature(method.Name.Span, "Self");
@@ -1175,20 +1336,22 @@ public sealed partial class Binder
     {
         foreach (var (symbol, protocol, span) in module.DeclaredProtocols)
         {
-            if (Ancestors(symbol).FirstOrDefault(a => a.Protocols.Contains(protocol)) is { } declarer)
-                _diagnostics.ReportProtocolRepeated(span, protocol.Name, declarer.Name);
+            if (Ancestors(symbol).FirstOrDefault(a => a.Protocols.Any(p => p.Symbol == protocol.Symbol)) is { } declarer)
+                _diagnostics.ReportProtocolRepeated(span, protocol.Symbol.Name, declarer.Name);
             else if (Unsatisfied(symbol.Type, protocol) is { } why)
-                _diagnostics.ReportUnsatisfied(span, symbol.Type, protocol.Name, declaredBy: null, why);
+                _diagnostics.ReportUnsatisfied(span, symbol.Type, protocol.ToString(), declaredBy: null, why);
         }
         foreach (var (syntax, symbol) in module.ClassDefs.Where(c => !c.Symbol.IsProtocol))
         {
-            var checkedProtocols = new HashSet<ClassSymbol>(symbol.Protocols);
+            var checkedProtocols = new HashSet<ClassSymbol>(symbol.Protocols.Select(p => p.Symbol));
             foreach (var ancestor in Ancestors(symbol))
             {
-                foreach (var protocol in ancestor.Protocols.Where(checkedProtocols.Add))
+                foreach (var declared in ancestor.Protocols.Where(p => checkedProtocols.Add(p.Symbol)))
                 {
-                    if (Unsatisfied(ancestor.Type, protocol) is null && Unsatisfied(symbol.Type, protocol) is { } why)
-                        _diagnostics.ReportUnsatisfied(syntax.Name.Span, symbol.Type, protocol.Name, ancestor.Name, why);
+                    // A generic base's declaration, with the subclass's type arguments (SPEC §3.18).
+                    var protocol = (ClassType)TypeChecker.Substitute(declared, TypeChecker.MapOf(symbol.Type));
+                    if (Unsatisfied(TypeChecker.AsBase(symbol.Type, ancestor)!, protocol) is null && Unsatisfied(symbol.Type, protocol) is { } why)
+                        _diagnostics.ReportUnsatisfied(syntax.Name.Span, symbol.Type, protocol.ToString(), ancestor.Name, why);
                 }
             }
         }
@@ -1200,78 +1363,10 @@ public sealed partial class Binder
             yield return ancestor;
     }
 
-    /// <summary>
-    /// Why <paramref name="type"/> doesn't satisfy <paramref name="protocol"/> (SPEC §3.11), naming
-    /// the first of its methods that's missing or doesn't fit; null if it does.
-    /// </summary>
-    private static string? Unsatisfied(TaipanType type, ClassSymbol protocol)
-    {
-        if (type.ContainsError)
-            return null;
-        var self = new Dictionary<TypeParameterSymbol, TaipanType> { [protocol.SelfParameter!] = type };
-        foreach (var required in protocol.Methods.Values)
-        {
-            if (MethodOf(type, required.Name) is not var (method, map))
-                return $"it has no method '{required.Name}'";
-            if (!Fits(required, self, method, map))
-                return $"'{required.Name}' must be '{Signature(required, self)}'";
-        }
-        return null;
-    }
+    private static string? Unsatisfied(TaipanType type, ClassType protocol) => Protocols.Unsatisfied(type, protocol);
 
-    /// <summary>
-    /// A method of a type, with the substitution its signature needs, for protocols: a class's own
-    /// or inherited method, a bounded type parameter's protocol method, or the built-in <c>__lt__</c>
-    /// of an ordered type (SPEC §3.11).
-    /// </summary>
-    private static (FunctionSymbol Method, Dictionary<TypeParameterSymbol, TaipanType> Map)? MethodOf(TaipanType type, string name)
-    {
-        switch (type)
-        {
-            case ClassType { Symbol: { IsProtocol: false } symbol } classType when symbol.FindMethod(name) is { } method:
-                return (method, TypeChecker.MapOf(classType));
-            case TypeParameterType { Symbol.Bound: { } bound } parameter when bound.Methods.GetValueOrDefault(name) is { } method:
-                return (method, new() { [bound.SelfParameter!] = parameter });
-            case var ordered when ordered.IsOrdered && name == "__lt__":
-                var comparable = BuiltinClasses.Comparable;
-                return (comparable.Methods[name], new() { [comparable.SelfParameter!] = ordered });
-            default:
-                return null;
-        }
-    }
-
-    /// <summary>
-    /// Whether a method can stand in for a protocol's: the same parameter names, each taking the
-    /// protocol's type or a base class of it, and a result that's the same or a derived class.
-    /// </summary>
-    private static bool Fits(FunctionSymbol required, Dictionary<TypeParameterSymbol, TaipanType> self,
-        FunctionSymbol method, Dictionary<TypeParameterSymbol, TaipanType> map)
-    {
-        static bool IsClass(TaipanType type) => TypeChecker.Unwrap(type) is ClassType;
-        if (method.Parameters.Length != required.Parameters.Length || !method.Kinds.SequenceEqual(required.Kinds))
-            return false;
-        for (var i = 0; i < method.Parameters.Length; i++)
-        {
-            var (expected, actual) = (TypeChecker.Substitute(required.Parameters[i].Type, self), TypeChecker.Substitute(method.Parameters[i].Type, map));
-            if (method.Parameters[i].Name != required.Parameters[i].Name)
-                return false;
-            if (expected != actual && !actual.ContainsError && !(IsClass(expected) && IsClass(actual) && TypeChecker.IsAssignable(expected, actual)))
-                return false;
-        }
-        var (result, actualResult) = (TypeChecker.Substitute(required.ReturnType, self), TypeChecker.Substitute(method.ReturnType, map));
-        if (result is NothingType)
-            return actualResult is NothingType;
-        return result == actualResult || actualResult.ContainsError
-            || IsClass(result) && IsClass(actualResult) && TypeChecker.IsAssignable(actualResult, result);
-    }
-
-    /// <summary>A protocol method's signature with <c>Self</c> replaced: <c>def scaled(self, k: float) -> Cube</c>.</summary>
-    private static string Signature(FunctionSymbol method, Dictionary<TypeParameterSymbol, TaipanType> self)
-    {
-        var parameters = string.Concat(method.Parameters.Select(p => $", {p.Name}: {TypeChecker.Substitute(p.Type, self)}"));
-        var result = method.ReturnType is NothingType ? "" : $" -> {TypeChecker.Substitute(method.ReturnType, self)}";
-        return $"def {method.Name}(self{parameters}){result}";
-    }
+    private static (FunctionSymbol Method, Dictionary<TypeParameterSymbol, TaipanType> Map)? MethodOf(TaipanType type, string name) =>
+        Protocols.MethodOf(type, name);
 
     /// <summary>
     /// Checks a class's own members against its base's (SPEC §4.3): no redeclared names, overrides
@@ -1341,6 +1436,8 @@ public sealed partial class Binder
     private void CheckOverride(MethodDef syntax, FunctionSymbol method, FunctionSymbol overridden)
     {
         var (name, owner) = (method.Name, overridden.Owner!.Name);
+        // A generic base's members are checked with its type arguments in place (SPEC §3.18).
+        var map = TypeChecker.MapOf(method.Owner!.Type);
         // The same kinds too: '/', '*', '*args' and '**kwargs' (SPEC §4.3, M30).
         if (method.Parameters.Length != overridden.Parameters.Length || !method.Kinds.SequenceEqual(overridden.Kinds))
         {
@@ -1350,6 +1447,7 @@ public sealed partial class Binder
         for (var i = 0; i < method.Parameters.Length; i++)
         {
             var (parameter, expected) = (method.Parameters[i], overridden.Parameters[i]);
+            expected = new VariableSymbol(expected.Name, TypeChecker.Substitute(expected.Type, map), expected.Kind);
             if (parameter.Name != expected.Name)
             {
                 _diagnostics.ReportOverrideParameters(syntax.Params[i].Name.Span, name, owner);
@@ -1361,7 +1459,7 @@ public sealed partial class Binder
                 _diagnostics.ReportOverrideDefault(syntax.Params[i].Span, parameter.Name, name, owner);
         }
 
-        var (result, expectedResult) = (method.ReturnType, overridden.ReturnType);
+        var (result, expectedResult) = (method.ReturnType, TypeChecker.Substitute(overridden.ReturnType, map));
         var span = syntax.ReturnType?.Span ?? syntax.Name.Span;
         static bool IsClass(TaipanType type) => TypeChecker.Unwrap(type) is ClassType;
         // An override may narrow a class result to Self, but must keep a Self result (SPEC §4.9).
@@ -1391,6 +1489,7 @@ public sealed partial class Binder
         if (classDef.Fields.All(f => f.Default is null))
             return;
         var outerTypeParameters = EnterTypeParameters(symbol.TypeParameters);
+        _aliasClass = symbol;
         // Named after the class, for TP0211.
         var context = new FunctionSymbol(symbol.Name, [], TaipanType.Nothing);
         (_function, _outerFunction, _scope) = (context, context, new Scope(_global));
@@ -1410,6 +1509,7 @@ public sealed partial class Binder
         }
         (_function, _outerFunction, _scope) = (null, null, _global);
         _typeParameters = outerTypeParameters;
+        _aliasClass = null;
     }
 
     /// <summary>A method's body; an <c>__init__</c>'s is also checked for strict initialization (SPEC §4.3).</summary>
@@ -1690,13 +1790,13 @@ public sealed partial class Binder
                 if (typeParameter is TypeParameterType { Symbol: var parameterSymbol })
                     Index(named.Name.Span, parameterSymbol);
                 return typeParameter;
-            case NamedType named when _global.Lookup(named.Name.Text) is TypeAliasSymbol alias:
+            case NamedType named when LookupAlias(named.Name.Text) is { } alias:
                 Index(named.Name.Span, alias);
                 return ExpandAlias(alias, named.Name, [], named.Span);
             case NamedType named when _global.Lookup(named.Name.Text) is DotNetTypeSymbol dotnet:
                 Index(named.Name.Span, dotnet);
                 return DotNetTypeOf(dotnet.Type, named.Span);
-            case GenericType generic when _global.Lookup(generic.Name.Text) is TypeAliasSymbol alias:
+            case GenericType generic when LookupAlias(generic.Name.Text) is { } alias:
                 Index(generic.Name.Span, alias);
                 return ExpandAlias(alias, generic.Name, generic.Arguments, generic.Span);
             case NamedType named when ResolveTypeName(named.Name.Text) is { } typeSymbol:
@@ -1830,11 +1930,14 @@ public sealed partial class Binder
             return TaipanType.Error;
         }
 
-        // A protocol only bounds type parameters (SPEC §3.11).
-        if (symbol is ClassSymbol { IsProtocol: true })
+        // A protocol is a type when it uses Self only as a whole result (SPEC §3.18), which is
+        // checked once its methods are known.
+        if (symbol is ClassSymbol { IsProtocol: true } protocol)
         {
-            _diagnostics.ReportProtocolAsType(span, name.Text);
-            return TaipanType.Error;
+            if (!_protocolsDeclared)
+                _pendingProtocolTypes.Add((_module!, span, protocol));
+            else if (!CheckProtocolType(span, protocol))
+                return TaipanType.Error;
         }
         if (arguments.Length != parameters.Length)
         {
@@ -1865,6 +1968,8 @@ public sealed partial class Binder
     {
         if (isSet)
             _diagnostics.ReportInvalidSetElement(span, key);
+        else if (Unhashable(key) is { Symbol.IsProtocol: true } protocol)
+            _diagnostics.ReportUnhashableKey(span, protocol, null, "a class that satisfies a protocol needn't be hashable");
         else if (Unhashable(key) is { } unhashable)
             _diagnostics.ReportUnhashableKey(span, unhashable, unhashable.Symbol.IsDataclass ? null : EqualityDefiner(unhashable.Symbol),
                 // A frozen dataclass is hashable when its fields are (SPEC §4.9).
@@ -1911,7 +2016,11 @@ public sealed partial class Binder
     /// </summary>
     private ImmutableArray<BoundStmt> BindStatements(ImmutableArray<Stmt> syntax)
     {
+        var outerAliases = _localAliases;
+        foreach (var alias in DeclareLocalAliases(syntax.OfType<TypeAliasStmt>().Select(s => s.Alias), owner: null).Values)
+            _scope.Declare(alias);
         var statements = syntax.Select(BindStmt).ToImmutableArray();
+        _localAliases = outerAliases;
         for (var i = 0; i < statements.Length - 1; i++)
         {
             // A break or continue outside a loop, or a return outside a function, is already an error (TP0215).
@@ -1925,7 +2034,14 @@ public sealed partial class Binder
         return statements;
     }
 
-    private BoundStmt BindStmt(Stmt stmt) => stmt switch
+    private BoundStmt BindStmt(Stmt stmt)
+    {
+        var bound = BindStmtCore(stmt);
+        EndElementsAfter(bound, bound.Span);
+        return bound;
+    }
+
+    private BoundStmt BindStmtCore(Stmt stmt) => stmt switch
     {
         LetStmt let => BindVariableDecl(let.Name, let.Type, let.Value, VariableKind.Let, let.Span),
         VarStmt var => BindVariableDecl(var.Name, var.Type, var.Value, VariableKind.Var, var.Span),
@@ -1947,6 +2063,7 @@ public sealed partial class Binder
         UnpackStmt unpack => BindUnpack(unpack),
         YieldStmt yield => BindYield(yield),
         TupleAssignStmt assign => BindTupleAssign(assign),
+        TypeAliasStmt alias => new BoundBlock([], alias.Span),
         _ => throw new InvalidOperationException($"unexpected statement {stmt.GetType().Name}"),
     };
 
@@ -2084,7 +2201,7 @@ public sealed partial class Binder
             return BindMemberAssign(assign, member, null, named, named.Name, preset) ?? NotAnAttribute(assign, member, named, preset);
         if (IsCls(member.Target))
             return BindMemberAssign(assign, member, null, _outerFunction!.Owner!, "cls", preset) ?? NotAnAttribute(assign, member, _outerFunction!.Owner!, preset);
-        var target = BindValue(member.Target);
+        var target = Upcast(BindValue(member.Target));
         if (target.Type.ContainsError || ReportIfOptional(target, member.Target.Span))
             return OrphanAssign(assign, preset);
         if (target.Type is DotNetType net)
@@ -2452,7 +2569,7 @@ public sealed partial class Binder
         {
             if (symbol.IsProtocol)
             {
-                _diagnostics.ReportProtocolAsType(type.Span, symbol.Name);
+                _diagnostics.ReportProtocolAsClass(type.Span, symbol.Name, constructing: false);
                 return null;
             }
             if (BuiltinClasses.IsException(symbol))
@@ -2721,6 +2838,11 @@ public sealed partial class Binder
             value = AsFunctionValue(value);
         if (expected == TaipanType.Py && value.Type != TaipanType.Py && !value.Type.ContainsError && value.Type.IsConvertibleToPython)
             return new BoundToPy(value, value.Span);
+        // One protocol type as another (SPEC §3.18).
+        if (TypeChecker.Unwrap(value.Type) is ClassType { Symbol.IsProtocol: true } fromProtocol
+            && TypeChecker.Unwrap(expected) is ClassType { Symbol.IsProtocol: true } toProtocol
+            && fromProtocol != toProtocol && TypeChecker.IsAssignable(value.Type, expected))
+            return new BoundProtocolCast(value, expected, value.Span);
         // A list, dict, str or class used as an iterable or iterator is wrapped (SPEC §3.13, §8).
         if (TypeChecker.Unwrap(expected) is IterableOfType or IteratorOfType && value.Type is not (IterableOfType or IteratorOfType or NoneType or OptionalOf or OpaqueType)
             && !value.Type.ContainsError && TypeChecker.IsAssignable(value.Type, expected))
@@ -2836,7 +2958,7 @@ public sealed partial class Binder
             _diagnostics.ReportTupleIndexOutOfRange(indexExpr.Index.Span, index, tuple);
             return new BoundErrorExpr(indexExpr.Span);
         }
-        return new BoundTupleElement(target, (int)normalized, tuple.Elements[(int)normalized], indexExpr.Span);
+        return NarrowedElement(new BoundTupleElement(target, (int)normalized, tuple.Elements[(int)normalized], indexExpr.Span));
     }
 
     /// <summary>
@@ -2954,7 +3076,10 @@ public sealed partial class Binder
             return (bound, bound is BoundLambda { FunctionType.Result: var lambdaResult } ? lambdaResult : TaipanType.Error);
         }
 
-        var value = AsFunctionValue(BindValue(expr));
+        // A generic function, built-in or constructor takes the parameters it's given (SPEC §3.18).
+        var value = CallableValueTarget(expr) is { } callable
+            ? BindCallableAs(expr, callable, expr.Span, parameters, required)
+            : AsFunctionValue(BindValue(expr));
         if (value.Type.ContainsError)
             return (value, TaipanType.Error);
         if (value.Type is FunctionType function && function.Parameters.SequenceEqual(parameters)
@@ -3000,6 +3125,7 @@ public sealed partial class Binder
         BinaryExpr { Op: BinaryOp.Equal or BinaryOp.NotEqual } equality => BindEquality(equality),
         BinaryExpr { Op: BinaryOp.And or BinaryOp.Or } logical => BindLogical(logical),
         IsNoneExpr isNone => BindIsNone(isNone),
+        IsExpr identity => BindIs(identity),
         BinaryExpr binary => BindBinaryOperation(BindValue(binary.Left), binary.Op, BindValue(binary.Right), binary.Span),
         CallExpr call => BindCall(call, expected),
         ListExpr list => BindList(list, expected),
@@ -3007,7 +3133,7 @@ public sealed partial class Binder
         ComprehensionExpr comprehension => BindComprehension(comprehension, expected),
         DictExpr dict => BindDict(dict, expected),
         MemberExpr member => BindMember(member, expected),
-        IndexExpr index => BindIndexOf(BindValue(index.Target), index),
+        IndexExpr index => BindIndexOf(Upcast(BindValue(index.Target)), index),
         NoneLiteral => new BoundNone(expr.Span),
         CastExpr cast => BindCast(cast),
         LambdaExpr lambda => BindLambda(lambda, expected),
@@ -3123,10 +3249,13 @@ public sealed partial class Binder
     }
 
     private BoundExpr BindName(NameExpr name, TaipanType? expected) =>
-        BindSymbolValue(LookupName(name.Name, name.Span), name.Name, name.Span, expected);
+        BindSymbolValue(LookupName(name.Name, name.Span), name.Name, name.Span, expected, name);
 
-    private BoundExpr BindSymbolValue(Symbol? symbol, string name, TextSpan span, TaipanType? expected)
+    private BoundExpr BindSymbolValue(Symbol? symbol, string name, TextSpan span, TaipanType? expected, Expr? syntax = null)
     {
+        // Generic functions, built-ins and constructors are values as lambdas that call them (SPEC §3.18).
+        if (syntax is not null && symbol is not null && CallableValueTarget(syntax) == symbol)
+            return BindCallableValue(syntax, symbol, name, span, expected);
         switch (symbol)
         {
             case VariableSymbol variable when variable == _outerFunction?.Cls:
@@ -3206,6 +3335,9 @@ public sealed partial class Binder
 
     private BoundExpr BindBinaryOperation(BoundExpr left, BinaryOp op, BoundExpr right, TextSpan span)
     {
+        // A class-bounded type parameter has its class's operators (SPEC §3.18).
+        if (op is not (BinaryOp.Equal or BinaryOp.NotEqual or BinaryOp.And or BinaryOp.Or or BinaryOp.Coalesce))
+            (left, right) = (Upcast(left), Upcast(right));
         if (left.Type.ContainsError || right.Type.ContainsError)
             return new BoundBinary(left, op, right, TaipanType.Error, span);
         if (left.Type == TaipanType.Py || right.Type == TaipanType.Py)
@@ -3281,6 +3413,39 @@ public sealed partial class Binder
         return new BoundIsNone(operand, isNone.Negated, isNone.Span);
     }
 
+    /// <summary><c>a is b</c> (SPEC §3.18): both of types with an identity, one assignable to the other, or both py.</summary>
+    private BoundExpr BindIs(IsExpr identity)
+    {
+        var left = BindValue(identity.Left);
+        var right = BindValue(identity.Right);
+        if (left.Type.ContainsError || right.Type.ContainsError)
+            return new BoundErrorExpr(identity.Span);
+        if (new[] { left, right }.FirstOrDefault(o => !HasIdentity(o.Type)) is { } without)
+        {
+            _diagnostics.ReportNoIdentity(identity.Span, without.Type);
+            return new BoundErrorExpr(identity.Span);
+        }
+        if ((left.Type == TaipanType.Py) != (right.Type == TaipanType.Py)
+            || !TypeChecker.IsAssignable(left.Type, right.Type) && !TypeChecker.IsAssignable(right.Type, left.Type))
+        {
+            _diagnostics.ReportCannotCompare(identity.Span, left.Type, right.Type);
+            return new BoundErrorExpr(identity.Span);
+        }
+        return new BoundIs(left, right, identity.Negated, identity.Span);
+    }
+
+    private static bool HasIdentity(TaipanType type) => type switch
+    {
+        ClassType or ListOfType or DictOfType or SetOfType or FunctionType or IteratorOfType or IterableOfType or ClassOfType => true,
+        OpaqueType or NoneType => true,
+        OptionalOf optional => HasIdentity(optional.Inner),
+        _ => type == TaipanType.Py,
+    };
+
+    /// <summary>A value of a class-bounded type parameter as its bound, for its members and operators (SPEC §3.18).</summary>
+    private static BoundExpr Upcast(BoundExpr value) =>
+        value.Type is TypeParameterType { Symbol.ClassBound: { } bound } ? new BoundNarrowed(value, bound, value.Span) : value;
+
     // ---- Narrowing (SPEC §3.9) ----
 
     /// <summary>
@@ -3304,20 +3469,39 @@ public sealed partial class Binder
     private Narrowing Facts(BoundExpr condition, bool whenTrue) => condition switch
     {
         BoundIsInstance isInstance when whenTrue => Narrow(isInstance.Operand, InstanceType(isInstance)),
+        BoundPyIsInstance { Narrows: { } type } test when whenTrue => Narrow(test.Operand, type),
         BoundIsNone isNone when isNone.Negated == whenTrue => Narrow(isNone.Operand, TypeChecker.Unwrap(isNone.Operand.Type)),
         BoundIsSome isSome when whenTrue => Narrow(isSome.Operand, TypeChecker.Unwrap(isSome.Operand.Type)),
+        BoundBinary { Op: BinaryOp.Equal or BinaryOp.NotEqual } equality => EqualityFacts(equality, (equality.Op == BinaryOp.Equal) == whenTrue),
         BoundUnary { Op: UnaryOp.Not } negation => Facts(negation.Operand, !whenTrue),
         BoundBinary { Op: BinaryOp.And } both when whenTrue => Sequence(Facts(both.Left, true), both.Right, Facts(both.Right, true)),
         BoundBinary { Op: BinaryOp.Or } either when !whenTrue => Sequence(Facts(either.Left, false), either.Right, Facts(either.Right, false)),
         _ => Narrowing.None,
     };
 
+    /// <summary>
+    /// <c>x == lit</c> when it holds, or <c>x == None</c> when it doesn't, rules out None for an
+    /// optional <c>x</c> (SPEC §3.18).
+    /// </summary>
+    private Narrowing EqualityFacts(BoundBinary equality, bool equal)
+    {
+        foreach (var (value, other) in new[] { (equality.Left, equality.Right), (equality.Right, equality.Left) })
+        {
+            if (Declared(value).Type is OptionalOf optional && (equal ? IsLiteral(other) : other is BoundNone))
+                return Narrow(value, optional.Inner);
+        }
+        return Narrowing.None;
+    }
+
+    private static bool IsLiteral(BoundExpr expr) =>
+        expr is BoundLiteral { Value: not null } or BoundUnary { Op: UnaryOp.Negate, Operand: BoundLiteral };
+
     private static Narrowing Sequence(Narrowing first, BoundExpr between, Narrowing then) =>
         (ContainsCode(between) ? first.WithoutPaths() : first).With(then);
 
     /// <summary>The type <c>isinstance(x, C)</c> narrows <c>x</c> to: <c>C</c>, unless <c>x</c>'s own class already derives from it.</summary>
     private static TaipanType InstanceType(BoundIsInstance isInstance) =>
-        TypeChecker.Unwrap(isInstance.Operand.Type) is ClassType current && !isInstance.Class.Symbol.DerivesFrom(current.Symbol)
+        TypeChecker.Unwrap(isInstance.Operand.Type) is ClassType { Symbol.IsProtocol: false } current && !isInstance.Class.Symbol.DerivesFrom(current.Symbol)
             ? current
             : isInstance.Class;
 
@@ -3329,6 +3513,7 @@ public sealed partial class Binder
         var key = KeyOf(operand);
         string? why = key switch
         {
+            FieldPath { CanNarrow: true, Root: VariableSymbol { Kind: VariableKind.Var } root } => _nestedAssigned.Contains(root) ? CopyHelp : null,
             VariableSymbol { Kind: VariableKind.Let or VariableKind.Parameter or VariableKind.LoopVariable } or FieldPath { CanNarrow: true } => null,
             VariableSymbol { Kind: VariableKind.Var } variable => _nestedAssigned.Contains(variable) ? "a nested function assigns it, so it isn't narrowed" : null,
             FieldPath => CopyHelp,
@@ -3568,9 +3753,13 @@ public sealed partial class Binder
     private BoundExpr BindMember(MemberExpr member, TaipanType? expected)
     {
         if (TryQualifiedVariant(member, out var qualified))
-            return qualified is null ? new BoundErrorExpr(member.Span) : BindVariantValue(qualified, member.Span, expected);
+        {
+            return qualified is null ? new BoundErrorExpr(member.Span)
+                : qualified.Fields.IsEmpty ? BindVariantValue(qualified, member.Span, expected)
+                : BindCallableValue(member, qualified, $"{qualified.Enum.Name}.{qualified.Name}", member.Span, expected);
+        }
         if (TryModuleMember(member, out var definition))
-            return BindSymbolValue(definition, member.Member.Text, member.Span, expected);
+            return BindSymbolValue(definition, member.Member.Text, member.Span, expected, member);
         if (DotNetTypeNamed(member.Target) is { } owner)
         {
             RecordReceiver(member.Member.Span, owner);
@@ -3588,7 +3777,7 @@ public sealed partial class Binder
             return BindClassMember(member, named, viaCls: IsCls(member.Target));
         }
 
-        var target = BindValue(member.Target);
+        var target = Upcast(BindValue(member.Target));
         RecordReceiver(member.Member.Span, target.Type);
         var name = member.Member.Text;
         if (target.Type.ContainsError || ReportIfOptional(target, member.Target.Span))
@@ -3650,9 +3839,9 @@ public sealed partial class Binder
             case TupleOfType tuple:
                 return BindTupleElement(target, tuple, indexExpr);
             case ListOfType list:
-                return new BoundIndex(target, BindExpected(indexExpr.Index, TaipanType.Int), list.Element, indexExpr.Span);
+                return NarrowedElement(new BoundIndex(target, BindExpected(indexExpr.Index, TaipanType.Int), list.Element, indexExpr.Span));
             case DictOfType dict:
-                return new BoundIndex(target, BindExpected(indexExpr.Index, dict.Key), dict.Value, indexExpr.Span);
+                return NarrowedElement(new BoundIndex(target, BindExpected(indexExpr.Index, dict.Key), dict.Value, indexExpr.Span));
             case PrimitiveType { Name: "str" }:
                 return new BoundIndex(target, BindExpected(indexExpr.Index, TaipanType.Int), TaipanType.Str, indexExpr.Span);
             case DotNetType net:
@@ -3828,11 +4017,15 @@ public sealed partial class Binder
             inference.Unify(resultType, expected, fromArgument: null);
 
         var bound = new BoundExpr[arguments.Count];
-        foreach (var i in Enumerable.Range(0, arguments.Count).OrderBy(i => arguments[i] is LambdaExpr ? 1 : 0))
+        // Lambdas, and generic functions, built-ins and constructors as values, come last (SPEC §3.7, §3.18).
+        bool Deferred(Expr argument) => argument is LambdaExpr || CallableValueTarget(argument) is { } target && NeedsExpectedType(target);
+        foreach (var i in Enumerable.Range(0, arguments.Count).OrderBy(i => Deferred(arguments[i]) ? 1 : 0))
         {
             var parameter = parameterTypes[i];
             var argument = arguments[i] is LambdaExpr lambda && TypeChecker.Unwrap(parameter) is FunctionType callable && !inference.IsKnown(callable)
                 ? BindLambdaArgument(lambda, callable, inference, map)
+                : Deferred(arguments[i]) && TypeChecker.Unwrap(parameter) is FunctionType wanted && !inference.IsKnown(wanted)
+                ? BindCallableArgument(arguments[i], wanted, inference, map)
                 : BindValue(arguments[i], inference.IsKnown(parameter) ? TypeChecker.Substitute(parameter, map) : null);
             inference.Unify(parameter, argument.Type, fromArgument: arguments[i].Span);
             bound[i] = argument;
@@ -3847,9 +4040,18 @@ public sealed partial class Binder
             map[parameter] = CheckConstraint(parameter, map[parameter], nameSpan);
         foreach (var parameter in typeParameters.Where(p => p.Bound is not null))
         {
+            // A class bound: the type argument is the class, or derives from it (SPEC §3.18).
+            if (parameter.ClassBound is { } classBound)
+            {
+                if (map[parameter] is var argument && (argument.ContainsError || argument is not OptionalOf && TypeChecker.IsAssignable(argument, classBound)))
+                    continue;
+                _diagnostics.ReportNotDerived(nameSpan, map[parameter], classBound);
+                map[parameter] = TaipanType.Error;
+                continue;
+            }
             if (Unsatisfied(map[parameter], parameter.Bound!) is not { } why)
                 continue;
-            _diagnostics.ReportUnsatisfied(nameSpan, map[parameter], parameter.Bound!.Name, declaredBy: null, why);
+            _diagnostics.ReportUnsatisfied(nameSpan, map[parameter], parameter.Bound!.ToString(), declaredBy: null, why);
             map[parameter] = TaipanType.Error;
         }
         // A type parameter inferred as py takes its arguments converted to Python (SPEC §3.6, §10.3).
@@ -3880,6 +4082,23 @@ public sealed partial class Binder
         }
         var parameterTypes = callable.Parameters.Select(p => inference.IsKnown(p) ? TypeChecker.Substitute(p, map) : TaipanType.Error);
         return BindLambdaAs(lambda, [.. parameterTypes], inference.IsKnown(callable.Result) ? TypeChecker.Substitute(callable.Result, map) : null);
+    }
+
+    /// <summary>
+    /// A generic function, built-in or constructor for a parameter of function type that still
+    /// mentions uninferred type parameters (SPEC §3.18): as a lambda argument is (§3.7).
+    /// </summary>
+    private BoundExpr BindCallableArgument(Expr argument, FunctionType callable, TypeInference inference, Dictionary<TypeParameterSymbol, TaipanType> map)
+    {
+        var name = argument is MemberExpr member ? member.Member.Text : _source.ToString(argument.Span);
+        if (callable.Parameters.Any(p => !inference.IsKnown(p)))
+        {
+            _diagnostics.ReportCannotInferValue(argument.Span, name);
+            inference.GiveUp(callable);
+            return new BoundErrorExpr(argument.Span);
+        }
+        var result = inference.IsKnown(callable.Result) ? TypeChecker.Substitute(callable.Result, map) : null;
+        return BindCallableAs(argument, CallableValueTarget(argument)!, argument.Span, [.. callable.Parameters.Select(p => TypeChecker.Substitute(p, map))], result);
     }
 
     /// <summary>
@@ -4003,6 +4222,32 @@ public sealed partial class Binder
                     foreach (var (pa, aa) in p.TypeArguments.Zip(a.TypeArguments))
                         Unify(pa, aa, fromArgument);
                     break;
+                // A generic protocol from what the argument has (SPEC §3.18): each member's types, matched exactly.
+                case (ClassType { Symbol.IsProtocol: true } p, _) when TypeChecker.IsProtocolValue(actual) && p.Symbol != (actual as ClassType)?.Symbol:
+                {
+                    var required = Protocols.Required(p, actual);
+                    foreach (var field in p.Symbol.Fields)
+                    {
+                        if (Protocols.FieldOf(actual, field.Name) is { } fieldType)
+                            Unify(TypeChecker.Substitute(field.Type, required), fieldType, fromArgument);
+                    }
+                    foreach (var method in p.Symbol.Methods.Values)
+                    {
+                        if (Protocols.MethodOf(actual, method.Name) is not var (found, map) || found.Parameters.Length != method.Parameters.Length)
+                            continue;
+                        foreach (var (wanted, given) in method.Parameters.Zip(found.Parameters))
+                            Unify(TypeChecker.Substitute(wanted.Type, required), TypeChecker.Substitute(given.Type, map), fromArgument);
+                        Unify(TypeChecker.Substitute(method.ReturnType, required), TypeChecker.SubstituteSelf(TypeChecker.Substitute(found.ReturnType, map), actual), fromArgument);
+                    }
+                    break;
+                }
+                // Through bases (SPEC §3.18): a Labeled[int] argument for a Box[T], or a Sub[T] result into a Box[float].
+                case (ClassType p, ClassType a) when TypeChecker.AsBase(a, p.Symbol) is { } up:
+                    Unify(p, up, fromArgument);
+                    break;
+                case (ClassType p, ClassType a) when TypeChecker.AsBase(p, a.Symbol) is { } up:
+                    Unify(up, a, fromArgument);
+                    break;
                 case (EnumType p, EnumType a) when p.Symbol == a.Symbol:
                     foreach (var (pa, aa) in p.TypeArguments.Zip(a.TypeArguments))
                         Unify(pa, aa, fromArgument);
@@ -4061,7 +4306,10 @@ public sealed partial class Binder
 
     /// <summary>Two classes mix to their nearest common base (SPEC §3.2); null for anything else.</summary>
     private static TaipanType? Join(TaipanType a, TaipanType b) =>
-        a is ClassType x && b is ClassType y && x.Symbol.CommonBase(y.Symbol) is { } common ? common.Type : null;
+        a is ClassType x && b is ClassType y && x.Symbol.CommonBase(y.Symbol) is { } common
+        && TypeChecker.AsBase(x, common) is { } left && left == TypeChecker.AsBase(y, common)
+            ? left
+            : null;
 
     private void ReportAmbiguous(AmbiguousVariantSymbol ambiguous, TextSpan span) =>
         _diagnostics.ReportAmbiguousVariant(span, ambiguous.Name, ambiguous.Variants.Select(v => v.Enum.Name));
@@ -4118,7 +4366,7 @@ public sealed partial class Binder
         if (classSymbol.IsProtocol)
         {
             BindArguments(call);
-            _diagnostics.ReportProtocolAsType(nameSpan, classSymbol.Name);
+            _diagnostics.ReportProtocolAsClass(nameSpan, classSymbol.Name, constructing: true);
             return new BoundErrorExpr(call.Span);
         }
         // An abstract class has no instances of its own (SPEC §4.8).
@@ -4157,7 +4405,9 @@ public sealed partial class Binder
             _diagnostics.ReportWrongArgumentCount(nameSpan, "isinstance", Arguments(2), call.Arguments.Length);
             return new BoundErrorExpr(call.Span);
         }
-        var operand = BindValue(call.Arguments[0].Value);
+        var operand = Upcast(BindValue(call.Arguments[0].Value));
+        if (operand.Type == TaipanType.Py)
+            return BindPyIsInstance(operand, call);
         var operandClass = TypeChecker.Unwrap(operand.Type) as ClassType;
         if (operandClass is null && !operand.Type.ContainsError)
         {
@@ -4179,6 +4429,41 @@ public sealed partial class Binder
         return target is null || operand.Type.ContainsError
             ? new BoundErrorExpr(call.Span)
             : new BoundIsInstance(operand, target, call.Span);
+    }
+
+    /// <summary>
+    /// <c>isinstance(v, T)</c> on a py value (SPEC §3.18): int, float, str and bool test what
+    /// <c>as</c> accepts, and narrow; list, dict, tuple and Python classes are Python's test.
+    /// </summary>
+    private BoundExpr BindPyIsInstance(BoundExpr operand, CallExpr call)
+    {
+        var target = call.Arguments[1].Value;
+        string? name = target is NameExpr n && _scope.Lookup(n.Name) is not VariableSymbol ? n.Name : null;
+        switch (name)
+        {
+            case "int" or "float" or "str" or "bool":
+                var type = name switch { "int" => TaipanType.Int, "float" => TaipanType.Float, "str" => TaipanType.Str, _ => TaipanType.Bool };
+                return new BoundPyIsInstance(operand, type, null, null, call.Span);
+            case "list" or "dict" or "tuple":
+                return new BoundPyIsInstance(operand, null, name, null, call.Span);
+            case not null:
+                _diagnostics.ReportPyIsInstanceTarget(target.Span, name);
+                return new BoundErrorExpr(call.Span);
+        }
+        if (target is TupleExpr or IndexExpr)
+        {
+            _diagnostics.ReportPyIsInstanceTarget(target.Span, target is TupleExpr ? "tuple" : _source.ToString(target.Span));
+            return new BoundErrorExpr(call.Span);
+        }
+        var pyClass = BindValue(target);
+        if (pyClass.Type.ContainsError)
+            return new BoundErrorExpr(call.Span);
+        if (pyClass.Type != TaipanType.Py)
+        {
+            _diagnostics.ReportPyIsInstanceTarget(target.Span, pyClass.Type.ToString());
+            return new BoundErrorExpr(call.Span);
+        }
+        return new BoundPyIsInstance(operand, null, null, pyClass, call.Span);
     }
 
     /// <summary>
@@ -4209,7 +4494,7 @@ public sealed partial class Binder
                 _diagnostics.ReportGenericClassTest(expr.Span, generic.Name);
                 return null;
             case ClassSymbol { IsProtocol: true } protocol:
-                _diagnostics.ReportProtocolAsType(expr.Span, protocol.Name);
+                _diagnostics.ReportProtocolAsClass(expr.Span, protocol.Name, constructing: false);
                 return null;
             case ClassSymbol classSymbol:
                 return CheckRelated(new ClassType(classSymbol), tested, expr.Span);
@@ -4225,13 +4510,23 @@ public sealed partial class Binder
     /// <summary>TP0200 unless a <paramref name="tested"/> value could be a <paramref name="target"/>: one derives from the other.</summary>
     private ClassType? CheckRelated(ClassType target, TaipanType tested, TextSpan span)
     {
-        if (tested is ClassType testedClass && !TypeChecker.AreRelated(testedClass.Symbol, target.Symbol))
+        if (tested is ClassType testedClass && !CouldBe(target.Symbol, testedClass))
         {
             _diagnostics.ReportNeverInstance(span, tested, target.Symbol.Name);
             return null;
         }
         return target;
     }
+
+    /// <summary>
+    /// Whether a value of type <paramref name="tested"/> could be a <paramref name="target"/>: one
+    /// class derives from the other, or for a protocol value, the class or one deriving from it
+    /// satisfies the protocol (SPEC §3.18).
+    /// </summary>
+    private bool CouldBe(ClassSymbol target, ClassType tested) =>
+        tested.Symbol.IsProtocol
+            ? _allClasses.Append(target).Any(c => c.DerivesFrom(target) && c.TypeParameters.IsEmpty && Protocols.Unsatisfied(c.Type, tested) is null)
+            : TypeChecker.AreRelated(tested.Symbol, target);
 
     /// <summary>
     /// <c>super().m(…)</c> in a method of a class with a base: the base's <c>m</c>, found from the
@@ -4265,7 +4560,10 @@ public sealed partial class Binder
         if (method.IsAbstract)
             _diagnostics.ReportAbstractSuper(member.Member.Span, method.Owner!.Name, name);
         var superResult = TypeChecker.SubstituteSelf(method.ReturnType, self.Type);
-        var (arguments, shape, _, valid) = BindCallArguments(call, method, name, member.Member.Span, [], t => t, superResult, null);
+        // A generic base's members take its type arguments (SPEC §3.18).
+        var map = TypeChecker.MapOf(self.Type);
+        superResult = TypeChecker.Substitute(superResult, map);
+        var (arguments, shape, _, valid) = BindCallArguments(call, method, name, member.Member.Span, [], t => TypeChecker.Substitute(t, map), superResult, null);
         return new BoundSuperCall(method, self, arguments, superResult, call.Span) { Shape = valid ? shape : null };
     }
 
@@ -4339,7 +4637,7 @@ public sealed partial class Binder
         }
 
         var (bound, map) = InferAndBind(
-            owner, call.Callee.Span, typeParameters, [.. chosen.Select(c => c.Field.Type)], ownerType, [.. chosen.Select(c => c.Value)],
+            owner, call.Callee.Span, typeParameters, [.. chosen.Select(c => TypeChecker.Substitute(c.Field.Type, TypeChecker.MapOf(ownerType)))], ownerType, [.. chosen.Select(c => c.Value)],
             valid ? expected : null);
         ImmutableArray<(FieldSymbol, BoundExpr)> pairs = [.. chosen.Select(c => c.Field).Zip(bound)];
         return (valid ? pairs : null, isKeyword, map);
@@ -4442,7 +4740,8 @@ public sealed partial class Binder
         if (IsCls(member.Target))
             return BindClassMethodCall(call, member, _outerFunction!.Owner!, viaCls: true);
 
-        var target = BindValue(member.Target);
+        var receiver = BindValue(member.Target);
+        var target = Upcast(receiver);
         var name = member.Member.Text;
         if (target.Type == TaipanType.Py)
             return BindPyCall(call, new BoundPyGetAttr(target, name, member.Span));
@@ -4466,7 +4765,7 @@ public sealed partial class Binder
         }
 
         // A bounded type parameter has its protocol's methods, with Self as the parameter (SPEC §3.11).
-        if (target.Type is TypeParameterType { Symbol.Bound: { } bound } && bound.Methods.GetValueOrDefault(name) is { } required)
+        if (target.Type is TypeParameterType { Symbol.Protocol: { } bound } && bound.Methods.GetValueOrDefault(name) is { } required)
         {
             var self = new Dictionary<TypeParameterSymbol, TaipanType> { [bound.SelfParameter!] = target.Type };
             var resultType = TypeChecker.Substitute(required.ReturnType, self);
@@ -4512,7 +4811,8 @@ public sealed partial class Binder
             {
                 Index(member.Member.Span, method);
                 var map = TypeChecker.MapOf(target.Type);
-                var returnType = TypeChecker.SubstituteSelf(TypeChecker.Substitute(method.ReturnType, map), target.Type);
+                // On a class-bounded type parameter, Self is the type parameter (SPEC §3.18).
+                var returnType = TypeChecker.SubstituteSelf(TypeChecker.Substitute(method.ReturnType, map), receiver.Type);
                 var (arguments, shape, _, valid) = BindCallArguments(
                     call, method, name, member.Member.Span, [], t => TypeChecker.Substitute(t, map), returnType, null);
                 return new BoundMethodCall(target, method, arguments, returnType, call.Span) { Shape = valid ? shape : null };
@@ -4784,7 +5084,13 @@ public sealed partial class Binder
     private void CheckAssignable(BoundExpr value, TaipanType target, TextSpan span, string? expectedText = null)
     {
         if (TypeChecker.IsAssignable(value.Type, target))
+        {
+            // A library compiles a generic class used as a protocol type per instantiation (SPEC §14.2).
+            if (TypeChecker.Unwrap(target) is ClassType { Symbol.IsProtocol: true } protocol
+                && TypeChecker.Unwrap(value.Type) is ClassType { Symbol.IsProtocol: false, Symbol.TypeParameters.IsEmpty: false } generic)
+                _protocolUses.TryAdd(generic.Symbol, protocol.ToString());
             return;
+        }
         if (target == TaipanType.Py)
         {
             _diagnostics.ReportCannotPassToPython(span, value.Type);
@@ -4792,6 +5098,10 @@ public sealed partial class Binder
         }
         if (value.Type is OptionalOf optional && TypeChecker.IsAssignable(optional.Inner, target))
             _diagnostics.ReportOptionalNotNarrowed(span, expectedText ?? target.ToString(), value.Type, WhyNotNarrowed(value));
+        // A value for a protocol type, with what it lacks (SPEC §3.18).
+        else if (TypeChecker.Unwrap(target) is ClassType { Symbol.IsProtocol: true } protocol && TypeChecker.Unwrap(value.Type) is var inner
+            && TypeChecker.IsProtocolValue(inner) && Protocols.Unsatisfied(inner, protocol) is { } why)
+            _diagnostics.ReportUnsatisfied(span, inner, protocol.ToString(), declaredBy: null, why);
         else
             _diagnostics.ReportTypeMismatch(span, expectedText ?? target.ToString(), value.Type);
     }

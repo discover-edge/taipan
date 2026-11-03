@@ -556,7 +556,7 @@ public sealed partial class Binder
         }
         if (classSymbol.IsProtocol)
         {
-            _diagnostics.ReportProtocolAsType(pattern.Variant.Span, classSymbol.Name);
+            _diagnostics.ReportProtocolAsClass(pattern.Variant.Span, classSymbol.Name, constructing: false);
             return Invalid();
         }
         if (pattern.Bindings is not { } arguments)
@@ -564,7 +564,7 @@ public sealed partial class Binder
             _diagnostics.ReportBareClassPattern(pattern.Span, name);
             return Invalid();
         }
-        if (!classSymbol.DerivesFrom(scrutinee.Symbol))
+        if (scrutinee.Symbol.IsProtocol ? !CouldBe(classSymbol, scrutinee) : !classSymbol.DerivesFrom(scrutinee.Symbol))
         {
             _diagnostics.ReportNeverInstance(pattern.Span, scrutinee, classSymbol.Name);
             return Invalid();

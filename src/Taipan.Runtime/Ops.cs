@@ -7,6 +7,13 @@ namespace Taipan.Runtime;
 /// <summary>Operators whose semantics differ from C#'s (SPEC §5.3).</summary>
 public static class Ops
 {
+    /// <summary>
+    /// <c>a is b</c> (SPEC §3.18, M40): identity, where a function value converted to another type
+    /// is still the function it was converted from.
+    /// </summary>
+    public static bool Is(object? a, object? b) =>
+        a is IFunction f && b is IFunction g ? ReferenceEquals(f.Identity, g.Identity) : ReferenceEquals(a, b);
+
     /// <summary><c>/</c>: always true division; dividing by zero panics, for floats too.</summary>
     /// <summary>
     /// <c>x as C</c> between classes (SPEC §4.3): <paramref name="value"/> itself if it's a

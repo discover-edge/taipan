@@ -1,0 +1,12 @@
+# Protocol fields have no defaults or Self, and generic protocols' bounds and arguments (SPEC §3.18).
+class Named(Protocol):
+    name: str = "x"
+    other: Self
+
+class Source[T](Protocol):
+    def take(self) -> T?: ...
+
+class Box[T: int](Protocol):
+    pass
+
+let s: Source = None

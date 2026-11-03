@@ -46,7 +46,7 @@ public sealed partial class Binder
 
         var bodies = functions.ToLookup(f => (Symbol)f.Symbol);
         var methods = classes.ToDictionary(c => (Symbol)c.Symbol, c => c.Methods);
-        var generic = NetGenerics(candidates, bodies, methods, out var genericReasons);
+        var generic = NetGenerics(candidates, bodies, methods, _protocolUses, out var genericReasons);
 
         // What each definition shows callers; anything it uses must be exported too.
         var reasons = new Dictionary<Symbol, string>();
@@ -141,7 +141,7 @@ public sealed partial class Binder
     /// </summary>
     private static ImmutableHashSet<Symbol> NetGenerics(
         List<Candidate> candidates, ILookup<Symbol, BoundFunction> bodies, Dictionary<Symbol, ImmutableArray<BoundFunction>> methods,
-        out Dictionary<Symbol, string> reasonsOut)
+        Dictionary<ClassSymbol, string> protocolUses, out Dictionary<Symbol, string> reasonsOut)
     {
         var reasons = reasonsOut = [];
         var uses = new Dictionary<Symbol, List<Symbol>>();
@@ -160,6 +160,12 @@ public sealed partial class Binder
             if (typeParameters.FirstOrDefault(p => p.Bound is not null || !p.Constraints.IsEmpty) is { } bounded)
             {
                 reasons[symbol] = $"its type parameter '{bounded.Name}' has a bound";
+                continue;
+            }
+            // Its instances implement protocol interfaces one instantiation at a time (SPEC §14.2).
+            if (symbol is ClassSymbol usedClass && protocolUses.TryGetValue(usedClass, out var protocol))
+            {
+                reasons[symbol] = $"it's used as the protocol '{protocol}'";
                 continue;
             }
 

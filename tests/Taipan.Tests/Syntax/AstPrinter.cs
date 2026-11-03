@@ -10,7 +10,7 @@ namespace Taipan.Tests.Syntax;
 /// <summary>
 /// Prints an AST as a compact one-line snapshot: <c>Kind(child, child, …)</c>, without spans (any TextSpan property).
 /// Children print in declaration order; identifiers print as bare text and strings quoted. An empty
-/// decorator list, a missing default, a decorator without a member and a method's <c>self</c> are
+/// decorator list, a class without aliases, a missing default, a decorator without a member and a method's <c>self</c> are
 /// left out, since most declarations have none of them.
 /// Uses reflection so that every node type is covered without a hand-written case per node.
 /// </summary>
@@ -56,6 +56,7 @@ public static class AstPrinter
             .Where(p => !(p.Name == "Unpack" && node is Argument { Unpack: ArgumentUnpack.None }))
             .Where(p => !(p.Name == "Kind" && node is Param { Kind: ParamKind.Normal }))
             .Where(p => !(p.Name == "IsAsync" && node is FuncDef { IsAsync: false } or MethodDef { IsAsync: false }))
+            .Where(p => !(p.Name == "Aliases" && node is ClassDef { Aliases.IsEmpty: true }))
             .Select(p => Print(p.GetValue(node)))
             .ToList();
         return children.Count == 0 ? type.Name : $"{type.Name}({string.Join(", ", children)})";

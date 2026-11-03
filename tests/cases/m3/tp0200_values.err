@@ -2,8 +2,8 @@ tests/cases/m3/tp0200_values.tpn:5:5: error TP0200: missing return value; 'twice
 tests/cases/m3/tp0200_values.tpn:8:12: error TP0200: 'noisy' has no return type, so 'return' cannot have a value
 tests/cases/m3/tp0200_values.tpn:10:9: error TP0200: 'log' does not return a value
 tests/cases/m3/tp0200_values.tpn:11:9: error TP0200: 'print' does not return a value
-tests/cases/m3/tp0200_values.tpn:12:9: error TP0200: built-in 'len' cannot be used as a value
-  help: wrap it in a lambda
+tests/cases/m3/tp0200_values.tpn:12:9: error TP0206: cannot infer the type of 'len'
+  help: give it a type, e.g. 'let f: Callable[[…], …] = len'
 tests/cases/m3/tp0200_values.tpn:14:1: error TP0200: 'd' is not a function
 tests/cases/m3/tp0200_values.tpn:15:1: error TP0200: cannot call str
 tests/cases/m3/tp0200_values.tpn:16:11: error TP0200: integer literal is out of range

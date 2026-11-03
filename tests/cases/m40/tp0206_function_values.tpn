@@ -1,0 +1,13 @@
+# Generic functions and built-ins as values need an expected function type (SPEC §3.18).
+def first[T](xs: list[T]) -> T?:
+    return None
+
+class Pet:
+    def __init__(self, *names: str):
+        pass
+
+let a = first
+let b = len
+let c: Callable[[int], int] = len
+let d: Callable[[int], str] = range
+let e = Pet

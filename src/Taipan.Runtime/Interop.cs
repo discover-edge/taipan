@@ -90,6 +90,10 @@ public static class Interop
     /// <summary><c>except m.E</c> (SPEC §3.10): whether a Python exception is an instance of the class <paramref name="type"/>.</summary>
     public static bool IsInstance(PyObject value, PyObject type) => Run(() => value.IsInstance(type));
 
+    /// <summary><c>isinstance(v, list)</c> on a py value (SPEC §3.18, M40): Python's test against a built-in type.</summary>
+    public static bool IsInstanceOf(PyObject value, string builtin) =>
+        Run(() => value.IsInstance(PyModule.Import("builtins").GetAttr(builtin)));
+
     public static void SetAttr(PyObject target, string name, object? value) => Run(() => target.SetAttr(name, From(value)));
 
     public static PyObject GetItem(PyObject target, object? key) => Run(() => target.GetItem(From(key)));
@@ -384,6 +388,16 @@ public static class Interop
         action();
         return 0;
     });
+
+    /// <summary><c>a is b</c> on py values (SPEC §3.18, M40): Python's identity.</summary>
+    public static bool Is(PyObject? a, PyObject? b)
+    {
+        if (a is null || b is null)
+            return a is null && b is null;
+#pragma warning disable CS0612 // Handle is the object's address, which is what Python's 'is' compares.
+        return a.Handle == b.Handle;
+#pragma warning restore CS0612
+    }
 
     // Every Python operation starts Python first, so a program that converts to py without
     // importing a Python module gets §10.5's panic if Python can't be loaded.

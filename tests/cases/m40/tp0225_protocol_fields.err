@@ -1,0 +1,5 @@
+tests/cases/m40/tp0225_protocol_fields.tpn:3:17: error TP0225: a protocol field can't have a default
+tests/cases/m40/tp0225_protocol_fields.tpn:4:12: error TP0201: undefined type 'Self'
+  help: 'Self' can only be used in a protocol
+tests/cases/m40/tp0225_protocol_fields.tpn:9:14: error TP0220: bounds are only supported on functions
+tests/cases/m40/tp0225_protocol_fields.tpn:12:8: error TP0209: 'Source' takes 1 type argument, found 0

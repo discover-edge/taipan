@@ -1,11 +1,10 @@
 tests/cases/m11/tp0200_functions.tpn:12:3: error TP0200: expected int, found str
 tests/cases/m11/tp0200_functions.tpn:14:1: error TP0200: 'n' is not a function
 tests/cases/m11/tp0200_functions.tpn:15:2: error TP0200: cannot call int
-tests/cases/m11/tp0200_functions.tpn:16:9: error TP0200: 'first' is generic, so it cannot be used as a value
-  help: wrap it in a lambda
-tests/cases/m11/tp0200_functions.tpn:17:9: error TP0200: built-in 'len' cannot be used as a value
-  help: wrap it in a lambda
-tests/cases/m11/tp0200_functions.tpn:18:9: error TP0200: 'Point' is a type, not a value
+tests/cases/m11/tp0200_functions.tpn:16:9: error TP0206: cannot infer the type of 'first'
+  help: give it a type, e.g. 'let f: Callable[[…], …] = first'
+tests/cases/m11/tp0200_functions.tpn:17:9: error TP0206: cannot infer the type of 'len'
+  help: give it a type, e.g. 'let f: Callable[[…], …] = len'
 tests/cases/m11/tp0200_functions.tpn:19:14: error TP0200: expected int, found lambda
 tests/cases/m11/tp0200_functions.tpn:20:7: error TP0200: operator '<' cannot be applied to Callable[[int], int] and Callable[[int], int]
 tests/cases/m11/tp0200_functions.tpn:21:14: error TP0200: cannot sort list[Point]
