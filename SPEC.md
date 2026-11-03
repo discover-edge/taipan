@@ -1630,10 +1630,14 @@ Types are written as in source: `int`, `str?`, `list[int]`. The type of `None` i
 ---
 
 ## 11. Deferred (post-v0.1)
+ROADMAP.md plans most of these from M35 on. They were never part of v0.1:
+
+- everyday built-ins: `abs`, `min`, `max`, `sum`, `any`, `all`, `round`, `divmod` and `**`, most methods of `str`, `list` and `dict` beyond §6, and sets (`set[T]`)
+- program arguments, `sys.exit`, `input()`, environment variables, files (`open`), and `with` statements and context managers
 - protocols as types of values, protocol fields, generic protocols, protocols extending other protocols, and a check that a class used with a protocol declares it
 - class bounds (`[T: Animal]`), bounds on classes' and enums' type parameters, and built-in types' ordinary methods satisfying protocols
 - special methods beyond §4.8 (`__bool__`, `__len__`, `__getitem__`, `__contains__`, `__call__`, `__ne__`, `__pow__`, in-place `__iadd__` and the like, `__format__`), special methods in protocols other than `__lt__`, and `functools.total_ordering`
-- multiple inheritance, mixing dataclasses and plain classes in one hierarchy, and inheritance involving generic classes
+- mixing dataclasses and plain classes in one hierarchy, and inheritance involving generic classes
 - `@dataclass` options (`frozen`, `order`), `__post_init__`, and an `__init__` written in a dataclass
 - `@final`, `Self` outside protocols (so a class method's result is its declared class, not `cls`'s), static and class methods and class attributes on generic classes, abstract static and class methods, property deleters, and static and class methods as values
 - `isinstance` on `py` values, and `is` between two expressions (identity)
@@ -1641,17 +1645,26 @@ Types are written as in source: `int`, `str?`, `list[int]`. The type of `None` i
 - async generators, `async for`, `async with`, async lambdas and `asyncio`-style helpers (M33), generator `send`, `throw` and `close`, `yield` as an expression, generator return values, `Generator[Y, S, R]`, `yield` inside `try`/`except`, generator expressions and comprehensions, and `async` iterators
 - or-patterns (`A | B`), guards (`case x if …`), `as` patterns, `None` and float literal patterns, mapping patterns, and `*` in tuple patterns (M29 has them in list patterns only)
 - type aliases inside functions and classes, recursive aliases, and showing an alias's name in diagnostics
-- defaults on lambda parameters (not planned, since loop variables are captured per iteration, §3.7), typed `**kwargs` (`Unpack[TypedDict]`), `*args` and `**kwargs` in function types, and `**e` filling named parameters
+- typed `**kwargs` (`Unpack[TypedDict]`), `*args` and `**kwargs` in function types, and `**e` filling named parameters
 - narrowing elements (`xs[0]`) and paths rooted at a `var`, and narrowing that follows `==` comparisons with literals
-- `raise … from …`, exception chaining, `BaseException`, exception groups (`except*`), and printing tracebacks
+- `raise … from …`, exception chaining, `BaseException`, and printing tracebacks
 - dataclass exceptions (mixing dataclasses and plain classes), and `args` on exceptions
-- nested format specs in f-strings (`{x:{width}}`), the locale-dependent `n` format type, and format specs for other types (`__format__`)
+- nested format specs in f-strings (`{x:{width}}`), and format specs for other types (`__format__`)
 - language server features beyond §16: formatting, code actions, incremental sync, workspace-wide diagnostics, semantic token deltas and ranges, completion of .NET namespaces and Python modules' names, signature help for built-in functions, references to built-in, Python and .NET names, renaming modules (renaming their files), and editors other than VS Code
-- CPython extension modules beyond §17: classes and enums as Python types, Python functions and objects as arguments, Python interop inside an extension, generic functions, free-threaded CPython, and builds for one exact Python version
+- CPython extension modules beyond §17: classes and enums as Python types, Python functions and objects as arguments, Python interop inside an extension, generic functions, and builds for one exact Python version
 - .NET interop beyond §13: generic .NET types other than `Dictionary<K, V>`, `Task<T>` and delegates (`HashSet<T>`, `IGrouping<K, T>`), explicit type arguments on generic methods, extension-method syntax (`xs.Where(f)`), events, `ref`/`out`/`in` parameters, `params` arrays, `object` and `decimal` results, deriving from .NET classes or implementing .NET interfaces, raising .NET exceptions, `isinstance`/`as`/`match` on .NET types, flags enums, namespace imports (`import dotnet.System.IO as io`), cancelling a `Task`, and packages with native assets
-- build integration beyond §18: design-time builds for IDEs (Visual Studio's project system), multi-targeting, Taipan test projects (tests written in Taipan), native and Python-extension SDK projects, and symbols packages
+- build integration beyond §18: multi-targeting, Taipan test projects (tests written in Taipan), native and Python-extension SDK projects, and symbols packages
 - native builds beyond §15: another architecture (`--runtime <rid>`), Python in native programs, native libraries, and size options such as invariant globalization
-- Taipan libraries beyond §14: PascalCase names, XML documentation, value `Equals` and `GetHashCode` for dataclasses, deriving from Taipan classes in other .NET languages, and plain delegates for function types
+- Taipan libraries beyond §14: XML documentation, value `Equals` and `GetHashCode` for dataclasses, deriving from Taipan classes in other .NET languages, and plain delegates for function types
+
+**Not planned**, since each costs much more than it gives a statically typed language on .NET:
+- multiple inheritance (protocols cover the common uses, §3.11)
+- defaults on lambda parameters, since loop variables are captured per iteration (§3.7)
+- exception groups (`except*`)
+- the locale-dependent `n` format type
+- free-threaded CPython for extension modules
+- design-time builds for Visual Studio's project system
+- PascalCase renaming of a library's names (§14.1 keeps Taipan's names)
 
 ---
 
@@ -1922,7 +1935,7 @@ catch (shapes.UnknownShape e) { Console.WriteLine(e.message); }
 - The library targets the .NET runtime `taipan` runs on (`net10.0`). It compiles against that runtime's reference assemblies, as every .NET library does, so other projects can reference it. They come with the .NET SDK (`packs/Microsoft.NETCore.App.Ref` beside the runtime), so building a library needs the SDK, unlike building a program (§12.2). Without it, `taipan: building a library needs the .NET SDK's reference assemblies (Microsoft.NETCore.App.Ref)` exits with `2`.
 
 ### 14.5 Deferred
-§11 lists what's deferred: a configurable namespace, assembly name and version, PascalCase names, XML documentation from docstrings, `Equals` and `GetHashCode` on dataclasses, deriving from Taipan classes in other .NET languages, delegates for function types, and publishing a library as a NuGet package.
+§11 lists what's deferred: XML documentation from docstrings, `Equals` and `GetHashCode` on dataclasses, deriving from Taipan classes in other .NET languages, and delegates for function types. A configurable namespace, assembly name and version, and packing a library as a NuGet package, came in M34 (§18); PascalCase names aren't planned.
 
 ---
 
@@ -2228,7 +2241,7 @@ A Taipan exception raised by an exported function, or while the module's constan
 `print` writes to the process's standard output, as C code does, which may interleave with Python's own buffered `sys.stdout` differently than Python's `print` would.
 
 ### 17.5 Deferred
-§11 lists what's deferred: classes and enums as Python types, passing Python functions or objects (`py`) to Taipan functions, Python interop inside an extension module, generic functions, free-threaded CPython, and builds for one exact Python version.
+§11 lists what's deferred: classes and enums as Python types, passing Python functions or objects (`py`) to Taipan functions, Python interop inside an extension module, generic functions, and builds for one exact Python version. Free-threaded CPython isn't planned.
 
 ---
 
@@ -2301,4 +2314,4 @@ The SDK's own errors, outside any Taipan file:
 | `TPN002` | `list references and packages in the project file, not taipan.json` |
 
 ### 18.6 Deferred
-§11 lists what's deferred: design-time builds for IDEs, multi-targeting, Taipan test projects, native and Python-extension SDK projects, and symbols packages.
+§11 lists what's deferred: multi-targeting, Taipan test projects, native and Python-extension SDK projects, and symbols packages. Design-time builds for Visual Studio aren't planned.

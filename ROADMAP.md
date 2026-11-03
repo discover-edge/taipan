@@ -2,7 +2,7 @@
 
 Each milestone is done when **all** of its acceptance criteria pass as golden tests (see CLAUDE.md). Milestones are sequential. Don't start the next one early.
 
-M0–M10 (with M8.1) make up v0.1 and are complete. M11 through M34 are complete.
+M0–M10 (with M8.1) make up v0.1 and are complete. M11 through M34 are complete; M35 onward are planned.
 
 ## M0 — Scaffold
 - Create the solution layout from CLAUDE.md, the `taipan` CLI with `check | emit | build | run` stubs, and the golden-test harness.
@@ -268,3 +268,91 @@ M0–M10 (with M8.1) make up v0.1 and are complete. M11 through M34 are complete
 - **Accept:**
   - A solution with a Taipan project and a C# project referencing each other builds and tests with `dotnet test`.
   - A packed Taipan library installs from a local feed into a fresh C# project and is called from it.
+
+## M35 — Everyday built-ins II
+- Built-in functions `abs`, `min`, `max`, `sum`, `any`, `all`, `round` and `divmod`, the `**` operator with `__pow__`, and the common methods of `str` (`join`, `find`, `count`, `split()` on whitespace, `title`, `isdigit`, …), `list` (`extend`, `remove`, `index`, `count`, `reverse`, `clear`, `copy`, `pop(i)`) and `dict` (`pop`, `setdefault`, `update`, `clear`, `copy`).
+- `set[T]`: literals, `in`, `add`, `remove`, `discard`, and the operators `|`, `&`, `-`, `^`, `<=`.
+- Update SPEC first: each function's and method's signature and Python behavior, which take a `key=`, set display and equality, and which element types a set takes (as dict keys, §3.1).
+- **Accept:**
+  - A program using each new built-in, method and set operation prints CPython's output.
+  - `max([])` and `min` on an empty iterable raise `ValueError` as in Python, and `min` of a list of a class without `__lt__` is a compile-time error.
+
+## M36 — Comprehensions
+- List, dict and set comprehensions with any number of `for` and `if` clauses, and generator expressions, lazy like M31's iterators (`sum(x * x for x in xs)`).
+- Update SPEC first: their scoping (each has its own scope, as in Python 3), how their element types are inferred, and how a generator expression as a function's only argument drops its parentheses.
+- **Accept:**
+  - Nested comprehensions and generator expressions over lists, dicts, strings and generators print CPython's output.
+  - A comprehension's variable isn't visible after it (`TP0201`), and an element type that can't be inferred (`[x for x in []]`) is `TP0206`.
+
+## M37 — Programs and I/O
+- Program arguments (`sys.argv`, from `import sys`), `sys.exit(code)`, `input()`, and environment variables (`os.environ`).
+- Files: `open(path, mode)` giving a file object with `read`, `readline`, `write` and iteration by line, and `with` statements, with context managers as classes defining `__enter__` and `__exit__`.
+- Update SPEC first: which parts of `sys` and `os` exist, file encodings and newline handling, and how `with` runs `__exit__` when the block raises.
+- **Accept:**
+  - A program copies an input file to an output file line by line, upper-casing it, with paths from its arguments, matching CPython.
+  - A `with` block that raises still runs `__exit__`, and the exception reaches the caller as in Python.
+
+## M38 — Patterns II
+- Or-patterns (`A | B`), guards (`case x if …`, here an arm's `if`), `as` patterns, `None` and float literal patterns, mapping patterns (`{"k": v}`), and `*` in tuple patterns.
+- Update SPEC first: the arm syntax for guards, how guards affect exhaustiveness (a guarded arm covers nothing), and what an or-pattern may bind (the same names in each alternative).
+- **Accept:**
+  - A `match` using each new pattern kind prints CPython's output.
+  - A match whose only arm for a case is guarded is non-exhaustive (`TP0204`), and an or-pattern binding different names in its alternatives is a compile-time error.
+
+## M39 — Classes III
+- Dataclass options `frozen=True` and `order=True`, `__post_init__`, `@final`, and `Self` outside protocols.
+- Special methods `__len__`, `__getitem__`, `__setitem__`, `__contains__`, `__call__`, the in-place operators (`__iadd__` and the like), and `__format__`; `functools.total_ordering`.
+- Static and class methods and class attributes on generic classes, and static and class methods as values.
+- Update SPEC first: what `frozen` forbids at compile time, the order `order=True` defines, and how each special method is called and checked.
+- **Accept:**
+  - Assigning a frozen dataclass's field is a compile-time error, and `order=True` dataclasses sort as in Python.
+  - A class with `__len__`, `__getitem__` and `__call__` works with `len`, indexing and calls, printing CPython's output.
+
+## M40 — Types II
+- Protocols as the types of values, generic protocols, protocol fields, class bounds (`[T: Animal]`), and inheritance involving generic classes.
+- Generic functions, built-ins and constructors as values, type aliases inside functions and classes, and an alias's name in diagnostics.
+- Narrowing of elements (`xs[0]`) and of `var` paths, narrowing that follows `==` with a literal, `isinstance` on `py` values, and `is` between two objects (identity).
+- Update SPEC first: when a class satisfies a protocol used as a type (structurally, as in Python's typing), how a generic function value is instantiated, and what invalidates each new narrowing.
+- **Accept:**
+  - A `list[Drawable]` holding instances of unrelated classes that satisfy the protocol calls each one's method.
+  - A class that doesn't satisfy a protocol it's used as is a compile-time error naming the missing method.
+
+## M41 — Exceptions II
+- `raise … from …`, exception chaining (`__cause__`, `__context__`), printing tracebacks for uncaught exceptions as Python does, `args` on exceptions, and dataclass exceptions.
+- Update SPEC first: the traceback format (file, line and the line's text, as Python prints them), and which chaining a bare `raise` in an `except` keeps.
+- **Accept:**
+  - An uncaught chained exception prints a traceback with both exceptions and "The above exception was the direct cause of the following exception", matching CPython's layout.
+  - `e.args` and `e.__cause__` give Python's values.
+
+## M42 — Generators and async II
+- Generator `send`, `throw` and `close`, `yield` as an expression, generator return values (`StopIteration.value`, `yield from`'s result), `Generator[Y, S, R]`, and `yield` inside `try`/`except`.
+- Async generators, `async for`, `async with`, and helpers for running awaitables together (`gather`, `sleep`, timeouts).
+- Update SPEC first: how a generator with `send` compiles (C# iterators can't receive values), and the async helpers' module and names.
+- **Accept:**
+  - A coroutine-style generator driven with `send` prints CPython's output.
+  - Two async generators consumed with `async for`, run together with `gather`, interleave as in Python.
+
+## M43 — .NET interop III
+- Generic .NET types (`HashSet[str]()`, `Queue[int]`), explicit type arguments on generic methods, extension-method syntax (`xs.Where(f)` for imported extension classes), `ref`/`out` parameters, `params` arrays, and `object` and `decimal` results.
+- Deriving from .NET classes and implementing .NET interfaces, raising .NET exceptions, `isinstance`, `as` and `match` on .NET types, flags enums, events, namespace imports (`import dotnet.System.IO as io`), and cancelling a `Task`.
+- Update SPEC first: how a generic .NET type is written and imported, how an `out` parameter's value comes back (a tuple, as Python's .NET bridges do), and what a Taipan class deriving from a .NET class may override.
+- **Accept:**
+  - `HashSet[str]()`, `xs.Where(lambda x: x > 2).Select(str)` and `Int32.TryParse("12")` give the right results.
+  - A Taipan class implementing `IComparable<T>` sorts with .NET's `List.Sort`.
+
+## M44 — Tooling II
+- A formatter, `taipan fmt` (with `--check`), also served as the language server's formatting, and code actions for common fixes (adding an import, `@override`, `list(…)` around an iterator).
+- `taipan test`, which finds and runs `test_*` functions in Taipan files, and test projects in the SDK; completion of .NET namespaces and Python modules' names, and renaming a module (and its file).
+- Update SPEC first: the formatter's style (it doesn't change what a program means, and is idempotent), how tests are found and reported, and which diagnostics have code actions.
+- **Accept:**
+  - Formatting every golden case leaves it unchanged in meaning (the same output) and formatting again changes nothing.
+  - `taipan test` runs a file's tests and reports a failing assertion with its line, exiting non-zero.
+
+## M45 — Platforms
+- Native builds for other runtimes (`--runtime linux-arm64`, `win-x64`, `osx-arm64`), native libraries callable from C, and size options such as invariant globalization.
+- CPython extension modules that export classes and enums as Python types and take Python objects as arguments.
+- Update SPEC first: which runtime identifiers are supported and what cross-compiling needs, the C ABI of a native library's exports, and how a Taipan class appears in Python.
+- **Accept:**
+  - A native build for another runtime identifier produces an executable of that platform (checked by its file header).
+  - Python creates an instance of a Taipan class from an extension module and calls its methods.
+
