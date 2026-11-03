@@ -53,6 +53,7 @@ public static class AstPrinter
             .Where(p => !(p.Name == "Block" && node is ValueArm { Block: null }))
             .Where(p => !(p.Name == "Unpack" && node is Argument { Unpack: ArgumentUnpack.None }))
             .Where(p => !(p.Name == "Kind" && node is Param { Kind: ParamKind.Normal }))
+            .Where(p => !(p.Name == "IsAsync" && node is FuncDef { IsAsync: false } or MethodDef { IsAsync: false }))
             .Select(p => Print(p.GetValue(node)))
             .ToList();
         return children.Count == 0 ? type.Name : $"{type.Name}({string.Join(", ", children)})";

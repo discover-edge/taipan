@@ -13,6 +13,7 @@ public static class BoundTree
         BoundClassAttributeAssign assign => [assign.Value],
         BoundDotNetAssign { Target: { } target } assign => [target, assign.Value],
         BoundDotNetAssign assign => [assign.Value],
+        BoundDotNetIndexAssign assign => [assign.Index.Target, .. assign.Index.Arguments.Select(a => a.Value), assign.Value],
         BoundIndexAssign assign => [assign.Target, assign.Index, assign.Value],
         BoundPySetAttr assign => [assign.Target, assign.Value],
         BoundPySetItem assign => [assign.Target, assign.Index, assign.Value],
@@ -53,6 +54,7 @@ public static class BoundTree
     public static IEnumerable<BoundExpr> Children(BoundExpr expr) => expr switch
     {
         BoundUnary unary => [unary.Operand],
+        BoundAwait awaited => [awaited.Operand],
         BoundBinary binary => [binary.Left, binary.Right],
         BoundCall call => call.Arguments,
         BoundListLiteral list => list.Elements,
@@ -98,6 +100,8 @@ public static class BoundTree
         // A block arm's statements are a nested block, reached through ArmBlocks (M29).
         BoundMatchExpr match => [match.Scrutinee, .. match.Arms.Select(a => a.Value ?? a.Raise?.Value).OfType<BoundExpr>()],
         BoundDotNetCall call => [.. ((BoundExpr?[])[call.Target]).OfType<BoundExpr>(), .. call.Arguments.Select(a => a.Value)],
+        BoundDotNetIndex index => [index.Target, .. index.Arguments.Select(a => a.Value)],
+        BoundDotNetOperator op => [.. op.Arguments.Select(a => a.Value)],
         BoundDotNetNew created => created.Arguments.Select(a => a.Value),
         BoundDotNetMember { Target: { } target } => [target],
         _ => [],

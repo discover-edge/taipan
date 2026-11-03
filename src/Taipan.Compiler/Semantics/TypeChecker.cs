@@ -110,6 +110,7 @@ public static class TypeChecker
             OptionalOf optional => Flatten(Substitute(optional.Inner, map)),
             ListOfType list => new ListOfType(Substitute(list.Element, map)),
             IteratorOfType iterator => new IteratorOfType(Substitute(iterator.Element, map)),
+            AwaitableOfType awaitable => new AwaitableOfType(Substitute(awaitable.Result, map)),
             IterableOfType iterable => new IterableOfType(Substitute(iterable.Element, map)),
             DictOfType dict => new DictOfType(Substitute(dict.Key, map), Substitute(dict.Value, map)),
             ClassType classType => classType with { TypeArguments = [.. classType.TypeArguments.Select(a => Substitute(a, map))] },

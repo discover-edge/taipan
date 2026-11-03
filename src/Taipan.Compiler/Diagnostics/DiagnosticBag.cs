@@ -780,6 +780,21 @@ public sealed class DiagnosticBag
     public void ReportYieldOutsideFunction(TextSpan span) =>
         Add("TP0215", span, "'yield' outside a function");
 
+    public void ReportAwaitOutsideAsync(TextSpan span) =>
+        Add("TP0215", span, "'await' outside an async function");
+
+    public void ReportYieldInAsync(TextSpan span) =>
+        Add("TP0215", span, "'yield' in an async function");
+
+    public void ReportUnmetConstraint(TextSpan span, Semantics.TaipanType argument, string constraint, string parameter, string member) =>
+        Add("TP0200", span, $"'{argument}' doesn't satisfy the constraint '{constraint}' on '{parameter}' of '{member}'");
+
+    public void ReportCannotAwait(TextSpan span, Semantics.TaipanType type) =>
+        Add("TP0200", span, $"cannot await {type}");
+
+    public void ReportAwaitableDiscarded(TextSpan span) =>
+        Add("TP0235", span, "this awaitable is never awaited", "write 'await …'");
+
     public void ReportYieldInTry(TextSpan span) =>
         Add("TP0215", span, "'yield' can't be inside a 'try' with 'except', or in 'finally'");
 

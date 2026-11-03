@@ -19,10 +19,10 @@ public sealed partial class LanguageServer
     private static readonly string[] BuiltinTypes = ["bool", "Callable", "dict", "float", "int", "Iterable", "Iterator", "list", "py", "str", "tuple"];
 
     private static readonly string[] StatementKeywords =
-        ["break", "class", "const", "continue", "def", "del", "elif", "else", "enum", "except", "False", "finally", "for", "from",
+        ["async", "await", "break", "class", "const", "continue", "def", "del", "elif", "else", "enum", "except", "False", "finally", "for", "from",
          "if", "import", "lambda", "let", "match", "None", "not", "pass", "raise", "return", "True", "try", "type", "var", "while", "yield"];
 
-    private static readonly string[] ExpressionKeywords = ["False", "lambda", "match", "None", "not", "True"];
+    private static readonly string[] ExpressionKeywords = ["await", "False", "lambda", "match", "None", "not", "True"];
 
     // §6's methods of list, dict and str.
     private static readonly Dictionary<string, string[]> BuiltinMethods = new()

@@ -49,6 +49,8 @@ public enum TokenKind
     RaiseKeyword,
     DelKeyword,
     YieldKeyword,
+    AsyncKeyword,
+    AwaitKeyword,
 
     // Operators and punctuation
     Plus,

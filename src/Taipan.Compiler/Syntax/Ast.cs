@@ -30,7 +30,11 @@ public sealed record ImportName(Identifier Name, Identifier? Alias, TextSpan Spa
 /// <summary><see cref="TypeParams"/> is empty for a non-generic function (SPEC §3.6).</summary>
 public sealed record FuncDef(
     ImmutableArray<Decorator> Decorators, Identifier Name, ImmutableArray<TypeParam> TypeParams, ImmutableArray<Param> Params,
-    TypeSyntax? ReturnType, Block Body, TextSpan Span) : TopItem(Span);
+    TypeSyntax? ReturnType, Block Body, TextSpan Span) : TopItem(Span)
+{
+    /// <summary>Whether it's an <c>async def</c> (SPEC §3.14, M33).</summary>
+    public bool IsAsync { get; init; }
+}
 
 /// <summary><c>@name</c> on the line before a class or <c>def</c> (SPEC §2, M15).</summary>
 /// <summary><c>@name</c>, or <c>@name.member</c> for a property's setter (SPEC §4.8, M28).</summary>
@@ -62,7 +66,11 @@ public enum Receiver { Self, Cls, None }
 /// </summary>
 public sealed record MethodDef(
     ImmutableArray<Decorator> Decorators, Identifier Name, Receiver Receiver, TextSpan ReceiverSpan, ImmutableArray<Param> Params,
-    TypeSyntax? ReturnType, Block Body, TextSpan Span) : Node(Span);
+    TypeSyntax? ReturnType, Block Body, TextSpan Span) : Node(Span)
+{
+    /// <summary>Whether it's an <c>async def</c> (SPEC §3.14, M33).</summary>
+    public bool IsAsync { get; init; }
+}
 
 /// <summary>A class field or variant payload field; only a class field may have a <see cref="Default"/>.</summary>
 public sealed record FieldDef(Identifier Name, TypeSyntax Type, Expr? Default, TextSpan Span) : Node(Span);
@@ -231,6 +239,9 @@ public sealed record TupleType(ImmutableArray<TypeSyntax> Elements, TextSpan Spa
 /// <summary><c>Callable[[A, B], R]</c>; <see cref="Result"/> is null for a result of <c>None</c> (SPEC §3.7).</summary>
 public sealed record CallableType(ImmutableArray<TypeSyntax> Parameters, TypeSyntax? Result, TextSpan Span) : TypeSyntax(Span);
 
+/// <summary><c>Awaitable[T]</c>, or <c>Awaitable[None]</c> with no <see cref="Result"/> (SPEC §3.14, M33).</summary>
+public sealed record AwaitableType(TypeSyntax? Result, TextSpan Span) : TypeSyntax(Span);
+
 public sealed record ErrorType(TextSpan Span) : TypeSyntax(Span);
 
 // ---- Expressions ----
@@ -281,6 +292,9 @@ public sealed record DictEntry(Expr Key, Expr Value, TextSpan Span) : Node(Span)
 public enum UnaryOp { Negate, Not }
 
 public sealed record UnaryExpr(UnaryOp Op, Expr Operand, TextSpan Span) : Expr(Span);
+
+/// <summary><c>await e</c> (SPEC §3.14, M33).</summary>
+public sealed record AwaitExpr(Expr Operand, TextSpan Span) : Expr(Span);
 
 public enum BinaryOp
 {

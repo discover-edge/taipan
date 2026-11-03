@@ -1,0 +1,21 @@
+# Dictionaries, delegates both ways, and a multi-argument indexer from a local assembly (SPEC §13.3, §13.9, §13.10).
+from dotnet.Acme.Geometry import Tally, Grid
+
+let counts = {"a": 1, "b": 2}
+let doubled = Tally.Doubled(counts)
+print(doubled, counts)
+print(Tally.Total(doubled))
+
+let shared: dict[str, int] = {"x": 1}
+Tally.Bump(shared, "x")
+Tally.Bump(shared, "y")
+print(shared)
+
+let add_five = Tally.Adder(5)
+print(add_five(10), add_five)
+print(Tally.Apply(lambda n: n * 3, 7))
+print(Tally.Describe(lambda line: print("log:", line)))
+
+let grid = Grid(2, 3)
+grid[1, 2] = 7
+print(grid[1, 2], grid[0, 0])

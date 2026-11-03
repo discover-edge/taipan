@@ -1,0 +1,10 @@
+# An awaitable that's never awaited (SPEC §3.14).
+from dotnet.System.Threading.Tasks import Task
+
+async def save(name: str):
+    await Task.Delay(1)
+
+save("draft")
+Task.Delay(10)
+let kept = save("kept")
+await kept

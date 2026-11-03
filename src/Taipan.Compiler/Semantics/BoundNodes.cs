@@ -18,6 +18,9 @@ public sealed record BoundProgram(
     /// <summary>The .NET assemblies the program compiles and runs against, if it uses .NET (SPEC §13.2); else empty.</summary>
     public ImmutableArray<string> References { get; init; } = [];
 
+    /// <summary>Whether the main file's top level awaits, so its entry point is async (SPEC §3.14, M33).</summary>
+    public bool IsAsync { get; init; }
+
     /// <summary>How a program bound as a library is exported (SPEC §14); null for a program.</summary>
     public BoundLibrary? Library { get; init; }
 
@@ -187,13 +190,28 @@ public sealed record BoundArm(BoundPattern Pattern, BoundBlock Body, bool IsReac
 /// argument is paired with its parameter, in source order.
 /// </summary>
 public sealed record BoundDotNetCall(BoundExpr? Target, Microsoft.CodeAnalysis.IMethodSymbol Method,
-    ImmutableArray<BoundDotNetArgument> Arguments, TaipanType Type, TextSpan Span) : BoundExpr(Type, Span);
+    ImmutableArray<BoundDotNetArgument> Arguments, TaipanType Type, TextSpan Span) : BoundExpr(Type, Span)
+{
+    /// <summary>A generic method's inferred type arguments (SPEC §13.8); null otherwise.</summary>
+    public TypeArguments? TypeArguments { get; init; }
+}
 
 /// <summary>A .NET constructor call; <see cref="Constructor"/> is null for a struct's default value (SPEC §13.4).</summary>
 public sealed record BoundDotNetNew(DotNetType Created, Microsoft.CodeAnalysis.IMethodSymbol? Constructor,
     ImmutableArray<BoundDotNetArgument> Arguments, TextSpan Span) : BoundExpr(Created, Span);
 
 public sealed record BoundDotNetArgument(Microsoft.CodeAnalysis.IParameterSymbol Parameter, BoundExpr Value);
+
+/// <summary><c>x[i]</c> through a .NET indexer (SPEC §13.10, M33).</summary>
+public sealed record BoundDotNetIndex(BoundExpr Target, Microsoft.CodeAnalysis.IPropertySymbol Indexer,
+    ImmutableArray<BoundDotNetArgument> Arguments, TaipanType Type, TextSpan Span) : BoundExpr(Type, Span);
+
+/// <summary><c>x[i] = v</c> through a .NET indexer's setter (SPEC §13.10, M33).</summary>
+public sealed record BoundDotNetIndexAssign(BoundDotNetIndex Index, BoundExpr Value, bool IsCompound, TextSpan Span) : BoundStmt(Span);
+
+/// <summary>A .NET type's operator, written as C#'s <see cref="Op"/> (SPEC §13.10, M33).</summary>
+public sealed record BoundDotNetOperator(string Op, Microsoft.CodeAnalysis.IMethodSymbol Method,
+    ImmutableArray<BoundDotNetArgument> Arguments, TaipanType Type, TextSpan Span) : BoundExpr(Type, Span);
 
 /// <summary>Reading a .NET property or field, or an enum member (SPEC §13.4); <see cref="Target"/> is null for a static one.</summary>
 public sealed record BoundDotNetMember(BoundExpr? Target, Microsoft.CodeAnalysis.ISymbol Member, TaipanType Type, TextSpan Span) : BoundExpr(Type, Span);
@@ -249,6 +267,9 @@ public sealed record BoundLiteral(object Value, TaipanType Type, TextSpan Span) 
 public sealed record BoundVariable(VariableSymbol Symbol, TextSpan Span) : BoundExpr(Symbol.Type, Span);
 
 public sealed record BoundUnary(UnaryOp Op, BoundExpr Operand, TaipanType Type, TextSpan Span) : BoundExpr(Type, Span);
+
+/// <summary><c>await e</c>, giving what <c>e</c>'s awaitable gives (SPEC §3.14, M33).</summary>
+public sealed record BoundAwait(BoundExpr Operand, TaipanType Type, TextSpan Span) : BoundExpr(Type, Span);
 
 public sealed record BoundBinary(BoundExpr Left, BinaryOp Op, BoundExpr Right, TaipanType Type, TextSpan Span)
     : BoundExpr(Type, Span);

@@ -23,6 +23,7 @@ public sealed partial class Binder
                     var unconvertibleType = function.Parameters.Select(p => Unconvertible(p.Type, isResult: false))
                         .Append(Unconvertible(function.ReturnType, isResult: true)).FirstOrDefault(t => t is not null);
                     var reason = !function.TypeParameters.IsEmpty ? "it's generic"
+                        : function.IsAsync ? "it's async"
                         : unconvertibleType is not null ? $"'{unconvertibleType}' can't be passed to Python"
                         : null;
                     if (reason is null)

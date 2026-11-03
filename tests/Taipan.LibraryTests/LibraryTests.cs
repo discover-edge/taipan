@@ -105,4 +105,11 @@ public class LibraryTests
         Assert.Null(typeof(shapes.Counter).GetMethod("__init__", BindingFlags.Public | BindingFlags.Instance));
         Assert.DoesNotContain(typeof(shapes).Assembly.GetExportedTypes(), t => t.Name == "TaipanLibrary");
     }
+
+    [Fact]
+    public async Task AsyncFunctionsReturnTasks()
+    {
+        Task<double> pending = geometry.area_later([new shapes.Shape.Square(3.0)]);
+        Assert.Equal(9.0, await pending);
+    }
 }

@@ -229,6 +229,113 @@ public sealed partial class Binder
         return new BoundDotNetAssign(target, found, value, assign.Op != AssignOp.Assign, assign.Span);
     }
 
+    // ---- Indexers and operators (SPEC §13.10, M33) ----
+
+    /// <summary>The public indexers of a type and its bases that can be read.</summary>
+    private static List<IPropertySymbol> Indexers(INamedTypeSymbol owner) =>
+        [.. MembersNamed(owner, "this[]").OfType<IPropertySymbol>().Where(p => p.IsIndexer && !p.IsStatic && p.GetMethod is { DeclaredAccessibility: Accessibility.Public })];
+
+    // `x[a, b]` passes a and b to an indexer with two parameters.
+    private static ImmutableArray<Expr> IndexArguments(IndexExpr index) => index.Index is TupleExpr tuple ? tuple.Elements : [index.Index];
+
+    /// <summary><c>x[i]</c> on a .NET value: its indexer, chosen among overloads as a method is (SPEC §13.10).</summary>
+    private BoundExpr BindDotNetIndex(BoundExpr target, INamedTypeSymbol owner, IndexExpr index)
+    {
+        var syntax = IndexArguments(index);
+        var indexers = Indexers(owner);
+        if (indexers.Count == 0)
+        {
+            foreach (var argument in syntax)
+                BindValue(argument);
+            _diagnostics.ReportCannotIndex(index.Target.Span, target.Type);
+            return new BoundErrorExpr(index.Span);
+        }
+        var name = $"{new DotNetType(owner)}[…]";
+        var shaped = indexers.Select(p => p.GetMethod!).Where(m => m.Parameters.Length == syntax.Length && UnsupportedIn(m) is null)
+            .Select(m => (m, Enumerable.Range(0, syntax.Length).ToArray())).ToList();
+        var values = syntax.Select(a => a is LambdaExpr ? null : BindValue(a)).ToArray();
+        if (values.Any(v => v is not null && v.Type.ContainsError))
+            return new BoundErrorExpr(index.Span);
+        if (shaped.Count == 0)
+        {
+            _diagnostics.ReportNoOverload(index.Target.Span, name, values.Select(v => v?.Type ?? TaipanType.Error));
+            return new BoundErrorExpr(index.Span);
+        }
+        if (ChooseOverload(syntax, shaped, values, name, index.Target.Span) is not var (getter, arguments, _))
+            return new BoundErrorExpr(index.Span);
+        var indexer = indexers.First(p => SymbolEqualityComparer.Default.Equals(p.GetMethod, getter));
+        var type = DotNetTypes.Map(DotNetTypes.TypeOf(indexer), result: true, out _)!;
+        return new BoundDotNetIndex(target, indexer, arguments, type, index.Span);
+    }
+
+    /// <summary><c>x[i] = v</c> on a .NET value: an indexer with a public setter (SPEC §13.10).</summary>
+    private BoundStmt BindDotNetIndexAssign(AssignStmt assign, BoundDotNetIndex read, BoundExpr? preset)
+    {
+        if (read.Indexer.SetMethod is not { DeclaredAccessibility: Accessibility.Public, IsInitOnly: false })
+        {
+            _diagnostics.ReportCannotAssign(read.Span, $"{read.Target.Type}[…]", "read-only indexer", null);
+            return OrphanAssign(assign, preset);
+        }
+        var netType = DotNetTypes.TypeOf(read.Indexer);
+        var type = DotNetTypes.Map(netType, result: false, out _)!;
+        var value = BindAssignedValue(assign, read, type, preset);
+        CheckLiteralFits(value, netType);
+        return new BoundDotNetIndexAssign(read, value, assign.Op != AssignOp.Assign, assign.Span);
+    }
+
+    private static string? OperatorName(BinaryOp op) => op switch
+    {
+        BinaryOp.Add => "op_Addition",
+        BinaryOp.Subtract => "op_Subtraction",
+        BinaryOp.Multiply => "op_Multiply",
+        BinaryOp.Divide => "op_Division",
+        BinaryOp.Modulo => "op_Modulus",
+        BinaryOp.Less => "op_LessThan",
+        BinaryOp.LessEqual => "op_LessThanOrEqual",
+        BinaryOp.Greater => "op_GreaterThan",
+        BinaryOp.GreaterEqual => "op_GreaterThanOrEqual",
+        _ => null,
+    };
+
+    // The user-defined operators with a name, on each .NET type among the operands.
+    private static List<IMethodSymbol> Operators(string name, params TaipanType[] operands) =>
+        [.. operands.OfType<DotNetType>().Select(t => t.Symbol).Distinct<INamedTypeSymbol>(SymbolEqualityComparer.Default)
+            .SelectMany(t => t.GetMembers(name)).OfType<IMethodSymbol>()
+            .Where(m => m.MethodKind == MethodKind.UserDefinedOperator && m.DeclaredAccessibility == Accessibility.Public)];
+
+    /// <summary>
+    /// <c>a op b</c> where either is a .NET value: the operator their types define, chosen as an
+    /// overload is (SPEC §13.10). Null when neither defines one with that name.
+    /// </summary>
+    private BoundExpr? BindDotNetOperator(BoundExpr left, BinaryOp op, BoundExpr right, TextSpan span)
+    {
+        // The operands are bound already; their syntax only places messages.
+        Expr leftSyntax = new ErrorExpr(left.Span), rightSyntax = new ErrorExpr(right.Span);
+        if (OperatorName(op) is not { } name || Operators(name, left.Type, right.Type) is not { Count: > 0 } operators)
+            return null;
+        var shaped = operators.Where(m => m.Parameters.Length == 2 && UnsupportedIn(m) is null).Select(m => (m, new[] { 0, 1 })).ToList();
+        var plans = shaped.Select(c => Plan([leftSyntax, rightSyntax], c.m, c.Item2, [left, right], name, span, report: false)).OfType<OverloadPlan>().ToList();
+        if (plans.Count == 0)
+            return null;
+        if (ChooseOverload([leftSyntax, rightSyntax], [.. plans.Select(p => (p.Method, p.Shape))], [left, right], TypeChecker.Display(op), span) is not var (method, arguments, _))
+            return new BoundErrorExpr(span);
+        var type = DotNetTypes.Map(DotNetTypes.ResultOf(method), result: true, out _)!;
+        return new BoundDotNetOperator(TypeChecker.Display(op), method, arguments, type, span);
+    }
+
+    /// <summary><c>-x</c> on a .NET value: its type's unary negation (SPEC §13.10).</summary>
+    private BoundExpr? BindDotNetNegation(BoundExpr operand, TextSpan span)
+    {
+        Expr operandSyntax = new ErrorExpr(operand.Span);
+        var operators = Operators("op_UnaryNegation", operand.Type).Where(m => m.Parameters.Length == 1 && UnsupportedIn(m) is null).ToList();
+        if (operators.Count == 0)
+            return null;
+        if (ChooseOverload([operandSyntax], [.. operators.Select(m => (m, new[] { 0 }))], [operand], "-", span) is not var (method, arguments, _))
+            return new BoundErrorExpr(span);
+        var type = DotNetTypes.Map(DotNetTypes.ResultOf(method), result: true, out _)!;
+        return new BoundDotNetOperator("-", method, arguments, type, span);
+    }
+
     // ---- Calls and constructors (SPEC §13.4, §13.5) ----
 
     /// <summary><c>T.m(…)</c> (static, <paramref name="target"/> null) or <c>x.m(…)</c>.</summary>
@@ -246,12 +353,12 @@ public sealed partial class Binder
                 _diagnostics.ReportNoMethod(name.Span, new DotNetType(owner), name.Text);
             return new BoundErrorExpr(call.Span);
         }
-        if (ResolveOverload(call, methods, MemberName(owner, name.Text), name.Span) is not var (method, arguments))
+        if (ResolveOverload(call, methods, MemberName(owner, name.Text), name.Span) is not var (method, arguments, typeArguments))
             return new BoundErrorExpr(call.Span);
         CheckNative(method, null, name.Span, MemberName(owner, name.Text));
         Index(name.Span, method);
-        var result = DotNetTypes.Map(DotNetTypes.ResultOf(method), result: true, out _)!;
-        return new BoundDotNetCall(target, method, arguments, result, call.Span);
+        var result = DotNetTypes.Map(DotNetTypes.ResultOf(method), result: true, out _, typeArguments)!;
+        return new BoundDotNetCall(target, method, arguments, result, call.Span) { TypeArguments = typeArguments };
     }
 
     /// <summary><c>T(…)</c>: a public constructor, or a struct's default value (SPEC §13.4).</summary>
@@ -270,7 +377,7 @@ public sealed partial class Binder
         }
         if (type.IsValueType && call.Arguments.IsEmpty && !constructors.Any(c => c.Parameters.IsEmpty))
             return new BoundDotNetNew(created, null, [], call.Span);
-        if (ResolveOverload(call, constructors, created.ToString(), nameSpan) is not var (constructor, arguments))
+        if (ResolveOverload(call, constructors, created.ToString(), nameSpan) is not var (constructor, arguments, _))
             return new BoundErrorExpr(call.Span);
         CheckNative(constructor, null, nameSpan, created.ToString());
         return new BoundDotNetNew(created, constructor, arguments, call.Span);
@@ -279,8 +386,10 @@ public sealed partial class Binder
     /// <summary>
     /// Picks the overload a call means (SPEC §13.5) and binds its arguments, reporting why if there's
     /// none: a member Taipan can't use (TP0231), argument errors, no overload, or ambiguity (TP0232).
+    /// A generic method's type arguments are inferred (SPEC §13.8), and a lambda is bound with each
+    /// candidate's parameter types, then for real with the chosen one's.
     /// </summary>
-    private (IMethodSymbol Method, ImmutableArray<BoundDotNetArgument> Arguments)? ResolveOverload(
+    private (IMethodSymbol Method, ImmutableArray<BoundDotNetArgument> Arguments, TypeArguments? TypeArguments)? ResolveOverload(
         CallExpr call, List<IMethodSymbol> candidates, string member, TextSpan nameSpan)
     {
         var usable = candidates.Where(m => UnsupportedIn(m) is null).ToList();
@@ -292,10 +401,10 @@ public sealed partial class Binder
         }
 
         var shaped = usable.Select(m => (Method: m, Shape: ShapeOf(call, m))).Where(c => c.Shape is not null).ToList();
-        if (shaped.Count == 1)
+        if (shaped is [{ Method.IsGenericMethod: false } only])
         {
             // One overload takes these arguments: they're checked against its parameters, as for a Taipan function.
-            var (method, shape) = (shaped[0].Method, shaped[0].Shape!);
+            var (method, shape) = (only.Method, only.Shape!);
             var arguments = call.Arguments.Select((a, i) =>
             {
                 var parameter = method.Parameters[shape[i]];
@@ -303,7 +412,7 @@ public sealed partial class Binder
                 CheckLiteralFits(value, DotNetTypes.TypeOf(parameter));
                 return new BoundDotNetArgument(parameter, value);
             }).ToImmutableArray();
-            return (method, arguments);
+            return (method, arguments, null);
         }
         if (shaped.Count == 0)
         {
@@ -315,60 +424,295 @@ public sealed partial class Binder
             return null;
         }
 
-        var values = call.Arguments.Select(a => BindValue(a.Value)).ToImmutableArray();
-        if (values.Any(v => v.Type.ContainsError))
+        // Lambdas are bound for each candidate; every other argument once.
+        var values = call.Arguments.Select(a => a.Value is LambdaExpr ? null : BindValue(a.Value)).ToArray();
+        if (values.Any(v => v is not null && v.Type.ContainsError))
             return null;
-        var applicable = shaped
-            .Select(c => (c.Method, Shape: c.Shape!, Fits: c.Shape!.Select((p, i) => DotNetTypes.Fit(values[i].Type, DotNetTypes.TypeOf(c.Method.Parameters[p]))).ToArray()))
-            .Where(c => c.Fits.All(f => f != DotNetFit.None))
-            .ToList();
-        if (applicable.Count == 0)
+        return ChooseOverload([.. call.Arguments.Select(a => a.Value)], [.. shaped.Select(c => (c.Method, c.Shape!))], values, member, nameSpan);
+    }
+
+    /// <summary>
+    /// The overload no other is better than, among those that take <paramref name="values"/>
+    /// (null for each lambda in <paramref name="syntax"/>), with its arguments bound (SPEC §13.5).
+    /// </summary>
+    private (IMethodSymbol Method, ImmutableArray<BoundDotNetArgument> Arguments, TypeArguments? TypeArguments)? ChooseOverload(
+        IReadOnlyList<Expr> syntax, List<(IMethodSymbol Method, int[] Shape)> shaped, BoundExpr?[] values, string member, TextSpan nameSpan)
+    {
+        var single = shaped.Count == 1;
+        var plans = shaped.Select(c => Plan(syntax, c.Method, c.Shape, values, member, nameSpan, report: single)).OfType<OverloadPlan>().ToList();
+        if (plans.Count == 0)
         {
-            _diagnostics.ReportNoOverload(nameSpan, member, values.Select(v => v.Type));
+            if (!single)
+                _diagnostics.ReportNoOverload(nameSpan, member, values.Select(v => v?.Type ?? TaipanType.Error));
             return null;
         }
 
-        // The chosen overload is the one no other is better than (SPEC §13.5).
-        bool Better((IMethodSymbol Method, int[] Shape, DotNetFit[] Fits) a, (IMethodSymbol Method, int[] Shape, DotNetFit[] Fits) b)
-        {
-            var atLeast = a.Fits.Zip(b.Fits).All(p => p.First >= p.Second);
-            var strictly = a.Fits.Zip(b.Fits).Any(p => p.First > p.Second);
-            return atLeast && (strictly || a.Method.Parameters.Length - a.Shape.Length < b.Method.Parameters.Length - b.Shape.Length);
-        }
-        var best = applicable.Where(c => !applicable.Any(o => o != c && Better(o, c))).ToList();
+        // The chosen overload is the one no other is better than (SPEC §13.5, §13.8).
+        var best = plans.Where(c => !plans.Any(o => o != c && Better(o, c))).ToList();
         if (best.Count != 1)
         {
             _diagnostics.ReportAmbiguousDotNetCall(nameSpan, member, Signature(best[0].Method), Signature(best[1].Method));
             return null;
         }
-        var chosen = best[0];
-        var bound = values.Select((v, i) =>
+        return Finish(syntax, best[0], values, member, nameSpan);
+    }
+
+    /// <summary>A candidate that takes a call's arguments: its type arguments, each argument's fit, and each lambda's parameter type.</summary>
+    private sealed record OverloadPlan(IMethodSymbol Method, int[] Shape, TypeArguments? TypeArguments, DotNetFit[] Fits, TaipanType?[] Parameters);
+
+    private static bool Better(OverloadPlan a, OverloadPlan b)
+    {
+        var atLeast = a.Fits.Zip(b.Fits).All(p => p.First >= p.Second);
+        if (!atLeast)
+            return false;
+        if (a.Fits.Zip(b.Fits).Any(p => p.First > p.Second))
+            return true;
+        var (omittedA, omittedB) = (a.Method.Parameters.Length - a.Shape.Length, b.Method.Parameters.Length - b.Shape.Length);
+        if (omittedA != omittedB)
+            return omittedA < omittedB;
+        // Fitting the same, a non-generic overload is better, and of generic ones the more specific (SPEC §13.5).
+        return GenericRank(a.Method) < GenericRank(b.Method);
+    }
+
+    private static int GenericRank(IMethodSymbol method) =>
+        method.IsGenericMethod ? 1 + method.OriginalDefinition.Parameters.Sum(p => Mentions(p.Type)) : 0;
+
+    private static int Mentions(ITypeSymbol type) => type switch
+    {
+        ITypeParameterSymbol => 1,
+        IArrayTypeSymbol array => Mentions(array.ElementType),
+        INamedTypeSymbol named => named.TypeArguments.Sum(Mentions),
+        _ => 0,
+    };
+
+    /// <summary>
+    /// Whether a candidate takes the arguments, inferring its type arguments (SPEC §13.8): from
+    /// each argument that isn't a lambda, then from lambdas whose parameter types are known.
+    /// With <paramref name="report"/>, the only candidate's problems are reported.
+    /// </summary>
+    private OverloadPlan? Plan(IReadOnlyList<Expr> syntax, IMethodSymbol method, int[] shape, BoundExpr?[] values, string member, TextSpan nameSpan, bool report)
+    {
+        var (placeholders, symbolic) = Placeholders(method);
+        var map = new Dictionary<TypeParameterSymbol, TaipanType>();
+        var diagnostics = report ? _diagnostics : new Diagnostics.DiagnosticBag { Source = _source };
+        var reported = diagnostics.ToImmutable().Count(d => !d.IsWarning);
+        var inference = new TypeInference(placeholders, map, diagnostics);
+        var parameterTypes = shape.Select(p => DotNetTypes.Map(DotNetTypes.TypeOf(method.Parameters[p]), result: false, out _, symbolic)!).ToArray();
+        for (var i = 0; i < values.Length; i++)
         {
-            var parameter = chosen.Method.Parameters[chosen.Shape[i]];
-            CheckLiteralFits(v, DotNetTypes.TypeOf(parameter));
-            return new BoundDotNetArgument(parameter, v);
-        }).ToImmutableArray();
-        return (chosen.Method, bound);
+            if (values[i] is { } value)
+                inference.Unify(parameterTypes[i], value.Type, syntax[i].Span);
+        }
+
+        var lambdaResults = new TaipanType?[values.Length];
+        var pending = Enumerable.Range(0, values.Length).Where(i => values[i] is null).ToList();
+        while (pending.Count > 0)
+        {
+            var ready = pending.FirstOrDefault(i => TypeChecker.Unwrap(parameterTypes[i]) is not FunctionType callable || callable.Parameters.All(inference.IsKnown), -1);
+            if (ready < 0)
+                break;
+            pending.Remove(ready);
+            var lambda = (LambdaExpr)syntax[ready];
+            if (TypeChecker.Unwrap(parameterTypes[ready]) is not FunctionType function || function.Parameters.Length != lambda.Parameters.Length)
+            {
+                if (report)
+                    _diagnostics.ReportTypeMismatch(lambda.Span, parameterTypes[ready], "lambda");
+                return null;
+            }
+            var result = SpeculateLambda(lambda, [.. function.Parameters.Select(p => TypeChecker.Substitute(p, map))], function.Result is NothingType);
+            lambdaResults[ready] = result;
+            if (!inference.IsKnown(function.Result))
+                inference.Unify(function.Result, result, lambda.Body.Span);
+        }
+        if (pending.Count > 0)
+        {
+            if (report)
+            {
+                var parameter = ((LambdaExpr)syntax[pending[0]]).Parameters.FirstOrDefault();
+                if (parameter is not null)
+                    _diagnostics.ReportCannotInferLambdaParameter(parameter.Span, parameter.Text);
+            }
+            return null;
+        }
+        foreach (var parameter in placeholders.Where(p => !map.ContainsKey(p)))
+        {
+            if (report)
+                _diagnostics.ReportCannotInferTypeArgument(nameSpan, parameter.Name, member);
+            return null;
+        }
+        // A type argument inferred two ways was reported, or rules this candidate out.
+        if (diagnostics.ToImmutable().Count(d => !d.IsWarning) > reported)
+            return null;
+
+        var typeArguments = method.IsGenericMethod
+            ? new TypeArguments(method.TypeParameters.Select((p, k) => KeyValuePair.Create(p, map[placeholders[k]])))
+            : null;
+        var fits = new DotNetFit[values.Length];
+        for (var i = 0; i < values.Length; i++)
+        {
+            var parameter = DotNetTypes.TypeOf(method.Parameters[shape[i]]);
+            fits[i] = values[i] is { } value ? DotNetTypes.Fit(value.Type, parameter, typeArguments)
+                : LambdaFit(lambdaResults[i]!, (INamedTypeSymbol)parameter, typeArguments);
+            // The only candidate's arguments are checked against it when they're bound.
+            if (fits[i] == DotNetFit.None && !report)
+                return null;
+        }
+        var concrete = parameterTypes.Select(t => TypeChecker.Substitute(t, map)).ToArray();
+        return new OverloadPlan(method, shape, typeArguments, fits, concrete);
+    }
+
+    /// <summary>A lambda's fit is its result's, to the delegate's result type (SPEC §13.5).</summary>
+    private static DotNetFit LambdaFit(TaipanType result, INamedTypeSymbol callable, TypeArguments? typeArguments) =>
+        callable.DelegateInvokeMethod is not { } invoke || invoke.ReturnsVoid ? DotNetFit.Exact
+            : DotNetTypes.Fit(result, DotNetTypes.ResultOf(invoke), typeArguments);
+
+    /// <summary>Binds the chosen overload's arguments: lambdas with its parameter types, and checks its constraints.</summary>
+    private (IMethodSymbol, ImmutableArray<BoundDotNetArgument>, TypeArguments?)? Finish(
+        IReadOnlyList<Expr> syntax, OverloadPlan plan, BoundExpr?[] values, string member, TextSpan nameSpan)
+    {
+        var arguments = ImmutableArray.CreateBuilder<BoundDotNetArgument>();
+        for (var i = 0; i < values.Length; i++)
+        {
+            var parameter = plan.Method.Parameters[plan.Shape[i]];
+            var expected = plan.Parameters[i]!;
+            BoundExpr value;
+            if (values[i] is { } bound)
+            {
+                value = bound;
+                if (plan.Fits[i] == DotNetFit.None && !expected.ContainsError)
+                    _diagnostics.ReportTypeMismatch(bound.Span, expected, bound.Type);
+                if (!plan.Method.IsGenericMethod)
+                    CheckLiteralFits(value, DotNetTypes.TypeOf(parameter));
+            }
+            else
+            {
+                var function = (FunctionType)TypeChecker.Unwrap(expected);
+                value = BindLambdaAs((LambdaExpr)syntax[i], function.Parameters, function.Result);
+            }
+            arguments.Add(new BoundDotNetArgument(parameter, value));
+        }
+        if (plan.TypeArguments is { } typeArguments && !SatisfiesConstraints(plan.Method, typeArguments, member, nameSpan))
+            return null;
+        return (plan.Method, arguments.ToImmutable(), plan.TypeArguments);
+    }
+
+    // Taipan type parameters standing for a generic method's own, while its type arguments are inferred.
+    private readonly Dictionary<IMethodSymbol, (ImmutableArray<TypeParameterSymbol>, TypeArguments)> _placeholders = new(SymbolEqualityComparer.Default);
+
+    private (ImmutableArray<TypeParameterSymbol> Placeholders, TypeArguments Symbolic) Placeholders(IMethodSymbol method)
+    {
+        if (_placeholders.TryGetValue(method, out var found))
+            return found;
+        ImmutableArray<TypeParameterSymbol> placeholders = [.. method.TypeParameters.Select(p => new TypeParameterSymbol(p.Name))];
+        var symbolic = new TypeArguments(method.TypeParameters.Select((p, k) => KeyValuePair.Create(p, (TaipanType)placeholders[k].Type)));
+        return _placeholders[method] = (placeholders, symbolic);
+    }
+
+    // Binding lambdas for candidates that may not be chosen: their diagnostics and names aren't kept.
+    private int _speculating;
+
+    /// <summary>A lambda's result type with these parameter types, binding it without keeping anything.</summary>
+    private TaipanType SpeculateLambda(LambdaExpr lambda, ImmutableArray<TaipanType> parameters, bool discardsResult)
+    {
+        var diagnostics = _diagnostics;
+        _diagnostics = new Diagnostics.DiagnosticBag { Source = _source, FileOrder = diagnostics.FileOrder };
+        _speculating++;
+        try
+        {
+            var bound = BindLambdaAs(lambda, parameters, discardsResult ? TaipanType.Nothing : null);
+            return bound is BoundLambda { FunctionType.Result: var result } && !_diagnostics.ToImmutable().Any(d => !d.IsWarning) ? result : TaipanType.Error;
+        }
+        finally
+        {
+            _speculating--;
+            _diagnostics = diagnostics;
+        }
     }
 
     /// <summary>
-    /// The type that keeps Taipan from using an overload (TP0231), or null if it can: a generic
-    /// method's type parameter, a <c>ref</c>, <c>out</c> or <c>in</c> parameter, or an unmapped type.
+    /// A generic method's constraints, checked against each type argument's .NET form (SPEC §13.8):
+    /// <c>class</c>, <c>struct</c>, <c>new()</c>, and base classes or interfaces.
     /// </summary>
-    private static string? UnsupportedIn(IMethodSymbol method)
+    private bool SatisfiesConstraints(IMethodSymbol method, TypeArguments typeArguments, string member, TextSpan nameSpan)
     {
-        if (method.IsGenericMethod)
-            return method.TypeParameters[0].Name;
+        var symbols = new Dictionary<ITypeParameterSymbol, ITypeSymbol?>(SymbolEqualityComparer.Default);
+        foreach (var (parameter, argument) in typeArguments)
+            symbols[parameter] = NetSymbolOf(argument);
+        foreach (var parameter in method.TypeParameters)
+        {
+            var argument = typeArguments[parameter];
+            if (argument.ContainsError)
+                continue;
+            var symbol = symbols[parameter];
+            var isValue = argument is PrimitiveType { Name: "int" or "float" or "bool" } or TupleOfType || symbol is { IsValueType: true };
+            string? unmet = null;
+            if (parameter.HasReferenceTypeConstraint && isValue)
+                unmet = "class";
+            else if ((parameter.HasValueTypeConstraint || parameter.HasUnmanagedTypeConstraint) && (!isValue || argument is OptionalOf))
+                unmet = parameter.HasUnmanagedTypeConstraint ? "unmanaged" : "struct";
+            else if (parameter.HasConstructorConstraint && !isValue
+                && !(symbol is INamedTypeSymbol { IsAbstract: false } type && type.InstanceConstructors.Any(c => c.Parameters.IsEmpty && c.DeclaredAccessibility == Accessibility.Public)))
+                unmet = "new()";
+            else
+            {
+                foreach (var constraint in parameter.ConstraintTypes)
+                {
+                    if (symbol is null || Construct(constraint, symbols) is not { } required
+                        || !(SymbolEqualityComparer.Default.Equals(symbol, required) || symbol is INamedTypeSymbol named && required is INamedTypeSymbol target && DotNetTypes.Derives(named, target)))
+                    {
+                        unmet = DotNetTypes.Display(constraint);
+                        break;
+                    }
+                }
+            }
+            if (unmet is not null)
+            {
+                _diagnostics.ReportUnmetConstraint(nameSpan, argument, unmet, parameter.Name, member);
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /// <summary>A Taipan type's .NET type, for one that has a symbol in the metadata: built-in types and .NET types.</summary>
+    private ITypeSymbol? NetSymbolOf(TaipanType type) => type switch
+    {
+        PrimitiveType { Name: "int" } => DotNet.Special(SpecialType.System_Int64),
+        PrimitiveType { Name: "float" } => DotNet.Special(SpecialType.System_Double),
+        PrimitiveType { Name: "bool" } => DotNet.Special(SpecialType.System_Boolean),
+        PrimitiveType { Name: "str" } => DotNet.Special(SpecialType.System_String),
+        DotNetType net => net.Symbol,
+        _ => null,
+    };
+
+    // A constraint with the type arguments put in, when each has a .NET symbol.
+    private static ITypeSymbol? Construct(ITypeSymbol type, Dictionary<ITypeParameterSymbol, ITypeSymbol?> symbols) => type switch
+    {
+        ITypeParameterSymbol parameter => symbols.GetValueOrDefault(parameter),
+        INamedTypeSymbol { IsGenericType: true } named => named.TypeArguments.Select(a => Construct(a, symbols)).ToList() is var arguments && arguments.All(a => a is not null)
+            ? named.OriginalDefinition.Construct([.. arguments!])
+            : null,
+        _ => type,
+    };
+
+    /// <summary>
+    /// The type that keeps Taipan from using an overload (TP0231), or null if it can: a <c>ref</c>,
+    /// <c>out</c> or <c>in</c> parameter, or an unmapped type. A generic method's type parameters
+    /// stand for whatever is inferred (SPEC §13.8).
+    /// </summary>
+    private string? UnsupportedIn(IMethodSymbol method)
+    {
+        var symbolic = method.IsGenericMethod ? Placeholders(method).Symbolic : null;
         foreach (var parameter in method.Parameters)
         {
             if (parameter.RefKind != RefKind.None)
                 return $"{(parameter.RefKind == RefKind.RefReadOnlyParameter ? "ref readonly" : parameter.RefKind.ToString().ToLowerInvariant())} {DotNetTypes.Display(parameter.Type)}";
-            if (DotNetTypes.Map(DotNetTypes.TypeOf(parameter), result: false, out var unsupported) is null)
+            if (DotNetTypes.Map(DotNetTypes.TypeOf(parameter), result: false, out var unsupported, symbolic) is null)
                 return DotNetTypes.Display(unsupported ?? parameter.Type);
         }
         if (method.ReturnsByRef || method.ReturnsByRefReadonly)
             return $"ref {DotNetTypes.Display(method.ReturnType)}";
-        if (method.MethodKind != MethodKind.Constructor && DotNetTypes.Map(DotNetTypes.ResultOf(method), result: true, out var result) is null)
+        if (method.MethodKind != MethodKind.Constructor && DotNetTypes.Map(DotNetTypes.ResultOf(method), result: true, out var result, symbolic) is null)
             return DotNetTypes.Display(result ?? method.ReturnType);
         return null;
     }

@@ -127,9 +127,10 @@ public sealed class SemanticIndex
         };
         var receiver = function.Self is not null ? "self" : function.Cls is not null ? "cls" : null;
         var parts = function.Parameters.Select((p, i) => ParameterText(p, function.Kinds[i], function.DefaultFor(i) is not null)).ToList();
-        var label = $"{decorator}def {owner}{function.Name}{TypeParameters(function.TypeParameters)}";
+        var label = $"{decorator}{(function.IsAsync ? "async " : "")}def {owner}{function.Name}{TypeParameters(function.TypeParameters)}";
         var (text, ranges) = ParameterList(label, parts, function.Kinds, receiver);
-        var result = function.ReturnType is NothingType ? "" : $" -> {function.ReturnType}";
+        // An async function is written with what its body returns, as it's declared (SPEC §3.14).
+        var result = function.BodyResult is NothingType ? "" : $" -> {function.BodyResult}";
         return (text + result, ranges);
     }
 

@@ -26,6 +26,9 @@ def pick(xs: list[Point?]) -> int:
 def identity[T](x: T) -> T:
     return x
 
+async def later(n: int) -> int:
+    return n
+
 def _hidden(p: Point) -> float:
     return p.x
 

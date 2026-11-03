@@ -1,0 +1,9 @@
+# Awaiting something that isn't awaitable, and type arguments that don't fit (SPEC §3.14, §13.8).
+from dotnet.System import Enum
+from dotnet.System.Linq import Enumerable
+
+async def twice(n: int) -> int:
+    return await n * 2
+
+print(Enum.IsDefined(5))
+print(Enumerable.Concat([1, 2], ["a"]))

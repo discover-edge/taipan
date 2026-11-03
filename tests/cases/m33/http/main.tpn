@@ -1,0 +1,7 @@
+# M33 acceptance: awaiting a .NET task, against a local test server (SPEC §13.11).
+# The test gives the server's address in TAIPAN_TEST_URL; it's checked without running here.
+from dotnet.System import Environment
+from dotnet.System.Net.Http import HttpClient
+
+let url = Environment.GetEnvironmentVariable("TAIPAN_TEST_URL") ?? "http://127.0.0.1:9/"
+print(await HttpClient().GetStringAsync(url))

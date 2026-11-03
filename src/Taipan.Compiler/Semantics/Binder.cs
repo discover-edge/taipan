@@ -26,7 +26,7 @@ public sealed record BindResult(BoundProgram Program, ImmutableArray<Diagnostic>
 public sealed partial class Binder
 {
     private static readonly BigInteger MaxInt = long.MaxValue;
-    private static readonly HashSet<string> BuiltinTypeNames = ["int", "float", "bool", "str", "list", "dict", "py", "Callable", "tuple", "Protocol", "Self", "ABC", "ClassVar", "Iterator", "Iterable"];
+    private static readonly HashSet<string> BuiltinTypeNames = ["int", "float", "bool", "str", "list", "dict", "py", "Callable", "tuple", "Protocol", "Self", "ABC", "ClassVar", "Iterator", "Iterable", "Awaitable"];
 
     // Every class the program defines, for checks across a hierarchy (SPEC §4.8).
     private readonly List<ClassSymbol> _allClasses = [];
@@ -293,7 +293,9 @@ public sealed partial class Binder
         Enter(main);
         _scope = new Scope(_global);
         var unit = main.File.Unit;
+        _inTopLevel = true;
         var topLevel = BindStatements([.. unit.Items.OfType<Stmt>()]);
+        _inTopLevel = false;
         var order = InitializationOrder(main, byName);
         var library = _asLibrary ? BindLibrary(modules, byName, functions, classes) : null;
         var extension = _asExtension ? BindExtension(main) : null;
@@ -309,6 +311,7 @@ public sealed partial class Binder
             References = _asLibrary ? _library.References : _dotnet?.References ?? [],
             Library = library,
             Extension = extension,
+            IsAsync = _topLevelAwaits,
         };
     }
 
@@ -946,11 +949,12 @@ public sealed partial class Binder
         BindConstraints(funcDef.TypeParams, typeParameters);
         BindBounds(funcDef.TypeParams, typeParameters);
         var symbol = new FunctionSymbol(
-            funcDef.Name.Text, BindParams(funcDef.Params), BindReturnType(funcDef.ReturnType), typeParameters: typeParameters)
+            funcDef.Name.Text, BindParams(funcDef.Params), AsyncResult(funcDef.IsAsync, BindReturnType(funcDef.ReturnType)), typeParameters: typeParameters)
         {
             Defaults = PendingDefaults(funcDef.Params),
             Kinds = KindsOf(funcDef.Params),
             IsGenerator = Yields(funcDef.Body),
+            IsAsync = funcDef.IsAsync,
         };
         CheckGeneratorReturn(symbol, funcDef.Name);
         _typeParameters = outer;
@@ -1405,7 +1409,7 @@ public sealed partial class Binder
 
         var boundBody = BindBlock(body);
         var stub = body.Statements is [ExprStmt { Expr: EllipsisExpr }];
-        if (symbol.ReturnType != TaipanType.Nothing && !stub && !symbol.IsGenerator && !TypeChecker.Terminates(boundBody))
+        if (symbol.BodyResult != TaipanType.Nothing && !stub && !symbol.IsGenerator && !TypeChecker.Terminates(boundBody))
             _diagnostics.ReportNotAllPathsReturn(name.Span, symbol.Name);
 
         _function = null;
@@ -1561,6 +1565,9 @@ public sealed partial class Binder
                     return new TupleOfType(elements);
                 _diagnostics.ReportTupleTooShort(tuple.Span);
                 return TaipanType.Error;
+            case AwaitableType awaitable:
+                IndexBuiltinType(awaitable.Span, "Awaitable");
+                return new AwaitableOfType(awaitable.Result is null ? TaipanType.Nothing : BindType(awaitable.Result));
             case CallableType callable:
                 IndexBuiltinType(callable.Span, "Callable");
                 return new FunctionType(
@@ -1790,7 +1797,7 @@ public sealed partial class Binder
         PassStmt pass => new BoundBlock([], pass.Span),
         BreakStmt brk => BindBreak(brk),
         ContinueStmt cont => BindContinue(cont),
-        ExprStmt exprStmt => new BoundExprStmt(BindExpr(exprStmt.Expr), exprStmt.Span),
+        ExprStmt exprStmt => BindExprStmt(exprStmt),
         IfStmt ifStmt => BindIf(ifStmt),
         WhileStmt whileStmt => BindWhile(whileStmt),
         ForStmt forStmt => BindFor(forStmt),
@@ -1823,13 +1830,14 @@ public sealed partial class Binder
                 _typeParameters.TryAdd(parameter.Name, parameter.Type);
         }
         var parameters = BindParams(def.Params);
-        var returnType = BindReturnType(def.ReturnType);
+        var returnType = AsyncResult(def.IsAsync, BindReturnType(def.ReturnType));
         // Its defaults see what's visible here, so they may use the bindings it captures (SPEC §4.2).
         var function = new FunctionSymbol(def.Name.Text, parameters, returnType)
         {
             Defaults = BindDefaultValues(def.Params, parameters),
             Kinds = KindsOf(def.Params),
             IsGenerator = Yields(def.Body),
+            IsAsync = def.IsAsync,
         };
         CheckGeneratorReturn(function, def.Name);
         var symbol = new VariableSymbol(def.Name.Text, new FunctionType([.. parameters.Select(p => p.Type)], returnType), VariableKind.Function);
@@ -1849,7 +1857,7 @@ public sealed partial class Binder
         _noYield = 0;
         var body = InDeferredRegion(() => BindBlock(def.Body));
         _noYield = outerNoYield;
-        if (returnType != TaipanType.Nothing && !function.IsGenerator && !TypeChecker.Terminates(body))
+        if (function.BodyResult != TaipanType.Nothing && !function.IsGenerator && !TypeChecker.Terminates(body))
             _diagnostics.ReportNotAllPathsReturn(def.Name.Span, def.Name.Text);
         (_function, _loopDepth, _scope) = (outerFunction, outerLoopDepth, outerScope);
         (_handlerDepth, _finallyLoopDepth) = (outerHandlerDepth, outerFinallyLoopDepth);
@@ -1979,6 +1987,8 @@ public sealed partial class Binder
         }
 
         var read = BindIndexOf(target, indexExpr);
+        if (read is BoundDotNetIndex dotnetIndex)
+            return BindDotNetIndexAssign(assign, dotnetIndex, preset);
         if (read is BoundPyGetItem pyItem)
         {
             var pyValue = BindAssignedValue(assign, pyItem, TaipanType.Py, preset);
@@ -2026,9 +2036,9 @@ public sealed partial class Binder
             _diagnostics.ReportLeavesFinally(new TextSpan(ret.Span.Start, "return".Length), "return");
         else if (LeavesMatchExpression(isReturn: true))
             _diagnostics.ReportLeavesMatchExpression(new TextSpan(ret.Span.Start, "return".Length), "return");
-        var returnType = TypeChecker.Substitute(_function.ReturnType, _specialization);
+        var returnType = TypeChecker.Substitute(_function.BodyResult, _specialization);
         // A generator's return only ends it (SPEC §3.13).
-        if (_function.IsGenerator)
+        if (_function.IsGenerator && !_function.IsAsync)
         {
             if (ret.Value is not null)
                 _diagnostics.ReportGeneratorReturnValue(ret.Value.Span);
@@ -2714,11 +2724,13 @@ public sealed partial class Binder
 
         // A lambda runs later, so it doesn't see narrowed vars or paths (SPEC §3.9).
         var expectedResult = result;
+        _lambdaDepth++;
         var body = InDeferredRegion(() =>
             // An error result (an undefined type, say) was already reported, so any body fits it.
             expectedResult is NothingType or ErrorType ? BindExpr(lambda.Body)
             : expectedResult is not null ? BindExpected(lambda.Body, expectedResult)
             : resultMayBeNothing ? BindExpr(lambda.Body) : BindValue(lambda.Body));
+        _lambdaDepth--;
         if (result is null)
         {
             result = body.Type;
@@ -2791,6 +2803,7 @@ public sealed partial class Binder
         FStringExpr fstring => BindFString(fstring),
         NameExpr name => BindName(name, expected),
         UnaryExpr unary => BindUnary(unary),
+        AwaitExpr awaitExpr => BindAwait(awaitExpr),
         BinaryExpr { Op: BinaryOp.Coalesce } binary => BindCoalesce(binary),
         BinaryExpr { Op: BinaryOp.Equal or BinaryOp.NotEqual } equality => BindEquality(equality),
         BinaryExpr { Op: BinaryOp.And or BinaryOp.Or } logical => BindLogical(logical),
@@ -2973,6 +2986,8 @@ public sealed partial class Binder
 
         if (operand.Type == TaipanType.Py)
             return new BoundUnary(unary.Op, operand, TaipanType.Py, unary.Span);
+        if (operand.Type is DotNetType && BindDotNetNegation(operand, unary.Span) is { } dotnet)
+            return dotnet;
         // -x on a class calls its __neg__ (SPEC §4.8).
         if (operand.Type is ClassType && NegatedType(operand.Type) is { } negated)
             return new BoundUnary(unary.Op, operand, negated, unary.Span);
@@ -2999,6 +3014,9 @@ public sealed partial class Binder
         // `x in c` takes values from a class through its __iter__ or __next__ (SPEC §3.13).
         if (op is BinaryOp.In or BinaryOp.NotIn && right.Type is ClassType && TypeChecker.ElementOf(right.Type) is { } element)
             right = Convert(right, new IterableOfType(element));
+        // An operator on a .NET value calls its type's operator (SPEC §13.10).
+        if ((left.Type is DotNetType || right.Type is DotNetType) && BindDotNetOperator(left, op, right, span) is { } dotnet)
+            return dotnet;
         // An operator on a class value calls a special method (SPEC §4.8).
         if (SpecialMethods.Forward(op) is { } forward && (left.Type is ClassType || right.Type is ClassType))
         {
@@ -3395,6 +3413,8 @@ public sealed partial class Binder
                 return new BoundIndex(target, BindExpected(indexExpr.Index, dict.Key), dict.Value, indexExpr.Span);
             case PrimitiveType { Name: "str" }:
                 return new BoundIndex(target, BindExpected(indexExpr.Index, TaipanType.Int), TaipanType.Str, indexExpr.Span);
+            case DotNetType net:
+                return BindDotNetIndex(target, net.Symbol, indexExpr);
             // An iterator's values aren't there until they're taken (SPEC §3.13).
             case IteratorOfType or IterableOfType:
                 BindValue(indexExpr.Index);
@@ -3638,6 +3658,9 @@ public sealed partial class Binder
             EnumType e => e.TypeArguments.All(IsKnown),
             FunctionType f => f.Parameters.All(IsKnown) && IsKnown(f.Result),
             TupleOfType t => t.Elements.All(IsKnown),
+            AwaitableOfType a => IsKnown(a.Result),
+            IteratorOfType i => IsKnown(i.Element),
+            IterableOfType i => IsKnown(i.Element),
             _ => true,
         };
 
@@ -3706,6 +3729,9 @@ public sealed partial class Binder
                     break;
                 case (IteratorOfType p, _) when TypeChecker.IteratorElementOf(actual) is { } produced:
                     Unify(p.Element, produced, fromArgument);
+                    break;
+                case (AwaitableOfType p, AwaitableOfType a):
+                    Unify(p.Result, a.Result, fromArgument);
                     break;
                 case (DictOfType p, DictOfType a):
                     Unify(p.Key, a.Key, fromArgument);

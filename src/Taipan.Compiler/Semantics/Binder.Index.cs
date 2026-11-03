@@ -11,6 +11,8 @@ public sealed partial class Binder
     /// <summary>Records the name at <paramref name="span"/> in the current file as naming <paramref name="target"/>.</summary>
     private void Index(Text.TextSpan span, object target, bool isDefinition = false)
     {
+        if (_speculating > 0)
+            return;
         if (isDefinition)
             _index.Define(_source, span, target);
         else
@@ -18,11 +20,17 @@ public sealed partial class Binder
     }
 
     /// <summary>Records what's before the <c>.</c> of the member at <paramref name="member"/>.</summary>
-    private void RecordReceiver(Text.TextSpan member, object receiver) => _index.Receiver(_source, member, receiver);
+    private void RecordReceiver(Text.TextSpan member, object receiver)
+    {
+        if (_speculating == 0)
+            _index.Receiver(_source, member, receiver);
+    }
 
     /// <summary>Records the names in scope where the name at <paramref name="span"/> didn't resolve.</summary>
     private void Unresolved(Text.TextSpan span, bool inType)
     {
+        if (_speculating > 0)
+            return;
         var names = ImmutableArray.CreateBuilder<SemanticIndex.ScopedName>();
         var seen = new HashSet<string>();
         if (inType)

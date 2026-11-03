@@ -1,0 +1,2 @@
+tests/cases/m33/tp0206_dotnet.tpn:4:13: error TP0206: cannot infer 'T' for 'Array.Empty'
+  help: add a type annotation

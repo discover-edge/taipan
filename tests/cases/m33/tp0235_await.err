@@ -1,0 +1,4 @@
+tests/cases/m33/tp0235_await.tpn:7:1: error TP0235: this awaitable is never awaited
+  help: write 'await …'
+tests/cases/m33/tp0235_await.tpn:8:1: error TP0235: this awaitable is never awaited
+  help: write 'await …'
