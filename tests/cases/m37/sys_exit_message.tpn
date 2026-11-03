@@ -1,0 +1,5 @@
+from sys import exit, argv
+
+if len(argv) < 2:
+    exit("usage: sys_exit_message <name>")
+print("hello", argv[1])

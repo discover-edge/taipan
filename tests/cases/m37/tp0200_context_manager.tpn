@@ -1,0 +1,10 @@
+class Plain:
+    pass
+
+with 5 as x:
+    pass
+with Plain():
+    pass
+
+def kind(t: type[int]) -> None:
+    pass

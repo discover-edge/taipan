@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Taipan.Compiler.Syntax;
 
 namespace Taipan.Compiler.Semantics;
@@ -36,7 +37,17 @@ public static class SpecialMethods
         ["__neg__"] = (0, null),
         ["__iter__"] = (0, null),
         ["__next__"] = (0, null),
+        ["__enter__"] = (0, null),
+        ["__exit__"] = (3, null),
     };
+
+    /// <summary><c>__exit__</c>'s parameter types (SPEC §3.17, M37).</summary>
+    public static ImmutableArray<TaipanType> ExitParameters { get; } =
+    [
+        new OptionalOf(new ClassOfType(BuiltinClasses.BaseException.Type)),
+        new OptionalOf(BuiltinClasses.BaseException.Type),
+        new OptionalOf(TaipanType.Traceback),
+    ];
 
     public static bool IsSupported(string name) => Signatures.ContainsKey(name);
 
@@ -52,6 +63,10 @@ public static class SpecialMethods
         var (arity, result) = Signatures[method.Name];
         if (method.Parameters.Length != arity || hasDefaults)
             return false;
+        // __exit__ takes exactly Python's three optionals, and suppresses only when it returns bool (SPEC §3.17).
+        if (method.Name == "__exit__")
+            return method.Parameters.Select(p => p.Type).Zip(ExitParameters).All(pair => pair.First.ContainsError || pair.First == pair.Second)
+                && (method.ReturnType.ContainsError || method.ReturnType is NothingType || method.ReturnType == TaipanType.Bool);
         if (method.ReturnType.ContainsError)
             return true;
         if (result is null ? method.ReturnType is NothingType : method.ReturnType != result)
@@ -66,6 +81,8 @@ public static class SpecialMethods
     /// <summary>The signature a message shows: <c>def __eq__(self, other: Money) -> bool</c>.</summary>
     public static string Signature(string name, ClassSymbol owner)
     {
+        if (name == "__exit__")
+            return "def __exit__(self, exc_type: type[BaseException]?, exc: BaseException?, tb: TracebackType?) -> bool";
         var (arity, result) = Signatures[name];
         var other = name == "__eq__" ? owner.Type.ToString() : "T";
         var parameters = arity == 0 ? "" : $", other: {other}";
@@ -83,6 +100,7 @@ public static class SpecialMethods
         "__eq__" => "==",
         "__iter__" => $"iter({target})",
         "__next__" => $"next({target})",
+        "__enter__" or "__exit__" => $"with {target}:",
         _ => Operator(name) ?? name,
     };
 

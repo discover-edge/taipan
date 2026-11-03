@@ -51,7 +51,7 @@ public static class ModuleLoader
             var importer = modules[i];
             foreach (var import in Imports(importer.Unit))
             {
-                if (import.Text == PythonModule || IsDotNet(import.Text) || !loaded.Add(import.Text))
+                if (import.Text == PythonModule || IsDotNet(import.Text) || Semantics.BuiltinModules.IsBuiltin(import.Text) || !loaded.Add(import.Text))
                     continue;
                 // Modules aren't dotted; only .NET namespaces are (SPEC §4.7).
                 if (import.Text.Contains('.'))

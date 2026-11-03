@@ -1,0 +1,6 @@
+import sys as system
+
+print(system.argv[0])
+print(system.argv[1:])
+system.argv.append("x")
+print(len(system.argv))

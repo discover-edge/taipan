@@ -161,6 +161,12 @@ public sealed record MatchStmt(Expr Scrutinee, ImmutableArray<MatchArm> Arms, Te
 /// <summary><c>try</c> with its clauses; a <c>try</c> has at least one <c>except</c> or a <c>finally</c> (SPEC §3.10).</summary>
 public sealed record TryStmt(Block Body, ImmutableArray<ExceptClause> Handlers, Block? Else, Block? Finally, TextSpan Span) : Stmt(Span);
 
+/// <summary><c>with</c> and its items, which nest left to right (SPEC §3.17).</summary>
+public sealed record WithStmt(ImmutableArray<WithItem> Items, Block Body, TextSpan Span) : Stmt(Span);
+
+/// <summary>One <c>with</c> item: a context manager and the name its <c>__enter__</c> result is bound to, if any.</summary>
+public sealed record WithItem(Expr Manager, Identifier? Binding, TextSpan Span) : Node(Span);
+
 /// <summary>
 /// An <c>except</c> clause. <see cref="Types"/> is empty for a bare <c>except:</c>; each type is a
 /// <see cref="NameExpr"/> or <see cref="MemberExpr"/> chain naming a class or a Python class.

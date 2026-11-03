@@ -813,6 +813,33 @@ public sealed class DiagnosticBag
     public void ReportAwaitableDiscarded(TextSpan span) =>
         Add("TP0235", span, "this awaitable is never awaited", "write 'await …'");
 
+    public void ReportYieldInWith(TextSpan span) =>
+        Add("TP0215", span, "'yield' can't be inside a 'with'");
+
+    public void ReportHalfContextManager(TextSpan span, string className, string has, string lacks) =>
+        Add("TP0225", span, $"'{className}' defines '{has}' but not '{lacks}'");
+
+    public void ReportNotContextManager(TextSpan span, Semantics.TaipanType type) =>
+        Add("TP0200", span, $"{type} is not a context manager", "define '__enter__' and '__exit__'");
+
+    public void ReportInvalidMode(TextSpan span, string mode)
+    {
+        var help = mode.Contains('b') ? "binary files ('b') are deferred" : mode.Contains('+') ? "read-write modes ('+') are deferred" : "use 'r', 'w', 'a' or 'x'";
+        Add("TP0200", span, $"invalid mode '{mode}'", help);
+    }
+
+    public void ReportOpenNeedsLiteral(TextSpan span, string argument) =>
+        Add("TP0200", span, $"'open' needs a literal {argument}");
+
+    public void ReportUnknownEncoding(TextSpan span, string encoding) =>
+        Add("TP0200", span, $"unknown encoding '{encoding}'", "use 'utf-8', 'utf-8-sig', 'ascii' or 'latin-1'");
+
+    public void ReportInvalidNewline(TextSpan span) =>
+        Add("TP0200", span, "newline must be None or ''");
+
+    public void ReportTypeOfNonClass(TextSpan span, object found) =>
+        Add("TP0200", span, $"'type[…]' needs a class, found {found}");
+
     public void ReportYieldInTry(TextSpan span) =>
         Add("TP0215", span, "'yield' can't be inside a 'try' with 'except', or in 'finally'");
 

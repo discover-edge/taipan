@@ -51,6 +51,7 @@ public enum TokenKind
     YieldKeyword,
     AsyncKeyword,
     AwaitKeyword,
+    WithKeyword,
 
     // Operators and punctuation
     Plus,

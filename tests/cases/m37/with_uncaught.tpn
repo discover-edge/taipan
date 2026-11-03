@@ -1,0 +1,16 @@
+from types import TracebackType
+
+class Resource:
+    def __enter__(self) -> int:
+        print("enter")
+        return 7
+
+    def __exit__(self, exc_type: type[BaseException]?, exc: BaseException?, tb: TracebackType?) -> bool:
+        print("exit", exc_type)
+        return False
+
+with Resource() as n:
+    print("got", n)
+    let xs = [1, 2]
+    print(xs[n])
+print("not reached")

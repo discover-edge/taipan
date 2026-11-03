@@ -921,6 +921,26 @@ public class ParserTests
             "TryStmt(Block([PassStmt]), [ExceptClause([MemberExpr(MemberExpr(NameExpr(json), decoder), JSONDecodeError)], e, Block([PassStmt]))], null, null)",
             Snapshot("try:\n    pass\nexcept json.decoder.JSONDecodeError as e:\n    pass\n"));
 
+    // ---- with (M37) ----
+
+    [Theory]
+    [InlineData("with lock:\n    pass\n", "WithStmt([WithItem(NameExpr(lock), null)], Block([PassStmt]))")]
+    [InlineData("with open(p) as f, g() as h:\n    pass\n",
+        "WithStmt([WithItem(CallExpr(NameExpr(open), [Argument(null, NameExpr(p))]), f), WithItem(CallExpr(NameExpr(g), []), h)], Block([PassStmt]))")]
+    // A top-level `as` names the item's variable; inside brackets it's still a conversion (SPEC §2).
+    [InlineData("with (x as Lock) as held:\n    pass\n",
+        "WithStmt([WithItem(CastExpr(NameExpr(x), NamedType(Lock)), held)], Block([PassStmt]))")]
+    [InlineData("with f(x as int) as y:\n    pass\n",
+        "WithStmt([WithItem(CallExpr(NameExpr(f), [Argument(null, CastExpr(NameExpr(x), NamedType(int)))]), y)], Block([PassStmt]))")]
+    public void With(string text, string expected) =>
+        Assert.Equal(expected, Snapshot(text));
+
+    [Theory]
+    [InlineData("with a as b.c:\n    pass\n", "1:12 TP0100: expected ':', found '.'")]
+    [InlineData("with:\n    pass\n", "1:5 TP0100: expected expression, found ':'")]
+    public void WithSyntaxErrors(string text, string expected) =>
+        Assert.Equal(expected, Errors(text).First());
+
     [Theory]
     [InlineData("raise\n", "RaiseStmt(null)")]
     [InlineData("raise ValueError(\"x\")\n", "RaiseStmt(CallExpr(NameExpr(ValueError), [Argument(null, StringLiteral(\"x\"))]))")]

@@ -1,0 +1,53 @@
+from types import TracebackType
+
+class Step:
+    name: str
+    fail_enter: bool
+
+    def __init__(self, name: str, fail_enter: bool = False):
+        self.name = name
+        self.fail_enter = fail_enter
+
+    def __enter__(self) -> Step:
+        if self.fail_enter:
+            raise ValueError(f"cannot enter {self.name}")
+        print("enter", self.name)
+        return self
+
+    def __exit__(self, exc_type: type[BaseException]?, exc: BaseException?, tb: TracebackType?) -> None:
+        print("exit", self.name, exc)
+
+class Replacing:
+    def __enter__(self) -> Replacing:
+        return self
+
+    def __exit__(self, exc_type: type[BaseException]?, exc: BaseException?, tb: TracebackType?) -> bool:
+        raise RuntimeError("from exit")
+
+def label(text: str) -> str:
+    print("evaluating", text)
+    return text
+
+def value() -> str:
+    with Step("v"):
+        return label("returned")
+
+print(value())
+
+try:
+    with Step("outer"), Step("inner", fail_enter=True):
+        print("not reached")
+except ValueError as e:
+    print("caught", e)
+
+try:
+    with Replacing():
+        raise IndexError("original")
+except RuntimeError as e:
+    print("replaced by", e)
+
+try:
+    with Step("exiting"):
+        raise SystemExit(2)
+except BaseException as e:
+    print("base caught", e, isinstance(e, SystemExit))

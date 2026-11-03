@@ -1,0 +1,5 @@
+tests/cases/m37/tp0200_context_manager.tpn:4:6: error TP0200: int is not a context manager
+  help: define '__enter__' and '__exit__'
+tests/cases/m37/tp0200_context_manager.tpn:6:6: error TP0200: Plain is not a context manager
+  help: define '__enter__' and '__exit__'
+tests/cases/m37/tp0200_context_manager.tpn:9:18: error TP0200: 'type[…]' needs a class, found int

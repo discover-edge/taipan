@@ -1,0 +1,11 @@
+import sys
+
+let name = input("name? ")
+print(f"hello {name}")
+print(sys.stdin.readline(), end="")
+print(sys.stdin.readlines())
+try:
+    input()
+except EOFError as e:
+    print("eof:", e)
+print(sys.stdin)

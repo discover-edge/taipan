@@ -217,8 +217,8 @@ public sealed partial class CSharpEmitter
         code.Append($"\npublic static class {_entryClass}\n{{\n");
         // An awaiting top level runs to its end before the program exits (SPEC §3.14).
         code.Append(_program.IsAsync
-            ? $"    public static int Main() => {Runtime}.Panic.Run(() => {_programClass}.{_topLevelMethod}().GetAwaiter().GetResult());\n"
-            : $"    public static int Main() => {Runtime}.Panic.Run({_programClass}.{_topLevelMethod});\n");
+            ? $"    public static int Main(string[] args) => {Runtime}.Panic.Run(() => {_programClass}.{_topLevelMethod}().GetAwaiter().GetResult(), args);\n"
+            : $"    public static int Main(string[] args) => {Runtime}.Panic.Run({_programClass}.{_topLevelMethod}, args);\n");
         code.Append("}\n");
         return code.ToString();
     }
@@ -648,6 +648,8 @@ public sealed partial class CSharpEmitter
             Line();
         }
         Line($"string {Runtime}.IObject.TypeName => \"{symbol.Name}\";");
+        if (symbol.Module is { } module)
+            Line($"string {Runtime}.IObject.ModuleName => \"{module}\";");
         Line($"public override string ToString() => {Runtime}.Display.Format(this);");
         EmitSpecialHooks(symbol, ClassTypeOf(classDef));
         EmitFieldDefaultHelpers(symbol, className);
@@ -828,7 +830,12 @@ public sealed partial class CSharpEmitter
                     Line($"@{_lineVariable} = {loopLine};");
                 Line("continue;");
                 break;
-            case BoundExprStmt { Expr: BoundCall or BoundMethodCall or BoundBuiltinMethodCall or BoundPyCall or BoundInvoke or BoundSort or BoundSuperCall or BoundClassMethodCall or BoundRuntimeMethodCall or BoundDotNetCall { Method.ReturnsVoid: true } } exprStmt:
+            // sys.exit raises SystemExit (SPEC §6.1).
+            case BoundExprStmt { Expr: BoundCall { Function.Builtin: BuiltinFunction.Exit } exit } exprStmt:
+                LineDirective(exprStmt.Span);
+                Line($"throw {Exit(exit)};");
+                break;
+            case BoundExprStmt { Expr: BoundCall or BoundPrint or BoundMethodCall or BoundBuiltinMethodCall or BoundPyCall or BoundInvoke or BoundSort or BoundSuperCall or BoundClassMethodCall or BoundRuntimeMethodCall or BoundDotNetCall { Method.ReturnsVoid: true } } exprStmt:
                 LineDirective(exprStmt.Span);
                 Line($"{Expr(exprStmt.Expr)};");
                 break;
@@ -857,7 +864,7 @@ public sealed partial class CSharpEmitter
                 {
                     PrimitiveType { Name: "py" } => $"{Interop}.Iterate",
                     // An iterator or iterable is a .NET sequence already (SPEC §3.13).
-                    IteratorOfType or IterableOfType => "",
+                    IteratorOfType or IterableOfType or OpaqueType => "",
                     _ => $"{Runtime}.Iter.Over",
                 };
                 Line($"foreach ({TypeName(forEach.Variable.Type)} @{_locals[forEach.Variable]} in {iterate}({Expr(forEach.Iterable)}))");
@@ -872,6 +879,9 @@ public sealed partial class CSharpEmitter
                 break;
             case BoundTry tryStmt:
                 EmitTry(tryStmt);
+                break;
+            case BoundWith with:
+                EmitWith(with);
                 break;
             case BoundLocalFunction function:
                 EmitLocalFunction(function);
@@ -1353,6 +1363,7 @@ public sealed partial class CSharpEmitter
             BoundVariable variable when variable.Symbol == _self => "this",
             // In a class method, cls is the class object the method runs on (SPEC §8).
             BoundVariable variable when variable.Symbol == _cls => "this",
+            BoundVariable { Symbol.RuntimePath: { } path } => $"global::{path}",
             BoundVariable { Symbol.Kind: VariableKind.Constant } variable => Global(_names[variable.Symbol]),
             BoundVariable variable => $"@{_locals[variable.Symbol]}",
             BoundUnary { Op: UnaryOp.Negate, Type: PrimitiveType { Name: "py" } } unary => $"{Interop}.Negate({Expr(unary.Operand)})",
@@ -1370,7 +1381,10 @@ public sealed partial class CSharpEmitter
             BoundMinMax minMax => MinMax(minMax),
             BoundComprehension comprehension => Comprehension(comprehension),
             BoundRangeValues range => RangeValues(range),
+            BoundRuntimeMethodCall { Kind: "TextFile" } call => $"{Operand(call.Target)}.@{call.Name}({string.Join(", ", call.Arguments.Select(Expr))})",
             BoundRuntimeMethodCall call => $"{Runtime}.{call.Kind}Methods.@{call.Name}({string.Join(", ", [Expr(call.Target), .. call.Arguments.Select(Expr)])})",
+            BoundRuntimeProperty property => $"{Operand(property.Target)}.@{property.Name}",
+            BoundPrint print => Print(print),
             BoundDictLiteral dict => DictLiteral(dict),
             BoundConstruct construct => Construct(construct),
             BoundConstructVariant construct => ConstructVariant(construct),
@@ -1656,6 +1670,11 @@ public sealed partial class CSharpEmitter
                 p => $"@{call.Function.Parameters[p].Name}", p => $"{Global(DefaultName(FunctionName(call), call.Function, p))}{TypeArgumentList(call)}()")})",
             null => $"{FunctionReference(call)}({arguments})",
             BuiltinFunction.Print => $"{Runtime}.Builtins.Print({arguments})",
+            // M37 (SPEC §6.1).
+            BuiltinFunction.Input => $"{Runtime}.Builtins.Input({arguments})",
+            BuiltinFunction.Open => $"{Runtime}.TextFile.@open({arguments})",
+            BuiltinFunction.GetEnv => $"{Runtime}.Os.@getenv({arguments})",
+            BuiltinFunction.Exit => $"{Runtime}.Exceptions.Throw({Exit(call)})",
             // M35 (SPEC §6).
             BuiltinFunction.Abs when argumentType == TaipanType.Int => $"{Runtime}.Numbers.Abs({arguments})",
             BuiltinFunction.Abs => $"global::System.Math.Abs({arguments})",
@@ -1949,6 +1968,8 @@ public sealed partial class CSharpEmitter
         FunctionType function => $"{Runtime}.Function<{DelegateName(function)}>",
         TupleOfType tuple => $"({string.Join(", ", tuple.Elements.Select(TypeName))})",
         DotNetType net => net.Symbol.ToDisplayString(Microsoft.CodeAnalysis.SymbolDisplayFormat.FullyQualifiedFormat),
+        OpaqueType opaque => $"global::{opaque.RuntimeName}",
+        ClassOfType => $"{Runtime}.ClassValue",
         var other => throw new InvalidOperationException($"no C# type for {other}"),
     };
 

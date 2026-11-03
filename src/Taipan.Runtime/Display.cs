@@ -68,6 +68,30 @@ public static class Display
         _ => ExternalFormat?.Invoke(value, true) ?? Format(value),
     };
 
+    /// <summary>
+    /// Python's <c>repr</c> of a string, in <c>'</c> quotes unless it holds one and no <c>"</c>, for
+    /// the messages and displays Taipan copies from Python (SPEC §3.10, §6.1).
+    /// </summary>
+    public static string PythonRepr(string value)
+    {
+        var quote = value.Contains('\'') && !value.Contains('"') ? '"' : '\'';
+        var text = new System.Text.StringBuilder().Append(quote);
+        foreach (var c in value)
+        {
+            text.Append(c switch
+            {
+                '\\' => "\\\\",
+                '\n' => "\\n",
+                '\r' => "\\r",
+                '\t' => "\\t",
+                _ when c == quote => $"\\{c}",
+                _ when c < ' ' || c == '\x7f' => $"\\x{(int)c:x2}",
+                _ => c.ToString(),
+            });
+        }
+        return text.Append(quote).ToString();
+    }
+
     /// <summary>A class's form without <c>__repr__</c>: a dataclass's fields, or <c>&lt;Dog object&gt;</c> (SPEC §4.3).</summary>
     public static string DefaultRepr(IClass value) => value switch
     {

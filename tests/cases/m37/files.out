@@ -1,0 +1,27 @@
+6
+True w utf-8 False
+True
+I/O operation on closed file.
+"first\n"
+"sec"
+ond
+["third"]
+""
+OSError not writable
+["first\n", "second\n", "third\n", "fourth\n"]
+26
+[2, 2, 2]
+[3, 2, 2]
+["one\n", "two\n"]
+17 File exists True
+[Errno 2] No such file or directory: 'tests/cases/m37/missing.txt'
+True 21
+café
+decode: True
+encode: True
+2
+1
+3
+🐍o
+a:1
+b!

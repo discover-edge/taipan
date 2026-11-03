@@ -1,0 +1,7 @@
+import sys
+
+print("before")
+try:
+    sys.exit(4)
+finally:
+    print("finally runs")

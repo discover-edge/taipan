@@ -1,0 +1,5 @@
+name? hello Ada
+first
+["1\n", "2\n", "3"]
+eof: EOF when reading a line
+<_io.TextIOWrapper name='<stdin>' mode='r' encoding='utf-8'>

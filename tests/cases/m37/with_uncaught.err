@@ -1,0 +1,2 @@
+panic: index 7 out of range for length 2
+  at tests/cases/m37/with_uncaught.tpn:15

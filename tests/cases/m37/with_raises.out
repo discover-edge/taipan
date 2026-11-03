@@ -1,0 +1,8 @@
+open a
+using a
+close a None None
+1
+open a
+using a
+close a <class 'ValueError'> boom
+caught boom

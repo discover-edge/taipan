@@ -221,7 +221,7 @@
           "name": "constant.language.taipan"
         },
         {
-          "match": "\\b(if|elif|else|while|match|return|pass|break|continue|try|except|finally|raise|yield|await)\\b",
+          "match": "\\b(if|elif|else|while|match|return|pass|break|continue|try|except|finally|raise|yield|await|with)\\b",
           "name": "keyword.control.flow.taipan"
         },
         {
@@ -257,7 +257,7 @@
     "builtin": {
       "patterns": [
         {
-          "match": "\\b(print|len|range|repr|hash|sorted|map|filter|enumerate|zip|iter|next|isinstance|super|abs|min|max|sum|any|all|round|divmod)\\b",
+          "match": "\\b(print|len|range|repr|hash|sorted|map|filter|enumerate|zip|iter|next|isinstance|super|abs|min|max|sum|any|all|round|divmod|input|open)\\b",
           "name": "support.function.builtin.taipan"
         },
         {
@@ -265,7 +265,7 @@
           "name": "support.function.builtin.taipan"
         },
         {
-          "match": "\\b(int|float|str|bool|list|dict|set|tuple|Iterator|Iterable|Callable|Awaitable)\\b",
+          "match": "\\b(int|float|str|bool|list|dict|set|tuple|Iterator|Iterable|Callable|Awaitable|TextIO)\\b",
           "name": "support.type.builtin.taipan"
         }
       ]

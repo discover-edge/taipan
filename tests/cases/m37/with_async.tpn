@@ -1,0 +1,19 @@
+from types import TracebackType
+
+class Step:
+    def __enter__(self) -> str:
+        print("enter")
+        return "step"
+
+    def __exit__(self, exc_type: type[BaseException]?, exc: BaseException?, tb: TracebackType?) -> None:
+        print("exit", exc)
+
+async def zero() -> int:
+    return 0
+
+async def work() -> int:
+    with Step() as name:
+        print("in", name)
+        return await zero() + 1
+
+print(await work())

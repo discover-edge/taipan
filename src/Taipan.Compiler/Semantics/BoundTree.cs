@@ -28,6 +28,7 @@ public static class BoundTree
         BoundWhile whileStmt => [whileStmt.Condition],
         BoundForRange forStmt => [.. ((BoundExpr?[])[forStmt.Start, forStmt.Stop, forStmt.Step]).OfType<BoundExpr>()],
         BoundForEach forEach => [forEach.Iterable],
+        BoundWith with => [with.Manager],
         BoundMatch match => [match.Scrutinee],
         BoundUnpack unpack => [unpack.Value, .. unpack.Stores.SelectMany(Expressions)],
         // A nested def's defaults are emitted at its calls, in the same method (SPEC §8).
@@ -65,6 +66,8 @@ public static class BoundTree
         }), comprehension.Element, .. ((BoundExpr?[])[comprehension.Value]).OfType<BoundExpr>()],
         BoundRangeValues range => [.. ((BoundExpr?[])[range.Start, range.Stop, range.Step]).OfType<BoundExpr>()],
         BoundRuntimeMethodCall call => [call.Target, .. call.Arguments],
+        BoundRuntimeProperty property => [property.Target],
+        BoundPrint print => [.. print.Values, .. ((BoundExpr?[])[print.Sep, print.End, print.File, print.Flush]).OfType<BoundExpr>()],
         BoundMinMax minMax => [minMax.Values, .. ((BoundExpr?[])[minMax.Key, minMax.Default]).OfType<BoundExpr>()],
         BoundListLiteral list => list.Elements,
         BoundDictLiteral dict => dict.Entries.SelectMany(e => (BoundExpr[])[e.Key, e.Value]),
@@ -167,6 +170,7 @@ public static class BoundTree
         BoundWhile whileStmt => whileStmt.Body.Statements,
         BoundForRange forStmt => forStmt.Body.Statements,
         BoundForEach forEach => forEach.Body.Statements,
+        BoundWith with => with.Body.Statements,
         BoundMatch match => match.Arms.SelectMany(a => a.Body.Statements),
         BoundTry tryStmt =>
         [

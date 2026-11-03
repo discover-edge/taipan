@@ -1,0 +1,16 @@
+import sys
+
+def copy_upper(source: str, target: str) -> int:
+    var count = 0
+    with open(source) as src, open(target, "w") as dst:
+        for line in src:
+            dst.write(line.upper())
+            count += 1
+    return count
+
+if len(sys.argv) != 3:
+    sys.exit(f"usage: {sys.argv[0]} <source> <target>")
+let n = copy_upper(sys.argv[1], sys.argv[2])
+print(n, "lines copied")
+with open(sys.argv[2]) as result:
+    print(result.read(), end="")

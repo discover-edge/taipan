@@ -1,0 +1,1 @@
+tests/cases/m37/tp0208_with_suppress.tpn:10:5: error TP0208: not all paths in 'first' return a value

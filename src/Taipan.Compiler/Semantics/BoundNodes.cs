@@ -542,3 +542,17 @@ public sealed record BoundIsSome(BoundExpr Operand, VariableSymbol Binding, Text
 
 /// <summary><c>x is None</c>, or <c>x is not None</c> when <see cref="Negated"/> (SPEC §3.4).</summary>
 public sealed record BoundIsNone(BoundExpr Operand, bool Negated, TextSpan Span) : BoundExpr(TaipanType.Bool, Span);
+
+/// <summary><c>print</c> with keywords (SPEC §6, M37); a keyword left out is null.</summary>
+public sealed record BoundPrint(ImmutableArray<BoundExpr> Values, BoundExpr? Sep, BoundExpr? End, BoundExpr? File, BoundExpr? Flush, TextSpan Span)
+    : BoundExpr(TaipanType.Nothing, Span);
+
+/// <summary>An attribute of a file or a class value, read from the runtime object (SPEC §6.1, §3.17, M37).</summary>
+public sealed record BoundRuntimeProperty(BoundExpr Target, string Name, TaipanType Type, TextSpan Span) : BoundExpr(Type, Span);
+
+/// <summary>
+/// One <c>with</c> item and its block (SPEC §3.17, M37). <see cref="Enter"/> is what <c>__enter__</c>
+/// gives; <see cref="Suppresses"/> is whether <c>__exit__</c> returns bool, and so may swallow an exception.
+/// </summary>
+public sealed record BoundWith(BoundExpr Manager, VariableSymbol? Binding, TaipanType Enter, bool Suppresses, BoundBlock Body, TextSpan Span)
+    : BoundStmt(Span);

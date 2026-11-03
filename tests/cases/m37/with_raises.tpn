@@ -1,0 +1,27 @@
+from types import TracebackType
+
+class Resource:
+    name: str
+
+    def __init__(self, name: str):
+        self.name = name
+
+    def __enter__(self) -> Resource:
+        print("open", self.name)
+        return self
+
+    def __exit__(self, exc_type: type[BaseException]?, exc: BaseException?, tb: TracebackType?) -> None:
+        print("close", self.name, exc_type, exc)
+
+def work(fail: bool) -> int:
+    with Resource("a") as r:
+        print("using", r.name)
+        if fail:
+            raise ValueError("boom")
+        return 1
+
+print(work(False))
+try:
+    work(True)
+except ValueError as e:
+    print("caught", e)

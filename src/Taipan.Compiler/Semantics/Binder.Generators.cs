@@ -18,6 +18,7 @@ public sealed partial class Binder
         WhileStmt whileStmt => Yields(whileStmt.Body),
         ForStmt forStmt => Yields(forStmt.Body),
         MatchStmt match => match.Arms.Any(a => Yields(a.Body)),
+        WithStmt with => Yields(with.Body),
         TryStmt tryStmt => Yields(tryStmt.Body) || tryStmt.Handlers.Any(h => Yields(h.Body))
             || tryStmt.Else is { } elseBlock && Yields(elseBlock) || tryStmt.Finally is { } finallyBlock && Yields(finallyBlock),
         _ => false,
@@ -44,6 +45,8 @@ public sealed partial class Binder
         }
         if (_function.IsAsync)
             _diagnostics.ReportYieldInAsync(keyword);
+        else if (_withDepth > 0)
+            _diagnostics.ReportYieldInWith(keyword);
         else if (_noYield > 0)
             _diagnostics.ReportYieldInTry(keyword);
         else if (_matchExpressionArm is var (function, _) && function == _function)

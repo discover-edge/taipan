@@ -159,6 +159,9 @@ public sealed class LocalNames
                 foreach (var arm in match.Arms)
                     yield return (arm.Body.Statements, []);
                 break;
+            case BoundWith with:
+                yield return (with.Body.Statements, with.Binding is { } bound ? [bound] : []);
+                break;
             case BoundTry tryStmt:
                 yield return (tryStmt.Body.Statements, []);
                 foreach (var handler in tryStmt.Handlers)

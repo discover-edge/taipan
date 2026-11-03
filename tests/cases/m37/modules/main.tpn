@@ -1,0 +1,21 @@
+import timer
+from types import TracebackType
+
+class Mine(Exception):
+    pass
+
+class Local:
+    def __enter__(self) -> Local:
+        return self
+
+    def __exit__(self, exc_type: type[BaseException]?, exc: BaseException?, tb: TracebackType?) -> bool:
+        print(exc_type, tb)
+        return True
+
+with Local():
+    raise timer.Late("late")
+with Local():
+    raise Mine("mine")
+with Local():
+    raise ValueError("value")
+print(timer.count_args())

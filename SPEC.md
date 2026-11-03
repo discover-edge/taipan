@@ -34,8 +34,8 @@ Taipan is a statically typed, compiled language with Python's surface syntax. Th
 - **Comments:** `#` to end of line.
 - **Identifiers:** `[A-Za-z_][A-Za-z0-9_]*`. A lone `_` is the wildcard pattern only.
 - **Keywords:**
-  `def class enum let var const if elif else while for in match return pass break continue and or not is some None True False as from import lambda try except finally raise del yield async await`
-  - `yield` is a keyword since M31 (§3.13), and `async` and `await` since M33 (§3.14).
+  `def class enum let var const if elif else while for in match return pass break continue and or not is some None True False as from import lambda try except finally raise del yield async await with`
+  - `yield` is a keyword since M31 (§3.13), `async` and `await` since M33 (§3.14), and `with` since M37 (§3.17).
   - `struct` was a keyword before M15. It's now an ordinary name, and records are declared with `@dataclass class` (§4.3).
   - `type` is a *soft keyword* (M18), as in Python 3.12: it starts a type alias (§3.12) only at the start of a line, followed by a name and then `=` or `[`. Anywhere else it's an ordinary name, so `type = "json"` and `e.type` still work.
   - `isinstance` and `super` are built-in functions (§6), not keywords. `Protocol`, `Self` and `Comparable` are built-in names (M17, §3.11), not keywords.
@@ -138,7 +138,9 @@ expr_list     = expr { "," expr } ;                                  (* two or m
 raise_stmt    = "raise" [ expr ] ;                                   (* M16, §3.10 *)
 yield_stmt    = "yield" [ "from" ] expr ;                            (* M31, §3.13 *)
 
-compound_stmt = if_stmt | while_stmt | for_stmt | match_stmt | try_stmt | func_def ;   (* in a block: nested function, M11 *)
+compound_stmt = if_stmt | while_stmt | for_stmt | match_stmt | try_stmt | with_stmt | func_def ;   (* in a block: nested function, M11 *)
+with_stmt     = "with" with_item { "," with_item } ":" block ;   (* M37, §3.17 *)
+with_item     = expr [ "as" NAME ] ;                              (* a top-level 'as' here is the item's, not a conversion (§10.4) *)
 try_stmt      = "try" ":" block { except_clause } [ "else" ":" block ] [ "finally" ":" block ] ;   (* M16, §3.10 *)
 except_clause = "except" [ except_types [ "as" NAME ] ] ":" block ;
 except_types  = qual_name | "(" qual_name { "," qual_name } [ "," ] ")" ;
@@ -249,6 +251,9 @@ comp_for      = "for" ( NAME | names ) "in" coalesce { "for" ( NAME | names ) "i
 | `py` | dynamic Python object (M10, §10) | `Python.Runtime.PyObject` |
 | `C` | instance of a class `C` (M15, §4.3) | a C# class (§8) |
 | `Exception`, `ValueError`, … | built-in exception classes (M16, §3.10) | classes in `Taipan.Runtime` (§8) |
+| `TextIO` | an open text file, or a standard stream (M37, §6.1) | `Taipan.Runtime.TextFile` |
+| `type[C]` | the class `C` or a class deriving from it, as a value; only `__exit__` receives one (M37, §3.17) | `Taipan.Runtime.ClassValue` |
+| `TracebackType` | where an exception was raised, from `types` (M37, §3.17) | `Taipan.Runtime.Traceback` |
 | `Callable[[A, B], R]` | function value (M11, §3.7) | `Taipan.Runtime.Function<D>` (§8) |
 | `Iterator[T]`, `Iterable[T]` | single-pass stream, and anything a `for` loop goes over (M31, §3.13) | `Taipan.Runtime.IIterator<T>`, `IEnumerable<T>` (§8) |
 | `Comparable`, user protocols | structural interface, only as a type parameter bound (M17, §3.11) | none: bounded generics are monomorphized |
@@ -496,7 +501,9 @@ finally:
 
   | Class | Base | Raised by Taipan for (§7) |
   |---|---|---|
-  | `Exception` | | |
+  | `BaseException` (M37) | | |
+  | `SystemExit` (M37) | `BaseException` | `sys.exit` (§6.1) |
+  | `Exception` | `BaseException` (since M37) | |
   | `ArithmeticError` | `Exception` | |
   | `ZeroDivisionError` | `ArithmeticError` | division by zero |
   | `OverflowError` | `ArithmeticError` | int overflow, and `int(x)` of an infinite or out-of-range float |
@@ -509,15 +516,27 @@ finally:
   | `StopIteration` | `Exception` | `next()` on an exhausted iterator, or a class's `__next__` ending (M31, §3.13) |
   | `PythonError` | `Exception` | a Python exception from a `py` operation (§10.5) |
   | `DotNetError` | `Exception` | a .NET exception from a .NET call, caught as `Exception` (M21, §13.6) |
+  | `EOFError` (M37) | `Exception` | `input()` at the end of its input |
+  | `OSError` (M37) | `Exception` | a file operation the system refuses, and reading or writing a file not opened for it (§6.1) |
+  | `FileNotFoundError` (M37) | `OSError` | opening a missing file |
+  | `FileExistsError` (M37) | `OSError` | opening an existing file with mode `x` |
+  | `PermissionError` (M37) | `OSError` | opening a file without permission |
+  | `IsADirectoryError` (M37) | `OSError` | opening a directory |
+  | `UnicodeError` (M37) | `ValueError` | |
+  | `UnicodeDecodeError` (M37) | `UnicodeError` | reading bytes that aren't valid in the file's encoding |
+  | `UnicodeEncodeError` (M37) | `UnicodeError` | writing a character the file's encoding can't represent |
 
-- `Exception` has one field, `message: str`, and an `__init__(self, message: str = "")`. Every built-in class except `PythonError` takes the same arguments: `raise ValueError("bad port")`. Python has no `message` field; it keeps the arguments in `args`, and `str(e)` gives the message. In Taipan, `str(e)` gives the message too (§6).
+- `Exception` has one field, `message: str`, and an `__init__(self, message: str = "")`, both from `BaseException` since M37. Every built-in class except `PythonError` and `SystemExit` takes the same arguments: `raise ValueError("bad port")`. Python has no `message` field; it keeps the arguments in `args`, and `str(e)` gives the message. In Taipan, `str(e)` gives the message too (§6).
 - `PythonError` has two more fields: `type: str`, the Python exception's class name, and `value: py`, the Python exception object. Its `message` is Python's `str(e)`. Only the runtime creates one: constructing it is `TP0200`, and deriving from it is `TP0225`. The same holds for `DotNetError` (M21), whose one more field is `type: str`, the .NET exception's full class name (§13.6).
 - The built-in exception classes' names are global, like other classes', so a definition with one of their names is `TP0214`.
+- **`BaseException` (M37)** is the root, as in Python, so that `SystemExit` isn't an `Exception`: `except Exception` doesn't catch it, and a program's `sys.exit` passes through handlers meant for errors. `except BaseException` and `except SystemExit` do catch it. Unlike Python, a bare `except:` is still `except Exception:` (below). A user class may derive from `BaseException`, as from `Exception`.
+- **`SystemExit` (M37)** has `__init__(self, code: int = 0)` and one more field, `code: int`; its `message` is `str(code)`, as Python's `str(e)` is. `sys.exit(message)` creates one whose `code` is `1` and whose `message` is `message` (in Python, `code` would be the string).
+- **`OSError` (M37)** has three more fields, as in Python: `errno: int?`, `strerror: str?` and `filename: str?`. Those the runtime raises (§6.1) set all three, and their message is Python's, `[Errno 2] No such file or directory: 'data.txt'`, with the file name quoted as Python's `repr` quotes it. Constructed with `OSError(message)`, as the others are, all three are `None`.
 - **User exceptions** are plain classes deriving, directly or not, from `Exception`. They follow every rule of §4.3: a subclass with its own fields sets them and then calls `super().__init__(message)`, and one without `__init__` takes `Exception`'s `message` argument. Since a dataclass can only derive from a dataclass (§4.3), `@dataclass class NotFound(Exception)` is `TP0225`.
 - Exceptions compare by identity, like other plain classes, and may be stored, passed and returned like any value.
 
 **`raise`**
-- `raise e` raises `e`, which must be an `Exception` (a class deriving from it). Anything else is `TP0200`. Raising the class itself, as in `raise ValueError`, which Python allows, is `TP0200` with help `write 'ValueError(…)'`.
+- `raise e` raises `e`, which must be an `Exception` (a class deriving from it), or since M37 any `BaseException`. Anything else is `TP0200`. Raising the class itself, as in `raise ValueError`, which Python allows, is `TP0200` with help `write 'ValueError(…)'`.
 - A bare `raise` re-raises the exception being handled. It's valid only inside an `except` block, and not in a function nested in one (`TP0215`).
 - A `raise` terminates (§4.5).
 
@@ -528,12 +547,12 @@ finally:
 - `return`, `break` and `continue` aren't allowed in a `finally` block (`TP0215`). In Python they silently discard a propagating exception, and Python 3.14 warns about them (PEP 765).
 
 **`except` clauses**
-- `except C` matches an exception of class `C` or a class deriving from it. `C` must be `Exception` or derive from it, and may be qualified with a module: `except zoo.NotFound`. A bare `except:` is `except Exception:`. `except (A, B)` matches either.
+- `except C` matches an exception of class `C` or a class deriving from it. `C` must be `Exception` or derive from it (since M37, `BaseException` or derive from it), and may be qualified with a module: `except zoo.NotFound`. A bare `except:` is `except Exception:`. `except (A, B)` matches either.
 - `except m.E` where `m` is a Python module (`py`, §10) takes a Python exception class: `except json.JSONDecodeError`. It matches a `PythonError` whose `value` is an instance of that class, as tested by Python's `isinstance`. The class is looked up when an exception reaches the clause.
 - Anything else, such as a class not deriving from `Exception`, an enum or a type parameter, is `TP0200`.
 - `except … as e` binds `e`, a `let` visible only in that clause's block. Its type is the clause's class, `PythonError` for a Python class, or the nearest class all of the listed classes derive from (§3.3), so `except (KeyError, IndexError) as e` gives a `LookupError`.
 - A clause whose classes all derive from those of an earlier clause can never match, and is warning `TP0300`. Python classes aren't checked.
-- **Broad clauses (`TP0301`).** A bare `except:`, or a clause listing `Exception`, also catches mistakes such as an `IndexError`. Such a clause is warning `TP0301`, at `except`, unless its block contains a `raise` (outside any nested function), or the clause binds the exception with `as e` and the block uses `e`. So logging the exception, or re-raising it, is deliberate handling. A clause that silently discards everything is warned about, as Python linters do (flake8's E722, pylint's `broad-exception-caught`).
+- **Broad clauses (`TP0301`).** A bare `except:`, or a clause listing `Exception` (or since M37 `BaseException`), also catches mistakes such as an `IndexError`. Such a clause is warning `TP0301`, at `except`, unless its block contains a `raise` (outside any nested function), or the clause binds the exception with `as e` and the block uses `e`. So logging the exception, or re-raising it, is deliberate handling. A clause that silently discards everything is warned about, as Python linters do (flake8's E722, pylint's `broad-exception-caught`).
 
 **Return paths and initialization**
 - A `try` terminates (§4.5) if its `finally` block terminates, or if every `except` block terminates and the `try` block or the `else` block terminates.
@@ -542,6 +561,7 @@ finally:
 **Uncaught exceptions** are panics (§7). They print the line where the exception was raised and exit with 101.
 - A Taipan built-in exception prints its message alone, as before M16: `panic: missing key "a"`. A `PythonError` prints `Python <type>: <message>`, as in §10.5. A user exception prints its class name and message, as Python does: `panic: NotFound: no service named db`. An empty message prints the class name alone.
 - `raise e` reports its own line, even when `e` was caught elsewhere. A bare `raise` keeps the line where the exception was first raised.
+- **An uncaught `SystemExit` (M37)** isn't a panic. The program ends with its `code` as the exit code, printing nothing, or for `sys.exit(message)` the message and a newline to stderr, as Python does. Output the program printed is flushed first, and open files are flushed and closed (§6.1). As in Python, on Unix only the code's lowest 8 bits reach the parent process.
 
 **What isn't catchable**
 - Importing Python modules happens at startup (§10.1), before any `try` runs, so a failure to load Python or to import a module is always a panic. So is a failure to load Python at a program's first conversion to `py`, when it imports no Python module (§10.5).
@@ -778,6 +798,42 @@ let total = sum(x * x for x in squares)
 - **Not allowed inside:** `await` (`TP0215`, `'await' can't be inside a comprehension`). `yield` and assignment are statements, so they can't be inside one. Async comprehensions are deferred.
 - Changing a list, dict or set while a comprehension iterates over it raises `RuntimeError`, as for a loop.
 
+### 3.17 Context managers and `with` (M37)
+```python
+from types import TracebackType
+
+class Timer:
+    name: str
+
+    def __init__(self, name: str):
+        self.name = name
+
+    def __enter__(self) -> Timer:
+        print("start", self.name)
+        return self
+
+    def __exit__(self, exc_type: type[BaseException]?, exc: BaseException?, tb: TracebackType?) -> bool:
+        print("stop", self.name, exc)
+        return False
+
+with open(source) as src, open(target, "w") as dst:
+    for line in src:
+        dst.write(line.upper())
+```
+
+- **Syntax** (§2): `with e as v:` or `with e:`, then a block. Items separated by commas nest left to right, so `with a as x, b as y:` is `with a as x:` holding `with b as y:`. `v` is a `let` scoped to the block, as a `for` loop's variable is (§5.2); Python keeps it after the block. A top-level `as` in an item names its variable, so a conversion there (§10.4) needs parentheses: `with (x as Lock) as held:`. Parenthesized item lists (`with (a as x, b as y):`) and targets other than a name are deferred.
+- **Context managers:** `e` must be a `TextIO` (§6.1), whose `__enter__` gives the file itself and whose `__exit__` closes it, or an instance of a class with `__enter__` and `__exit__`, its own or inherited (§4.8). Anything else is `TP0200`, `<T> is not a context manager`, with help `define '__enter__' and '__exit__'`, and an optional is `TP0203`. `v` has the type `__enter__` returns.
+- **Evaluation**, as in Python:
+  - `e` is evaluated, then its `__enter__` is called, and its result bound to `v`. An exception from either leaves `__exit__` uncalled.
+  - When the block ends normally, or through `return`, `break` or `continue`, `__exit__(None, None, None)` is called. A `return`'s value is evaluated first.
+  - When the block raises any `BaseException`, `SystemExit` included, `__exit__` is called with the exception's class, the exception and a `TracebackType`. If it returns `True`, the exception is suppressed and the program continues after the `with`. Otherwise the exception propagates unchanged, still reporting the line where it was raised (§3.10).
+  - An exception raised by `__exit__` replaces the one in flight, as from a `finally` block.
+  - With several items, each later item is inside the earlier ones, so an exception from the second item's `__enter__` calls the first's `__exit__`.
+- **Suppression and checking.** An `__exit__` declared `-> bool` may suppress, so for termination, definite assignment and narrowing (§4.5, §3.9) its `with` statement may end after any statement of its block, as a `try` with an `except` clause may: a block that always returns doesn't make the `with` terminate, and a variable first assigned inside isn't assigned after. One declared `-> None` never suppresses, so the `with` is checked as its block alone. A `TextIO`'s `__exit__` never suppresses. (Python's type checkers make the same distinction.)
+- **`yield` inside `with`** is `TP0215`, `'yield' can't be inside a 'with'`, as inside a `try` with `except` (§3.13); both are deferred. `await` may be inside one (§3.14). `async with` is deferred.
+- **`type[C]`** is the type of `__exit__`'s first argument: a class as a value, `C` or one deriving from it. `type[A]` is assignable to `type[B]` when `A` derives from `B`. Only `__exit__` receives one; nothing constructs or calls one, and `type[T]` for a `T` that isn't a class is `TP0200`. Its one attribute is `__name__: str`, and it displays as Python's does: `<class 'ValueError'>` for a built-in class, `<class '__main__.Timer'>` for one in the main file, and `<class 'zoo.Timer'>` for one in module `zoo`.
+- **`TracebackType`** comes from the built-in module `types` (§4.7), as in Python. It's opaque: it displays as `<traceback object>`, and reading its frames is deferred (M41).
+
 ## 4. Declarations
 
 ### 4.1 Bindings
@@ -999,7 +1055,8 @@ class Point:
 - **A program is a main file plus the modules it imports, directly or indirectly.**
   - `import geometry` loads `geometry.tpn` from the main file's directory. Every module of a program lives in that one directory, so there are no packages or dotted module names in v0.1.
   - A missing file is `TP0221`, reported at the import.
-  - The module name `python` is reserved for Python interop (§10), and `dotnet` for .NET interop (M21, §13). A dotted `from` path is a .NET namespace under `dotnet` (§13.1); any other dotted path is `TP0221`, since modules aren't dotted.
+  - The module name `python` is reserved for Python interop (§10), and `dotnet` for .NET interop (M21, §13).
+  - **Built-in modules (M37):** `sys`, `os` and `types` are part of Taipan (§6.1), imported as other modules are (`import sys`, `from os import environ`, `import sys as system`), and never loaded from a file, so a `sys.tpn` beside the main file isn't imported. `from python import os` still binds Python's `os` module (§10.1); importing both under one name is `TP0214`. A dotted `from` path is a .NET namespace under `dotnet` (§13.1); any other dotted path is `TP0221`, since modules aren't dotted.
 - **Module files contain declarations only:** `import`, `def`, `class`, `enum` and `const`. A top-level statement (including `let` and `var`) in a module other than the main file is `TP0222`. Only the main file has a top level that runs.
 - **Exports:** a module exports every name it defines, meaning its functions, classes, enums, their variants, constants, protocols (M17) and type aliases (M18). There's no privacy, no re-export (a name a module itself imported can't be imported from it), and no `from m import *` (`TP0100`).
 - **Imports:**
@@ -1071,6 +1128,8 @@ class Shape(ABC):
 | `__neg__` | `(self) -> R` | unary `-` |
 | `__iter__` | `(self) -> Iterator[T]` | `for`, `iter()` and every built-in that takes an `Iterable[T]` (M31, §3.13) |
 | `__next__` | `(self) -> T` | `next()`, and taking a value from the class as an `Iterator[T]` (M31, §3.13) |
+| `__enter__` (M37) | `(self) -> R`, for any `R` | `with` (§3.17) |
+| `__exit__` (M37) | `(self, exc_type: type[BaseException]?, exc: BaseException?, tb: TracebackType?) -> bool`, or `-> None` | `with` (§3.17); a class with one must have the other, or it's `TP0225`, `'<C>' defines '__exit__' but not '__enter__'` (or the reverse) |
 
 - Special methods are inherited and overridden like other methods (§4.3), with `@override` when a base class defines the method in its body. Defining one that only Python's `object` has (`__str__`, `__eq__`, …), or that a dataclass generates (below), needs no `@override`.
 - Calling one directly (`m.__add__(n)`, `m.__str__()`) is `TP0200`, `'<m>' cannot be called directly`, with help naming its form (`use '+'`, `use 'str(m)'`, `use 'repr(m)'`, `use 'hash(m)'`), except as `super().__m__(…)` in an override.
@@ -1310,7 +1369,9 @@ In `a == b` and `a != b`, `a`'s type is `b`'s expected type (§4.6), so `m == No
 ## 6. Built-ins (v0.1)
 
 **Functions**
-- `print(*args)` writes each argument's display form, space-separated, then a newline.
+- `print(*args)` writes each argument's display form, space-separated, then a newline. Since M37 it takes Python's keyword-only `sep: str = " "`, `end: str = "\n"`, `file: TextIO = sys.stdout` and `flush: bool = False` (§6.1).
+- `input()` and `input(prompt: str) -> str` (M37) write `prompt` to stdout without a newline, flushing it, then read a line from stdin, without its line ending (`\n` or `\r\n`). At the end of the input, it raises `EOFError`, `EOF when reading a line`.
+- `open(file: str, mode: str = "r", *, encoding: str = "utf-8", newline: str? = None) -> TextIO` (M37) opens a text file (§6.1).
 - `len(x) -> int` takes a list, dict, str or, since M35, set (an iterator is `TP0200`, with help `convert it with 'list(…)' first`). For a `str` it counts Unicode code points, so `len("🐍")` is `1`.
 - `range(stop)`, `range(start, stop)` and, since M35, `range(start, stop, step)` iterate only (they're not a list). A negative `step` counts down, and a `step` of 0 raises `ValueError`, `range() arg 3 must not be zero`.
 - `str(x) -> str` gives the display form.
@@ -1376,6 +1437,9 @@ In `a == b` and `a != b`, `a`'s type is `b`'s expected type (§4.6), so `m == No
 | enum | `Ok`, `Degraded(healthy=1, total=4)` |
 | function | `<function name>`, `<function <lambda>>` (M11) |
 | exception | its message, as Python's `str(e)` (M16). Inside a container, its class and message: `[KeyError("missing key \"a\"")]` |
+| `TextIO` (M37) | Python's: `<_io.TextIOWrapper name='data.txt' mode='r' encoding='utf-8'>` |
+| `type[C]` (M37) | `<class 'ValueError'>`, `<class '__main__.Timer'>` (§3.17) |
+| `TracebackType` (M37) | `<traceback object>` |
 
 **F-string holes (M26)** take the parts §1 lists, applied in this order:
 - **`=`** writes the expression's text exactly as written, spaces included, then its value: `f"{x = }"` is `x = 5`. The value is written as `!r` would write it, unless the hole has a conversion or a format spec of its own, as in Python.
@@ -1389,6 +1453,48 @@ In `a == b` and `a != b`, `a`'s type is `b`'s expected type (§4.6), so `m == No
   - a spec that isn't in the mini-language, or one with an `n` type (locale-dependent), is `TP0006`, `invalid format spec '<spec>'`;
   - a spec whose parts don't apply to the type (`f"{name:.2f}"`, `f"{n:.3d}"`, `f"{name:+}"`) is `TP0200`, `format spec '<spec>' isn't valid for <T>`, with help naming the part, as Python's message does (`'f' formats a number, not str`, `precision isn't allowed for an int formatted with 'd'`, `a sign isn't allowed for str`);
   - a spec on any other type (a `bool`, an optional, a list, a class) is `TP0200`, `format specs apply to int, float and str, found <T>`, with help `convert it with str() first, or narrow the optional` as fits. A `bool` is an `int` in Python, so `f"{True:>5}"` there is `    1`, which is rarely what's meant.
+
+### 6.1 Programs and I/O (M37)
+```python
+import sys
+from os import environ
+
+if len(sys.argv) != 3:
+    sys.exit(f"usage: {sys.argv[0]} <source> <target>")
+with open(sys.argv[1]) as src, open(sys.argv[2], "w") as dst:
+    for line in src:
+        dst.write(line.upper())
+print("done", file=sys.stderr)
+```
+
+**`sys`** (a built-in module, §4.7) has these names, and no others:
+- `argv: list[str]`, the program's path followed by its arguments, as in Python. The path is the main file's as given to `taipan run`, whose arguments follow `--` (§12.1), and for a built program its `.dll` or executable. In a library or extension module (§14, §17) it's the host process's arguments. It's an ordinary list, so the program may change it.
+- `exit()`, `exit(code: int)` and `exit(message: str)` raise `SystemExit` (§3.10), with `code` `0`, `code`, or `1` and the message. It never returns, so it terminates (§4.5).
+- `stdin: TextIO`, `stdout: TextIO` and `stderr: TextIO`, the standard streams, named `<stdin>`, `<stdout>` and `<stderr>`. `print` and `input` use `stdout` and `stdin`. They're UTF-8, and `stdin` reads with universal newlines (below) on every platform, as Python does on Windows (on Unix, Python leaves a `\r` in place). Closing one makes later uses raise `ValueError`, as in Python.
+
+**`os`** (a built-in module) has these names, and no others:
+- `environ: dict[str, str]`, the environment variables when the program started, in the order the system gives them. It's an ordinary dict: changes to it are seen by `getenv`, but not by .NET code or Python modules, which read the process's environment.
+- `getenv(name: str) -> str?` and `getenv(name: str, default: str) -> str` read `environ`, as in Python.
+- `os.path`, directories and the other functions of Python's `os` are deferred.
+
+**`types`** (a built-in module) has one name, `TracebackType` (§3.17).
+
+**Opening files.** `open(file, mode="r", *, encoding="utf-8", newline=None)` opens a text file, as Python's does:
+- `mode` is `r` (read), `w` (write, emptying the file or creating it), `a` (append, creating the file) or `x` (write a new file, `FileExistsError` if it exists), with an optional `t`, which changes nothing. It must be a string literal, checked at compile time: any other mode is `TP0200`, `invalid mode '<m>'`, with help `binary files ('b') are deferred` or `read-write modes ('+') are deferred` for those, and a mode that isn't a literal is `TP0200`, `'open' needs a literal mode`.
+- `encoding` is one of `utf-8`, `utf-8-sig` (which skips a byte order mark when reading, and writes one first), `ascii` and `latin-1`, with Python's other spellings of the same codecs (`utf8`, `UTF-8`, `latin1`, `iso-8859-1`, `us-ascii`, …). It must be a string literal, and anything else is `TP0200`, `unknown encoding '<e>'`. Unlike Python, whose default is the locale's encoding before 3.15, the default is always `utf-8`. A `utf-8` file's byte order mark is read as the character U+FEFF, as in Python.
+- `newline` is `None` or `""`, as a literal. With `None`, reading ends lines at `\n`, `\r\n` and `\r` and gives each as `\n`, and writing turns each `\n` into the platform's line ending (`\r\n` on Windows). With `""`, reading ends lines at the same three but leaves them as they are, and writing writes `\n` unchanged. Python's other values (`"\n"`, `"\r"`, `"\r\n"`) are deferred (`TP0200`).
+- A failure raises the `OSError` the system's error matches (§3.10): `FileNotFoundError` (`[Errno 2] No such file or directory: '<file>'`), `FileExistsError` (errno 17, `File exists`), `PermissionError` (errno 13, `Permission denied`) and `IsADirectoryError` (errno 21, `Is a directory`), as on Linux, whatever the platform. Any other failure is an `OSError` whose `errno` and `strerror` are `None` and whose message is .NET's.
+
+**`TextIO`**, an open file, has Python's methods:
+- `read() -> str` reads to the end, and `read(n: int) -> str` at most `n` characters (code points). Both give `""` at the end.
+- `readline() -> str` reads one line, with its line ending, or `""` at the end. `readlines() -> list[str]` reads the rest as lines.
+- A `TextIO` is an `Iterator[str]` (§3.13) over its remaining lines, each with its line ending, so `for line in f`, `list(f)` and `next(f)` work, and a line read by `readline` isn't seen again.
+- `write(s: str) -> int` writes `s` and gives its length in code points. `writelines(lines: Iterable[str])` writes each, adding nothing between them.
+- `flush()` writes what's buffered, and `close()` flushes and closes the file. Closing a closed file does nothing.
+- Its attributes are `name: str`, the path as given to `open`, `mode: str`, as given, `encoding: str`, as given, and `closed: bool`.
+- Reading a file opened for writing, or writing one opened for reading, raises `OSError`, `not readable` or `not writable` (Python's `io.UnsupportedOperation` is both an `OSError` and a `ValueError`). Using a closed file raises `ValueError`, `I/O operation on closed file.`.
+- Bytes that aren't valid in the file's encoding raise `UnicodeDecodeError`, `'<encoding>' codec can't decode byte 0x<hh>`, and a character the encoding can't hold raises `UnicodeEncodeError`, `'<encoding>' codec can't encode character '<c>'`, with `<c>` written as Python writes it (`\xe9`, `\u20ac`, `\U0001f40d`). Python's messages also give the position and a reason.
+- It's a context manager (§3.17). Files left open are flushed and closed when the program ends, normally, through `SystemExit` or through a panic, as CPython does when it exits. The `errors=`, `buffering=` and other arguments of Python's `open`, binary files, `seek` and `tell` are deferred.
 
 ---
 
@@ -1411,6 +1517,9 @@ In `a == b` and `a != b`, `a`'s type is `b`'s expected type (§4.6), so `m == No
   - Python interop (§10.5): `cannot convert Python <type> to <T>` (`TypeError`), `Python <ExceptionType>: <message>` (`PythonError`), `cannot load Python: <reason>` (at startup, so never caught)
   - failed non-optional `as` (M10), and `as` to a class the value isn't an instance of: `cannot convert <runtime class> to <C>` (M15) (`TypeError`)
   - an uncaught `raise` (M16): as §3.10 says
+  - `input()` at the end of its input (M37): `EOF when reading a line` (`EOFError`)
+  - files (M37, §6.1): the system's refusals (`OSError` and the classes deriving from it), `not readable` / `not writable` (`OSError`), `I/O operation on closed file.` (`ValueError`), and encoding failures (`UnicodeDecodeError`, `UnicodeEncodeError`)
+- An uncaught `SystemExit` (M37) isn't a panic: it ends the program with its code (§3.10).
 
 ---
 
@@ -1423,7 +1532,7 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 
 | Taipan | Emitted C# |
 |---|---|
-| program | `public static class TaipanProgram { ...constants... static void TopLevel() { ...constant initializers, then top-level stmts... } ...functions... }`, plus `public static class TaipanEntry { static int Main() => Taipan.Runtime.Panic.Run(TaipanProgram.TopLevel); }`. `Panic.Run` turns panics into the §7 output and the exit code. A generated name that clashes with a user name gets a numeric suffix. |
+| program | `public static class TaipanProgram { ...constants... static void TopLevel() { ...constant initializers, then top-level stmts... } ...functions... }`, plus `public static class TaipanEntry { static int Main(string[] args) => Taipan.Runtime.Panic.Run(TaipanProgram.TopLevel, args); }`. `Panic.Run` sets up `sys.argv` (M37), turns panics into the §7 output and the exit code, and an uncaught `SystemExit` into its code. A generated name that clashes with a user name gets a numeric suffix. |
 | identifiers | always verbatim-escaped (`@name`) to avoid C# keyword collisions |
 | `def f(a: int) -> str` | `public static string @f(long @a)` |
 | default values | Each default of a top-level function or method is a static helper method next to it (`connect_port()`, or `scale_by_default()` in a class), called by each call that leaves the parameter out, so every call evaluates its own (M14). A method's helpers are virtual instance methods, overridden along with the method, so a call evaluates the defaults of the method that runs (M15). A nested `def`'s default is emitted inline at each such call. Arguments are passed positionally while each is its own parameter, then by name (`arg1`, `arg2`, … for a nested `def`'s delegate), which C# evaluates in source order. The C# methods have no optional parameters. |
@@ -1448,6 +1557,8 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 | `x as C` / `x as C?` | `Taipan.Runtime.Ops.Cast<C>(x)`, which panics as §7 says / `x as C` |
 | exceptions (M16) | `Exception` is `Taipan.Runtime.Exception`, which derives from `System.Exception` and is emitted against like a plain class's base (`__new__`, `@__init__`, a `message` property); the other built-in exception classes derive from it. A user exception class is a plain class deriving from one of them. Runtime errors throw the matching class, and a Python exception becomes a `PythonError` where the `py` operation calls Python. Checked arithmetic keeps throwing C#'s `OverflowException`, which a `catch` turns into an `OverflowError`. `raise e` is `throw e`. A bare `raise` is `throw Taipan.Runtime.Exceptions.Rethrow(caught)`, which rethrows with `ExceptionDispatchInfo` and so keeps the original stack trace and line. |
 | `try` (M16) | A C# `try` with one `catch (System.Exception)` that converts the exception to its Taipan value (or rethrows one that isn't catchable), then tests the `except` clauses in order with `is` (or Python's `isinstance` for a Python class). If none matches, `throw;` rethrows the original. `else` runs after the `try`/`catch`, behind a flag set at the end of the `try` block. `finally` is C#'s `finally`. `Panic.Run` prints an uncaught exception as §3.10 says. |
+| `with` (M37) | The manager and `__enter__`'s result go into temporaries, then a C# `try` whose `catch (System.Exception)` sets a flag, converts the exception to its Taipan value (rethrowing one that isn't catchable), and calls `__exit__` with its class, the exception and a `Taipan.Runtime.Traceback`, rethrowing with `throw;` unless it returns `true`. Its `finally` calls `__exit__(null, null, null)` unless the flag is set. A `TextIO` is a `Taipan.Runtime.TextFile`, whose methods `@__enter__` and `@__exit__` the statement calls as a class's. |
+| `sys`, `os` (M37) | `Taipan.Runtime.Sys` and `Taipan.Runtime.Os`, static classes whose members the names compile to: `sys.argv` is `Sys.argv`. |
 | class patterns | C# type patterns with property sub-patterns: `case Dog { @name: var n }`. The scrutinee is narrowed as above. |
 | function conversion | Converting a function value to a different function type (§3.3) wraps the delegate in an adapter. The new `Function<D>` keeps the original's identity, which its `==` compares, and its display name. |
 | `enum E` | `public abstract record E` with a private constructor; each variant is `public sealed record V(...) : E` nested inside |
@@ -1581,6 +1692,7 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0200 | `no overload of '<T>.<m>' takes (<A1>, <A2>)` / `'<T>' is a static class` (constructing it, or using it as a type) / `'<T>' cannot be constructed` (an interface, abstract class or enum) / `<v> is out of range for <N>` (a literal argument, `<N>` the .NET type's name, such as `Int32`) / `'<T>.<m>' returned null` (`TypeError`, at run time) / `'<C>' is not an exception class` (a .NET class not deriving from `System.Exception`) / `cannot bind both Taipan and .NET exceptions`, with help `write separate clauses` (M21) |
 | TP0200 | `every arm of this 'match' raises`, with help `use a 'match' statement` (M19) / `this arm gives no value`, with help `end it with an expression` / `<T> cannot match a tuple pattern` / `<T> cannot match a list pattern` / `'*<x>' would hold <A> and <B>` (a starred name in a tuple) (M29) |
 | TP0200 | `set elements must be hashable, found <T>` / `sum() takes numbers, found <T>`, with help `use ''.join(…)` for `str` / `'any' takes bools, found <T>` (and `'all'`), with help `test each value, as in any(x > 0 for x in xs)` / `'min' needs values that can be ordered, found <T>` (and `'max'`), with help `pass a key, e.g. 'key=lambda x: ...'` / `an int can't be raised to a negative power`, with help `use a float base, as in 2.0 ** -1` (M35) |
+| TP0200 | `<T> is not a context manager`, with help `define '__enter__' and '__exit__'` / `invalid mode '<m>'`, with help naming a deferred mode / `'open' needs a literal mode` (and `encoding`, `newline`) / `unknown encoding '<e>'` / `newline must be None or ''` / `'type[…]' needs a class, found <T>` (M37) |
 | TP0200 | `format spec '<spec>' isn't valid for <T>`, with help naming the part that isn't / `format specs apply to int, float and str, found <T>` (M26) |
 | TP0200 | `'<A>' is a type alias, not a value`, with help `use '<N>'` when it names a class or enum (M18) |
 | TP0200 | `cannot raise <T>` (with help `write '<C>(…)'` for a class name) / `'<C>' is not an exception class` / `'PythonError' cannot be constructed` (and `'DotNetError'`, M21) (M16) |
@@ -1605,7 +1717,7 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0211 | `'<f>' cannot use top-level variable '<x>'`, with help `pass it as a parameter, or make it a const` |
 | TP0213 | `optional types cannot be nested` |
 | TP0214 | `duplicate definition of '<x>'` |
-| TP0215 | `'await' can't be inside a comprehension` (M36) / `'await' outside an async function` / `'yield' in an async function` (M33) / `'yield' outside a function` / `'yield' can't be inside a 'try' with 'except', or in 'finally'` (M31) / `'<k>' can't leave a 'match' expression`, with help `use a 'match' statement` (M29) / `'break' outside a loop` / `'continue' outside a loop` / `'return' outside a function` / `'raise' without an exception outside an except block` / `'return' cannot be used in a finally block` (and `'break'`, `'continue'`) (M16) |
+| TP0215 | `'yield' can't be inside a 'with'` (M37) / `'await' can't be inside a comprehension` (M36) / `'await' outside an async function` / `'yield' in an async function` (M33) / `'yield' outside a function` / `'yield' can't be inside a 'try' with 'except', or in 'finally'` (M31) / `'<k>' can't leave a 'match' expression`, with help `use a 'match' statement` (M29) / `'break' outside a loop` / `'continue' outside a loop` / `'return' outside a function` / `'raise' without an exception outside an except block` / `'return' cannot be used in a finally block` (and `'break'`, `'continue'`) (M16) |
 | TP0216 | `'<v>' is ambiguous: it is a variant of <E1> and <E2>`, with help `qualify it, e.g. '<E1>.<v>'` |
 | TP0217 | `const initializer must be a constant expression` / `class attribute value must be a constant expression` (M28) |
 | TP0218 | `'<p>' is positional-only, so it can't be passed by keyword` (M30) / `'<f>' takes no keyword arguments` (a built-in) / `a function value takes no keyword arguments` / `'<f>' has no parameter '<k>'` (M14; also for `sorted`, `sort` and `enumerate`) |
@@ -1614,7 +1726,7 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0222 | `only the main file can have top-level statements` / `a library can't have top-level statements` (M22) / `a Python extension can't have top-level statements` (M25) |
 | TP0223 | `nested functions cannot have type parameters` |
 | TP0224 | `unknown decorator '@<d>'` / `'@<d>' cannot be used here` (with help `'@dataclass' goes on a class, '@override' on a method`) / `duplicate decorator '@<d>'` / `'@<d>' cannot be used here`, with help `'@<d>' goes on a method`, for a method's decorator elsewhere / `'@<a>' cannot be combined with '@<b>'` / `'@abstractmethod' needs a class deriving from 'ABC'` / `'@<x>.setter' needs a property '<x>' just above it` (M28) |
-| TP0225 | `a class can have only one base class` (protocols aside, M17) / `'<T>' cannot be a base class` / `a dataclass can only derive from a dataclass` (with help `exceptions are plain classes; give it an '__init__'` for an exception base, M16) / `a plain class can only derive from a plain class` / `generic classes cannot be derived from` / `generic classes cannot have a base class` / `'<C>' derives from itself` / `special method '<m>' is not supported` / `a dataclass cannot define '__init__'` / `field without a default follows field with a default` / `'<m>' must be 'def <m>(self, …) -> <R>'` (M28, replacing M17's `'__lt__' must take one parameter of type '<C>' (or a base class) and return bool`) / `'<m>' must take 'self' first` (or `'cls'`) / `a static method takes neither 'self' nor 'cls'` / `a property takes no parameters other than 'self'` / `a property must have a return type` / `a setter must follow its property` / `a setter must take one parameter of type <T> and return nothing` / `class attribute '<a>' needs a value` / `generic classes cannot have <static methods\|class methods\|class attributes>` / `an abstract method's body must be '...'` / `'<C>' would not be hashable, but its base '<B>' is`, with help `define '__hash__'` (M28) / `'<P>' is already declared` (or `already declared by '<B>'`) / `a protocol can only declare methods` / `a protocol method's body must be '...'` / `protocol method parameters cannot have defaults` / `protocols cannot be generic` / `a protocol can only derive from 'Protocol'` (M17) |
+| TP0225 | `a class can have only one base class` (protocols aside, M17) / `'<T>' cannot be a base class` / `a dataclass can only derive from a dataclass` (with help `exceptions are plain classes; give it an '__init__'` for an exception base, M16) / `a plain class can only derive from a plain class` / `generic classes cannot be derived from` / `generic classes cannot have a base class` / `'<C>' derives from itself` / `special method '<m>' is not supported` / `a dataclass cannot define '__init__'` / `field without a default follows field with a default` / `'<m>' must be 'def <m>(self, …) -> <R>'` (M28, replacing M17's `'__lt__' must take one parameter of type '<C>' (or a base class) and return bool`) / `'<m>' must take 'self' first` (or `'cls'`) / `a static method takes neither 'self' nor 'cls'` / `a property takes no parameters other than 'self'` / `a property must have a return type` / `a setter must follow its property` / `a setter must take one parameter of type <T> and return nothing` / `class attribute '<a>' needs a value` / `generic classes cannot have <static methods\|class methods\|class attributes>` / `an abstract method's body must be '...'` / `'<C>' would not be hashable, but its base '<B>' is`, with help `define '__hash__'` (M28) / `'<C>' defines '__exit__' but not '__enter__'` (or the reverse) (M37) / `'<P>' is already declared` (or `already declared by '<B>'`) / `a protocol can only declare methods` / `a protocol method's body must be '...'` / `protocol method parameters cannot have defaults` / `protocols cannot be generic` / `a protocol can only derive from 'Protocol'` (M17) |
 | TP0226 | `'__init__' does not set '<f>'` / `'<f>' has no default, and '<C>' has no '__init__'` / `'<f>' is read before it is set` / `'self' is used before '<f>' is set` (or `before 'super().__init__' is called`) / `'<f>' is inherited, so it is set by 'super().__init__'` / `'super().__init__' is called before '<f>' is set` / `'<C>.__init__' must call 'super().__init__(…)'` / `'super().__init__' must be called once, directly in '__init__'` / `'super().__init__' can only be called in '__init__'` / `'__init__' returns before '<f>' is set` (or `before 'super().__init__' is called`) (when several fields are unset, the first in declaration order is named) |
 | TP0227 | `'<m>' overrides '<B>.<m>'; mark it '@override'` / `'<m>' does not override a method of <a base class\|'<B>'>` / `'__init__' cannot be marked '@override'` |
 | TP0228 | `'<m>' must take the same parameters as '<B>.<m>'` / `parameter '<p>' of '<m>' must have type <T>, as in '<B>.<m>'` / `parameter '<p>' of '<m>' needs a default, as in '<B>.<m>'` / `'<m>' must return <T>, as '<B>.<m>' does` (or `return nothing`) / `'<m>' is a <static method\|class method\|method\|property> in '<B>'` / `'<p>' must have a setter, as '<B>.<p>' does` / `'<D>.<m>' must return <R>, since it can run in place of '<B>.<op>'` / `'<D>' must be constructed as '<C>' is, since '<C>.<m>' calls 'cls(…)'` (M28) |
@@ -1695,7 +1807,7 @@ Types are written as in source: `int`, `str?`, `list[int]`. The type of `None` i
 ROADMAP.md plans most of these from M35 on. They were never part of v0.1:
 
 - built-ins beyond M35: `frozenset`, `|=` and the other in-place set operators, `str.format` and `%` formatting, `sorted`'s and `min`'s keys on mixed types, and passing sets to Python and .NET
-- program arguments, `sys.exit`, `input()`, environment variables, files (`open`), and `with` statements and context managers
+- I/O beyond §6.1 (M37): binary files and `bytes`, read-write (`+`) modes, `seek` and `tell`, `open`'s `errors=` and `buffering=`, `newline` values other than `None` and `""`, other encodings, `os.path` and the rest of `os` and `sys`, `contextlib`, parenthesized `with` items and targets other than a name, `yield` inside `with`, and `NotADirectoryError` and Python's other `OSError` classes
 - protocols as types of values, protocol fields, generic protocols, protocols extending other protocols, and a check that a class used with a protocol declares it
 - class bounds (`[T: Animal]`), bounds on classes' and enums' type parameters, and built-in types' ordinary methods satisfying protocols
 - special methods beyond §4.8 (`__bool__`, `__len__`, `__getitem__`, `__contains__`, `__call__`, `__ne__`, in-place `__iadd__` and the like, `__format__`), special methods in protocols other than `__lt__`, and `functools.total_ordering`
@@ -1709,7 +1821,7 @@ ROADMAP.md plans most of these from M35 on. They were never part of v0.1:
 - type aliases inside functions and classes, recursive aliases, and showing an alias's name in diagnostics
 - typed `**kwargs` (`Unpack[TypedDict]`), `*args` and `**kwargs` in function types, and `**e` filling named parameters
 - narrowing elements (`xs[0]`) and paths rooted at a `var`, and narrowing that follows `==` comparisons with literals
-- `raise … from …`, exception chaining, `BaseException`, and printing tracebacks
+- `raise … from …`, exception chaining, and printing tracebacks (`BaseException` exists since M37)
 - dataclass exceptions (mixing dataclasses and plain classes), and `args` on exceptions
 - nested format specs in f-strings (`{x:{width}}`), and format specs for other types (`__format__`)
 - language server features beyond §16: formatting, code actions, incremental sync, workspace-wide diagnostics, semantic token deltas and ranges, completion of .NET namespaces and Python modules' names, signature help for built-in functions, references to built-in, Python and .NET names, renaming modules (renaming their files), and editors other than VS Code
@@ -1739,7 +1851,7 @@ taipan emit  <file> [<kind>]                         print the generated C# (§8
 taipan build <file> [<kind>] -o <dir>                write a runnable program to <dir>, or with <kind>:
                                                      --library (M22, §14), --native (M23, §15),
                                                      or --python-extension (M25, §17)
-taipan run   <file> [-- args]                        compile and run
+taipan run   <file> [-- args]                        compile and run, passing args to the program (sys.argv, M37)
 taipan pack  <file> -o <dir>                         pack a library as a NuGet package (M34, §18.4)
 taipan compile <file> [--library] --out <dll>        compile one assembly, for TaipanLang.Sdk (M34, §18.2)
                [--reference <dll>]… [--assembly <name>] [--namespace <ns>] [--version <v>]
@@ -2212,7 +2324,7 @@ This adds a local store per statement and a filter per method; it's emitted only
   | `f"…"` | `string.interpolated`, with `{{` and `}}` as escapes; each hole `meta.interpolation`, with its braces `punctuation.section.interpolation.begin` and `.end`, its conversion (`!r`) and format spec (`:>8`) `storage.type.format`, and the expression inside colored as code |
   | integers, floats | `constant.numeric.integer`, `constant.numeric.float` |
   | `True`, `False`, `None` | `constant.language` |
-  | `if elif else while for match return pass break continue try except finally raise yield await`, and a `for` header's `in` | `keyword.control.flow` |
+  | `if elif else while for match return pass break continue try except finally raise yield await with` (`with`: M37), and a `for` header's `in` | `keyword.control.flow` |
   | `import from as` | `keyword.control.import` |
   | `and or not is in some` | `keyword.operator.logical` |
   | `def`, `lambda`, `async` | `storage.type.function` |
@@ -2224,7 +2336,7 @@ This adds a local store per statement and a filter per method; it's emitted only
   | `@name` | `entity.name.function.decorator` |
   | `self`, `cls` | `variable.language.special` |
   | §6's built-in functions; `int`, `float`, `str`, `list` and `set` only before `(`, since they're types otherwise | `support.function.builtin` |
-  | built-in types (`int float str bool list dict set tuple Iterator Iterable Callable Awaitable`) | `support.type.builtin` |
+  | built-in types (`int float str bool list dict set tuple Iterator Iterable Callable Awaitable TextIO`) | `support.type.builtin` |
   | `+ - * / // % ** ??`, and `\| & ^` (M35) | `keyword.operator.arithmetic` |
   | `== != < <= > >=` | `keyword.operator.comparison` |
   | `= += -= *= /= //= %= **=` | `keyword.operator.assignment` |

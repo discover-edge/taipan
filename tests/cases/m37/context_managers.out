@@ -1,0 +1,29 @@
+n 42
+suppressed ValueError v
+after quiet
+enter outer
+enter inner
+body outer inner
+exit inner None False
+exit outer None False
+enter loop0
+exit loop0 None False
+enter loop1
+middle 1
+exit loop1 None False
+enter loop2
+exit loop2 None False
+enter find
+exit find None False
+enter find
+exit find None False
+2
+enter exit
+exit exit <class 'SystemExit'> True
+exit code 3 3
+enter nested
+suppressed IndexError deep
+still here
+exit nested None False
+suppressed IndexError index 5 out of range for length 1
+fallback
