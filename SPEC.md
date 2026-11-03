@@ -1619,7 +1619,7 @@ Types are written as in source: `int`, `str?`, `list[int]`. The type of `None` i
 - `raise … from …`, exception chaining, `BaseException`, exception groups (`except*`), and printing tracebacks
 - dataclass exceptions (mixing dataclasses and plain classes), and `args` on exceptions
 - nested format specs in f-strings (`{x:{width}}`), the locale-dependent `n` format type, and format specs for other types (`__format__`)
-- language server features beyond §16: completion, signature help, find references, rename, semantic tokens, formatting, code actions, incremental sync, workspace-wide diagnostics, and editor extensions
+- language server features beyond §16: formatting, code actions, incremental sync, workspace-wide diagnostics, semantic token deltas and ranges, completion of .NET namespaces and Python modules' names, signature help for built-in functions, references to built-in, Python and .NET names, renaming modules (renaming their files), and editors other than VS Code
 - CPython extension modules beyond §17: classes and enums as Python types, Python functions and objects as arguments, Python interop inside an extension, generic functions, free-threaded CPython, and builds for one exact Python version
 - .NET interop beyond §13: generic methods and generic .NET types (other than the collections of §13.3), delegates and passing Taipan functions to .NET, `async` and `Task`, events, `ref`/`out`/`in` parameters, `params` arrays, indexers, operators, extension methods (LINQ), `object` and `decimal` results, dictionaries, deriving from .NET classes or implementing .NET interfaces, raising .NET exceptions, `isinstance`/`as`/`match` on .NET types, flags enums, namespace imports (`import dotnet.System.IO as io`), and packages with native assets
 - an MSBuild project SDK (`TaipanLang.Sdk`), for building `.tpn` files with `dotnet build` as part of a .NET solution
@@ -1901,13 +1901,13 @@ This adds a local store per statement and a filter per method; it's emitted only
 
 ---
 
-## 16. Language server (M24)
-`taipan lsp` is a Language Server Protocol (LSP 3.17) server for editors. It reports the compiler's diagnostics as you type, shows a name's type on hover, and goes to a name's definition, across modules too.
+## 16. Language server (M24, M32)
+`taipan lsp` is a Language Server Protocol (LSP 3.17) server for editors. It reports the compiler's diagnostics as you type, shows a name's type on hover, and goes to a name's definition, across modules too. Since M32 it also completes names, shows a call's signature, finds a name's references, renames across modules, and gives semantic tokens (§16.4–§16.7), and the repository has a VS Code extension that starts it (§16.8).
 
 ### 16.1 Protocol
 - **Transport:** JSON-RPC 2.0 over stdin and stdout, each message framed by a `Content-Length` header, as the LSP specifies. `taipan lsp` takes no arguments but `--stdio`, which clients such as VS Code's pass and which names the only transport. It writes nothing else to stdout.
 - **Lifecycle:** `initialize`, `initialized`, `shutdown` and `exit`. `exit` ends the server with code `0` after `shutdown`, and `1` without it, as the LSP specifies.
-- **Capabilities** the server declares: full document sync with open and close notifications (`textDocumentSync: 1`), `hoverProvider` and `definitionProvider`. Positions are in UTF-16 code units, the LSP's default; Taipan's own columns count code points (§9), and the server converts.
+- **Capabilities** the server declares: full document sync with open and close notifications (`textDocumentSync: 1`), `hoverProvider` and `definitionProvider`; since M32, `completionProvider` (trigger character `.`), `signatureHelpProvider` (trigger characters `(` and `,`), `referencesProvider`, `renameProvider` (with `prepareProvider`), and `semanticTokensProvider` (`full` only, with §16.7's legend). Positions are in UTF-16 code units, the LSP's default; Taipan's own columns count code points (§9), and the server converts.
 - **Documents** are `file://` URIs; others are ignored. Open documents' text comes from the client (`didOpen`, `didChange`), unsaved changes included, and any other file the server reads from disk.
 - A request the server doesn't support is answered with JSON-RPC's `MethodNotFound` error (`-32601`); an unsupported notification is ignored. A request for a document that isn't open, or that can't be analyzed, gets a null result.
 
@@ -1929,7 +1929,7 @@ This adds a local store per statement and a filter per method; it's emitted only
   |---|---|
   | variable | `let total: float`, `var count: int`, or `items: list[Shape]` for a parameter |
   | constant | `const LIMIT: int` |
-  | function | `def scale(p: Point, by: float = …) -> Point`, with type parameters (`def first[T](xs: list[T]) -> T?`) |
+  | function | `def scale(p: Point, by: float = …) -> Point`, with type parameters (`def first[T](xs: list[T]) -> T?`) and parameter kinds as written (§4.2): `def log(msg: str, /, *args: int, sep: str = …, **kwargs: str)` (M32) |
   | method | `def Point.moved(self, by: float = …) -> Point` |
   | field | `Point.x: float` |
   | class, enum | `class Point`, `@dataclass class Point`, `class Box[T]`, `enum Shape` |
@@ -1942,8 +1942,157 @@ This adds a local store per statement and a filter per method; it's emitted only
 - **Go to definition** (`textDocument/definition`) on a name gives the location of the name where it's defined: a local's or parameter's declaration, or a function, class, enum, variant, field, method, constant or type alias in its file. A name imported from another module (`from shapes import area`, or `shapes.area`) goes to `shapes.tpn`, and a module's name in `import shapes` goes to the start of its file. Built-in names, and Python and .NET names, have no definition here, so the result is null.
 - Both need the document to parse (§9's stage gating). With type errors, they work wherever names resolved.
 
-### 16.4 Deferred
-§11 lists what's deferred: completion, signature help, find references, rename, semantic tokens, formatting, code actions, incremental document sync, workspace-wide diagnostics, and editor extensions (a VS Code extension, a TextMate grammar).
+### 16.4 Completion (M32)
+- **Partial code.** Completion and signature help (§16.5) are asked for while code is half-typed, as in `p.` or `scale(p, `, which doesn't parse. For these two requests only, the server analyzes a copy of the document patched at the cursor, and leaves the document, its diagnostics and its other requests alone:
+  - The cursor's logical line (§1.2) is cut at the cursor, and the name being typed there, if any, is replaced with a placeholder name.
+  - The brackets left open before the cursor on that logical line are closed, innermost first.
+  - If the line starts a block (`if`, `elif`, `else`, `while`, `for`, `def`, `class`, `enum`, `match`, `try`, `except` or `finally`, or a decorator's `def` or `class`), it gets its `:`. If the next line isn't indented more than it, a `pass` body is added too.
+  - The rest of the document is unchanged. If the copy still doesn't parse, because of an error elsewhere, completion gives an empty list and signature help a null result.
+- **What's offered depends on where the cursor is:**
+
+  | Cursor | Offered |
+  |---|---|
+  | in a comment, or a string's text (not an f-string's hole) | nothing |
+  | after `import` or `from`, or after a comma in `import a, ` | the modules the document may import: the other `.tpn` files in its directory (§4.7), and `python` and `dotnet` |
+  | after `from m import`, or after a comma there | the names `m` exports (§4.7), with an enum's variants; nothing for `python` and `dotnet` modules |
+  | after `.`, on a value of a class | its fields, properties and methods, inherited ones included, and its `ClassVar` attributes, but not static or class methods, or special methods (§4.8) |
+  | after `.`, on a class's name | its static and class methods and `ClassVar` attributes |
+  | after `.`, on an enum's name | its variants |
+  | after `.`, on a module | the names it exports, as after `from m import` |
+  | after `.`, on a `list`, `dict` or `str` | §6's methods for it |
+  | after `.`, on a .NET value or type | its public instance members, or a type's public static members (§13.4) |
+  | after `.`, on anything else (a `py` value, a tuple, a number) | nothing |
+  | in a type (after `:` in a binding or parameter, after `->`, inside a type's `[…]`, after `type X =`) | the types in scope: built-in types (§3), classes, enums, protocols, type aliases, type parameters, imported .NET types, and modules (for `m.Point`) |
+  | anywhere else a name may go | the names in scope at the cursor, then keywords: every keyword that starts a statement at a statement's start, and `None`, `True`, `False`, `not`, `lambda` and `match` inside an expression |
+
+  The names in scope are the locals and parameters of the enclosing functions bound before the cursor, the file's own definitions and imports, and the built-in functions, types and exceptions (§6).
+- **Items.** Each item's `label` is the name, its `detail` is what hover would show for it (§16.3), and its `kind` is LSP's for what it names:
+
+  | Name | `kind` |
+  |---|---|
+  | method, static or class method | `Method` (2) |
+  | function, nested function, built-in function | `Function` (3) |
+  | field, `ClassVar` attribute | `Field` (5) |
+  | `let`, `var`, parameter | `Variable` (6) |
+  | class, exception, type alias, built-in type, .NET class | `Class` (7) |
+  | protocol, .NET interface | `Interface` (8) |
+  | module, a Python module (§10) | `Module` (9) |
+  | property, .NET property | `Property` (10) |
+  | enum, .NET enum | `Enum` (13) |
+  | keyword | `Keyword` (14) |
+  | variant | `EnumMember` (20) |
+  | `const` | `Constant` (21) |
+  | .NET struct | `Struct` (22) |
+  | type parameter | `TypeParameter` (25) |
+
+- **Order.** The server sends every candidate, and the client filters them by what's typed (`isIncomplete` is `false`). `sortText` puts the innermost scope's names first, then the file's own and imported names, then built-ins, then keywords, each group by name.
+
+### 16.5 Signature help (M32)
+- **Signature help** (`textDocument/signatureHelp`) inside a call's parentheses, after `(` or a `,`, shows the signature of the innermost call around the cursor, analyzing the patched copy of §16.4:
+  - **A function or method** shows hover's text (§16.3), `def scale(p: Point, by: float = …) -> Point`. `self` and `cls` are in the label but aren't parameters, since no argument fills them.
+  - **A class's constructor** shows the class and `__init__`'s parameters, or a dataclass's fields: `Point(x: float, y: float = …)`.
+  - **A variant** shows hover's text, `Shape.Circle(r: float)`.
+  - **A function value** shows its type with numbered parameters: `f(arg0: int, arg1: str) -> bool` for an `f: Callable[[int, str], bool]`.
+  - **A .NET method or constructor** shows each overload as a signature, in C# form as hover writes it, with `activeSignature` the overload the call binds to (§13.5), or the first when it binds to none.
+  - **Built-in functions, `super()` and Python callees** give a null result.
+- **`parameters`** are each parameter's text in the label, as `[start, end]` offsets, and **`activeParameter`** is the one the argument at the cursor fills as §4.2 binds it: a positional argument the next positional parameter, then `*args`; a keyword argument the parameter it names, then `**kwargs`. An argument that fills none (one too many, or an unpacked `*xs`) gives the number of parameters, which highlights none.
+
+### 16.6 References and rename (M32)
+- **The files searched** are the module root: every `.tpn` file in the document's directory, the directory its imports load from (§4.7), whether it's open or not. Each is checked as a main file (§16.2), using open documents' text and reading the rest from disk.
+- **The same name.** Since each file is checked on its own, two occurrences name the same thing when what they name is defined at the same place: a module, function, class, enum, variant, field, method, property, `ClassVar` attribute, constant, type alias, type parameter, local or parameter. A module is defined by its file.
+  - **Methods** that override one another (§4.3) count as one name, so a base class's method, its overrides, and calls of any of them are found together.
+  - **Keyword arguments** name their parameters, so `scale(p, by=2.0)` is a reference of `scale`'s `by`. A dataclass's constructor keywords (`Point(x=1.0)`) and class patterns' fields (`Point(x=0.0)`, §5.1) are references of the fields they name.
+  - **An alias** (`from shapes import area as surface`, `import geometry as g`) names what it imports, so references of `area` include the uses of `surface`.
+- **Find references** (`textDocument/references`) on a name gives every occurrence of it in the module root, with its definition when `context.includeDeclaration` is `true`, ordered by file path and then position. Built-in, Python and .NET names give a null result, and so does a position that isn't on a name, or a file that doesn't parse.
+- **Rename** (`textDocument/rename`) on a name gives a `WorkspaceEdit` whose `changes` replace every reference that's spelled as the name, in every file that has one, with the new name.
+  - An alias isn't spelled as the name it imports, so renaming `area` edits the `area` in `from shapes import area as surface` but not the uses of `surface`.
+  - Renaming an alias itself edits only that alias and its uses, in its own file.
+  - Renaming a name to itself gives no changes.
+- **`textDocument/prepareRename`** gives the name's range and its text as the `placeholder`, the error rename would give for a name it refuses (below), or a null result away from a name.
+- **What rename refuses.** A refusal is a JSON-RPC error, LSP's `RequestFailed` (`-32803`), with one of these messages, and makes no changes:
+
+  | Refused | Message |
+  |---|---|
+  | a built-in name (§6) | `cannot rename the built-in '<x>'` |
+  | a .NET name | `cannot rename the .NET name '<x>'` |
+  | a Python name (§10) | `cannot rename the Python name '<x>'` |
+  | a module | `cannot rename the module '<x>'; rename its file instead` |
+  | a special method (§4.8), `__init__` included | `cannot rename the special method '<x>'` |
+  | a new name that isn't an identifier (§1.3), or is `_` | `'<new>' is not a valid name` |
+  | a new name that's a keyword (`type` isn't) | `'<new>' is a keyword` |
+  | a new name that's a special method's (`__x__`) | `cannot rename to the special name '<new>'` |
+  | a file in the module root that doesn't parse, since its references can't be found | `cannot rename while <path> has syntax errors` |
+  | a rename that would add an error: one more error with some code in some file of the module root, when it's checked again with the changes | `renaming '<x>' to '<new>' would cause an error: <path>:<line>:<col>: <code>: <message>`, naming the first such error |
+
+  The last row catches clashes (`TP0214`), shadowing (`TP0207`), and a class that stops satisfying a protocol (`TP0225`), among others, so a rename never turns a program that checked into one that doesn't. Paths in these messages are relative to the document's directory.
+
+### 16.7 Semantic tokens (M32)
+- **`textDocument/semanticTokens/full`** gives a token for each name the binder resolved in the document (§16.3), in LSP's relative encoding, from the document's latest check. It needs the document to parse, and gives a null result otherwise. Keywords, literals, operators and comments get no semantic tokens; the grammar (§16.8) colors them. Names that didn't resolve, and Python names, get no token.
+- **The legend's token types**, in order: `namespace`, `class`, `enum`, `interface`, `struct`, `typeParameter`, `type`, `parameter`, `variable`, `property`, `enumMember`, `function`, `method`. **Its modifiers:** `declaration`, `readonly`, `static`, `defaultLibrary`.
+
+  | Name | Type | Modifiers |
+  |---|---|---|
+  | module, .NET namespace | `namespace` | |
+  | class, exception, .NET class | `class` | |
+  | enum, .NET enum | `enum` | |
+  | protocol, .NET interface | `interface` | |
+  | .NET struct | `struct` | |
+  | type parameter | `typeParameter` | |
+  | type alias | `type` | |
+  | built-in type (`int`, `list`) | `type` | `defaultLibrary` |
+  | parameter, `self`, `cls` | `parameter` | |
+  | `let`, a loop variable, a name a pattern binds | `variable` | `readonly` |
+  | `var` | `variable` | |
+  | `const` | `variable` | `readonly`, `static` |
+  | field, property, .NET property or field | `property` | |
+  | `ClassVar` attribute | `property` | `static` |
+  | variant | `enumMember` | |
+  | function | `function` | |
+  | built-in function | `function` | `defaultLibrary` |
+  | method, .NET method | `method` | `static` for a static or class method |
+
+  A name where it's defined also has `declaration`.
+
+### 16.8 The VS Code extension (M32)
+- **Where.** The extension lives in `editors/vscode`, in plain JavaScript with no build step. Its one runtime dependency is `vscode-languageclient`, Microsoft's LSP client. Its development dependencies are `@vscode/vsce`, which packages it, and `vscode-textmate` and `vscode-oniguruma`, which its grammar test runs on, the engine VS Code itself uses.
+- **What it contributes:**
+  - the language `taipan`, for `.tpn` files;
+  - a language configuration: `#` comments, bracket pairs, auto-closing brackets and quotes, and indenting after a line ending in `:`;
+  - the TextMate grammar `source.taipan` (below);
+  - the setting `taipan.path`, the `taipan` command to start, `"taipan"` by default (found on `PATH`).
+- **It starts** `<taipan.path> lsp --stdio` when a `.tpn` file is opened, as the client for every Taipan document, and stops it when VS Code closes.
+- **It packages** with `vsce package` into `taipan-<version>.vsix`, with the extension's own files and its runtime dependency only.
+- **The grammar** colors code without the server, so a file is colored as soon as it opens. It gives these scopes, each ending in `.taipan`:
+
+  | Text | Scope |
+  |---|---|
+  | `# …` | `comment.line.number-sign` |
+  | `"…"`, `'…'` | `string.quoted.double`, `string.quoted.single`, with escapes `constant.character.escape` |
+  | `f"…"` | `string.interpolated`, with `{{` and `}}` as escapes; each hole `meta.interpolation`, with its braces `punctuation.section.interpolation.begin` and `.end`, its conversion (`!r`) and format spec (`:>8`) `storage.type.format`, and the expression inside colored as code |
+  | integers, floats | `constant.numeric.integer`, `constant.numeric.float` |
+  | `True`, `False`, `None` | `constant.language` |
+  | `if elif else while for match return pass break continue try except finally raise yield`, and a `for` header's `in` | `keyword.control.flow` |
+  | `import from as` | `keyword.control.import` |
+  | `and or not is in some` | `keyword.operator.logical` |
+  | `def`, `lambda` | `storage.type.function` |
+  | `class`, `enum` | `storage.type.class` |
+  | `let var const`, and `type` starting an alias | `storage.modifier.declaration` |
+  | `del` | `keyword.other.del` |
+  | the name after `def` | `entity.name.function` |
+  | the name after `class` or `enum` | `entity.name.type` |
+  | `@name` | `entity.name.function.decorator` |
+  | `self`, `cls` | `variable.language.special` |
+  | §6's built-in functions; `int`, `float`, `str` and `list` only before `(`, since they're types otherwise | `support.function.builtin` |
+  | built-in types (`int float str bool list dict tuple Iterator Iterable Callable`) | `support.type.builtin` |
+  | `+ - * / // % ??` | `keyword.operator.arithmetic` |
+  | `== != < <= > >=` | `keyword.operator.comparison` |
+  | `= += -= *= /=` | `keyword.operator.assignment` |
+  | `->` | `punctuation.separator.annotation.result` |
+
+- **The golden token list.** `editors/vscode/test/sample.tpn` exercises every row above, and `sample.tokens` lists the tokens the grammar gives it, one per line: `<line>:<column> <text> <scopes>`, with columns from 1, the text as a JSON string, and the token's scopes after `source.taipan`, space-separated (`-` when there are none). Tokens of only whitespace are left out.
+
+### 16.9 Deferred
+§11 lists what's deferred: formatting, code actions, incremental document sync, workspace-wide diagnostics, semantic token deltas and ranges, completing .NET namespaces and Python modules' names, signature help for built-ins, references to built-in, Python and .NET names, renaming modules, and editors other than VS Code.
 
 ---
 

@@ -1,0 +1,38 @@
+# A module the editor tests complete, rename and find references in (SPEC §16.4–§16.6).
+const UNITS = "cm"
+
+@dataclass
+class Point:
+    x: float
+    y: float = 0.0
+
+    def scaled(self, by: float) -> Point:
+        return Point(self.x * by, self.y * by)
+
+class Shape:
+    sides: ClassVar[int] = 0
+
+    def area(self) -> float:
+        return 0.0
+
+    @staticmethod
+    def unit() -> Shape:
+        return Square(1.0)
+
+class Square(Shape):
+    side: float
+
+    def __init__(self, side: float):
+        self.side = side
+        super().__init__()
+
+    @override
+    def area(self) -> float:
+        return self.side * self.side
+
+enum Color:
+    Red
+    Custom(code: str)
+
+def scale(p: Point, by: float = 2.0, *rest: float) -> Point:
+    return p.scaled(by)

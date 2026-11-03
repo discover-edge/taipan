@@ -1,0 +1,6 @@
+# Another module using geometry's names, which no test opens (SPEC §16.6).
+from geometry import Point, scale as resize
+
+def describe(p: Point) -> str:
+    let bigger = resize(p, by=3.0)
+    return f"{bigger.x} by {bigger.y}"

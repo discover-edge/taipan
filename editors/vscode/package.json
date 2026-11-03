@@ -1,0 +1,63 @@
+{
+  "name": "taipan",
+  "displayName": "Taipan",
+  "description": "Taipan language support: highlighting, and the taipan language server's diagnostics, completion, navigation and rename.",
+  "version": "0.1.0",
+  "publisher": "discover-edge",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/discover-edge/taipan"
+  },
+  "engines": {
+    "vscode": "^1.82.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "taipan",
+        "aliases": [
+          "Taipan",
+          "taipan"
+        ],
+        "extensions": [
+          ".tpn"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "taipan",
+        "scopeName": "source.taipan",
+        "path": "./syntaxes/taipan.tmLanguage.json"
+      }
+    ],
+    "configuration": {
+      "title": "Taipan",
+      "properties": {
+        "taipan.path": {
+          "type": "string",
+          "default": "taipan",
+          "description": "The taipan command the extension starts as its language server, with `lsp --stdio`. Found on PATH unless it's a path."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "tokens": "node test/tokenize.mjs test/sample.tpn",
+    "package": "vsce package"
+  },
+  "dependencies": {
+    "vscode-languageclient": "9.0.1"
+  },
+  "devDependencies": {
+    "@vscode/vsce": "3.2.1",
+    "vscode-oniguruma": "2.0.1",
+    "vscode-textmate": "9.2.0"
+  }
+}

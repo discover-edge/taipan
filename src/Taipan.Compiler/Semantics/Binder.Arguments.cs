@@ -173,6 +173,11 @@ public sealed partial class Binder
                 var index = Enumerable.Range(0, parameters.Length).FirstOrDefault(i => parameters[i].Name == keyword.Text && kinds[i] is not (ParamKind.VarArgs or ParamKind.VarKeywords), -1);
                 if (index >= 0 && kinds[index] != ParamKind.PositionalOnly)
                 {
+                    // A keyword names its parameter (SPEC §16.6): for an inherited constructor, its base's.
+                    var named = function;
+                    while (named.DefaultsFrom is { Name: "__init__" } from && named.Name == "__init__")
+                        named = from;
+                    Index(keyword.Span, named.Parameters[index]);
                     if (!filled.Add(index))
                     {
                         _diagnostics.ReportRepeatedArgument(keyword.Span, keyword.Text);

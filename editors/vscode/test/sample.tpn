@@ -1,0 +1,53 @@
+# The grammar's golden sample (SPEC §16.8): every row of its table.
+from geometry import Point as P
+import shapes
+
+type Grid = list[list[int]]
+
+@dataclass
+class Cell:
+    row: int
+    label: str = "a\tb"
+
+    def moved(self, by: int = 1) -> Cell:
+        return Cell(self.row + by, 'x\'y')
+
+enum Shade:
+    Light
+    Dark(level: float)
+
+const LIMIT = 1_000
+let ratio = 2.5e-3
+
+def report(cells: list[Cell], shade: Shade?) -> str:
+    var total = 0
+    for cell in cells:
+        if cell.row >= LIMIT and not (cell.row in [1, 2]):
+            continue
+        elif cell.row != 0 or cell.label is None:
+            total += cell.row // 2 % 3
+        else:
+            pass
+    while total > 10:
+        total -= 1
+    try:
+        raise ValueError(f"total {total:>4} {{braces}} {len(cells)}")
+    except ValueError as e:
+        print(str(e))
+    finally:
+        del cells[0]
+    if shade is some chosen:
+        print(chosen)
+    let name = shade ?? Shade.Light
+    match name:
+        Dark(level): print(level * 2.0, float(total) / 4)
+        _: print(True, False)
+    return f'{total!r}'
+
+def numbers() -> Iterator[int]:
+    yield 1
+    let pick = lambda x: x - 1
+    let pairs = zip(range(3), sorted([3, 1]))
+    let fns: Callable[[int], bool] = lambda n: n < 2
+    let found: dict[str, tuple[int, int]] = {}
+    print(isinstance(pick, Cell), int("3"), f"{found=}")

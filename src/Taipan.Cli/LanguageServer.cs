@@ -10,12 +10,17 @@ namespace Taipan.Cli;
 /// <summary>
 /// <c>taipan lsp</c> (SPEC §16): a Language Server Protocol server over a pair of streams, speaking
 /// JSON-RPC 2.0 framed by <c>Content-Length</c> headers. It checks each open document as a main
-/// file, as <c>taipan check</c> would, and answers hover and definition from what the binder resolved.
+/// file, as <c>taipan check</c> would, and answers hover and definition from what the binder
+/// resolved, and since M32 completion, signature help, references, rename and semantic tokens.
 /// </summary>
-public sealed class LanguageServer(Stream input, Stream output)
+public sealed partial class LanguageServer(Stream input, Stream output)
 {
     private const int MethodNotFound = -32601;
     private const int InternalError = -32603;
+    private const int RequestFailed = -32803;
+
+    /// <summary>A request the server refuses, such as a rename (SPEC §16.6): LSP's <c>RequestFailed</c>.</summary>
+    private sealed class RequestFailedException(string message) : Exception(message);
 
     private sealed record Document(string Text, SourceText Source, CheckResult Result);
 
@@ -42,6 +47,10 @@ public sealed class LanguageServer(Stream input, Stream output)
                 else
                     RespondError(id, MethodNotFound, $"unsupported method '{method}'");
             }
+            catch (RequestFailedException e) when (id is not null)
+            {
+                RespondError(id, RequestFailed, e.Message);
+            }
             catch (Exception e) when (id is not null)
             {
                 RespondError(id, InternalError, e.Message);
@@ -64,6 +73,19 @@ public sealed class LanguageServer(Stream input, Stream output)
                         ["textDocumentSync"] = new JsonObject { ["openClose"] = true, ["change"] = 1 },
                         ["hoverProvider"] = true,
                         ["definitionProvider"] = true,
+                        ["completionProvider"] = new JsonObject { ["triggerCharacters"] = new JsonArray(".") },
+                        ["signatureHelpProvider"] = new JsonObject { ["triggerCharacters"] = new JsonArray("(", ",") },
+                        ["referencesProvider"] = true,
+                        ["renameProvider"] = new JsonObject { ["prepareProvider"] = true },
+                        ["semanticTokensProvider"] = new JsonObject
+                        {
+                            ["legend"] = new JsonObject
+                            {
+                                ["tokenTypes"] = new JsonArray([.. TokenTypes.Select(t => (JsonNode)t)]),
+                                ["tokenModifiers"] = new JsonArray([.. TokenModifiers.Select(t => (JsonNode)t)]),
+                            },
+                            ["full"] = true,
+                        },
                     },
                     ["serverInfo"] = new JsonObject { ["name"] = "taipan" },
                 };
@@ -85,6 +107,18 @@ public sealed class LanguageServer(Stream input, Stream output)
                 return Hover(parameters!);
             case "textDocument/definition":
                 return Definition(parameters!);
+            case "textDocument/completion":
+                return Completion(parameters!);
+            case "textDocument/signatureHelp":
+                return SignatureHelp(parameters!);
+            case "textDocument/references":
+                return References(parameters!);
+            case "textDocument/prepareRename":
+                return PrepareRename(parameters!);
+            case "textDocument/rename":
+                return Rename(parameters!);
+            case "textDocument/semanticTokens/full":
+                return SemanticTokens(parameters!);
             default:
                 // An unsupported request is MethodNotFound; an unsupported notification is ignored (SPEC §16.1).
                 handled = false;

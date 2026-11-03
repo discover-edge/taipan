@@ -12,6 +12,9 @@ public sealed class Scope(Scope? parent)
 
     public Scope? Parent { get; } = parent;
 
+    /// <summary>The names this scope itself declares.</summary>
+    public IEnumerable<KeyValuePair<string, Symbol>> Symbols => _symbols;
+
     public Symbol? LookupLocal(string name) => _symbols.GetValueOrDefault(name);
 
     public Symbol? Lookup(string name) => LookupLocal(name) ?? Parent?.Lookup(name);

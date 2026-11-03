@@ -35,7 +35,7 @@ public class LanguageServerTests
     {
         var path = Path.Combine(Root, casePath);
         var text = File.ReadAllText(path);
-        var session = new Session().Open(path, text).Run();
+        var session = new LspSession().Open(path, text).Run();
 
         var published = session.Diagnostics(path);
         var lines = text.Replace("\r\n", "\n").Split('\n');
@@ -84,7 +84,7 @@ public class LanguageServerTests
         var path = Path.Combine(Root, "tests", "cases", "m24", "navigation", "main.tpn");
         var text = File.ReadAllText(path);
         var changed = text + "let bad: int = \"x\"\n";
-        var session = new Session().Open(path, text).Change(path, changed).Close(path).Run();
+        var session = new LspSession().Open(path, text).Change(path, changed).Close(path).Run();
 
         var published = session.All("textDocument/publishDiagnostics");
         Assert.Equal(3, published.Count);
@@ -101,7 +101,7 @@ public class LanguageServerTests
         // A document that's open but not saved, with a name after an emoji: two UTF-16 units, but
         // one code point, so `taipan check` would say column 18 and the server says character 18.
         var path = Path.Combine(Root, "tests", "cases", "m24", "unsaved.tpn");
-        var session = new Session().Open(path, "let pair = (\"🐍\", nope)\n").Run();
+        var session = new LspSession().Open(path, "let pair = (\"🐍\", nope)\n").Run();
         var error = Assert.Single(session.Diagnostics(path))!;
         Assert.Equal("TP0201", error["code"]!.GetValue<string>());
         Assert.Equal(0, error["range"]!["start"]!["line"]!.GetValue<int>());
@@ -114,7 +114,7 @@ public class LanguageServerTests
     {
         var path = Path.Combine(Root, "tests", "cases", "m24", "navigation", "main.tpn");
         var text = File.ReadAllText(path);
-        var session = new Session().Open(path, text)
+        var session = new LspSession().Open(path, text)
             .Hover(path, text, "found =")
             .Hover(path, text, "sum += area")
             .Hover(path, text, "area(item)")
@@ -143,7 +143,7 @@ public class LanguageServerTests
     {
         var path = Path.Combine(Root, "tests", "cases", "m28", "members.tpn");
         var text = File.ReadAllText(path);
-        var session = new Session().Open(path, text)
+        var session = new LspSession().Open(path, text)
             .Hover(path, text, "fahrenheit)")
             .Hover(path, text, "freezing(), t")
             .Hover(path, text, "parse(\"21.5\")")
@@ -164,7 +164,7 @@ public class LanguageServerTests
     {
         var path = Path.Combine(Root, "tests", "cases", "m21", "strings.tpn");
         var text = File.ReadAllText(path);
-        var session = new Session().Open(path, text)
+        var session = new LspSession().Open(path, text)
             .Hover(path, text, "StringBuilder()")
             .Hover(path, text, "Append(")
             .Definition(path, text, "Append(")
@@ -181,7 +181,7 @@ public class LanguageServerTests
         var path = Path.Combine(Root, "tests", "cases", "m24", "navigation", "main.tpn");
         var shapes = Path.Combine(Root, "tests", "cases", "m24", "navigation", "shapes.tpn");
         var text = File.ReadAllText(path);
-        var session = new Session().Open(path, text)
+        var session = new LspSession().Open(path, text)
             .Definition(path, text, "area(item)")
             .Definition(path, text, "shapes\nfrom")
             .Definition(path, text, "item in items")
@@ -212,7 +212,7 @@ public class LanguageServerTests
     [Fact]
     public void LifecycleAndUnsupportedRequests()
     {
-        var session = new Session().Request("textDocument/completion", new JsonObject()).Run();
+        var session = new LspSession().Request("textDocument/formatting", new JsonObject()).Run();
         Assert.Equal(0, session.ExitCode);
         var initialize = session.Initialize()["capabilities"]!;
         Assert.Equal(1, initialize["textDocumentSync"]!["change"]!.GetValue<int>());
@@ -220,7 +220,7 @@ public class LanguageServerTests
         Assert.True(initialize["definitionProvider"]!.GetValue<bool>());
         Assert.Equal(-32601, session.Responses()[0]["error"]!["code"]!.GetValue<int>());
 
-        Assert.Equal(1, new Session().Run(shutdown: false).ExitCode);
+        Assert.Equal(1, new LspSession().Run(shutdown: false).ExitCode);
     }
 
     /// <summary>The real command, over its process's stdin and stdout.</summary>
@@ -250,104 +250,5 @@ public class LanguageServerTests
         Assert.StartsWith("Content-Length: ", output);
         Assert.Contains("\"hoverProvider\":true", output);
         Assert.Contains("{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":null}", output);
-    }
-
-    /// <summary>A client's messages, sent all at once, and what the server sent back.</summary>
-    private sealed class Session
-    {
-        private readonly List<JsonObject> _messages = [];
-        private readonly List<JsonObject> _received = [];
-        private int _id;
-
-        public int ExitCode { get; private set; }
-
-        public Session() => Request("initialize", new JsonObject { ["capabilities"] = new JsonObject() }).Notify("initialized", new JsonObject());
-
-        public Session Open(string path, string text) => Notify("textDocument/didOpen", new JsonObject
-        {
-            ["textDocument"] = new JsonObject { ["uri"] = new Uri(path).AbsoluteUri, ["languageId"] = "taipan", ["version"] = 1, ["text"] = text },
-        });
-
-        public Session Change(string path, string text) => Notify("textDocument/didChange", new JsonObject
-        {
-            ["textDocument"] = new JsonObject { ["uri"] = new Uri(path).AbsoluteUri, ["version"] = 2 },
-            ["contentChanges"] = new JsonArray(new JsonObject { ["text"] = text }),
-        });
-
-        public Session Close(string path) => Notify("textDocument/didClose", new JsonObject
-        {
-            ["textDocument"] = new JsonObject { ["uri"] = new Uri(path).AbsoluteUri },
-        });
-
-        // A request at the start of `marker` in `text`.
-        public Session Hover(string path, string text, string marker) => Request("textDocument/hover", At(path, text, marker));
-
-        public Session Definition(string path, string text, string marker) => Request("textDocument/definition", At(path, text, marker));
-
-        private static JsonObject At(string path, string text, string marker)
-        {
-            var offset = text.IndexOf(marker, StringComparison.Ordinal);
-            Assert.True(offset >= 0, marker);
-            var before = text[..offset];
-            var line = before.Count(c => c == '\n');
-            return new JsonObject
-            {
-                ["textDocument"] = new JsonObject { ["uri"] = new Uri(path).AbsoluteUri },
-                ["position"] = new JsonObject { ["line"] = line, ["character"] = offset - (before.LastIndexOf('\n') + 1) },
-            };
-        }
-
-        public Session Request(string method, JsonObject parameters)
-        {
-            _messages.Add(new JsonObject { ["jsonrpc"] = "2.0", ["id"] = ++_id, ["method"] = method, ["params"] = parameters });
-            return this;
-        }
-
-        public Session Notify(string method, JsonObject parameters)
-        {
-            _messages.Add(new JsonObject { ["jsonrpc"] = "2.0", ["method"] = method, ["params"] = parameters });
-            return this;
-        }
-
-        public Session Run(bool shutdown = true)
-        {
-            if (shutdown)
-                Request("shutdown", new JsonObject());
-            Notify("exit", new JsonObject());
-            var input = new MemoryStream();
-            foreach (var message in _messages)
-            {
-                var body = Encoding.UTF8.GetBytes(message.ToJsonString());
-                input.Write(Encoding.ASCII.GetBytes($"Content-Length: {body.Length}\r\n\r\n"));
-                input.Write(body);
-            }
-            input.Position = 0;
-            var output = new MemoryStream();
-            ExitCode = new LanguageServer(input, output).Run();
-
-            // Each message is `Content-Length: n`, a blank line, and n bytes of JSON.
-            var bytes = output.ToArray();
-            for (var position = 0; position < bytes.Length;)
-            {
-                var headerEnd = bytes.AsSpan(position).IndexOf("\r\n\r\n"u8) + position;
-                var length = int.Parse(Encoding.ASCII.GetString(bytes, position, headerEnd - position)["Content-Length: ".Length..]);
-                _received.Add(JsonNode.Parse(bytes.AsSpan(headerEnd + 4, length))!.AsObject());
-                position = headerEnd + 4 + length;
-            }
-            return this;
-        }
-
-        /// <summary>The responses to the script's own requests, in order: not initialize's or shutdown's.</summary>
-        public List<JsonObject> Responses() =>
-            [.. _received.Where(m => m["id"] is not null && MethodOf(m["id"]!.GetValue<int>()) is not ("initialize" or "shutdown"))];
-
-        public JsonNode Initialize() => _received.First(m => m["id"]?.GetValue<int>() == 1)["result"]!;
-
-        private string MethodOf(int id) => _messages.First(m => m["id"]?.GetValue<int>() == id)["method"]!.GetValue<string>();
-
-        public List<JsonObject> All(string method) => [.. _received.Where(m => m["method"]?.GetValue<string>() == method).Select(m => m["params"]!.AsObject())];
-
-        public JsonArray Diagnostics(string path) =>
-            All("textDocument/publishDiagnostics").Last(p => new Uri(p["uri"]!.GetValue<string>()).LocalPath == path)["diagnostics"]!.AsArray();
     }
 }
