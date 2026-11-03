@@ -1,0 +1,294 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Taipan",
+  "scopeName": "source.taipan",
+  "fileTypes": [
+    "tpn"
+  ],
+  "patterns": [
+    {
+      "include": "#comment"
+    },
+    {
+      "include": "#code"
+    }
+  ],
+  "repository": {
+    "comment": {
+      "match": "#.*$",
+      "name": "comment.line.number-sign.taipan"
+    },
+    "code": {
+      "patterns": [
+        {
+          "include": "#fstring"
+        },
+        {
+          "include": "#string"
+        },
+        {
+          "include": "#number"
+        },
+        {
+          "include": "#decorator"
+        },
+        {
+          "include": "#definition"
+        },
+        {
+          "include": "#for"
+        },
+        {
+          "include": "#keyword"
+        },
+        {
+          "include": "#builtin"
+        },
+        {
+          "include": "#operator"
+        }
+      ]
+    },
+    "escape": {
+      "match": "\\\\[nt\\\\\\\\\\\"'{}]",
+      "name": "constant.character.escape.taipan"
+    },
+    "string": {
+      "patterns": [
+        {
+          "begin": "\"",
+          "end": "(\")|$",
+          "name": "string.quoted.double.taipan",
+          "patterns": [
+            {
+              "include": "#escape"
+            }
+          ]
+        },
+        {
+          "begin": "'",
+          "end": "(')|$",
+          "name": "string.quoted.single.taipan",
+          "patterns": [
+            {
+              "include": "#escape"
+            }
+          ]
+        }
+      ]
+    },
+    "fstring": {
+      "patterns": [
+        {
+          "begin": "f(\")",
+          "end": "(\")|$",
+          "name": "string.interpolated.taipan",
+          "patterns": [
+            {
+              "include": "#escape"
+            },
+            {
+              "include": "#braces"
+            },
+            {
+              "include": "#hole"
+            }
+          ]
+        },
+        {
+          "begin": "f(')",
+          "end": "(')|$",
+          "name": "string.interpolated.taipan",
+          "patterns": [
+            {
+              "include": "#escape"
+            },
+            {
+              "include": "#braces"
+            },
+            {
+              "include": "#hole"
+            }
+          ]
+        }
+      ]
+    },
+    "braces": {
+      "match": "\\{\\{|\\}\\}",
+      "name": "constant.character.escape.taipan"
+    },
+    "hole": {
+      "begin": "\\{",
+      "end": "\\}",
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.section.interpolation.begin.taipan"
+        }
+      },
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.section.interpolation.end.taipan"
+        }
+      },
+      "name": "meta.interpolation.taipan",
+      "patterns": [
+        {
+          "match": "![rs](?=[:}])",
+          "name": "storage.type.format.taipan"
+        },
+        {
+          "match": ":[^{}()\\[\\]'\\\"]*(?=\\})",
+          "name": "storage.type.format.taipan"
+        },
+        {
+          "include": "#code"
+        }
+      ]
+    },
+    "number": {
+      "patterns": [
+        {
+          "match": "\\b\\d(?:_?\\d)*(?:\\.\\d(?:_?\\d)*(?:[eE][+-]?\\d+)?|[eE][+-]?\\d+)\\b",
+          "name": "constant.numeric.float.taipan"
+        },
+        {
+          "match": "\\b\\d(?:_?\\d)*\\b",
+          "name": "constant.numeric.integer.taipan"
+        }
+      ]
+    },
+    "decorator": {
+      "match": "@[A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)*",
+      "name": "entity.name.function.decorator.taipan"
+    },
+    "definition": {
+      "patterns": [
+        {
+          "match": "\\b(def)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": {
+              "name": "storage.type.function.taipan"
+            },
+            "2": {
+              "name": "entity.name.function.taipan"
+            }
+          }
+        },
+        {
+          "match": "\\b(class|enum)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": {
+              "name": "storage.type.class.taipan"
+            },
+            "2": {
+              "name": "entity.name.type.taipan"
+            }
+          }
+        },
+        {
+          "match": "^\\s*(type)(?=\\s+[A-Za-z_][A-Za-z0-9_]*\\s*[=\\[])",
+          "captures": {
+            "1": {
+              "name": "storage.modifier.declaration.taipan"
+            }
+          }
+        }
+      ]
+    },
+    "for": {
+      "begin": "\\b(for)\\b",
+      "end": "\\b(in)\\b|(?=:)|$",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.control.flow.taipan"
+        }
+      },
+      "endCaptures": {
+        "1": {
+          "name": "keyword.control.flow.taipan"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#code"
+        }
+      ]
+    },
+    "keyword": {
+      "patterns": [
+        {
+          "match": "\\b(True|False|None)\\b",
+          "name": "constant.language.taipan"
+        },
+        {
+          "match": "\\b(if|elif|else|while|match|return|pass|break|continue|try|except|finally|raise|yield)\\b",
+          "name": "keyword.control.flow.taipan"
+        },
+        {
+          "match": "\\b(import|from|as)\\b",
+          "name": "keyword.control.import.taipan"
+        },
+        {
+          "match": "\\b(and|or|not|is|in|some)\\b",
+          "name": "keyword.operator.logical.taipan"
+        },
+        {
+          "match": "\\b(def|lambda)\\b",
+          "name": "storage.type.function.taipan"
+        },
+        {
+          "match": "\\b(class|enum)\\b",
+          "name": "storage.type.class.taipan"
+        },
+        {
+          "match": "\\b(let|var|const)\\b",
+          "name": "storage.modifier.declaration.taipan"
+        },
+        {
+          "match": "\\bdel\\b",
+          "name": "keyword.other.del.taipan"
+        },
+        {
+          "match": "\\b(self|cls)\\b",
+          "name": "variable.language.special.taipan"
+        }
+      ]
+    },
+    "builtin": {
+      "patterns": [
+        {
+          "match": "\\b(print|len|range|repr|hash|sorted|map|filter|enumerate|zip|iter|next|isinstance|super)\\b",
+          "name": "support.function.builtin.taipan"
+        },
+        {
+          "match": "\\b(int|float|str|list)\\b(?=\\s*\\()",
+          "name": "support.function.builtin.taipan"
+        },
+        {
+          "match": "\\b(int|float|str|bool|list|dict|tuple|Iterator|Iterable|Callable)\\b",
+          "name": "support.type.builtin.taipan"
+        }
+      ]
+    },
+    "operator": {
+      "patterns": [
+        {
+          "match": "->",
+          "name": "punctuation.separator.annotation.result.taipan"
+        },
+        {
+          "match": "==|!=|<=|>=|<|>",
+          "name": "keyword.operator.comparison.taipan"
+        },
+        {
+          "match": "\\+=|-=|\\*=|/=|=",
+          "name": "keyword.operator.assignment.taipan"
+        },
+        {
+          "match": "//|\\?\\?|[+\\-*/%]",
+          "name": "keyword.operator.arithmetic.taipan"
+        }
+      ]
+    }
+  }
+}

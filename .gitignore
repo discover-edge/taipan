@@ -481,3 +481,6 @@ $RECYCLE.BIN/
 # Vim temporary swap files
 *.swp
 tests/cases/m21/lib/
+
+# The VS Code extension's packages (SPEC §16.8)
+editors/vscode/*.vsix

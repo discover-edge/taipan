@@ -554,6 +554,8 @@ public sealed partial class Binder
             else
             {
                 field = classSymbol.FindField(argument.Field.Text);
+                if (field is not null)
+                    Index(argument.Field.Span, field);
                 if (field is null)
                 {
                     _diagnostics.ReportNoField(argument.Field.Span, classType, argument.Field.Text);

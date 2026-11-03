@@ -383,11 +383,11 @@ public sealed partial class Binder
                     foreach (var name in from.Names)
                     {
                         if (source.Classes.TryGetValue(name.Name.Text, out var classSymbol))
-                            DeclareGlobal(name.Alias ?? name.Name, classSymbol, isDefinition: false);
+                            DeclareImported(name, classSymbol);
                         else if (source.Enums.TryGetValue(name.Name.Text, out var enumSymbol))
                             ImportEnum(name, enumSymbol);
                         else if (source.Definitions.GetValueOrDefault(name.Name.Text) is TypeAliasSymbol imported)
-                            DeclareGlobal(name.Alias ?? name.Name, imported, isDefinition: false);
+                            DeclareImported(name, imported);
                         else
                             module.PendingImports.Add((source, name));
                     }
@@ -397,9 +397,20 @@ public sealed partial class Binder
         }
     }
 
+    /// <summary>
+    /// Declares an imported name under its alias, if any. With an alias, the name it imports is a
+    /// reference too, so rename and references find it (SPEC §16.6).
+    /// </summary>
+    private bool DeclareImported(ImportName name, Symbol symbol)
+    {
+        if (name.Alias is not null)
+            Index(name.Name.Span, symbol);
+        return DeclareGlobal(name.Alias ?? name.Name, symbol, isDefinition: false);
+    }
+
     private void ImportEnum(ImportName name, EnumSymbol enumSymbol)
     {
-        if (!DeclareGlobal(name.Alias ?? name.Name, enumSymbol, isDefinition: false))
+        if (!DeclareImported(name, enumSymbol))
             return;
         foreach (var variant in enumSymbol.Variants)
             DeclareVariant(variant, name.Span, isDefinition: false);
@@ -408,7 +419,7 @@ public sealed partial class Binder
     private void ImportValue(Module target, ImportName name)
     {
         if (target.Definitions.TryGetValue(name.Name.Text, out var symbol) && symbol is FunctionSymbol or VariableSymbol or VariantSymbol)
-            DeclareGlobal(name.Alias ?? name.Name, symbol, isDefinition: false);
+            DeclareImported(name, symbol);
         else
             _diagnostics.ReportNoDefinition(name.Name.Span, target.File.Name, name.Name.Text);
     }
@@ -1518,6 +1529,7 @@ public sealed partial class Binder
             _diagnostics.ReportTopLevelVariableInFunction(span, _function!.Name, name);
         else
             _diagnostics.ReportUndefinedName(span, name);
+        Unresolved(span, inType: false);
         return null;
     }
 
@@ -1525,15 +1537,17 @@ public sealed partial class Binder
     {
         switch (type)
         {
-            case NamedType { Name.Text: "int" }:
-                return TaipanType.Int;
-            case NamedType { Name.Text: "float" }:
-                return TaipanType.Float;
-            case NamedType { Name.Text: "bool" }:
-                return TaipanType.Bool;
-            case NamedType { Name.Text: "str" }:
-                return TaipanType.Str;
+            case NamedType { Name.Text: "int" or "float" or "bool" or "str" } primitive:
+                Index(primitive.Name.Span, new SemanticIndex.BuiltinType(primitive.Name.Text));
+                return primitive.Name.Text switch
+                {
+                    "int" => TaipanType.Int,
+                    "float" => TaipanType.Float,
+                    "bool" => TaipanType.Bool,
+                    _ => TaipanType.Str,
+                };
             case NamedType { Name.Text: "py" } py:
+                Index(py.Name.Span, new SemanticIndex.BuiltinType("py"));
                 if (_asNative)
                     _diagnostics.ReportNativePython(py.Span, _asExtension);
                 return TaipanType.Py;
@@ -1541,15 +1555,19 @@ public sealed partial class Binder
                 _diagnostics.ReportBareCallable(bare.Span);
                 return TaipanType.Error;
             case TupleType tuple:
+                IndexBuiltinType(tuple.Span, "tuple");
                 var elements = tuple.Elements.Select(BindType).ToImmutableArray();
                 if (elements.Length >= 2)
                     return new TupleOfType(elements);
                 _diagnostics.ReportTupleTooShort(tuple.Span);
                 return TaipanType.Error;
             case CallableType callable:
+                IndexBuiltinType(callable.Span, "Callable");
                 return new FunctionType(
                     [.. callable.Parameters.Select(BindType)], callable.Result is null ? TaipanType.Nothing : BindType(callable.Result));
             case NamedType named when _typeParameters.TryGetValue(named.Name.Text, out var typeParameter):
+                if (typeParameter is TypeParameterType { Symbol: var parameterSymbol })
+                    Index(named.Name.Span, parameterSymbol);
                 return typeParameter;
             case NamedType named when _global.Lookup(named.Name.Text) is TypeAliasSymbol alias:
                 Index(named.Name.Span, alias);
@@ -1574,6 +1592,7 @@ public sealed partial class Binder
                     _diagnostics.ReportWrongTypeArgumentCount(stream.Span, stream.Name.Text, 1, stream.Arguments.Length);
                     return TaipanType.Error;
                 }
+                Index(stream.Name.Span, new SemanticIndex.BuiltinType(stream.Name.Text));
                 return stream.Name.Text == "Iterator" ? new IteratorOfType(BindType(element)) : new IterableOfType(BindType(element));
             case GenericType generic:
                 return BindGenericType(generic.Name, generic.Arguments, generic.Span, ResolveTypeName(generic.Name.Text));
@@ -1581,10 +1600,13 @@ public sealed partial class Binder
                 return BindQualifiedType(qualified);
             case NamedType named:
                 _diagnostics.ReportUndefinedType(named.Span, named.Name.Text);
+                Unresolved(named.Name.Span, inType: true);
                 return TaipanType.Error;
             case ListType list:
+                IndexBuiltinType(list.Span, "list");
                 return new ListOfType(BindType(list.Element));
             case DictType dict:
+                IndexBuiltinType(dict.Span, "dict");
                 var key = BindType(dict.Key);
                 CheckDictKey(dict.Key.Span, key);
                 return new DictOfType(key, BindType(dict.Value));
@@ -1602,6 +1624,13 @@ public sealed partial class Binder
             default:
                 return TaipanType.Error;
         }
+    }
+
+    // `list[…]`, `dict[…]`, `tuple[…]` and `Callable[…]` start with their name (SPEC §16.7).
+    private void IndexBuiltinType(TextSpan span, string name)
+    {
+        if (span.Length >= name.Length && _source.ToString(new TextSpan(span.Start, name.Length)) == name)
+            Index(new TextSpan(span.Start, name.Length), new SemanticIndex.BuiltinType(name));
     }
 
     /// <summary>A class or enum visible in this file, defined or imported (SPEC §4.7).</summary>
@@ -1630,6 +1659,7 @@ public sealed partial class Binder
             return TaipanType.Error;
         }
         Index(qualified.Module.Span, module);
+        RecordReceiver(name.Span, module);
         if (module.Definitions.GetValueOrDefault(name.Text) is TypeAliasSymbol alias)
         {
             Index(name.Span, alias);
@@ -3292,14 +3322,19 @@ public sealed partial class Binder
         if (TryModuleMember(member, out var definition))
             return BindSymbolValue(definition, member.Member.Text, member.Span, expected);
         if (DotNetTypeNamed(member.Target) is { } owner)
+        {
+            RecordReceiver(member.Member.Span, owner);
             return BindDotNetMember(null, owner, member);
+        }
         // A class attribute through a class or cls (SPEC §4.8).
-        if (ClassNamed(member.Target) is { } named)
+        if ((ClassNamed(member.Target) ?? (IsCls(member.Target) ? _outerFunction!.Owner! : null)) is { } named)
+        {
+            RecordReceiver(member.Member.Span, named);
             return BindClassMember(member, named);
-        if (IsCls(member.Target))
-            return BindClassMember(member, _outerFunction!.Owner!);
+        }
 
         var target = BindValue(member.Target);
+        RecordReceiver(member.Member.Span, target.Type);
         var name = member.Member.Text;
         if (target.Type.ContainsError || ReportIfOptional(target, member.Target.Span))
             return new BoundErrorExpr(member.Span);
@@ -3991,6 +4026,8 @@ public sealed partial class Binder
             {
                 var name = argument.Name!;
                 var field = fields.FirstOrDefault(f => f.Name == name.Text);
+                if (field is not null)
+                    Index(name.Span, field);
                 if (field is null)
                 {
                     _diagnostics.ReportNoField(name.Span, owner, name.Text);
@@ -4029,6 +4066,7 @@ public sealed partial class Binder
         if (member.Target is not NameExpr moduleName || _scope.Lookup(moduleName.Name) is not ModuleSymbol module)
             return false;
         Index(moduleName.Span, module);
+        RecordReceiver(member.Member.Span, module);
         if (!module.Definitions.TryGetValue(member.Member.Text, out symbol))
             _diagnostics.ReportNoDefinition(member.Member.Span, module.Name, member.Member.Text);
         else
@@ -4053,6 +4091,7 @@ public sealed partial class Binder
             return false;
         if (member.Target is NameExpr enumReference)
             Index(enumReference.Span, enumSymbol);
+        RecordReceiver(member.Member.Span, enumSymbol);
         variant = enumSymbol.FindVariant(member.Member.Text);
         if (variant is null)
             _diagnostics.ReportNoVariant(member.Member.Span, enumSymbol.Type, member.Member.Text);

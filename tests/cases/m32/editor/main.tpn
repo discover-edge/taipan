@@ -1,0 +1,17 @@
+# Completion, signature help, references and rename (SPEC §16.4–§16.7).
+import geometry
+from geometry import Point, Square, scale
+from report import describe
+
+def total(shapes: list[geometry.Shape]) -> float:
+    var sum = 0.0
+    for shape in shapes:
+        sum += shape.area()
+    return sum
+
+let corner = Point(1.0, y=2.0)
+let moved = scale(corner, 2.0)
+print(describe(moved), moved.x, geometry.UNITS)
+print(total([Square(2.0), geometry.Shape.unit()]), geometry.Shape.sides)
+match corner:
+    Point(x=across): print("across", across)

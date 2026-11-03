@@ -146,7 +146,8 @@ $ cd out && python3 -c "import geometry; print(geometry.area(2.0))"
 12.56636
 ```
 
-- **Language server:** `taipan lsp` speaks the Language Server Protocol over stdin and stdout, for diagnostics as you type, the type of a name on hover, and go to definition across modules. Point any LSP client at it for `.tpn` files. In Neovim:
+- **Language server:** `taipan lsp` speaks the Language Server Protocol over stdin and stdout, for diagnostics as you type, the type of a name on hover, go to definition, completion, signature help, find references, rename across modules (refusing a rename that would break the program), and semantic highlighting.
+- **VS Code:** `editors/vscode` is an extension with a TextMate grammar that starts `taipan lsp`. Build it with `npm ci && npx vsce package` there, and install the `.vsix` with *Extensions: Install from VSIX…*. Any other LSP client works too. In Neovim:
 
 ```lua
 vim.filetype.add({ extension = { tpn = "taipan" } })
