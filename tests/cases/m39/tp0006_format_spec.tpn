@@ -1,0 +1,13 @@
+# Since M39 the type checker checks specs, since a class with __format__ takes any (SPEC §4.9).
+class Plain:
+    pass
+
+class Formatted:
+    def __format__(self, spec: str) -> str:
+        return spec
+
+let n = 3
+print(f"{n:10.2q}")
+print(f"{n:n}")
+print(f"{Formatted():10.2q}")
+print(f"{Plain():10.2q}")

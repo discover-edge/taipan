@@ -49,6 +49,7 @@ public static class AstPrinter
             .Where(p => p.PropertyType != typeof(TextSpan))
             .Where(p => !(p.Name == "Decorators" && p.GetValue(node) is ImmutableArray<Decorator> { IsEmpty: true }))
             .Where(p => !(p.Name == "Member" && node is Decorator { Member: null }))
+            .Where(p => !(p.Name == "Arguments" && node is Decorator { Arguments: null }))
             .Where(p => !(p.Name == "Receiver" && node is MethodDef { Receiver: Receiver.Self }))
             .Where(p => !(p.Name == "Block" && node is ValueArm { Block: null }))
             .Where(p => !(p.Name == "Guard" && node is MatchArm { Guard: null } or ValueArm { Guard: null }))

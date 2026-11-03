@@ -30,8 +30,8 @@ class Wrong:
     def __bool__(self) -> bool:
         return True
 
-    def __len__(self) -> int:
-        return 0
+    def __delitem__(self, key: int) -> None:
+        pass
 
 # A subclass of a hashable class must stay hashable.
 class Key:

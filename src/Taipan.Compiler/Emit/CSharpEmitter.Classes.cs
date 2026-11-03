@@ -15,6 +15,29 @@ public sealed partial class CSharpEmitter
     // The class method being emitted, whose cls is the class object, `this`.
     private VariableSymbol? _cls;
 
+    // The class whose members are being emitted, which Self stands for in their signatures (M39).
+    private ClassType? _selfClass;
+
+    /// <summary>
+    /// A call of a method returning <c>Self</c> (SPEC §8, M39): C# gives the declaring class, so a
+    /// receiver of a derived class casts the result to it.
+    /// </summary>
+    private string SelfCast(BoundExpr expr, string text)
+    {
+        var method = expr switch
+        {
+            BoundMethodCall call => call.Method,
+            BoundClassMethodCall call => call.Method,
+            BoundPropertyGet get => get.Property,
+            BoundSuperCall call => call.Method,
+            _ => null,
+        };
+        if (method?.Owner is not { } owner || !TypeChecker.MentionsSelf(method.ReturnType))
+            return text;
+        var declared = TypeChecker.SubstituteSelf(method.ReturnType, owner.Type);
+        return Concrete(expr.Type) is var actual && actual != Concrete(declared) ? $"(({TypeName(actual)}){text})" : text;
+    }
+
     /// <summary>A method's C# name: a property's getter and setter are methods beside each other.</summary>
     private static string MethodName(FunctionSymbol method) => method switch
     {
@@ -41,6 +64,9 @@ public sealed partial class CSharpEmitter
 
     private string ClassObjectType(ClassSymbol symbol) => $"{TypePath(symbol)}.@__Class";
 
+    /// <summary>Where a class's attributes are: the class itself, or for a generic class a holder its instantiations share (M39).</summary>
+    private string AttributeOwner(ClassSymbol owner) => owner.TypeParameters.IsEmpty ? TypePath(owner) : InstancePath($"{_names[owner]}__ClassVars");
+
     /// <summary>
     /// The explicit <c>IClass</c> implementations for the special methods a class defines (SPEC §8):
     /// display, equality, ordering, hashing and reflected arithmetic, each testing its parameter's
@@ -66,6 +92,17 @@ public sealed partial class CSharpEmitter
             EmitHook(type, "TryCompare(int op, object other, out bool result)",
                 [.. comparisons.Select((name, op) => (name, (int?)op)).Where(c => symbol.FindMethod(c.name) is not null)], "result = false;");
 
+        if (!own.ContainsKey("__hash__") && symbol.IsFrozen && !own.ContainsKey("__eq__") && symbol.IsHashable)
+        {
+            // A frozen dataclass hashes its fields, as Python's does (SPEC §4.9, M39).
+            Line($"bool {ClassInterface}.TryHash(out long hash)");
+            Line("{");
+            Line($"    hash = {Runtime}.Ops.HashFields(this);");
+            Line("    return true;");
+            Line("}");
+            Line($"public override bool Equals(object? other) => {Runtime}.Equality.KeyEqual(this, other);");
+            Line($"public override int GetHashCode() => {Runtime}.Ops.HashFields(this).GetHashCode();");
+        }
         if (own.ContainsKey("__hash__"))
         {
             Line($"bool {ClassInterface}.TryHash(out long hash)");
@@ -103,6 +140,9 @@ public sealed partial class CSharpEmitter
             var parameter = TypeName(TypeChecker.Substitute(method.Parameters[0].Type, TypeChecker.MapOf(type)));
             var that = $"@{name.Trim('_')}_other";
             var condition = op is { } code ? $"op == {code} && other is {parameter} {that}" : $"other is {parameter} {that}";
+            // order=True's methods apply only to the same runtime class, as Python's do (SPEC §4.9).
+            if (method.Generated == "order")
+                condition += $" && {that}.GetType() == GetType()";
             Line($"if ({condition})");
             Line("{");
             Line($"    result = this.@{name}({that});");
@@ -115,9 +155,42 @@ public sealed partial class CSharpEmitter
         Line("}");
     }
 
-    /// <summary>A class's attributes, as static properties of the class that declares them (SPEC §8).</summary>
-    private void EmitClassAttributes(ClassSymbol symbol)
+    /// <summary>
+    /// A comparison <c>order=True</c> or <c>@total_ordering</c> generates (SPEC §4.9): the fields
+    /// compared as a tuple, or Python's formula over the method it derives from and <c>==</c>.
+    /// </summary>
+    private void EmitGeneratedComparison(FunctionSymbol method, ClassType type)
     {
+        var parameter = TypeName(TypeChecker.Substitute(method.Parameters[0].Type, TypeChecker.MapOf(type)));
+        var op = method.Name switch { "__lt__" => "Lt", "__le__" => "Le", "__gt__" => "Gt", _ => "Ge" };
+        string body;
+        if (method.Generated == "order")
+        {
+            body = $"{Runtime}.Ops.OrderFields(this, @other, {ClassInterface}.{op})";
+        }
+        else
+        {
+            var root = $"this.@{method.Generated}(@other)";
+            var equal = $"{Runtime}.Equality.Equal(this, @other)";
+            body = (method.Generated, method.Name) switch
+            {
+                ("__lt__", "__le__") or ("__gt__", "__ge__") => $"{root} || {equal}",
+                ("__lt__", "__gt__") or ("__gt__", "__lt__") => $"!{root} && !{equal}",
+                ("__le__", "__lt__") or ("__ge__", "__gt__") => $"{root} && !{equal}",
+                ("__le__", "__ge__") or ("__ge__", "__le__") => $"!{root} || {equal}",
+                _ => $"!{root}",
+            };
+        }
+        Line();
+        Line($"public {(type.Symbol.HasSubclasses ? "virtual " : "")}bool @{method.Name}({parameter} @other) => {body};");
+    }
+
+    /// <summary>A class's attributes, as static properties of the class that declares them (SPEC §8).</summary>
+    private void EmitClassAttributes(ClassSymbol symbol, bool holder = false)
+    {
+        // A generic class's attributes are shared by its instantiations, in a holder of their own (SPEC §8, M39).
+        if (!symbol.TypeParameters.IsEmpty && !holder)
+            return;
         foreach (var attribute in symbol.ClassAttributes)
         {
             var value = attribute.Value!;
@@ -159,7 +232,8 @@ public sealed partial class CSharpEmitter
         while (root.Base is { } up && HasClassObject(up))
             root = up;
         var modifier = inherited ? "override " : symbol.HasSubclasses ? "virtual " : "";
-        Line($"{HelperAccess} {modifier}{ClassObjectType(root)} @__classobj => @__class;");
+        // A generic class has no base, so its own nested class object is the root (M39).
+        Line($"{HelperAccess} {modifier}{(symbol.TypeParameters.IsEmpty ? ClassObjectType(root) : "@__Class")} @__classobj => @__class;");
     }
 
     /// <summary>
@@ -205,7 +279,9 @@ public sealed partial class CSharpEmitter
     /// </summary>
     private string ClassMethodCall(BoundClassMethodCall call)
     {
-        var classObject = ClassObjectType(call.Through);
+        // A generic class's instantiation has its own class object (SPEC §8, M39).
+        var classPath = call.ThroughType is { TypeArguments.IsEmpty: false } instantiation ? TypeName(instantiation) : TypePath(call.Through);
+        var classObject = $"{classPath}.@__Class";
         string receiver;
         string? evaluated = null;
         if (call.ViaCls)
@@ -221,7 +297,7 @@ public sealed partial class CSharpEmitter
         }
         else
         {
-            receiver = $"{TypePath(call.Through)}.@__class";
+            receiver = $"{classPath}.@__class";
         }
         var invocation = $"{receiver}.@{call.Method.Name}({ShapedArguments(call.Arguments, call.Shape,
             p => $"@{call.Method.Parameters[p].Name}", p => $"{receiver}.@{MethodDefaultName(call.Method, p)}()")})";
@@ -252,7 +328,7 @@ public sealed partial class CSharpEmitter
     /// <summary>A class attribute: a static property of its class, after evaluating any instance it's reached through.</summary>
     private string ClassAttribute(BoundClassAttribute attribute)
     {
-        var value = $"{TypePath(attribute.Attribute.Owner)}.@{attribute.Attribute.Name}";
+        var value = $"{AttributeOwner(attribute.Attribute.Owner)}.@{attribute.Attribute.Name}";
         return attribute.Instance is { } instance && !IsSimple(instance) ? $"{Runtime}.Ops.After({Expr(instance)}, {value})" : value;
     }
 

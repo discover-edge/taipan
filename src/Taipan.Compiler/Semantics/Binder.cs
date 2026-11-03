@@ -216,6 +216,7 @@ public sealed partial class Binder
             Enter(module);
             BindDeclarations(module);
         }
+        GenerateMethods(modules);
         _membersDeclared = true;
         foreach (var (module, span, key, isSet) in _pendingKeys)
         {
@@ -673,10 +674,14 @@ public sealed partial class Binder
                 _classes[protocol.Name] = protocol;
             return protocol;
         }
-        var isDataclass = CheckDecorators(classDef.Decorators, "dataclass");
-        var symbol = new ClassSymbol(classDef.Name.Text, NewTypeParameters(classDef.TypeParams), isDataclass)
+        var marks = CheckClassDecorators(classDef.Decorators);
+        var symbol = new ClassSymbol(classDef.Name.Text, NewTypeParameters(classDef.TypeParams), marks.Contains("dataclass"))
         {
             Module = _module == _mainModule ? null : _module?.File.Name,
+            IsFrozen = marks.Contains("frozen"),
+            IsOrdered = marks.Contains("order"),
+            IsFinal = marks.Contains("final"),
+            TotalOrdering = marks.Contains("total_ordering"),
         };
         if (BuiltinTypeNames.Contains(symbol.Name))
             _diagnostics.ReportDuplicateDefinition(classDef.Name.Span, symbol.Name);
@@ -696,7 +701,9 @@ public sealed partial class Binder
         foreach (var decorator in decorators)
         {
             var name = decorator.Member is { } member ? $"{decorator.Name.Text}.{member.Text}" : decorator.Name.Text;
-            if (!seen.Add(name))
+            if (decorator.Arguments is not null)
+                _diagnostics.ReportDecoratorArguments(decorator.Span, name);
+            else if (!seen.Add(name))
                 _diagnostics.ReportDuplicateDecorator(decorator.Span, name);
             else if (name is not ("dataclass" or "override") && !MethodDecorators.Contains(name))
                 _diagnostics.ReportUnknownDecorator(decorator.Span, name);
@@ -711,6 +718,49 @@ public sealed partial class Binder
                 found = true;
         }
         return found;
+    }
+
+    /// <summary>
+    /// A class's decorators (SPEC §4.9): <c>@dataclass</c>, with <c>frozen</c> and <c>order</c> as
+    /// literal booleans, <c>@final</c> and <c>@total_ordering</c>. Returns those in effect, with
+    /// <c>frozen</c> and <c>order</c> when they're True. Anything else is TP0224.
+    /// </summary>
+    private HashSet<string> CheckClassDecorators(ImmutableArray<Decorator> decorators)
+    {
+        var marks = new HashSet<string>();
+        foreach (var decorator in decorators)
+        {
+            var name = decorator.Member is { } member ? $"{decorator.Name.Text}.{member.Text}" : decorator.Name.Text;
+            if (marks.Contains(name))
+                _diagnostics.ReportDuplicateDecorator(decorator.Span, name);
+            else if (name is not ("dataclass" or "final" or "total_ordering"))
+            {
+                if (name == "override")
+                    _diagnostics.ReportMisplacedDecorator(decorator.Span, name);
+                else if (MethodDecorators.Contains(name))
+                    _diagnostics.ReportMisplacedDecorator(decorator.Span, name, $"'@{name}' goes on a method");
+                else
+                    _diagnostics.ReportUnknownDecorator(decorator.Span, name);
+            }
+            else if (decorator.Arguments is { } arguments && (name != "dataclass"
+                || arguments.Any(a => a.Name?.Text is not ("frozen" or "order") || a.Value is not BoolLiteral)
+                || arguments.DistinctBy(a => a.Name!.Text).Count() != arguments.Length))
+            {
+                _diagnostics.ReportDecoratorArguments(decorator.Span, name);
+                // Still a dataclass, so its fields aren't also reported.
+                marks.Add(name);
+            }
+            else
+            {
+                marks.Add(name);
+                foreach (var argument in decorator.Arguments ?? [])
+                {
+                    if (argument.Value is BoolLiteral { Value: true })
+                        marks.Add(argument.Name!.Text);
+                }
+            }
+        }
+        return marks;
     }
 
     private static bool IsProtocolMarker(TypeSyntax type) => type is NamedType { Name.Text: "Protocol" };
@@ -787,6 +837,13 @@ public sealed partial class Binder
                 return;
             case ClassType { Symbol: var baseClass } when baseClass.IsDataclass != symbol.IsDataclass:
                 _diagnostics.ReportMixedBase(syntax.Span, symbol.IsDataclass, BuiltinClasses.IsException(baseClass));
+                return;
+            // M39 (SPEC §4.9): a final class has no subclasses, and frozen dataclasses derive only from frozen ones.
+            case ClassType { Symbol.IsFinal: true } finalBase:
+                _diagnostics.ReportFinalBase(syntax.Span, finalBase.Symbol.Name);
+                return;
+            case ClassType { Symbol: var baseClass } when baseClass.IsFrozen != symbol.IsFrozen:
+                _diagnostics.ReportFrozenBase(syntax.Span, symbol.IsFrozen);
                 return;
             case ClassType { Symbol: var baseClass }:
                 symbol.Base = baseClass;
@@ -1246,7 +1303,9 @@ public sealed partial class Binder
                     _diagnostics.ReportNothingToOverride(syntax.Name.Span, method.Name, baseClass?.Name);
                 continue;
             }
-            if (!method.IsMarkedOverride)
+            if (overridden.IsFinal)
+                _diagnostics.ReportFinalOverride(syntax.Name.Span, overridden.Owner!.Name, method.Name);
+            else if (!method.IsMarkedOverride)
                 _diagnostics.ReportMissingOverride(syntax.Name.Span, method.Name, overridden.Owner!.Name);
             else if (overridden.Kind != method.Kind)
                 _diagnostics.ReportMemberKind(syntax.Name.Span, method.Name, KindName(overridden.Kind), overridden.Owner!.Name);
@@ -1305,6 +1364,9 @@ public sealed partial class Binder
         var (result, expectedResult) = (method.ReturnType, overridden.ReturnType);
         var span = syntax.ReturnType?.Span ?? syntax.Name.Span;
         static bool IsClass(TaipanType type) => TypeChecker.Unwrap(type) is ClassType;
+        // An override may narrow a class result to Self, but must keep a Self result (SPEC §4.9).
+        if (result is SelfType && IsClass(expectedResult))
+            result = expectedResult;
         if (expectedResult is NothingType)
         {
             if (result is not NothingType)
@@ -1804,7 +1866,9 @@ public sealed partial class Binder
         if (isSet)
             _diagnostics.ReportInvalidSetElement(span, key);
         else if (Unhashable(key) is { } unhashable)
-            _diagnostics.ReportUnhashableKey(span, unhashable, unhashable.Symbol.IsDataclass ? null : EqualityDefiner(unhashable.Symbol));
+            _diagnostics.ReportUnhashableKey(span, unhashable, unhashable.Symbol.IsDataclass ? null : EqualityDefiner(unhashable.Symbol),
+                // A frozen dataclass is hashable when its fields are (SPEC §4.9).
+                unhashable.Symbol.IsFrozen && unhashable.Symbol.UnhashableField is { } field ? $"'{field.Name}' is {field.Type}, which isn't hashable" : null);
         else
             _diagnostics.ReportInvalidDictKey(span, key, isDataclass: false);
     }
@@ -1983,6 +2047,16 @@ public sealed partial class Binder
             return OrphanAssign(assign, preset);
         }
 
+        // A let can't be rebound, but an in-place method that gives it back may change it (SPEC §4.9, M39).
+        if (variable.Kind == VariableKind.Let && assign.Op != AssignOp.Assign && preset is null && variable.Type is ClassType
+            && SpecialMethods.InPlace(assign.Op) is { } inPlace && SpecialMethods.Method(variable.Type, inPlace) is var (_, _, inPlaceResult)
+            && inPlaceResult == variable.Type)
+        {
+            var current = new BoundVariable(variable, target.Span);
+            if (BindInPlace(current, assign.Op, BindValue(assign.Value), assign.Span) is { } call)
+                return new BoundExprStmt(new BoundInPlaceCheck(current, call, OpText(assign.Op), assign.Span), assign.Span);
+        }
+
         if (variable.Kind != VariableKind.Var)
         {
             var (what, help) = variable.Kind switch
@@ -2027,6 +2101,9 @@ public sealed partial class Binder
             if (classSymbol.FindField(member.Member.Text) is { } field)
             {
                 Index(member.Member.Span, field);
+                // A frozen dataclass's fields are set only by its constructor (SPEC §4.9, M39).
+                if (classSymbol.IsFrozen)
+                    _diagnostics.ReportFrozenAssign(member.Member.Span, field.Name, classSymbol.Name);
                 var fieldType = FieldType(target.Type, field);
                 var value = BindAssignedValue(assign, NarrowedField(new BoundFieldAccess(target, field, fieldType, member.Span)), fieldType, preset);
                 EndPathsThrough(field, assign.Span);
@@ -2058,6 +2135,22 @@ public sealed partial class Binder
         {
             _diagnostics.ReportCannotAssignStrElement(indexExpr.Span);
             return OrphanAssign(assign, preset);
+        }
+
+        // x[k] = v through __setitem__, and x[k] op= v through __getitem__ too (SPEC §4.9, M39).
+        if (target.Type is ClassType && SpecialMethods.Method(target.Type, "__setitem__") is { } setter
+            && (assign.Op == AssignOp.Assign || SpecialMethods.Method(target.Type, "__getitem__") is not null))
+        {
+            var (_, keyType, _) = setter;
+            var valueType = TypeChecker.Substitute(setter.Method.Parameters[1].Type, TypeChecker.MapOf(target.Type));
+            if (assign.Op == AssignOp.Assign)
+            {
+                var key = BindExpected(indexExpr.Index, keyType!);
+                return new BoundClassIndexAssign(target, key, BindAssignedValue(assign, new BoundErrorExpr(indexExpr.Span), valueType, preset), false, assign.Span);
+            }
+            var current = (BoundMethodCall)BindIndexOf(target, indexExpr);
+            var stored = BindAssignedValue(assign, current, valueType, preset);
+            return new BoundClassIndexAssign(target, current.Arguments[0], stored, true, assign.Span);
         }
 
         var read = BindIndexOf(target, indexExpr);
@@ -2092,7 +2185,9 @@ public sealed partial class Binder
             return BindExpected(assign.Value, targetType);
 
         var operand = BindValue(assign.Value);
-        var value = BindBinaryOperation(current, TypeChecker.ToBinaryOp(assign.Op), operand, assign.Span);
+        // A class's in-place method runs first, as in Python (SPEC §4.9, M39).
+        BoundExpr value = BindInPlace(current, assign.Op, operand, assign.Span)
+            ?? BindBinaryOperation(current, TypeChecker.ToBinaryOp(assign.Op), operand, assign.Span);
         CheckAssignable(value, targetType, assign.Value.Span);
         return value;
     }
@@ -2111,6 +2206,10 @@ public sealed partial class Binder
         else if (LeavesMatchExpression(isReturn: true))
             _diagnostics.ReportLeavesMatchExpression(new TextSpan(ret.Span.Start, "return".Length), "return");
         var returnType = TypeChecker.Substitute(_function.BodyResult, _specialization);
+        // In the body, Self is the class, but only Self values are one (SPEC §4.9, M39).
+        var returnsSelf = returnType is SelfType or OptionalOf { Inner: SelfType };
+        if (_function.Owner is { } owner && TypeChecker.MentionsSelf(returnType))
+            returnType = TypeChecker.SubstituteSelf(returnType, owner.Type);
         // A generator's return only ends it (SPEC §3.13).
         if (_function.IsGenerator && !_function.IsAsync)
         {
@@ -2131,7 +2230,10 @@ public sealed partial class Binder
             _diagnostics.ReportUnexpectedReturnValue(ret.Value.Span, _function.Name);
             return new BoundReturn(value, ret.Span);
         }
-        return new BoundReturn(BindExpected(ret.Value, returnType), ret.Span);
+        var returned = BindExpected(ret.Value, returnType);
+        if (returnsSelf && !returned.Type.ContainsError && returned.Type is not NoneType && !IsSelfValued(returned))
+            _diagnostics.ReportExpectedSelf(ret.Value.Span, returned.Type);
+        return new BoundReturn(returned, ret.Span);
     }
 
     private BoundBreak BindBreak(BreakStmt brk)
@@ -2614,6 +2716,9 @@ public sealed partial class Binder
     /// </summary>
     private static BoundExpr Convert(BoundExpr value, TaipanType expected)
     {
+        // An object with __call__ where a function is expected (SPEC §4.9, M39).
+        if (TypeChecker.Unwrap(expected) is FunctionType && value.Type is ClassType && TypeChecker.IsAssignable(value.Type, expected))
+            value = AsFunctionValue(value);
         if (expected == TaipanType.Py && value.Type != TaipanType.Py && !value.Type.ContainsError && value.Type.IsConvertibleToPython)
             return new BoundToPy(value, value.Span);
         // A list, dict, str or class used as an iterable or iterator is wrapped (SPEC §3.13, §8).
@@ -2849,7 +2954,7 @@ public sealed partial class Binder
             return (bound, bound is BoundLambda { FunctionType.Result: var lambdaResult } ? lambdaResult : TaipanType.Error);
         }
 
-        var value = BindValue(expr);
+        var value = AsFunctionValue(BindValue(expr));
         if (value.Type.ContainsError)
             return (value, TaipanType.Error);
         if (value.Type is FunctionType function && function.Parameters.SequenceEqual(parameters)
@@ -2971,6 +3076,16 @@ public sealed partial class Binder
     /// <summary>A hole's value, converted and formatted as its spec says, which is checked against the value's type (SPEC §6).</summary>
     private BoundExpr BindHole(FStringHoleSegment hole, BoundExpr value, char? conversion)
     {
+        // A class with __format__ formats itself, with any spec (SPEC §4.9, M39).
+        var formatsItself = conversion is null && value.Type is ClassType && SpecialMethods.Method(value.Type, "__format__") is not null;
+        if (formatsItself)
+            return SpecialCall(value, "__format__", [new BoundLiteral(hole.Spec ?? "", TaipanType.Str, hole.Span)], hole.Span);
+        // A spec outside the mini-language, or with the locale's `n` (SPEC §6).
+        if (hole.Spec is { } raw && !raw.Contains('{') && Taipan.Runtime.FormatSpec.Parse(raw) is not { Type: not 'n' })
+        {
+            _diagnostics.ReportInvalidFormatSpec(hole.SpecSpan.Length == 0 ? new TextSpan(hole.SpecSpan.Start - 1, 1) : hole.SpecSpan, raw);
+            return new BoundFormat(value, conversion, null, null, hole.Span);
+        }
         if (conversion is null && hole.Spec is null)
             return value;
         // A spec the lexer rejected (TP0006) isn't checked again.
@@ -3100,7 +3215,12 @@ public sealed partial class Binder
             && (ReportIfOptional(left, left.Span) | ReportIfOptional(right, right.Span)))
             return new BoundBinary(left, op, right, TaipanType.Error, span);
 
-        // `x in c` takes values from a class through its __iter__ or __next__ (SPEC §3.13).
+        // `x in c` calls the class's __contains__ (SPEC §4.9, M39), or else takes values through its __iter__ or __next__ (SPEC §3.13).
+        if (op is BinaryOp.In or BinaryOp.NotIn && right.Type is ClassType && SpecialMethods.Method(right.Type, "__contains__") is var (_, item, _))
+        {
+            CheckAssignable(left, item!, left.Span);
+            return new BoundBinary(Convert(left, item!), op, right, TaipanType.Bool, span);
+        }
         if (op is BinaryOp.In or BinaryOp.NotIn && right.Type is ClassType && TypeChecker.ElementOf(right.Type) is { } element)
             right = Convert(right, new IterableOfType(element));
         // An operator on a .NET value calls its type's operator (SPEC §13.10).
@@ -3456,11 +3576,16 @@ public sealed partial class Binder
             RecordReceiver(member.Member.Span, owner);
             return BindDotNetMember(null, owner, member);
         }
-        // A class attribute through a class or cls (SPEC §4.8).
+        // A class attribute, or a static or class method as a value, through a class or cls (SPEC §4.8, §4.9).
+        if (GenericClassReceiver(member.Target) is { } instantiation)
+        {
+            RecordReceiver(member.Member.Span, instantiation.Symbol);
+            return BindClassMember(member, instantiation.Symbol, instantiation);
+        }
         if ((ClassNamed(member.Target) ?? (IsCls(member.Target) ? _outerFunction!.Owner! : null)) is { } named)
         {
             RecordReceiver(member.Member.Span, named);
-            return BindClassMember(member, named);
+            return BindClassMember(member, named, viaCls: IsCls(member.Target));
         }
 
         var target = BindValue(member.Target);
@@ -3482,6 +3607,9 @@ public sealed partial class Binder
                 Index(member.Member.Span, field);
                 return NarrowedField(new BoundFieldAccess(target, field, FieldType(target.Type, field), member.Span));
             }
+            // A static or class method through an instance, as a value (SPEC §4.9).
+            if (classSymbol.FindMethod(name) is { IsClassLevel: true } classLevel)
+                return BindClassMethodValue(member, classSymbol, target, viaCls: false, classLevel, null);
             if (BindInstanceMember(target, classSymbol, member) is { } instanceMember)
                 return instanceMember is BoundClassAttribute attribute ? NarrowedAttribute(attribute) : instanceMember;
             if (name == "__init__")
@@ -3529,6 +3657,9 @@ public sealed partial class Binder
                 return new BoundIndex(target, BindExpected(indexExpr.Index, TaipanType.Int), TaipanType.Str, indexExpr.Span);
             case DotNetType net:
                 return BindDotNetIndex(target, net.Symbol, indexExpr);
+            // A class with __getitem__ (SPEC §4.9, M39).
+            case ClassType when SpecialMethods.Method(target.Type, "__getitem__") is var (_, key, _):
+                return SpecialCall(target, "__getitem__", [BindExpected(indexExpr.Index, key!)], indexExpr.Span);
             // An iterator's values aren't there until they're taken (SPEC §3.13).
             case IteratorOfType or IterableOfType:
                 BindValue(indexExpr.Index);
@@ -3558,6 +3689,8 @@ public sealed partial class Binder
                 ReportKeywordArguments(call, function: null);
                 return BindInvoke(call, callee, name: null, call.Callee.Span);
             }
+            if (IsCallableObject(callee.Type))
+                return BindObjectCall(call, callee, call.Callee.Span);
             BindArguments(call);
             if (!callee.Type.ContainsError)
                 _diagnostics.ReportCannotCall(call.Callee.Span, callee.Type);
@@ -3591,6 +3724,9 @@ public sealed partial class Binder
             case VariableSymbol variable when TypeChecker.Unwrap(variable.Type) is FunctionType:
                 ReportKeywordArguments(call, function: null);
                 return BindInvoke(call, new BoundVariable(variable, nameSpan), name, nameSpan);
+            // An object of a class with __call__ (SPEC §4.9, M39).
+            case VariableSymbol variable when IsCallableObject(variable.Type):
+                return BindObjectCall(call, BindSymbolValue(variable, name, nameSpan, null), nameSpan);
             case ClassSymbol classSymbol:
                 return BindConstruct(call, classSymbol, expected, nameSpan);
             case VariantSymbol variant:
@@ -4128,8 +4264,9 @@ public sealed partial class Binder
         }
         if (method.IsAbstract)
             _diagnostics.ReportAbstractSuper(member.Member.Span, method.Owner!.Name, name);
-        var (arguments, shape, _, valid) = BindCallArguments(call, method, name, member.Member.Span, [], t => t, method.ReturnType, null);
-        return new BoundSuperCall(method, self, arguments, method.ReturnType, call.Span) { Shape = valid ? shape : null };
+        var superResult = TypeChecker.SubstituteSelf(method.ReturnType, self.Type);
+        var (arguments, shape, _, valid) = BindCallArguments(call, method, name, member.Member.Span, [], t => t, superResult, null);
+        return new BoundSuperCall(method, self, arguments, superResult, call.Span) { Shape = valid ? shape : null };
     }
 
     private BoundExpr BindConstructVariant(CallExpr call, VariantSymbol variant, TaipanType? expected)
@@ -4297,7 +4434,9 @@ public sealed partial class Binder
 
         if (DotNetTypeNamed(member.Target) is { } owner)
             return BindDotNetCall(call, null, owner, member.Member);
-        // Static and class methods through a class or cls (SPEC §4.8).
+        // Static and class methods through a class or cls (SPEC §4.8), or a generic class's instantiation (SPEC §4.9).
+        if (GenericClassReceiver(member.Target) is { } instantiation)
+            return BindClassMethodCall(call, member, instantiation.Symbol, viaCls: false, instantiation);
         if (ClassNamed(member.Target) is { } named)
             return BindClassMethodCall(call, member, named, viaCls: false);
         if (IsCls(member.Target))
@@ -4339,6 +4478,11 @@ public sealed partial class Binder
         if (target.Type is ClassType { Symbol: var classSymbol })
         {
             // A field holding a function is called like a method (SPEC §3.7).
+            if (classSymbol.FindField(name) is { } callableField && IsCallableObject(FieldType(target.Type, callableField)))
+            {
+                Index(member.Member.Span, callableField);
+                return BindObjectCall(call, new BoundFieldAccess(target, callableField, FieldType(target.Type, callableField), member.Span), member.Member.Span);
+            }
             if (classSymbol.FindField(name) is { } field && TypeChecker.Unwrap(FieldType(target.Type, field)) is FunctionType)
             {
                 ReportKeywordArguments(call, function: null);
@@ -4368,7 +4512,7 @@ public sealed partial class Binder
             {
                 Index(member.Member.Span, method);
                 var map = TypeChecker.MapOf(target.Type);
-                var returnType = TypeChecker.Substitute(method.ReturnType, map);
+                var returnType = TypeChecker.SubstituteSelf(TypeChecker.Substitute(method.ReturnType, map), target.Type);
                 var (arguments, shape, _, valid) = BindCallArguments(
                     call, method, name, member.Member.Span, [], t => TypeChecker.Substitute(t, map), returnType, null);
                 return new BoundMethodCall(target, method, arguments, returnType, call.Span) { Shape = valid ? shape : null };
@@ -4614,6 +4758,9 @@ public sealed partial class Binder
             return new BoundCall(function, arguments, function.ReturnType, call.Span);
         switch (builtin)
         {
+            // A class with __len__ (SPEC §4.9, M39).
+            case BuiltinFunction.Len when argument.Type is ClassType && SpecialMethods.Method(argument.Type, "__len__") is not null:
+                break;
             // An iterator has no length until it's a list (SPEC §3.13).
             case BuiltinFunction.Len when argument.Type is IteratorOfType or IterableOfType:
                 _diagnostics.ReportNotIterableFromList(argumentSpan, $"'len' takes a list, dict or str, found {argument.Type}");

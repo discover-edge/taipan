@@ -1,0 +1,73 @@
+@total_ordering
+class Money:
+    cents: int
+
+    def __init__(self, cents: int):
+        self.cents = cents
+
+    def __eq__(self, other: Money) -> bool:
+        return self.cents == other.cents
+
+    def __hash__(self) -> int:
+        return self.cents
+
+    def __lt__(self, other: Money) -> bool:
+        return self.cents < other.cents
+
+    def __iadd__(self, other: int) -> Self:
+        self.cents += other
+        return self
+
+    def __format__(self, spec: str) -> str:
+        if spec == "short":
+            return f"${self.cents // 100}"
+        return f"${self.cents / 100:.2f}"
+
+    @classmethod
+    def zero(cls) -> Self:
+        return cls(0)
+
+    def same(self) -> Self:
+        return self
+
+class Euro(Money):
+    pass
+
+let wallet = Money(150)
+wallet += 250
+print(f"{wallet}", f"{wallet:short}", wallet.cents)
+print(Money(1) <= Money(1), Money(3) > Money(2), Money(1) >= Money(2), Money(2) > Money(2))
+let e = Euro.zero()
+print(isinstance(e, Euro), e.same().cents)
+let make = Money.zero
+let euros = Euro.zero
+print(make().cents, isinstance(euros(), Euro))
+
+@final
+class Leaf:
+    @final
+    def name(self) -> str:
+        return "leaf"
+
+print(Leaf().name())
+
+class Box[T]:
+    item: T
+    count: ClassVar[int] = 0
+
+    def __init__(self, item: T):
+        self.item = item
+        Box.count += 1
+
+    @staticmethod
+    def of(item: T) -> Box[T]:
+        return Box(item)
+
+    @classmethod
+    def pair(cls, item: T) -> list[Box[T]]:
+        return [cls(item), cls(item)]
+
+print(Box.of(3).item, Box[str].of("s").item, len(Box.pair(1.5)))
+let boxer = Box[int].of
+let pairs = Box[str].pair
+print(boxer(7).item, pairs("p")[1].item, Box.count, Box[int].count)

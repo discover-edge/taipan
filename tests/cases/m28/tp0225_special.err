@@ -8,7 +8,7 @@ tests/cases/m28/tp0225_special.tpn:21:9: error TP0225: '__sub__' must be 'def __
 tests/cases/m28/tp0225_special.tpn:24:9: error TP0225: '__neg__' must be 'def __neg__(self) -> R'
 tests/cases/m28/tp0225_special.tpn:27:9: error TP0225: '__mul__' must be 'def __mul__(self, other: T) -> R'
 tests/cases/m28/tp0225_special.tpn:30:9: error TP0225: special method '__bool__' is not supported
-tests/cases/m28/tp0225_special.tpn:33:9: error TP0225: special method '__len__' is not supported
+tests/cases/m28/tp0225_special.tpn:33:9: error TP0225: special method '__delitem__' is not supported
 tests/cases/m28/tp0225_special.tpn:40:7: error TP0225: 'EqOnly' would not be hashable, but its base 'Key' is
   help: define '__hash__'
 tests/cases/m28/tp0225_special.tpn:52:7: error TP0225: 'Point3' would not be hashable, but its base 'Point' is

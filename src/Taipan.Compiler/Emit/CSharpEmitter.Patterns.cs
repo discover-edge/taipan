@@ -73,4 +73,14 @@ public sealed partial class CSharpEmitter
         }
         return $"{{ }} {dict}";
     }
+
+    /// <summary>An object with <c>__call__</c> as a function (SPEC §4.9): evaluated once, then called by a lambda.</summary>
+    private string CallableObject(BoundCallableObject callable)
+    {
+        var function = TypeName(callable.Function);
+        var target = $"@{_locals.Fresh("callable")}";
+        var parameters = callable.Function.Parameters.Select(_ => $"@{_locals.Fresh("argument")}").ToList();
+        var name = $"{((ClassType)Concrete(callable.Value.Type)).Symbol.Name}.__call__";
+        return $"((global::System.Func<{TypeName(Concrete(callable.Value.Type))}, {function}>)({target} => new {function}(\"{name}\", ({string.Join(", ", parameters)}) => {target}.@__call__({string.Join(", ", parameters)}))))({Expr(callable.Value)})";
+    }
 }

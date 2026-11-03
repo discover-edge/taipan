@@ -1,0 +1,21 @@
+class Animal:
+    def copy(self) -> Self:
+        return Animal()
+
+class Box[T]:
+    shared: ClassVar[list[T]] = []
+
+    @staticmethod
+    def of(item: T) -> Box[T]:
+        return Box()
+
+@dataclass(frozen=True)
+class Tagged:
+    tags: list[str]
+
+class Plain:
+    pass
+
+let make = Box.of
+let index: dict[Tagged, int] = {}
+print(1 in Plain(), Plain()[0])

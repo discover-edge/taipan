@@ -1,0 +1,6 @@
+True True False 1
+index 0
+get 0
+set 0 ab
+["ab"]
+True ["a", "b"]

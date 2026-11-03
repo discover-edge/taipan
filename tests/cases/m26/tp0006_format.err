@@ -1,6 +1,4 @@
 tests/cases/m26/tp0006_format.tpn:4:11: error TP0006: invalid conversion '!x'
   help: use '!r' or '!s'
 tests/cases/m26/tp0006_format.tpn:5:12: error TP0006: format specs can't be nested
-tests/cases/m26/tp0006_format.tpn:6:12: error TP0006: invalid format spec '10.2q'
-tests/cases/m26/tp0006_format.tpn:7:12: error TP0006: invalid format spec 'n'
-tests/cases/m26/tp0006_format.tpn:8:9: error TP0006: empty f-string hole
+tests/cases/m26/tp0006_format.tpn:6:9: error TP0006: empty f-string hole

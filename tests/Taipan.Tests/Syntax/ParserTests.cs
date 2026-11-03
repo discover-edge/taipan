@@ -164,7 +164,7 @@ public class ParserTests
             Snapshot("match e:\n    Pair(a, right=b): pass\n"));
 
     [Theory]
-    [InlineData("@dataclass(frozen=True)\nclass A:\n    x: int\n", "1:11 TP0100: expected newline, found '('")]
+    [InlineData("@dataclass(frozen=True) class A:\n    x: int\n", "1:25 TP0100: expected newline, found 'class'")]
     [InlineData("@dataclass\nlet y = 1\n", "2:1 TP0100: expected 'def' or 'class', found 'let'")]
     [InlineData("def f():\n    class C:\n        pass\n", "2:5 TP0100: expected statement, found 'class'")]
     [InlineData("if x is not 3:\n    pass\n", "1:13 TP0100: expected 'None', found integer")]
@@ -364,6 +364,14 @@ public class ParserTests
             "MatchArm(BoolPattern(False), Block([PassStmt])), " +
             "MatchArm(WildcardPattern, Block([PassStmt]))])",
             Snapshot("match x:\n    0: pass\n    -1: pass\n    \"a\": pass\n    True: pass\n    False: pass\n    _: pass\n"));
+
+    // ---- decorator arguments (M39) ----
+
+    [Fact]
+    public void DecoratorArguments() =>
+        Assert.Equal(
+            "ClassDef([Decorator(dataclass, [Argument(frozen, BoolLiteral(True)), Argument(order, BoolLiteral(False))])], A, [], [], [FieldDef(x, NamedType(int))], [])",
+            Snapshot("@dataclass(frozen=True, order=False)\nclass A:\n    x: int\n"));
 
     // ---- patterns and guards (M38) ----
 

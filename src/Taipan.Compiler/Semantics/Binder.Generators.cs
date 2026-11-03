@@ -51,7 +51,10 @@ public sealed partial class Binder
             _diagnostics.ReportYieldInTry(keyword);
         else if (_matchExpressionArm is var (function, _) && function == _function)
             _diagnostics.ReportLeavesMatchExpression(keyword, "yield");
-        var element = TypeChecker.ElementOf(TypeChecker.Substitute(_function.ReturnType, _specialization)) ?? TaipanType.Error;
+        var declared = TypeChecker.Substitute(_function.ReturnType, _specialization);
+        if (_function.Owner is { } owner)
+            declared = TypeChecker.SubstituteSelf(declared, owner.Type);
+        var element = TypeChecker.ElementOf(declared) ?? TaipanType.Error;
         var value = yield.From ? BindExpected(yield.Value, new IterableOfType(element)) : BindExpected(yield.Value, element);
         return new BoundYield(value, yield.From, yield.Span);
     }

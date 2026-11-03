@@ -1,5 +1,5 @@
 # Syntax errors with classes (SPEC §2).
-@dataclass(frozen=True)
+@dataclass(frozen=True) class
 class A:
     x: int
 

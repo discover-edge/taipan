@@ -1,0 +1,3 @@
+tests/cases/m39/tp0224_decorators.tpn:1:1: error TP0224: '@dataclass' takes only 'frozen=' and 'order=', each True or False
+tests/cases/m39/tp0224_decorators.tpn:5:1: error TP0224: '@dataclass' takes only 'frozen=' and 'order=', each True or False
+tests/cases/m39/tp0224_decorators.tpn:9:1: error TP0224: '@final' takes no arguments

@@ -7,7 +7,7 @@ namespace Taipan.Compiler.Semantics;
 // methods (SPEC §4.8, M28).
 public sealed partial class Binder
 {
-    private static readonly string[] MethodDecorators = ["override", "property", "staticmethod", "classmethod", "abstractmethod"];
+    private static readonly string[] MethodDecorators = ["override", "property", "staticmethod", "classmethod", "abstractmethod", "final"];
 
     // Methods whose '...' body was meant for '@abstractmethod', which was rejected, and so isn't bound.
     private readonly HashSet<FunctionSymbol> _stubs = [];
@@ -33,6 +33,11 @@ public sealed partial class Binder
         foreach (var decorator in method.Decorators)
         {
             var name = decorator.Name.Text;
+            if (decorator.Arguments is not null)
+            {
+                _diagnostics.ReportDecoratorArguments(decorator.Span, name);
+                continue;
+            }
             if (decorator.Member is null && MethodDecorators.Contains(name))
                 written.Add(name);
             if (decorator.Member is { } member)
@@ -49,7 +54,7 @@ public sealed partial class Binder
             }
             if (names.Contains(name))
                 _diagnostics.ReportDuplicateDecorator(decorator.Span, name);
-            else if (name == "dataclass")
+            else if (name is "dataclass" or "total_ordering")
                 _diagnostics.ReportMisplacedDecorator(decorator.Span, name);
             else if (!MethodDecorators.Contains(name))
                 _diagnostics.ReportUnknownDecorator(decorator.Span, name);
@@ -95,10 +100,16 @@ public sealed partial class Binder
         var kindLeftOut = marks.Written.Any(w => w is "property" or "staticmethod" or "classmethod" && !marks.Has(w));
         if (method.Receiver != receiver && !kindLeftOut)
             _diagnostics.ReportReceiver(method.Name.Span, name, receiver switch { Receiver.Self => "self", Receiver.Cls => "cls", _ => null });
-        if (kind is MemberKind.Static or MemberKind.Class && !owner.TypeParameters.IsEmpty)
-            _diagnostics.ReportGenericClassMembers(method.Name.Span, kind == MemberKind.Static ? "static methods" : "class methods");
 
+        // Self (SPEC §4.9, M39): a result of the receiver's type; in a parameter, the class itself.
+        var outerTypes = _typeParameters;
+        if (kind != MemberKind.Static)
+            _typeParameters = new(_typeParameters) { ["Self"] = TaipanType.Self };
         var returnType = BindReturnType(method.ReturnType);
+        if (kind != MemberKind.Static)
+            _typeParameters = new(outerTypes) { ["Self"] = owner.Type };
+        var parameters = BindParams(method.Params);
+        _typeParameters = outerTypes;
         if (name == "__init__" && method.ReturnType is { } initReturn)
         {
             _diagnostics.ReportInitReturnType(initReturn.Span);
@@ -109,7 +120,7 @@ public sealed partial class Binder
         if (isAbstract && !stub)
             _diagnostics.ReportAbstractBody(method.Body.Statements.FirstOrDefault()?.Span ?? method.Name.Span);
         var symbol = new FunctionSymbol(
-            name, BindParams(method.Params), AsyncResult(method.IsAsync, returnType),
+            name, parameters, AsyncResult(method.IsAsync, returnType),
             self: kind is MemberKind.Instance or MemberKind.Property ? new VariableSymbol("self", owner.Type, VariableKind.Parameter) : null)
         {
             Defaults = PendingDefaults(method.Params),
@@ -117,6 +128,7 @@ public sealed partial class Binder
             IsGenerator = Yields(method.Body),
             IsAsync = method.IsAsync,
             IsMarkedOverride = marks.Written.Contains("override"),
+            IsFinal = marks.Has("final"),
             DeclaredIn = owner,
             Kind = kind,
             Cls = kind == MemberKind.Class ? new VariableSymbol("cls", owner.Type, VariableKind.Parameter) : null,
@@ -138,6 +150,11 @@ public sealed partial class Binder
         if (kind == MemberKind.Property && (!method.Params.IsEmpty || method.ReturnType is null))
         {
             _diagnostics.ReportPropertySignature(method.Name.Span, hasParameters: !method.Params.IsEmpty);
+            return symbol;
+        }
+        if (name == "__post_init__" && !owner.IsDataclass)
+        {
+            _diagnostics.ReportPostInitPlain(method.Name.Span);
             return symbol;
         }
         if (name == "__init__")
@@ -202,11 +219,16 @@ public sealed partial class Binder
             _diagnostics.ReportWrongTypeArgumentCount(classVar.Span, "ClassVar", 1, classVar.Arguments.Length);
             return null;
         }
-        if (!owner.TypeParameters.IsEmpty)
-            _diagnostics.ReportGenericClassMembers(field.Name.Span, "class attributes");
         if (field.Default is null)
             _diagnostics.ReportClassAttributeValue(field.Name.Span, field.Name.Text);
-        var attribute = new ClassAttributeSymbol(field.Name.Text, BindType(typeSyntax), owner);
+        var attributeType = BindType(typeSyntax);
+        // One attribute serves every instantiation, as in Python, so it can't use the class's type parameters (SPEC §4.9).
+        if (!owner.TypeParameters.IsEmpty && MentionsTypeParameter(attributeType))
+        {
+            _diagnostics.ReportClassAttributeTypeParameter(typeSyntax.Span, owner.TypeParameters[0].Name);
+            attributeType = TaipanType.Error;
+        }
+        var attribute = new ClassAttributeSymbol(field.Name.Text, attributeType, owner);
         Index(field.Name.Span, attribute, isDefinition: true);
         return attribute;
     }

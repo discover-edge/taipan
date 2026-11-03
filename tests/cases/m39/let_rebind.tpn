@@ -1,0 +1,17 @@
+class Counter:
+    n: int
+
+    def __init__(self, n: int):
+        self.n = n
+
+    def __iadd__(self, k: int) -> Counter:
+        return Counter(self.n + k)
+
+var free = Counter(1)
+free += 1
+print(free.n)
+let fixed = Counter(1)
+try:
+    fixed += 1
+except TypeError as e:
+    print(e)

@@ -1,0 +1,62 @@
+@total_ordering
+class Rank:
+    n: int
+
+    def __init__(self, n: int):
+        self.n = n
+
+    def __eq__(self, other: Rank) -> bool:
+        return self.n == other.n
+
+    def __hash__(self) -> int:
+        return self.n
+
+    def __gt__(self, other: Rank) -> bool:
+        return self.n > other.n
+
+print(Rank(1) < Rank(2), Rank(2) <= Rank(2), Rank(3) >= Rank(4), sorted([Rank(3), Rank(1)])[0].n)
+
+class Log:
+    entries: list[str]
+
+    def __init__(self):
+        self.entries = []
+
+    def __getitem__(self, i: int) -> str:
+        print("get", i)
+        return self.entries[i]
+
+    def __setitem__(self, i: int, v: str) -> None:
+        print("set", i, v)
+        self.entries[i] = v
+
+def index(n: int) -> int:
+    print("index", n)
+    return n
+
+let log = Log()
+log.entries.append("a")
+log[index(0)] += "b"
+print(log.entries)
+
+class Node:
+    name: str
+    children: list[Node]
+
+    def __init__(self, name: str):
+        self.name = name
+        self.children = []
+
+    def add(self, child: Node) -> Self:
+        self.children.append(child)
+        return self
+
+    @property
+    def me(self) -> Self:
+        return self
+
+class Leaf(Node):
+    pass
+
+let tree = Leaf("root").add(Node("a")).add(Node("b"))
+print(isinstance(tree, Leaf), [c.name for c in tree.me.children])

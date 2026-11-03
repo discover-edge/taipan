@@ -446,10 +446,8 @@ public sealed class Lexer
         if (specAt is { } colon)
         {
             spec = _text[(colon + 1)..close];
+            // The binder checks it against the mini-language, unless the value's class formats itself (SPEC §6, §4.9).
             specSpan = new TextSpan(colon + 1, close - colon - 1);
-            // `n` depends on the locale, which Taipan's formatting doesn't use (SPEC §6).
-            if (!spec.Contains('{') && Taipan.Runtime.FormatSpec.Parse(spec) is not { Type: not 'n' })
-                _diagnostics.ReportInvalidFormatSpec(specSpan.Length == 0 ? new TextSpan(colon, 1) : specSpan, spec);
         }
         parts.Add(new FStringHole(exprSpan) { DebugText = debugText, Conversion = conversion, Spec = spec, SpecSpan = specSpan });
         _pos++;

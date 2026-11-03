@@ -97,7 +97,7 @@ import_name   = NAME [ "as" NAME ] ;
 const_def     = "const" NAME [ ":" type ] "=" expr NEWLINE ;
 
 func_def      = { decorator } [ "async" ] "def" NAME [ type_params ] "(" [ params ] ")" [ "->" type ] ":" block ;   (* async: M33, §3.14 *)
-decorator     = "@" NAME [ "." NAME ] NEWLINE ;                      (* M15: @dataclass, @override; §4.3. M28: §4.8 *)
+decorator     = "@" NAME [ "." NAME ] [ "(" [ NAME "=" expr { "," NAME "=" expr } [ "," ] ] ")" ] NEWLINE ;   (* M15: @dataclass, @override; §4.3. M28: §4.8. Arguments: M39, §4.9 *)
 params        = param_item { "," param_item } [ "," ] ;
 param_item    = param | "/" | "*" [ NAME ":" type ] | "**" NAME ":" type ;   (* M30, §4.2 *)
 param         = NAME ":" type [ "=" expr ] ;                         (* default: M14, §4.2 *)
@@ -214,7 +214,7 @@ comp_for      = "for" ( NAME | names ) "in" coalesce { "for" ( NAME | names ) "i
 - **Unpacking (M29):** a parenthesized group in `names` or `targets` nests, and `*` marks the name or target that takes the rest. In `for`, `names` may also be parenthesized as a whole: `for (a, b) in pairs`. Two starred names at one level are `TP0100`, `an unpacking can have only one '*' at each level`; a starred name alone is `TP0100`, `a starred name can't be unpacked to alone`; and `*x` anywhere else is `TP0100`, `'*' can only mark a name or target being unpacked`. A trailing comma needs two names before it, so `let a, = t` is still `TP0100`.
 - Keyword arguments are allowed in calls to functions and methods (M14, §4.2), class and enum-variant constructors (§4.3), `py` values (§10.2), and the keyword parameters of built-ins (`key` and `reverse` of `sorted` and `list.sort`, `start` of `enumerate`; §6). Keyword arguments may follow positional ones, as in Python. A positional argument after a keyword argument is `TP0100`.
 - In a parameter list, a parameter without a default after one with a default is `TP0100`, as in Python. Since M30 that applies only before `*`, and the order of `/`, `*`, `*args` and `**kwargs` is checked as §4.2 says (`TP0100`).
-- **Decorators (M15)** are only `@dataclass` on a `class` and `@override` on a method (§4.3), and since M28 `@property`, `@<name>.setter`, `@staticmethod`, `@classmethod` and `@abstractmethod` on a method (§4.8). A decorator takes no arguments: `@dataclass(frozen=True)` is `TP0100`. Any other decorator name, a decorator in any other place, a repeated one, or one that can't be combined with another (§4.8) is `TP0224`. A dotted decorator other than `@<property>.setter` is `TP0224`.
+- **Decorators (M15)** are only `@dataclass` on a `class` and `@override` on a method (§4.3), and since M28 `@property`, `@<name>.setter`, `@staticmethod`, `@classmethod` and `@abstractmethod` on a method (§4.8). A decorator takes no arguments, except `@dataclass(frozen=…, order=…)` since M39 (§4.9); arguments on any other decorator are `TP0224`. Since M39, `@final` on a class or method and `@total_ordering` on a class are valid too. Any other decorator name, a decorator in any other place, a repeated one, or one that can't be combined with another (§4.8) is `TP0224`. A dotted decorator other than `@<property>.setter` is `TP0224`.
 - **Receivers (M28):** an instance method, property or setter must take `self` first, a `@classmethod` must take `cls` first, and a `@staticmethod` takes neither. Otherwise it's `TP0225`, `'<m>' must take 'self' first` (or `'cls'`, or `a static method takes neither 'self' nor 'cls'`). As before M28, `self` and `cls` are written without a type.
 - **`is`:** `x is None` and `x is not None` are comparisons that give `bool`, usable in any expression (M15). `x is some v` binds a name, so it's only a whole `if`/`elif`/`while` condition. Any other right operand of `is`, including another expression (`x is y`), is `TP0100`, `expected 'some', 'not' or 'None'`.
 - **`try` (M16):** a `try` needs at least one `except` clause or a `finally`, and an `else` needs at least one `except`. A bare `except:` must be the last clause. Otherwise it's `TP0100`. An `except` clause names its types (`except KeyError`, `except zoo.NotFound`, `except json.JSONDecodeError`) rather than taking an expression, so in `except KeyError as e` the `as` names the binding rather than starting a cast.
@@ -625,7 +625,7 @@ print(largest([3, 9, 4]), largest(["b", "a"]))  # 9 b
   - any special method other than `__lt__` (below), including `__init__`. A protocol's `__lt__` must be `def __lt__(self, other: Self) -> bool`.
 - A decorator on a protocol (`@dataclass`) or on one of its methods (`@override`) is `TP0224`.
 - A method name repeated in a protocol is `TP0214`.
-- `...` anywhere but a protocol method's body is `TP0200`. A function or method whose body is just `...` reports only that, and not also `TP0208`. `Self` outside a protocol method's signature is `TP0201`, `undefined type 'Self'`, with help `'Self' can only be used in a protocol`.
+- `...` anywhere but a protocol method's body is `TP0200`. A function or method whose body is just `...` reports only that, and not also `TP0208`. `Self` outside a protocol method's signature is `TP0201`, `undefined type 'Self'`, with help `'Self' can only be used in a protocol`. Since M39, it's also valid in a class's method signatures (§4.9).
 - Protocol names are global, as class names are (§4.6), and modules export them (§4.7). A definition with the name `Protocol`, `Self` or `Comparable` is `TP0214`.
 
 **Satisfying a protocol.** A type `X` satisfies a protocol `P` when, for each method `m` of `P`, with `Self` replaced by `X`:
@@ -947,7 +947,7 @@ class Point:
 - **Dataclass:** the parameters are the fields, in declaration order, with inherited fields first, and with the fields' defaults as their defaults.
   - A field without a default after one with a default is `TP0225`, as Python's `dataclass` reports it. That includes a field after an inherited field with a default.
   - Messages say `field` rather than `argument`: `missing field '<f>' in '<C>'`, `field '<f>' is given more than once` (`TP0209`), and an unknown keyword is `TP0210`.
-  - A dataclass can't define `__init__` (`TP0225`). `__post_init__` is deferred.
+  - A dataclass can't define `__init__` (`TP0225`). Since M39 it may define `__post_init__` (§4.9).
 
 **Strict initialization (`TP0226`).** An object can never be seen with a field unset.
 - At the end of `__init__`, on every path, each of the class's own fields must have been assigned, or have a default. Otherwise it's `TP0226` at `__init__`'s name: `'__init__' does not set 'breed'`.
@@ -1136,14 +1136,21 @@ class Shape(ABC):
 | `__iter__` | `(self) -> Iterator[T]` | `for`, `iter()` and every built-in that takes an `Iterable[T]` (M31, §3.13) |
 | `__next__` | `(self) -> T` | `next()`, and taking a value from the class as an `Iterator[T]` (M31, §3.13) |
 | `__enter__` (M37) | `(self) -> R`, for any `R` | `with` (§3.17) |
+| `__len__` (M39) | `(self) -> int` | `len(x)`; a negative result raises `ValueError`, `__len__() should return >= 0` |
+| `__getitem__` (M39) | `(self, key: K) -> V`, for any `K` and `V` | `x[k]` |
+| `__setitem__` (M39) | `(self, key: K, value: V)`, returning nothing | `x[k] = v`, and with `__getitem__`, `x[k] op= v` |
+| `__contains__` (M39) | `(self, item: T) -> bool` | `in` and `not in` |
+| `__call__` (M39) | `(self, …) -> R`: any parameters a method may have (§4.2), defaults and keywords included | `x(…)`, and converting `x` to a function type (§4.9) |
+| `__iadd__`, `__isub__`, `__imul__`, `__itruediv__`, `__ifloordiv__`, `__imod__`, `__ipow__` (M39) | `(self, other: T) -> R` | `x += y` and the others (§4.9) |
+| `__format__` (M39) | `(self, spec: str) -> str` | f-string holes, with the hole's spec (§4.9) |
 | `__exit__` (M37) | `(self, exc_type: type[BaseException]?, exc: BaseException?, tb: TracebackType?) -> bool`, or `-> None` | `with` (§3.17); a class with one must have the other, or it's `TP0225`, `'<C>' defines '__exit__' but not '__enter__'` (or the reverse) |
 
 - Special methods are inherited and overridden like other methods (§4.3), with `@override` when a base class defines the method in its body. Defining one that only Python's `object` has (`__str__`, `__eq__`, …), or that a dataclass generates (below), needs no `@override`.
 - Calling one directly (`m.__add__(n)`, `m.__str__()`) is `TP0200`, `'<m>' cannot be called directly`, with help naming its form (`use '+'`, `use 'str(m)'`, `use 'repr(m)'`, `use 'hash(m)'`), except as `super().__m__(…)` in an override.
 - A special method can't be a property, static method or class method (`TP0224`).
-- `x op= y` is `x = x op y` (§4.5), as in Python without `__iadd__`.
+- `x op= y` is `x = x op y` (§4.5), as in Python without `__iadd__`. Since M39, a class's in-place method runs instead when it has one (§4.9).
 
-**Display.** `str(x)`, `print` and f-string holes call `__str__`. A class without one in its hierarchy uses `__repr__`, as Python's `object.__str__` does. A class without `__repr__` gets the M15 forms: `<Dog object>` for a plain class, and for a dataclass the generated `Point(x=1.0, y=0.0)`. As in Python, every dataclass generates its `__repr__` unless its own body defines one, so a dataclass deriving from one with a custom `__repr__` displays in the generated form. `repr(x) -> str` (§6) gives the form inside a container for any value, which `!r` writes. Format specs on a class value are still `TP0200` (`__format__` is deferred).
+**Display.** `str(x)`, `print` and f-string holes call `__str__`. A class without one in its hierarchy uses `__repr__`, as Python's `object.__str__` does. A class without `__repr__` gets the M15 forms: `<Dog object>` for a plain class, and for a dataclass the generated `Point(x=1.0, y=0.0)`. As in Python, every dataclass generates its `__repr__` unless its own body defines one, so a dataclass deriving from one with a custom `__repr__` displays in the generated form. `repr(x) -> str` (§6) gives the form inside a container for any value, which `!r` writes. Format specs on a class value are `TP0200` unless it has `__format__` (M39, §4.9).
 
 **Equality.**
 - `a == b` on classes needs related types, as in M15 (§4.3). At run time it follows Python's protocol:
@@ -1165,7 +1172,7 @@ class Shape(ABC):
 **Ordering.**
 - `a < b` is valid when `a`'s class has `__lt__` taking `b`, or `b`'s class has `__gt__` taking `a`. `<=` pairs with `__ge__`, `>` with `__lt__`, and `>=` with `__le__`. Otherwise it's `TP0200`, `operator '<' cannot be applied to <A> and <B>`, with help `define '__lt__' on '<A>'` when `a` is a class.
 - At run time it follows Python's protocol: if `b`'s runtime class is a proper subclass of `a`'s, `b`'s reflected method (`__gt__` for `<`) is tried first. Then `a`'s method, then `b`'s reflected one, each only when it applies (above), using the methods of the operands' runtime classes. One of them always applies, since the check above found one for the static types.
-- `functools.total_ordering` is deferred, so `<=` needs `__le__` (or a reflected `__ge__`) even when the class has `__lt__` and `__eq__`.
+- Without `@total_ordering` (M39, §4.9), `<=` needs `__le__` (or a reflected `__ge__`) even when the class has `__lt__` and `__eq__`.
 
 **Arithmetic.**
 - `a + b` uses `a`'s class's `__add__` when it takes `b`. Otherwise, it uses `b`'s class's `__radd__` when it takes `a`. Otherwise the built-in rules of §5.3 apply, and failing those it's `TP0200`. So `m + n`, `m + 5` with `__add__(self, other: int)`, and `0 + m` with `__radd__(self, other: int)`. The result has the method's return type, and the other operand converts to its parameter as for any argument (`m * 2` with `__mul__(self, k: float)`).
@@ -1189,8 +1196,8 @@ class Shape(ABC):
   - Any other use of `cls` (passing, storing, displaying or comparing it) is `TP0200`, `'cls' can only be called, or used to reach static and class methods and class attributes`.
 - Static and class methods override like instance methods (§4.3), with `@override`, and only one of the same kind (`TP0228`, `'<m>' is a <static method|class method|method|property> in '<B>'`). Through an instance or `cls` they dispatch on the runtime class, and through a class name they're found from that class upwards.
 - They can't use `self` (`TP0201`), and a class method's `cls` follows the `self` rules: it's an immutable parameter, and a local can't take its name.
-- Using a static or class method without calling it is `TP0200`, with help `wrap it in a lambda`, as for other methods.
-- A generic class can't have static or class methods or class attributes (`TP0225`, `generic classes cannot have <static methods|class methods|class attributes>`); that's deferred.
+- Before M39, using a static or class method without calling it was `TP0200`; since M39 it's a function value (§4.9). An instance method used without calling it is still `TP0200`, with help `wrap it in a lambda`.
+- Before M39, a generic class couldn't have static or class methods or class attributes (`TP0225`); since M39 it can (§4.9).
 
 **Class attributes.**
 - `count: ClassVar[int] = 0` in a class body declares a class attribute, shared by the class, its subclasses and their instances. A field declaration without `ClassVar` is still per instance (§4.3). `ClassVar[T]` is valid only as the whole annotation of a class-body declaration (`TP0200` elsewhere), and the attribute needs a value (`TP0225`, `class attribute 'count' needs a value`).
@@ -1209,6 +1216,77 @@ class Shape(ABC):
   - A class can't add an abstract method when a base class has a class method that calls `cls(…)` (`TP0234`, `'<C>' cannot add abstract method '<m>', since '<B>.<cm>' calls 'cls(…)'`), so that the call stays valid when `cls` is the new class.
 - `super().area()` that reaches an abstract method is `TP0200`, `'Shape.area' is abstract`.
 - An abstract class may have fields, `__init__` and concrete methods, and may be a type: values of it are instances of its concrete subclasses.
+
+
+### 4.9 Classes III (M39)
+```python
+@dataclass(frozen=True, order=True)
+class Version:
+    major: int
+    minor: int = 0
+
+    def __post_init__(self) -> None:
+        if self.major < 0:
+            raise ValueError("negative version")
+
+class Grid:
+    cells: dict[tuple[int, int], str]
+
+    def __init__(self):
+        self.cells = {}
+
+    def __len__(self) -> int:
+        return len(self.cells)
+
+    def __getitem__(self, at: tuple[int, int]) -> str:
+        return self.cells.get(at, ".")
+
+    def __setitem__(self, at: tuple[int, int], value: str) -> None:
+        self.cells[at] = value
+
+    def __call__(self, row: int) -> str:
+        return "".join(self[(row, c)] for c in range(3))
+
+    def copy(self) -> Self:
+        ...
+```
+
+**Dataclass options.** `@dataclass(frozen=True)`, `@dataclass(order=True)` or both, with the literal `True` or `False`; any other argument or value is `TP0224`.
+- **`frozen=True`:** a field of the class can't be assigned once the object exists. Assigning one anywhere, `self.f = …` in a method and `__post_init__` included, or with `op=`, is `TP0202`, `cannot assign to '<f>': '<C>' is frozen`. Python raises `FrozenInstanceError` when the line runs. A field holding a list may still have its list changed.
+  - A frozen dataclass is hashable, as in Python: it gets a generated `__hash__` over its fields, unless its body defines `__eq__` or `__hash__` (§4.8). If a field's type isn't hashable (a list, a dict, an unhashable class), the class isn't either, and using it as a key is `TP0200`, with help `'<f>' is <T>, which isn't hashable`. Python raises `TypeError` when such a value is hashed.
+  - A frozen dataclass can derive only from a frozen one, and one that isn't frozen only from one that isn't (`TP0225`, `a frozen dataclass can't derive from one that isn't`, or the reverse), as Python's `dataclass` raises `TypeError`.
+- **`order=True`** generates `__lt__`, `__le__`, `__gt__` and `__ge__`, which compare the fields as a tuple, in constructor order (inherited fields first), as Python's do.
+  - Every field must be ordered as `sorted`'s values are (§6): `TP0225`, `'order=True' needs fields that can be ordered: '<f>' is <T>`.
+  - A body that defines any of the four with `order=True` is `TP0225`, as Python raises `TypeError`.
+  - `a < b` needs related classes (§4.8). At run time, operands of different runtime classes raise `TypeError`, `'<' not supported between instances of 'A' and 'B'`, as in Python. `sorted` and `sort` use the generated `__lt__`.
+- **`__post_init__(self) -> None`**, in a dataclass only (`TP0225` in a plain class, or with another signature), runs at the end of the generated constructor, once every field is set, so `self` may be used freely. It's inherited and overridden like other methods (with `@override`), and as in Python, only the most derived one runs; an override calls the base's with `super().__post_init__()`.
+
+**`@final`.** On a class, deriving from it is `TP0225`, `cannot derive from final class '<C>'`. On a method (or property, static or class method), overriding it is `TP0228`, `'<B>.<m>' is final`. As with `@override` and `ABC`, `final` is a built-in name; Python imports it from `typing`.
+
+**`Self`** may appear in a class's method signatures: parameter and return types, inside other types too (`list[Self]`, `Self?`), in instance methods, class methods and properties. Anywhere else in a class, such as a field or a static method, it's `TP0201` as before.
+- In a result, at a call, it's the static type of what the method is called on: `dog.copy()` is a `Dog` when `copy` is `Animal`'s, and `Dog.create()` through a class method is a `Dog`.
+- In a parameter, it's the class itself, so `def merge(self, other: Self)` takes any instance of the class, through a subclass too. Python's type checkers take only the receiver's type there.
+- In the body, a `Self` value is used as the class. Where `Self` itself (or `Self?`) is the result, a `return` must give a `Self` value: `self`, `cls(…)` in a class method, or the result of a call returning `Self` on those. A value of the class itself isn't one: returning `Animal(…)` from `-> Self` is `TP0200`, `expected Self, found Animal`, since a subclass would get the wrong type, as Python's type checkers report.
+- An override of a method returning `Self` must return `Self` too (`TP0228`), and one returning the class may return `Self`. In a generic class, `Self` is the class with its type parameters.
+
+**Container special methods** (§4.8's table):
+- `len(x)` calls `__len__`; `x[k]` calls `__getitem__`, with `k` checked against its parameter; `x[k] = v` calls `__setitem__`; `x[k] op= v` calls `__getitem__`, then `__setitem__`, evaluating `x` and `k` once. A class without the method is `TP0200`, as before. Slices (`x[a:b]`) and `del x[k]` on a class are deferred (`TP0200`).
+- `a in x` calls `x.__contains__(a)`, with `a` checked against its parameter. Without `__contains__`, `in` goes through the class's `__iter__` or `__next__` (§3.13), as Python's fallback does.
+- These are found on the static type and dispatch on the runtime class, as other methods do.
+
+**`__call__`.** `x(…)` on a value of a class with `__call__` calls it, with arguments matched as for a method (§4.2). Where a function type is expected (§3.7), such a value converts to it, as Python's type checkers allow, when `__call__`'s positional parameters accept the function type's parameters and its result fits the function type's result (§3.3): `sorted(names, key=Lengths())`. The function value calls the object's `__call__`, dispatching on its runtime class, and displays as `<function Lengths.__call__>`.
+
+**In-place operators.** `x op= y` uses `x`'s class's in-place method (`__iadd__` for `+=`, …) when it has one that takes `y`, and otherwise falls back to `x = x op y`, as in Python. The result is assigned to `x`, so it must be assignable to `x`'s type (`TP0200`). For a target that's a `let` (§4.1), which can't be reassigned, the method must return `Self` or `x`'s class, and at run time it must return `x` itself, as an in-place method usually does; another object raises `TypeError`, `'+=' can't rebind a 'let': '__iadd__' returned another object`. Otherwise `op=` on a `let` is still `TP0202`.
+
+**`__format__`.** In an f-string hole, a value of a class with `__format__` is formatted by calling it with the hole's spec, or `""` without one, as Python's `format(x, spec)` does: `f"{v:short}"`. Its spec isn't checked at compile time. `print` and `str()` still use `__str__`, and `!r` and `!s` convert first, as in Python.
+
+**`@total_ordering`.** On a class that defines at least one of `__lt__`, `__le__`, `__gt__` and `__ge__` (`TP0225` otherwise), it generates the others the class doesn't define (or inherit), as Python's `functools.total_ordering` does, from the first of those four that it defines, using `==`: from `__lt__`, `a <= b` is `a < b or a == b`, `a > b` is `not a < b and a != b`, and `a >= b` is `not a < b`. The generated methods take the defining method's parameter type. `total_ordering` is a built-in name; Python imports it from `functools`.
+
+**Generic classes** may have static and class methods and class attributes.
+- A static or class method is called through the class with type arguments, `Box[int].make(1)`, or without them, `Box.make(1)`, inferring them from the arguments and the expected type as a constructor call does (§3.6), or through an instance, `b.make(1)`, with the instance's. In a class method, `cls(…)` constructs the class with those type arguments.
+- A class attribute is one for every instantiation, as in Python, so its type can't use the class's type parameters (`TP0200`, `a class attribute can't use 'T'`). It's read through the class, with or without type arguments, or an instance, and assigned only through the bare class name: `Box.count += 1`.
+
+**Static and class methods as values.** `C.parse`, `zoo.C.parse`, `x.parse` and `cls.parse`, without a call, are function values of the method's type without `cls` (§3.7). A class method's value keeps the class it was reached through, as `cls`: `Sub.parse` constructs `Sub`s. A generic class's static or class method as a value needs type arguments, `Box[int].make` (`TP0200` otherwise, as for generic functions). Instance methods as values (bound methods) are still deferred.
 
 ---
 
@@ -1578,6 +1656,7 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 | `try` (M16) | A C# `try` with one `catch (System.Exception)` that converts the exception to its Taipan value (or rethrows one that isn't catchable), then tests the `except` clauses in order with `is` (or Python's `isinstance` for a Python class). If none matches, `throw;` rethrows the original. `else` runs after the `try`/`catch`, behind a flag set at the end of the `try` block. `finally` is C#'s `finally`. `Panic.Run` prints an uncaught exception as §3.10 says. |
 | `with` (M37) | The manager and `__enter__`'s result go into temporaries, then a C# `try` whose `catch (System.Exception)` sets a flag, converts the exception to its Taipan value (rethrowing one that isn't catchable), and calls `__exit__` with its class, the exception and a `Taipan.Runtime.Traceback`, rethrowing with `throw;` unless it returns `true`. Its `finally` calls `__exit__(null, null, null)` unless the flag is set. A `TextIO` is a `Taipan.Runtime.TextFile`, whose methods `@__enter__` and `@__exit__` the statement calls as a class's. |
 | `sys`, `os` (M37) | `Taipan.Runtime.Sys` and `Taipan.Runtime.Os`, static classes whose members the names compile to: `sys.argv` is `Sys.argv`. |
+| classes III (M39) | Frozen fields are ordinary properties, which only the generated constructor assigns, since the type checker rejects any other assignment. `order=True` and `@total_ordering` generate ordinary `@__lt__` methods and hooks, as written ones are. `Self` is the class's own type in C#, with a cast at each call site whose receiver is a subclass. Container and call special methods are ordinary methods the operators and calls go to. A static or class method of a generic class is emitted in each instantiation; its class attributes go in one non-generic holder class. A static or class method as a value, or a `__call__` object as a function, is a `Function<D>` over a lambda that calls it. |
 | class patterns | C# type patterns with property sub-patterns: `case Dog { @name: var n }`. The scrutinee is narrowed as above. |
 | function conversion | Converting a function value to a different function type (§3.3) wraps the delegate in an adapter. The new `Function<D>` keeps the original's identity, which its `==` compares, and its display name. |
 | `enum E` | `public abstract record E` with a private constructor; each variant is `public sealed record V(...) : E` nested inside |
@@ -1710,6 +1789,7 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0200 | `'<m>' is a method; call it` / `'<f>' is a field, not a method` / `cannot index <T>` / `dict keys must be int, str, bool, tuples of those, or plain class instances, found <T>` (for a dataclass, with help `a dataclass compares by value, so it cannot be a key`; since M28 a class that isn't hashable gets `dict keys must be hashable, found <C>` instead, §4.8) |
 | TP0200 | `isinstance needs a class, found <T>` / `'<C>' is not a class` / `'<C>' is generic` / `<T> can never be a <C>` (`isinstance`, `as` and class patterns on unrelated classes) / `'<C>' is a class; write '<C>()'` (a class pattern without parentheses) (M15) |
 | TP0200 | `no overload of '<T>.<m>' takes (<A1>, <A2>)` / `'<T>' is a static class` (constructing it, or using it as a type) / `'<T>' cannot be constructed` (an interface, abstract class or enum) / `<v> is out of range for <N>` (a literal argument, `<N>` the .NET type's name, such as `Int32`) / `'<T>.<m>' returned null` (`TypeError`, at run time) / `'<C>' is not an exception class` (a .NET class not deriving from `System.Exception`) / `cannot bind both Taipan and .NET exceptions`, with help `write separate clauses` (M21) |
+| TP0200 | `expected Self, found <C>` / `a class attribute can't use '<T>'` / `'<m>' is generic, so it cannot be used as a value` for a generic class's static or class method without type arguments (M39) |
 | TP0200 | `<T> can't be None` / `<T> cannot match a mapping pattern` / `mapping keys must be int, str or bool, found <K>` / `alternatives bind different names: '<x>' is not bound in every one` / `'<x>' is <A> in one alternative and <B> in another` (M38) |
 | TP0200 | `every arm of this 'match' raises`, with help `use a 'match' statement` (M19) / `this arm gives no value`, with help `end it with an expression` / `<T> cannot match a tuple pattern` / `<T> cannot match a list pattern` / `'*<x>' would hold <A> and <B>` (a starred name in a tuple) (M29) |
 | TP0200 | `set elements must be hashable, found <T>` / `sum() takes numbers, found <T>`, with help `use ''.join(…)` for `str` / `'any' takes bools, found <T>` (and `'all'`), with help `test each value, as in any(x > 0 for x in xs)` / `'min' needs values that can be ordered, found <T>` (and `'max'`), with help `pass a key, e.g. 'key=lambda x: ...'` / `an int can't be raised to a negative power`, with help `use a float base, as in 2.0 ** -1` (M35) |
@@ -1722,6 +1802,7 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0200 | `'<m>' cannot be called directly`, with help `use '<form>'` (a special method, as M17's `__lt__`) / `dict keys must be hashable, found <C>`, with help as §4.8 says / `cannot hash <T>` / `'+' on <A> and <B> is ambiguous: '<C>.__add__' would run when it fits` / `'<p>' is a property; read it from an instance` / `'<m>' needs an instance of '<C>'` / `'cls' can only be called, or used to reach static and class methods and class attributes` / `'ClassVar' can only annotate a class attribute` / `'<B>.<m>' is abstract` (M28) |
 | TP0201 | `undefined name '<x>'` (with help `use 'None'` for `none`) / `undefined type '<T>'` / `module '<m>' has no definition '<x>'` / `.NET namespace '<ns>' has no type '<x>'` (M21) |
 | TP0202 | `cannot assign to '<x>': it is a <let binding\|parameter\|loop variable\|constant\|function\|method>`, with help `declare it with 'var'` for a `let` binding / `cannot assign to an element of str` / `cannot assign to an element of a tuple` / `cannot use '<op>' on a slice` / `cannot delete '<x>'`, with help `assign it a new value instead` / `cannot delete a field` / `cannot delete an element of <T>` (M26) / `cannot assign to '<p>': it is a read-only property` / `cannot assign to '<a>' through '<x>'`, with help `assign '<C>.<a>'` (M28) |
+| TP0202 | `cannot assign to '<f>': '<C>' is frozen` (M39) |
 | TP0203 | `<T>? can only be matched by '_' or a binding`, with help `'None' patterns aren't supported yet; bind it and test it with 'is some'` (a pattern, M29) / `expected <T>, found <T>?` / `<T>? must be narrowed before use`, with help `narrow it with 'is some', or give a default with '??'`, or one saying why a name or path isn't narrowed there (§3.9, M27) |
 | TP0204 | `non-exhaustive match (missing: <a>, <b>)`, each a variant, literal or, since M29, a pattern such as `Degraded(0, _)` or `[_, *_]` (§5.1) |
 | TP0205 | `condition must be bool, found <T>` (with help `convert it with 'as bool'` for `py`) |
@@ -1749,10 +1830,12 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0222 | `only the main file can have top-level statements` / `a library can't have top-level statements` (M22) / `a Python extension can't have top-level statements` (M25) |
 | TP0223 | `nested functions cannot have type parameters` |
 | TP0224 | `unknown decorator '@<d>'` / `'@<d>' cannot be used here` (with help `'@dataclass' goes on a class, '@override' on a method`) / `duplicate decorator '@<d>'` / `'@<d>' cannot be used here`, with help `'@<d>' goes on a method`, for a method's decorator elsewhere / `'@<a>' cannot be combined with '@<b>'` / `'@abstractmethod' needs a class deriving from 'ABC'` / `'@<x>.setter' needs a property '<x>' just above it` (M28) |
-| TP0225 | `a class can have only one base class` (protocols aside, M17) / `'<T>' cannot be a base class` / `a dataclass can only derive from a dataclass` (with help `exceptions are plain classes; give it an '__init__'` for an exception base, M16) / `a plain class can only derive from a plain class` / `generic classes cannot be derived from` / `generic classes cannot have a base class` / `'<C>' derives from itself` / `special method '<m>' is not supported` / `a dataclass cannot define '__init__'` / `field without a default follows field with a default` / `'<m>' must be 'def <m>(self, …) -> <R>'` (M28, replacing M17's `'__lt__' must take one parameter of type '<C>' (or a base class) and return bool`) / `'<m>' must take 'self' first` (or `'cls'`) / `a static method takes neither 'self' nor 'cls'` / `a property takes no parameters other than 'self'` / `a property must have a return type` / `a setter must follow its property` / `a setter must take one parameter of type <T> and return nothing` / `class attribute '<a>' needs a value` / `generic classes cannot have <static methods\|class methods\|class attributes>` / `an abstract method's body must be '...'` / `'<C>' would not be hashable, but its base '<B>' is`, with help `define '__hash__'` (M28) / `'<C>' defines '__exit__' but not '__enter__'` (or the reverse) (M37) / `'<P>' is already declared` (or `already declared by '<B>'`) / `a protocol can only declare methods` / `a protocol method's body must be '...'` / `protocol method parameters cannot have defaults` / `protocols cannot be generic` / `a protocol can only derive from 'Protocol'` (M17) |
+| TP0225 | `a class can have only one base class` (protocols aside, M17) / `'<T>' cannot be a base class` / `a dataclass can only derive from a dataclass` (with help `exceptions are plain classes; give it an '__init__'` for an exception base, M16) / `a plain class can only derive from a plain class` / `generic classes cannot be derived from` / `generic classes cannot have a base class` / `'<C>' derives from itself` / `special method '<m>' is not supported` / `a dataclass cannot define '__init__'` / `field without a default follows field with a default` / `'<m>' must be 'def <m>(self, …) -> <R>'` (M28, replacing M17's `'__lt__' must take one parameter of type '<C>' (or a base class) and return bool`) / `'<m>' must take 'self' first` (or `'cls'`) / `a static method takes neither 'self' nor 'cls'` / `a property takes no parameters other than 'self'` / `a property must have a return type` / `a setter must follow its property` / `a setter must take one parameter of type <T> and return nothing` / `class attribute '<a>' needs a value` (`generic classes cannot have <static methods\|class methods\|class attributes>` until M39) / `an abstract method's body must be '...'` / `'<C>' would not be hashable, but its base '<B>' is`, with help `define '__hash__'` (M28) / `'<C>' defines '__exit__' but not '__enter__'` (or the reverse) (M37) / `'<P>' is already declared` (or `already declared by '<B>'`) / `a protocol can only declare methods` / `a protocol method's body must be '...'` / `protocol method parameters cannot have defaults` / `protocols cannot be generic` / `a protocol can only derive from 'Protocol'` (M17) |
+| TP0225 | `a frozen dataclass can't derive from one that isn't` (or the reverse) / `'order=True' needs fields that can be ordered: '<f>' is <T>` / `'order=True' generates '<m>'; remove it` / `'__post_init__' must be 'def __post_init__(self) -> None'` / `'__post_init__' is only for dataclasses` / `cannot derive from final class '<C>'` / `'@total_ordering' needs '__lt__', '__le__', '__gt__' or '__ge__'` (M39) |
 | TP0226 | `'__init__' does not set '<f>'` / `'<f>' has no default, and '<C>' has no '__init__'` / `'<f>' is read before it is set` / `'self' is used before '<f>' is set` (or `before 'super().__init__' is called`) / `'<f>' is inherited, so it is set by 'super().__init__'` / `'super().__init__' is called before '<f>' is set` / `'<C>.__init__' must call 'super().__init__(…)'` / `'super().__init__' must be called once, directly in '__init__'` / `'super().__init__' can only be called in '__init__'` / `'__init__' returns before '<f>' is set` (or `before 'super().__init__' is called`) (when several fields are unset, the first in declaration order is named) |
 | TP0227 | `'<m>' overrides '<B>.<m>'; mark it '@override'` / `'<m>' does not override a method of <a base class\|'<B>'>` / `'__init__' cannot be marked '@override'` |
 | TP0228 | `'<m>' must take the same parameters as '<B>.<m>'` / `parameter '<p>' of '<m>' must have type <T>, as in '<B>.<m>'` / `parameter '<p>' of '<m>' needs a default, as in '<B>.<m>'` / `'<m>' must return <T>, as '<B>.<m>' does` (or `return nothing`) / `'<m>' is a <static method\|class method\|method\|property> in '<B>'` / `'<p>' must have a setter, as '<B>.<p>' does` / `'<D>.<m>' must return <R>, since it can run in place of '<B>.<op>'` / `'<D>' must be constructed as '<C>' is, since '<C>.<m>' calls 'cls(…)'` (M28) |
+| TP0228 | `'<B>.<m>' is final` / `'<m>' must return Self, as '<B>.<m>' does` (M39) |
 | TP0235 | `this awaitable is never awaited`, with help `write 'await …'` (M33) |
 | TP0234 | `cannot instantiate abstract class '<C>'`, with help `it does not implement '<B>.<m>'` (`'<B>.<m>' and '<B>.<n>'` for more) / `'cls(…)' may construct the abstract class '<C>'` / `'<C>' cannot add abstract method '<m>', since '<B>.<cm>' calls 'cls(…)'` (M28) |
 | TP0220 | `a constraint needs at least two types` / `'<T>' is listed twice in the constraint` / `a constraint cannot be optional or generic` / `constraints are only supported on functions` / `'<T>' is not a protocol` (with help `class bounds are not supported`, for a class) / `bounds are only supported on functions` (M17) |
@@ -1833,10 +1916,10 @@ ROADMAP.md plans most of these from M35 on. They were never part of v0.1:
 - I/O beyond §6.1 (M37): binary files and `bytes`, read-write (`+`) modes, `seek` and `tell`, `open`'s `errors=` and `buffering=`, `newline` values other than `None` and `""`, other encodings, `os.path` and the rest of `os` and `sys`, `contextlib`, parenthesized `with` items and targets other than a name, `yield` inside `with`, and `NotADirectoryError` and Python's other `OSError` classes
 - protocols as types of values, protocol fields, generic protocols, protocols extending other protocols, and a check that a class used with a protocol declares it
 - class bounds (`[T: Animal]`), bounds on classes' and enums' type parameters, and built-in types' ordinary methods satisfying protocols
-- special methods beyond §4.8 (`__bool__`, `__len__`, `__getitem__`, `__contains__`, `__call__`, `__ne__`, in-place `__iadd__` and the like, `__format__`), special methods in protocols other than `__lt__`, and `functools.total_ordering`
+- special methods beyond §4.8 (`__bool__`, `__ne__`, `__delitem__`, the bitwise operators, `__enter__`'s async form), and special methods in protocols other than `__lt__`
 - mixing dataclasses and plain classes in one hierarchy, and inheritance involving generic classes
-- `@dataclass` options (`frozen`, `order`), `__post_init__`, and an `__init__` written in a dataclass
-- `@final`, `Self` outside protocols (so a class method's result is its declared class, not `cls`'s), static and class methods and class attributes on generic classes, abstract static and class methods, property deleters, and static and class methods as values
+- an `__init__` written in a dataclass
+- abstract static and class methods, property deleters, instance methods as values (bound methods), `field()` and the other dataclass options (`eq`, `kw_only`, `slots`, …), and slices and `del` on classes (`__getitem__` with a slice, `__delitem__`)
 - `isinstance` on `py` values, and `is` between two expressions (identity)
 - generic functions, built-ins, methods and constructors as values (wrap them in a lambda)
 - async generators, `async for`, `async with`, async lambdas and `asyncio`-style helpers (M33), generator `send`, `throw` and `close`, `yield` as an expression, generator return values, `Generator[Y, S, R]`, `yield` inside `try`/`except`, async comprehensions, and `async` iterators

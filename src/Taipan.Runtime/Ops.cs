@@ -243,6 +243,9 @@ public static class Ops
 
     private static bool Compare(object left, object right, Ordering ordering)
     {
+        // A class element compares by its methods (SPEC §4.8).
+        if (left is IClass)
+            return Compare(left, right, (int)ordering);
         if (left is ITuple l && right is ITuple r)
         {
             for (var i = 0; i < l.Length; i++)
@@ -376,8 +379,37 @@ public static class Ops
             return result;
         if (right is IClass rr && rr.TryCompare(reflected, left, out result))
             return result;
-        throw new System.Diagnostics.UnreachableException("no comparison method applies");
+        // Only order=True's methods can refuse, for different runtime classes (SPEC §4.9).
+        throw NotSupported(op, left, right);
     }
+
+    private static TypeError NotSupported(int op, object left, object right)
+    {
+        var symbol = op switch { IClass.Lt => "<", IClass.Le => "<=", IClass.Gt => ">", _ => ">=" };
+        static string Name(object value) => value switch { IStruct s => s.TypeName, IObject o => o.TypeName, _ => value.GetType().Name };
+        return new TypeError($"'{symbol}' not supported between instances of '{Name(left)}' and '{Name(right)}'");
+    }
+
+    /// <summary>
+    /// A comparison <c>order=True</c> generates (SPEC §4.9): the fields as a tuple, for objects of the
+    /// same runtime class only, raising <c>TypeError</c> otherwise, as Python's do.
+    /// </summary>
+    public static bool OrderFields(IStruct left, IStruct right, int op)
+    {
+        if (left.GetType() != right.GetType())
+            throw NotSupported(op, left, right);
+        var (l, r) = (left.Fields, right.Fields);
+        for (var i = 0; i < l.Count; i++)
+        {
+            if (!Equality.Equal(l[i].Value, r[i].Value))
+                return Compare(l[i].Value!, r[i].Value!, (Ordering)op);
+        }
+        return op is IClass.Le or IClass.Ge;
+    }
+
+    /// <summary>A frozen dataclass's hash (SPEC §4.9): its fields', as a tuple's.</summary>
+    public static long HashFields(IStruct value) =>
+        value.Fields.Aggregate(0x345678L, (acc, field) => unchecked(acc * 1000003 ^ Hash(field.Value)));
 
     /// <summary>
     /// <c>a op b</c> through <paramref name="left"/>'s method, unless <paramref name="right"/>'s runtime
@@ -563,5 +595,16 @@ public static class Ops
                 rest[key] = value;
         }
         return true;
+    }
+
+    /// <summary><c>len(x)</c> through a class's <c>__len__</c> (SPEC §4.9): a negative length raises <c>ValueError</c>, as in Python.</summary>
+    public static long CheckLength(long length) =>
+        length >= 0 ? length : throw new ValueError("__len__() should return >= 0");
+
+    /// <summary><c>x op= y</c> on a <c>let</c> (SPEC §4.9): the in-place method must give <c>x</c> back.</summary>
+    public static void InPlace(object? target, object? result, string op, string method)
+    {
+        if (!ReferenceEquals(target, result))
+            throw new TypeError($"'{op}' can't rebind a 'let': '{method}' returned another object");
     }
 }

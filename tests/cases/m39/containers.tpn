@@ -1,0 +1,46 @@
+class Grid:
+    cells: dict[tuple[int, int], str]
+    width: int
+
+    def __init__(self, width: int):
+        self.cells = {}
+        self.width = width
+
+    def __len__(self) -> int:
+        return len(self.cells)
+
+    def __getitem__(self, at: tuple[int, int]) -> str:
+        return self.cells.get(at, ".")
+
+    def __setitem__(self, at: tuple[int, int], value: str) -> None:
+        self.cells[at] = value
+
+    def __contains__(self, at: tuple[int, int]) -> bool:
+        return at in self.cells
+
+    def __call__(self, row: int) -> str:
+        return "".join([self[(row, c)] for c in range(self.width)])
+
+let g = Grid(3)
+g[(0, 1)] = "x"
+g[(1, 2)] = "o"
+g[(1, 2)] += "!"
+print(len(g), g[(0, 1)], g[(2, 2)], (1, 2) in g, (2, 2) not in g)
+for r in range(2):
+    print(g(r))
+
+class Length:
+    def __call__(self, word: str) -> int:
+        return len(word)
+
+print(sorted(["ccc", "a", "bb"], key=Length()))
+print(list(map(Length(), ["hi", "there"])))
+
+class Bad:
+    def __len__(self) -> int:
+        return -1
+
+try:
+    print(len(Bad()))
+except ValueError as e:
+    print(e)
