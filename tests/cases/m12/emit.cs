@@ -27,7 +27,7 @@ public static class TaipanProgram
 #line 11 "tests/cases/m12/emit.tpn"
         global::Taipan.Runtime.Builtins.Print(@q, @r, @x, @y, @t.Item2, global::Taipan.Runtime.Equality.Equal(@t, global::System.ValueTuple.Create<long, string>(1L, "a")), global::Taipan.Runtime.Ops.Less(@t, global::System.ValueTuple.Create<long, string>(2L, "")));
 #line 12 "tests/cases/m12/emit.tpn"
-        foreach ((long, string) @_4 in global::Taipan.Runtime.Iter.Over(global::Taipan.Runtime.Ops.Enumerate("ab")))
+        foreach ((long, string) @_4 in (global::Taipan.Runtime.Iterators.Enumerate(global::Taipan.Runtime.Iter.Over("ab"))))
         {
 #line 12 "tests/cases/m12/emit.tpn"
             (long, string) @_5 = @_4;

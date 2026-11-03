@@ -11,7 +11,7 @@ let services = [Service("api", 3, 3), Service("worker", 4, 1), Service("cron", 1
 # Stable: worker stays before cron, in either direction.
 for svc in sorted(services, key=lambda s: s.healthy):
     print(svc.name, svc.healthy)
-print(map(lambda s: s.name, sorted(services, key=lambda s: s.healthy, reverse=True)))
+print(list(map(lambda s: s.name, sorted(services, key=lambda s: s.healthy, reverse=True))))
 
 print(sorted([3, 1, 2]), sorted([3, 1, 2], reverse=True))
 print(sorted(["b", "B", "a", "_"]))
@@ -25,14 +25,14 @@ print(xs)
 xs.sort(key=lambda x: x % 4, reverse=True)
 print(xs)
 
-print(filter(lambda x: x % 2 == 0, [1, 2, 3, 4, 5, 6]))
-let names: list[str] = map(lambda s: s.name, services)
+print(list(filter(lambda x: x % 2 == 0, [1, 2, 3, 4, 5, 6])))
+let names: list[str] = list(map(lambda s: s.name, services))
 print(names)
-let halves: list[float] = map(lambda x: x, [1, 2])
+let halves: list[float] = list(map(lambda x: x, [1, 2]))
 print(halves)
-print(map(lambda x: str(x) + "!", filter(lambda x: x > 1, [1, 2, 3])))
+print(list(map(lambda x: str(x) + "!", filter(lambda x: x > 1, [1, 2, 3]))))
 
 def by_name(s: Service) -> str:
     return s.name
 
-print(map(by_name, sorted(services, key=by_name)))
+print(list(map(by_name, sorted(services, key=by_name))))

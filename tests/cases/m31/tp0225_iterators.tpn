@@ -1,0 +1,7 @@
+# __iter__ and __next__ have their signatures (SPEC §4.8).
+class Bad:
+    def __iter__(self) -> list[int]:
+        return []
+
+    def __next__(self, n: int) -> int:
+        return n

@@ -24,9 +24,41 @@ public static class TypeChecker
         || (to is DotNetType { IsObject: true } && from is PrimitiveType { Name: not "py" } or DotNetType)
         || (from is DotNetType fromNet && to is DotNetType toNet && DotNetTypes.Derives(fromNet.Symbol, toNet.Symbol))
         || (from is OptionalOf { Inner: DotNetType fromInner } && to is OptionalOf { Inner: DotNetType toInner } && DotNetTypes.Derives(fromInner.Symbol, toInner.Symbol))
+        // Anything iterable is an Iterable, and iterators are covariant for classes (SPEC §3.13).
+        || (to is IterableOfType iterable && ElementOf(from) is { } element && IsElementOf(element, iterable.Element))
+        || (to is IteratorOfType iterator && IteratorElementOf(from) is { } produced && IsElementOf(produced, iterator.Element))
         || (from is FunctionType f && to is FunctionType t && f.Parameters.Length == t.Parameters.Length
             && t.Parameters.Zip(f.Parameters).All(pair => IsSubtype(pair.First, pair.Second))
             && (f.Result == t.Result || (f.Result is not NothingType && t.Result is not NothingType && IsSubtype(f.Result, t.Result))));
+
+    private static bool IsElementOf(TaipanType element, TaipanType expected) =>
+        element == expected || element.ContainsError || expected.ContainsError
+        || element is ClassType e && expected is ClassType x && Derives(e, x);
+
+    /// <summary>
+    /// The type of the values a <c>for</c> loop over a value of this type takes (SPEC §3.13): a
+    /// list's elements, a dict's keys, a str's characters, an iterator's or iterable's values, or a
+    /// class's through its <c>__iter__</c> or <c>__next__</c>. Null if it isn't iterable.
+    /// </summary>
+    public static TaipanType? ElementOf(TaipanType type) => type switch
+    {
+        ListOfType list => list.Element,
+        DictOfType dict => dict.Key,
+        PrimitiveType { Name: "str" } => TaipanType.Str,
+        IteratorOfType iterator => iterator.Element,
+        IterableOfType iterable => iterable.Element,
+        ClassType classType when classType.Symbol.FindMethod("__iter__") is { ReturnType: var result } => Substitute(result, MapOf(classType)) is IteratorOfType iterator ? iterator.Element : null,
+        ClassType => IteratorElementOf(type),
+        _ => null,
+    };
+
+    /// <summary>The values a type gives as an iterator: an iterator's, or a class's <c>__next__</c>'s (SPEC §3.13).</summary>
+    public static TaipanType? IteratorElementOf(TaipanType type) => type switch
+    {
+        IteratorOfType iterator => iterator.Element,
+        ClassType classType when classType.Symbol.FindMethod("__next__") is { ReturnType: var result } => Substitute(result, MapOf(classType)),
+        _ => null,
+    };
 
     // Generic classes can't derive, so a class deriving from another has no type arguments (SPEC §4.3).
     private static bool Derives(ClassType from, ClassType to) => from.Symbol != to.Symbol && from.Symbol.DerivesFrom(to.Symbol);
@@ -77,6 +109,8 @@ public static class TypeChecker
             TypeParameterType parameter => map.GetValueOrDefault(parameter.Symbol, parameter),
             OptionalOf optional => Flatten(Substitute(optional.Inner, map)),
             ListOfType list => new ListOfType(Substitute(list.Element, map)),
+            IteratorOfType iterator => new IteratorOfType(Substitute(iterator.Element, map)),
+            IterableOfType iterable => new IterableOfType(Substitute(iterable.Element, map)),
             DictOfType dict => new DictOfType(Substitute(dict.Key, map), Substitute(dict.Value, map)),
             ClassType classType => classType with { TypeArguments = [.. classType.TypeArguments.Select(a => Substitute(a, map))] },
             EnumType enumType => enumType with { TypeArguments = [.. enumType.TypeArguments.Select(a => Substitute(a, map))] },

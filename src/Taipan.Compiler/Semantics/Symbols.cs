@@ -22,7 +22,7 @@ public sealed class VariableSymbol(string name, TaipanType type, VariableKind ki
     public VariableKind Kind { get; } = kind;
 }
 
-public enum BuiltinFunction { Print, Len, Str, Int, Float, Range, Sorted, Map, Filter, Enumerate, Zip, IsInstance, Super, Repr, Hash }
+public enum BuiltinFunction { Print, Len, Str, Int, Float, Range, Sorted, Map, Filter, Enumerate, Zip, IsInstance, Super, Repr, Hash, List, Iter, Next }
 
 /// <summary>What kind of method a function is (SPEC §4.8, M28); <see cref="Instance"/> for a function.</summary>
 public enum MemberKind { Instance, Property, Static, Class }
@@ -91,6 +91,9 @@ public sealed class FunctionSymbol(
     /// <summary>For a setter, its property.</summary>
     public FunctionSymbol? SetterOf { get; set; }
 
+    /// <summary>Whether the function's body yields, which makes it a generator (SPEC §3.13, M31).</summary>
+    public bool IsGenerator { get; init; }
+
     /// <summary>Whether the method is marked <c>@abstractmethod</c> (SPEC §4.8).</summary>
     public bool IsAbstract { get; init; }
 
@@ -134,6 +137,9 @@ public sealed class FunctionSymbol(
         new("super", [], TaipanType.Error, BuiltinFunction.Super),
         new("repr", [], TaipanType.Str, BuiltinFunction.Repr),
         new("hash", [], TaipanType.Int, BuiltinFunction.Hash),
+        new("list", [], TaipanType.Error, BuiltinFunction.List),
+        new("iter", [], TaipanType.Error, BuiltinFunction.Iter),
+        new("next", [], TaipanType.Error, BuiltinFunction.Next),
     ];
 }
 
@@ -354,6 +360,7 @@ public static class BuiltinClasses
             Builtin("ValueError", Exception),
             Builtin("TypeError", Exception),
             Builtin("RuntimeError", Exception),
+            Builtin("StopIteration", Exception),
             PythonError,
             DotNetError,
         ];

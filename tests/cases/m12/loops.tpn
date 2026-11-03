@@ -12,7 +12,7 @@ let counts = {"a": 2, "b": 1}
 for k, v in counts.items():
     print(k, v)
 print(counts.items())
-print(zip([1, 2, 3], ["x", "y"]))
+print(list(zip([1, 2, 3], ["x", "y"])))
 for x, y in zip(names, [1, 2, 3]):
     print(x, y)
 
@@ -23,7 +23,7 @@ class Service:
     healthy: int
 
 let services = [Service("web", 2), Service("api", 3), Service("cron", 2)]
-print(map(lambda s: s.name, sorted(services, key=lambda s: (s.healthy, s.name))))
+print(list(map(lambda s: s.name, sorted(services, key=lambda s: (s.healthy, s.name)))))
 print(sorted([(2, "b"), (1, "z"), (2, "a")]))
 print(sorted([(1, 1), (1, 2)], reverse=True))
 
@@ -31,4 +31,4 @@ print(sorted([(1, 1), (1, 2)], reverse=True))
 var fs: list[Callable[[], str]] = []
 for i, name in enumerate(names):
     fs.append(lambda: f"{i}:{name}")
-print(map(lambda f: f(), fs))
+print(list(map(lambda f: f(), fs)))

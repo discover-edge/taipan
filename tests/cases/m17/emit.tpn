@@ -31,4 +31,4 @@ def total[S: Shape](xs: list[S]) -> float:
 
 let vs = [Version(2), Version(1)]
 print(largest([1, 2]), largest(["a"]), total(vs), largest(vs) is not None)
-print(map(lambda v: v.n, sorted(vs)), vs[0] < vs[1])
+print(list(map(lambda v: v.n, sorted(vs))), vs[0] < vs[1])

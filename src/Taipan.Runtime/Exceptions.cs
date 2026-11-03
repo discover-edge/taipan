@@ -107,6 +107,15 @@ public class ValueError : TaipanException
     public static new ValueError @__new__(string @message) => Exceptions.Init(new ValueError(), message);
 }
 
+public class StopIteration : TaipanException
+{
+    protected StopIteration() { }
+
+    internal StopIteration(string message) : base(message) { }
+
+    public static new StopIteration @__new__(string @message) => Exceptions.Init(new StopIteration(), message);
+}
+
 public class TypeError : TaipanException
 {
     protected TypeError() { }

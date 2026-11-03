@@ -27,7 +27,7 @@ f("again")
 
 for name, age, city in zip(["ann", "bo", "cy"], [31, 42, 27, 99], ["oslo", "rome", "lima"]):
     print(name, age, city)
-print(zip([1, 2], ["a", "b"], [True, False], [1.5, 2.5]))
+print(list(zip([1, 2], ["a", "b"], [True, False], [1.5, 2.5])))
 
 let pets: list[Animal] = [Dog("rex"), Cat("tom"), Bird("tweety")]
 for pet in pets:

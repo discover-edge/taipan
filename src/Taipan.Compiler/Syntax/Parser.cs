@@ -711,6 +711,8 @@ public sealed class Parser
                 return ParseRaiseStmt();
             case TokenKind.DelKeyword:
                 return ParseDelStmt();
+            case TokenKind.YieldKeyword:
+                return ParseYieldStmt();
             case TokenKind.PassKeyword:
                 return new PassStmt(Next().Span);
             case TokenKind.BreakKeyword:
@@ -932,6 +934,22 @@ public sealed class Parser
         var start = Next().Span.Start;
         var value = !_recovering && CanStartExpression(Current.Kind) ? ParseValue() : null;
         return new ReturnStmt(value, SpanFrom(start));
+    }
+
+    // yield_stmt = "yield" [ "from" ] expr
+    private YieldStmt ParseYieldStmt()
+    {
+        var keyword = Next();
+        var from = At(TokenKind.FromKeyword);
+        if (from)
+            Next();
+        if (!CanStartExpression(Current.Kind))
+        {
+            ReportSyntaxError(bag => bag.ReportBareYield(keyword.Span));
+            return new YieldStmt(new ErrorExpr(Here), from, SpanFrom(keyword.Span.Start));
+        }
+        var value = ParseExpr();
+        return new YieldStmt(value, from, SpanFrom(keyword.Span.Start));
     }
 
     // raise_stmt = "raise" [ expr ]

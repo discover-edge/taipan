@@ -13,7 +13,7 @@ type Pet = Animal
 type Pets = list[Pet]
 
 def names(pets: Pets) -> list[str]:
-    return map(lambda p: p.name, pets)
+    return list(map(lambda p: p.name, pets))
 
 def kind(p: Pet) -> str:
     match p:
@@ -24,7 +24,7 @@ def kind(p: Pet) -> str:
 
 let pets: Pets = [Dog("rex"), Animal("generic")]
 print(names(pets))
-print(map(kind, pets))
+print(list(map(kind, pets)))
 let maybe: Pet? = pets[0]
 if maybe is some pet:
     print(isinstance(pet, Dog), pet.name)

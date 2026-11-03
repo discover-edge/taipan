@@ -266,51 +266,6 @@ public static class Ops
 
     // ---- Lists and dicts (SPEC §6) ----
 
-    /// <summary><c>enumerate(xs, start)</c>: (index, element) pairs, in a new list.</summary>
-    public static List<(long, T)> Enumerate<T>(List<T> list, long start = 0)
-    {
-        var result = new List<(long, T)>();
-        foreach (var item in Iter.Over(list))
-            result.Add((start + result.Count, item));
-        return result;
-    }
-
-    /// <summary><c>enumerate(s, start)</c> over a str's code points.</summary>
-    public static List<(long, string)> Enumerate(string value, long start = 0)
-    {
-        var result = new List<(long, string)>();
-        foreach (var item in Iter.Over(value))
-            result.Add((start + result.Count, item));
-        return result;
-    }
-
-    /// <summary>
-    /// <c>zip(xs, ys, zs, …)</c> of three or more lists (SPEC §6, M26): each row's elements up to the
-    /// shortest list's length, which the caller makes into a tuple.
-    /// </summary>
-    public static List<object?[]> Zip(params System.Collections.IList[] lists)
-    {
-        var count = lists.Min(list => list.Count);
-        var rows = new List<object?[]>(count);
-        for (var i = 0; i < count; i++)
-            rows.Add([.. lists.Select(list => list[i])]);
-        return rows;
-    }
-
-    /// <summary><c>zip(xs, ys)</c>: pairs up to the shorter list's length.</summary>
-    public static List<(T1, T2)> Zip<T1, T2>(List<T1> first, List<T2> second)
-    {
-        var result = new List<(T1, T2)>();
-        using var other = Iter.Over(second).GetEnumerator();
-        foreach (var item in Iter.Over(first))
-        {
-            if (!other.MoveNext())
-                break;
-            result.Add((item, other.Current));
-        }
-        return result;
-    }
-
     public static List<(TKey, TValue)> Items<TKey, TValue>(OrderedDictionary<TKey, TValue> dict) where TKey : notnull =>
         [.. dict.Select(entry => (entry.Key, entry.Value))];
 
@@ -437,27 +392,6 @@ public static class Ops
     {
         list.Clear();
         list.AddRange(items);
-    }
-
-    /// <summary><c>map(f, xs)</c>: a new list (SPEC §6).</summary>
-    public static List<TResult> Map<T, TResult>(Function<Func<T, TResult>> function, List<T> list)
-    {
-        var result = new List<TResult>();
-        foreach (var item in Iter.Over(list))
-            result.Add(function.Invoke(item));
-        return result;
-    }
-
-    /// <summary><c>filter(f, xs)</c>: a new list (SPEC §6).</summary>
-    public static List<T> Filter<T>(Function<Func<T, bool>> predicate, List<T> list)
-    {
-        var result = new List<T>();
-        foreach (var item in Iter.Over(list))
-        {
-            if (predicate.Invoke(item))
-                result.Add(item);
-        }
-        return result;
     }
 
     public static List<T> Concat<T>(List<T> left, List<T> right) => [.. left, .. right];

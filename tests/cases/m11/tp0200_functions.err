@@ -11,7 +11,7 @@ tests/cases/m11/tp0200_functions.tpn:20:7: error TP0200: operator '<' cannot be 
 tests/cases/m11/tp0200_functions.tpn:21:14: error TP0200: cannot sort list[Point]
   help: pass a key, e.g. 'key=lambda x: ...'
 tests/cases/m11/tp0200_functions.tpn:22:23: error TP0200: cannot sort by bool
-tests/cases/m11/tp0200_functions.tpn:23:26: error TP0200: expected list, found int
+tests/cases/m11/tp0200_functions.tpn:23:26: error TP0200: cannot iterate over int
 tests/cases/m11/tp0200_functions.tpn:24:13: error TP0200: dict keys must be int, str, bool, tuples of those, or plain class instances, found Callable[[], int]
 tests/cases/m11/tp0200_functions.tpn:25:13: error TP0200: expected Callable[[str], U], found Callable[[int], int]
 tests/cases/m11/tp0200_functions.tpn:26:23: error TP0200: 'print' does not return a value

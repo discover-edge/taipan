@@ -24,7 +24,7 @@ def largest[T: Comparable](xs: list[T]) -> T?:
     return best
 
 def labels(vs: list[Version]) -> list[str]:
-    return map(lambda v: v.label(), vs)
+    return list(map(lambda v: v.label(), vs))
 
 print(largest([3, 9, 4]))
 print(largest(["pear", "apple", "zucchini"]))

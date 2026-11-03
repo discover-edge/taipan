@@ -772,6 +772,26 @@ public sealed class DiagnosticBag
         return list.Count <= 1 ? string.Concat(list) : $"{string.Join(", ", list[..^1])} and {list[^1]}";
     }
 
+    // ---- Iterators and generators (SPEC §3.13, M31) ----
+
+    public void ReportBareYield(TextSpan span) =>
+        Add("TP0100", span, "'yield' needs a value");
+
+    public void ReportYieldOutsideFunction(TextSpan span) =>
+        Add("TP0215", span, "'yield' outside a function");
+
+    public void ReportYieldInTry(TextSpan span) =>
+        Add("TP0215", span, "'yield' can't be inside a 'try' with 'except', or in 'finally'");
+
+    public void ReportGeneratorReturnType(TextSpan span, string function) =>
+        Add("TP0200", span, $"'{function}' yields, so it must return 'Iterator[T]'");
+
+    public void ReportGeneratorReturnValue(TextSpan span) =>
+        Add("TP0200", span, "a generator can't return a value");
+
+    public void ReportNotIterableFromList(TextSpan span, string message) =>
+        Add("TP0200", span, message, "convert it with 'list(…)' first");
+
     // ---- Parameters (SPEC §4.2, M30) ----
 
     public void ReportPositionalOnlyByKeyword(TextSpan span, string parameter) =>

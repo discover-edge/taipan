@@ -54,7 +54,7 @@ def total_area[S: Shape](shapes: list[S]) -> float:
     return sum
 
 def doubled[S: Shape](shapes: list[S]) -> list[S]:
-    return map(lambda s: s.scaled(k=2.0), shapes)
+    return list(map(lambda s: s.scaled(k=2.0), shapes))
 
 # A bounded type parameter satisfies its own bound, so it can be passed on.
 def doubled_area[S: Shape](shapes: list[S]) -> float:

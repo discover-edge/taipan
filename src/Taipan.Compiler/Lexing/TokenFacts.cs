@@ -38,6 +38,7 @@ public static class TokenFacts
         ["finally"] = TokenKind.FinallyKeyword,
         ["raise"] = TokenKind.RaiseKeyword,
         ["del"] = TokenKind.DelKeyword,
+        ["yield"] = TokenKind.YieldKeyword,
     };
 
     private static readonly Dictionary<TokenKind, string> KeywordText =

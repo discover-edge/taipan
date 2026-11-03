@@ -1,0 +1,18 @@
+# Iterators can't be indexed, sliced or measured: convert them with list(…) (SPEC §3.13).
+let xs = [1, 2, 3]
+let doubled = map(lambda x: x * 2, xs)
+print(doubled[0])
+print(len(zip(xs, xs)))
+print(filter(lambda x: x > 1, xs)[1:])
+print(enumerate(xs) == [(0, 1)])
+
+def numbers() -> list[int]:
+    yield 1
+
+def counted(n: int) -> Iterator[int]:
+    yield n
+    return n
+
+def words() -> Iterator[str]:
+    yield 1
+    yield from [1, 2]

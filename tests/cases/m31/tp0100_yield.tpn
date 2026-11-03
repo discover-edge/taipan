@@ -1,0 +1,4 @@
+# yield needs a value, and is a statement (SPEC §2).
+def gen() -> Iterator[int]:
+    yield
+    let x = yield 1

@@ -48,6 +48,7 @@ public enum TokenKind
     FinallyKeyword,
     RaiseKeyword,
     DelKeyword,
+    YieldKeyword,
 
     // Operators and punctuation
     Plus,

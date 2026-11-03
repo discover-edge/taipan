@@ -54,6 +54,10 @@ public sealed partial class Binder
     private BoundUnpack Unpack(BoundExpr value, TextSpan span, ImmutableArray<Unpacked> items,
         Func<Unpacked, BoundExpr, IEnumerable<BoundStmt>> store, TextSpan statementSpan)
     {
+        // Any other iterable is taken into a list first, and checked as one (SPEC §3.13).
+        if (value.Type is not (TupleOfType or ListOfType) && !value.Type.ContainsError && value.Type is not OptionalOf
+            && TypeChecker.ElementOf(value.Type) is { } iterated)
+            value = new BoundToList(Convert(value, new IterableOfType(iterated)), new ListOfType(iterated), value.Span);
         var temp = UnpackTemp(value.Type);
         var source = new BoundVariable(temp, span);
         var star = items.IndexOf(items.FirstOrDefault(IsStarred)!);

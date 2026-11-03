@@ -34,7 +34,8 @@ Taipan is a statically typed, compiled language with Python's surface syntax. Th
 - **Comments:** `#` to end of line.
 - **Identifiers:** `[A-Za-z_][A-Za-z0-9_]*`. A lone `_` is the wildcard pattern only.
 - **Keywords:**
-  `def class enum let var const if elif else while for in match return pass break continue and or not is some None True False as from import lambda try except finally raise del`
+  `def class enum let var const if elif else while for in match return pass break continue and or not is some None True False as from import lambda try except finally raise del yield`
+  - `yield` is a keyword since M31 (§3.13).
   - `struct` was a keyword before M15. It's now an ordinary name, and records are declared with `@dataclass class` (§4.3).
   - `type` is a *soft keyword* (M18), as in Python 3.12: it starts a type alias (§3.12) only at the start of a line, followed by a name and then `=` or `[`. Anywhere else it's an ordinary name, so `type = "json"` and `e.type` still work.
   - `isinstance` and `super` are built-in functions (§6), not keywords. `Protocol`, `Self` and `Comparable` are built-in names (M17, §3.11), not keywords.
@@ -117,7 +118,7 @@ named_fields  = NAME ":" type { "," NAME ":" type } [ "," ] ;
 block         = NEWLINE INDENT stmt { stmt } DEDENT ;
 
 stmt          = simple_stmt NEWLINE | compound_stmt ;
-simple_stmt   = let_stmt | var_stmt | assign_stmt | return_stmt | raise_stmt | del_stmt
+simple_stmt   = let_stmt | var_stmt | assign_stmt | return_stmt | raise_stmt | del_stmt | yield_stmt
               | "pass" | "break" | "continue" | expr ;
 del_stmt      = "del" target { "," target } ;                       (* M26, §5.5 *)
 let_stmt      = "let" ( NAME [ ":" type ] | names ) "=" expr_list ;
@@ -134,6 +135,7 @@ match_expr    = "match" expr ":" NEWLINE INDENT value_arm { value_arm } DEDENT ;
 value_arm     = pattern ":" ( ( expr | raise_stmt ) NEWLINE | block ) ;   (* block: M29 *)
 expr_list     = expr { "," expr } ;                                  (* two or more make a tuple: M12 *)
 raise_stmt    = "raise" [ expr ] ;                                   (* M16, §3.10 *)
+yield_stmt    = "yield" [ "from" ] expr ;                            (* M31, §3.13 *)
 
 compound_stmt = if_stmt | while_stmt | for_stmt | match_stmt | try_stmt | func_def ;   (* in a block: nested function, M11 *)
 try_stmt      = "try" ":" block { except_clause } [ "else" ":" block ] [ "finally" ":" block ] ;   (* M16, §3.10 *)
@@ -240,6 +242,7 @@ atom          = INT | FLOAT | STRING | FSTRING | "True" | "False" | "None"
 | `C` | instance of a class `C` (M15, §4.3) | a C# class (§8) |
 | `Exception`, `ValueError`, … | built-in exception classes (M16, §3.10) | classes in `Taipan.Runtime` (§8) |
 | `Callable[[A, B], R]` | function value (M11, §3.7) | `Taipan.Runtime.Function<D>` (§8) |
+| `Iterator[T]`, `Iterable[T]` | single-pass stream, and anything a `for` loop goes over (M31, §3.13) | `Taipan.Runtime.IIterator<T>`, `IEnumerable<T>` (§8) |
 | `Comparable`, user protocols | structural interface, only as a type parameter bound (M17, §3.11) | none: bounded generics are monomorphized |
 
 - A function without `-> type` returns nothing (C# `void`). Using its result as a value is `TP0200`. Since M26, `-> None` says the same explicitly, as in Python's type hints, for functions, methods (including `__init__`) and nested `def`s; a function declared `-> None` is the same as one without a return type in every way, its display and function type (`Callable[[…], None]`) included.
@@ -494,7 +497,8 @@ finally:
   | `KeyError` | `LookupError` | a missing dict key |
   | `ValueError` | `Exception` | `int(x)` of a NaN, `split("")` and `replace("", …)`, and a slice step of 0 |
   | `TypeError` | `Exception` | a failed `as` (§4.3, §10.4) |
-  | `RuntimeError` | `Exception` | changing a list or dict while iterating over it |
+  | `RuntimeError` | `Exception` | changing a list or dict while iterating over it; `StopIteration` escaping a generator (M31) |
+  | `StopIteration` | `Exception` | `next()` on an exhausted iterator, or a class's `__next__` ending (M31, §3.13) |
   | `PythonError` | `Exception` | a Python exception from a `py` operation (§10.5) |
   | `DotNetError` | `Exception` | a .NET exception from a .NET call, caught as `Exception` (M21, §13.6) |
 
@@ -665,6 +669,49 @@ def swap[T](p: Pair[T]) -> Pair[T]:
 - **Display:** diagnostics show the expanded type, not the alias's name: `expected Callable[[Request], Response], found int`.
 
 There's no run-time form: aliases are expanded during type checking, and nothing is emitted for them (§8).
+
+### 3.13 Iterators and generators (M31)
+```python
+def naturals(start: int) -> Iterator[int]:
+    var n = start
+    while True:
+        yield n
+        n += 1
+
+def evens(xs: Iterable[int]) -> Iterator[int]:
+    for x in xs:
+        if x % 2 == 0:
+            yield x
+
+for i, name in zip(naturals(1), ["a", "b", "c"]):
+    print(i, name)
+```
+
+**Types**
+- **`Iterator[T]`** is a single-pass stream of `T` values: a generator, the result of `map`, `filter`, `zip`, `enumerate` and `iter`, or an instance of a class with `__next__` (below). Each value is produced when it's asked for, and once taken it's gone, as in Python.
+- **`Iterable[T]`** is anything a `for` loop can go over: `list[T]`, `dict[T, V]` (its keys), `str` (as `Iterable[str]`, one character each), an `Iterator[T]`, or an instance of a class with `__iter__` (below). Each loop over a list, dict, str or class starts again from its beginning; a loop over an iterator continues from where it is.
+- `Iterator` and `Iterable` are built-in generic names, like `list`, written as in Python's `typing`. Each takes one type argument (`TP0209`).
+- **Assignability (§3.3):** each type above is assignable to `Iterable[T]` of its element type, and a class with `__next__` to `Iterator[T]`. Since iterators only produce values, `Iterator[Dog]` and `Iterable[Dog]` are also assignable to `Iterator[Animal]` and `Iterable[Animal]`, for classes, as Python's are covariant. Nothing else converts: a `list[T]` isn't an `Iterator[T]` (use `iter(xs)`).
+- **Inference (§3.6):** an `Iterable[T]` parameter infers `T` from the element type of whatever is passed.
+- **What they support:** `for`, unpacking (§3.8, checked at run time as for a list), `in` and `not in` (which take values until one is equal, as in Python), the built-ins below, and `==` and `!=`, which compare identity. They can't be indexed, sliced, measured with `len` or used as dict keys. Each is `TP0200`, and for indexing, slicing and `len` the help is `convert it with 'list(…)' first`.
+- **Display:** `<generator object naturals>`, `<map object>`, `<filter object>`, `<zip object>`, `<enumerate object>`, `<list_iterator object>` from `iter` on a list, and `<iterator object>` for the rest, without Python's address. A class's instance displays as its class does (§4.8).
+- Iterators aren't convertible to Python (§10.3). A library exports `Iterable[T]` as .NET's `IEnumerable<T>`, and `Iterator[T]` as the runtime's `IIterator<T>`, which is one (§14.2).
+
+**Generators**
+- **A generator function** is one whose body has a `yield`, not counting nested functions. It's declared to return `Iterator[T]` or `Iterable[T]`, as in Python's type hints. Any other return type, or none, is `TP0200`, `'<f>' yields, so it must return 'Iterator[T]'`.
+- **`yield e`** is a statement. It gives `e`, which is checked against `T`, to whatever asked for the next value, and pauses the function there until it's asked again. The value of a `yield` expression (`x = yield e`, Python's `send`) is deferred: `yield` anywhere but at the start of a statement is `TP0100`. A bare `yield` is `TP0100`, `'yield' needs a value`.
+- **`yield from e`** gives each value of `e`, an `Iterable[U]` with `U` assignable to `T`, in turn.
+- **Calling a generator function** runs none of its body. It gives a new iterator; the body runs up to the first `yield` when the first value is asked for, and so on. The arguments are evaluated at the call, and the defaults too.
+- **`return`** without a value ends the generator, and so does reaching the end of its body. `return e` is `TP0200`, `a generator can't return a value` (generator return values are deferred). Since a generator needn't return, `TP0208` doesn't apply.
+- **Where:** `yield` outside a function is `TP0215`, `'yield' outside a function`. A lambda's body is an expression, so it can't yield. Methods may be generators, including `__iter__` (below).
+- **Inside `try` (deferred):** `yield` in the body of a `try` that has an `except` clause, or in an `except` or `finally` block, is `TP0215`, `'yield' can't be inside a 'try' with 'except', or in 'finally'`. A `try` with only `finally` may yield. Its `finally` runs when the generator finishes. A `for` loop that stops early (`break`, `return` or an exception) leaves the generator where it is, so a later loop or `next` continues it, as in Python; one that's never finished never runs its `finally`, where Python would run it when the generator is collected.
+- **`StopIteration`** raised inside a generator, and not caught there, is `RuntimeError`, `generator raised StopIteration`, as Python 3.7 and later do.
+
+**The iterator protocol for classes (§4.8)**
+- **`__iter__(self) -> Iterator[T]`** makes a class `Iterable[T]`: a `for` loop over an instance calls `__iter__` once, and takes values from its result. It's often a generator method.
+- **`__next__(self) -> T`** makes a class `Iterator[T]`: each value asked for is a call to `__next__`, and it ends when `__next__` raises `StopIteration`. As in Python, an iterator class usually also has `def __iter__(self) -> Iterator[T]: return self`; Taipan treats a class with `__next__` as its own iterator either way.
+- Both follow the rules for special methods (§4.8): calling them directly is `TP0200`, with help `use 'iter(x)'` and `use 'next(x)'`.
+- A class's `__iter__` result and `__next__` result types give `T`. A class with both must give the same `T` (`TP0225`).
 
 ---
 
@@ -959,6 +1006,8 @@ class Shape(ABC):
 | `__add__`, `__sub__`, `__mul__`, `__truediv__`, `__floordiv__`, `__mod__` | `(self, other: T) -> R`, for any `T` and `R` | `+ - * / // %` with the class value on the left |
 | `__radd__`, `__rsub__`, `__rmul__`, `__rtruediv__`, `__rfloordiv__`, `__rmod__` | `(self, other: T) -> R` | the same operators with the class value on the right |
 | `__neg__` | `(self) -> R` | unary `-` |
+| `__iter__` | `(self) -> Iterator[T]` | `for`, `iter()` and every built-in that takes an `Iterable[T]` (M31, §3.13) |
+| `__next__` | `(self) -> T` | `next()`, and taking a value from the class as an `Iterator[T]` (M31, §3.13) |
 
 - Special methods are inherited and overridden like other methods (§4.3), with `@override` when a base class defines the method in its body. Defining one that only Python's `object` has (`__str__`, `__eq__`, …), or that a dataclass generates (below), needs no `@override`.
 - Calling one directly (`m.__add__(n)`, `m.__str__()`) is `TP0200`, `'<m>' cannot be called directly`, with help naming its form (`use '+'`, `use 'str(m)'`, `use 'repr(m)'`, `use 'hash(m)'`), except as `super().__m__(…)` in an override.
@@ -1127,6 +1176,7 @@ def area(s: Shape) -> float:
   - `dict[K, V]`, giving `x: K` (keys, insertion order)
   - `str`, giving `x: str` (one character each)
   - `range(...)`, giving `x: int`
+  - since M31, `Iterator[T]` or `Iterable[T]`, giving `x: T`, or an instance of a class with `__iter__` or `__next__` (§3.13)
 - The loop variable is a `let` scoped to the body.
 - `for a, b in e` unpacks each element, which must be a tuple with that many elements, or since M29 a list (§3.8), with nesting and a starred name as for `let`. Each name is a loop variable.
 - Mutating a list or dict while iterating over it panics.
@@ -1192,7 +1242,7 @@ In `a == b` and `a != b`, `a`'s type is `b`'s expected type (§4.6), so `m == No
 
 **Functions**
 - `print(*args)` writes each argument's display form, space-separated, then a newline.
-- `len(x) -> int` takes a list, dict, or str. For a `str` it counts Unicode code points, so `len("🐍")` is `1`.
+- `len(x) -> int` takes a list, dict, or str (an iterator is `TP0200`, with help `convert it with 'list(…)' first`). For a `str` it counts Unicode code points, so `len("🐍")` is `1`.
 - `range(stop)` and `range(start, stop)` iterate only (they're not a list).
 - `str(x) -> str` gives the display form.
 - `repr(x) -> str` (M28) gives the form a value has inside a list, as `!r` writes it: `repr("a")` is `"a"` with its quotes. A class's `__repr__` defines it (§4.8).
@@ -1206,15 +1256,19 @@ In `a == b` and `a != b`, `a`'s type is `b`'s expected type (§4.6), so `m == No
   - `reverse: bool` sorts in descending order.
   - The sort is stable: equal elements keep their original order, with `reverse=True` too, as in Python.
   - `key` and `reverse` are optional and keyword-only.
-- `map(f: Callable[[T], U], xs: list[T]) -> list[U]` and `filter(f: Callable[[T], bool], xs: list[T]) -> list[T]` (M11) call `f` once per element, in order, and return new lists. Python's versions return iterators, which Taipan doesn't have.
-- `enumerate(xs)` and `enumerate(xs, start)` (M12) give a new list of `(index, element)` tuples: `list[tuple[int, T]]` for a `list[T]`, or `list[tuple[int, str]]` for a `str`'s characters. `start` is an `int` that defaults to 0. It may be given by position, or as the keyword argument `start=`, as in Python.
+- `map(f: Callable[[T], U], xs: Iterable[T]) -> Iterator[U]` and `filter(f: Callable[[T], bool], xs: Iterable[T]) -> Iterator[T]` (M11) call `f` once per element, in order. Since M31 they're lazy, as in Python 3: each calls `f` only when its next value is asked for (§3.13). Before M31 they returned new lists, so code that indexes, slices, measures or compares their results is now `TP0200`, with help `convert it with 'list(…)' first`.
+- `enumerate(xs)` and `enumerate(xs, start)` (M12) give `(index, element)` tuples: `Iterator[tuple[int, T]]` for an `Iterable[T]`, which a `str` is as `Iterable[str]`. `start` is an `int` that defaults to 0. It may be given by position, or as the keyword argument `start=`, as in Python. Before M31 it gave a new list.
+- `list(xs: Iterable[T]) -> list[T]` (M31) takes every value into a new list, in order: `list(map(f, xs))`. `list()` with no argument needs an expected type, as `[]` does (§4.6).
+- `iter(xs: Iterable[T]) -> Iterator[T]` (M31) starts an iterator over `xs`; on an iterator it gives the iterator itself.
+- `next(it: Iterator[T]) -> T` (M31) takes the next value, raising `StopIteration` when there's none. `next(it, default)` gives `default` instead, which is checked against `T`; a `None` default makes the result `T?`.
 - `isinstance(x, C) -> bool` (M15) is `True` when `x`'s runtime class is `C` or derives from it, as in Python, and `False` for `None`. Since M26, `isinstance(x, (A, B, …))` is `True` when `x` is any of the listed classes. It narrows `x` to the nearest class all of them derive from (§3.9), as `except (A, B) as e` binds (§3.10), and each listed class follows the rules for one (`TP0200` for a class `x` can never be).
   - `x` must be a class or an optional class, and `C` the name of a class (qualified for another module: `zoo.Dog`) that isn't generic. Anything else is `TP0200`. A tuple of classes (`isinstance(x, (A, B))`) is deferred.
   - `C` must derive from `x`'s class, or be it or one of its bases. An unrelated class is `TP0200`, since the test could never be `True`.
   - It narrows `x` (§3.9).
 - `super()` (M15) is valid only as `super().m(…)` in a method (§4.3).
-- `zip(xs: list[A], ys: list[B], …) -> list[tuple[A, B, …]]` (M12) groups the elements of two or more lists, stopping at the shortest, as in Python: `zip(names, ages, cities)` is a `list[tuple[str, int, str]]`. Before M26 it took exactly two lists. One list, which would need a one-element tuple, is `TP0209`.
-- `sorted`, `sort`, `map`, `filter`, `enumerate` and `zip` iterate their lists (§5.2), so a function argument that changes a list panics with `list mutated during iteration`.
+- `zip(xs: Iterable[A], ys: Iterable[B], …) -> Iterator[tuple[A, B, …]]` (M12) groups the values of two or more iterables, stopping at the shortest, as in Python: `zip(names, ages, cities)` is an `Iterator[tuple[str, int, str]]`. For each tuple it takes a value from each iterable in turn, left to right, and stops at the first that has none, so `zip(naturals(0), ["a", "b"])` ends. Before M26 it took exactly two lists, and before M31 it gave a new list. One iterable, which would need a one-element tuple, is `TP0209`.
+- `sorted(xs: Iterable[T], …)` takes any iterable since M31, and still gives a new list.
+- `sorted`, `sort`, `map`, `filter`, `enumerate` and `zip` iterate their lists (§5.2), so a function argument that changes a list panics with `list mutated during iteration`. Since M31 the lazy ones do so when they're iterated.
 
 **Methods**
 - `list[T]`: `append(x: T)`, `pop() -> T` (removes and returns the last element; panics if empty), `insert(i: int, x: T)` (Python semantics: a negative `i` counts from the end, and out-of-range indices clamp), `contains(x: T) -> bool`, `sort(key=…, reverse=False)` (M11: sorts in place, with the same rules as `sorted`)
@@ -1303,6 +1357,9 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 | static and class methods (M28) | Each class with static or class methods, or a base with them, has a nested class object, `C.@__Class`, deriving from the base's, with a singleton `C.@__class` and the methods as virtual instance methods (`this` is `cls`). `C.m(…)` is `C.@__class.@m(…)`, and `x.m(…)` is `x.@__classobj.@m(…)`, a virtual property each class overrides. `cls(…)` calls a virtual `@__call__` that each class object overrides with its class's construction. |
 | class attributes (M28) | `public static T @a { get; set; }` on the declaring class, initialized by its C# static initializer. |
 | abstract classes (M28) | `public abstract class`, with `public abstract` methods. An abstract class has no `@__new__`, since nothing constructs it. |
+| `Iterable[T]` / `Iterator[T]` (M31) | `IEnumerable<T>`, and the covariant interface `Taipan.Runtime.IIterator<T>`, an `IEnumerable<T>` over one stream: a second loop over it continues where the first stopped. A list, dict, str or class converts to `Iterable[T]` through a runtime wrapper that starts a fresh pass each time, and keeps the mutation check (§5.2). |
+| generators (M31) | A C# iterator method returning `IEnumerable<T>`, with `yield return` and `yield break`; the generator function calls it and wraps the result in an `Iterator<T>`, so its body starts at the first value asked for. `yield from e` is a `foreach` that yields each value. |
+| `map`, `filter`, `zip`, `enumerate` (M31) | Runtime iterators over `IEnumerable<T>`, which call their function or take from their sources only when asked for a value. |
 | `isinstance(x, C)` / narrowed `x` | `x is C`. A narrowed read is `((C)x)`, or `x!` / `x.Value` for `x is not None` on a reference / value type. |
 | `x as C` / `x as C?` | `Taipan.Runtime.Ops.Cast<C>(x)`, which panics as §7 says / `x as C` |
 | exceptions (M16) | `Exception` is `Taipan.Runtime.Exception`, which derives from `System.Exception` and is emitted against like a plain class's base (`__new__`, `@__init__`, a `message` property); the other built-in exception classes derive from it. A user exception class is a plain class deriving from one of them. Runtime errors throw the matching class, and a Python exception becomes a `PythonError` where the `py` operation calls Python. Checked arithmetic keeps throwing C#'s `OverflowException`, which a `catch` turns into an `OverflowError`. `raise e` is `throw e`. A bare `raise` is `throw Taipan.Runtime.Exceptions.Rethrow(caught)`, which rethrows with `ExceptionDispatchInfo` and so keeps the original stack trace and line. |
@@ -1367,7 +1424,7 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 | TP0005 | invalid escape sequence |
 | TP0006 | invalid f-string |
 | TP0007 | invalid number literal |
-| TP0100 | syntax error: expected X, found Y |
+| TP0100 | syntax error: expected X, found Y (including `'yield' needs a value`, M31) |
 | TP0200 | type mismatch |
 | TP0201 | undefined name |
 | TP0202 | cannot assign to `let` binding |
@@ -1422,6 +1479,7 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0200 | `'<x>' is not a function` / `cannot call <T>` (a callee that isn't a name) |
 | TP0200 | `'<f>' is generic, so it cannot be used as a value` / `built-in '<f>' cannot be used as a value`, with help `wrap it in a lambda` (M11) |
 | TP0200 | `'<f>' has '*args' or '**kwargs', so it cannot be used as a value`, with help `wrap it in a lambda` / `cannot unpack <T> into arguments` (M30) |
+| TP0200 | `'<f>' yields, so it must return 'Iterator[T]'` / `a generator can't return a value` / `cannot index <T>` / `cannot slice <T>` / `'len' takes a list, dict or str, found <T>`, each with help `convert it with 'list(…)' first` for an iterator (M31) |
 | TP0200 | `expected <T>, found lambda` / `cannot sort <T>`, with help `pass a key, e.g. 'key=lambda x: ...'` / `cannot sort by <K>` (M11) |
 | TP0200 | `tuple index must be an integer literal` / `index <i> out of range for <T>` (a tuple) / `cannot unpack <T>` / `cannot slice <T>` (M12) |
 | TP0200 | `integer literal is out of range` |
@@ -1459,7 +1517,7 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0211 | `'<f>' cannot use top-level variable '<x>'`, with help `pass it as a parameter, or make it a const` |
 | TP0213 | `optional types cannot be nested` |
 | TP0214 | `duplicate definition of '<x>'` |
-| TP0215 | `'<k>' can't leave a 'match' expression`, with help `use a 'match' statement` (M29) / `'break' outside a loop` / `'continue' outside a loop` / `'return' outside a function` / `'raise' without an exception outside an except block` / `'return' cannot be used in a finally block` (and `'break'`, `'continue'`) (M16) |
+| TP0215 | `'yield' outside a function` / `'yield' can't be inside a 'try' with 'except', or in 'finally'` (M31) / `'<k>' can't leave a 'match' expression`, with help `use a 'match' statement` (M29) / `'break' outside a loop` / `'continue' outside a loop` / `'return' outside a function` / `'raise' without an exception outside an except block` / `'return' cannot be used in a finally block` (and `'break'`, `'continue'`) (M16) |
 | TP0216 | `'<v>' is ambiguous: it is a variant of <E1> and <E2>`, with help `qualify it, e.g. '<E1>.<v>'` |
 | TP0217 | `const initializer must be a constant expression` / `class attribute value must be a constant expression` (M28) |
 | TP0218 | `'<p>' is positional-only, so it can't be passed by keyword` (M30) / `'<f>' takes no keyword arguments` (a built-in) / `a function value takes no keyword arguments` / `'<f>' has no parameter '<k>'` (M14; also for `sorted`, `sort` and `enumerate`) |
@@ -1547,13 +1605,13 @@ Types are written as in source: `int`, `str?`, `list[int]`. The type of `None` i
 ## 11. Deferred (post-v0.1)
 - protocols as types of values, protocol fields, generic protocols, protocols extending other protocols, and a check that a class used with a protocol declares it
 - class bounds (`[T: Animal]`), bounds on classes' and enums' type parameters, and built-in types' ordinary methods satisfying protocols
-- special methods beyond §4.8 (`__bool__`, `__len__`, `__iter__`, `__getitem__`, `__contains__`, `__call__`, `__ne__`, `__pow__`, in-place `__iadd__` and the like, `__format__`), special methods in protocols other than `__lt__`, and `functools.total_ordering`
+- special methods beyond §4.8 (`__bool__`, `__len__`, `__getitem__`, `__contains__`, `__call__`, `__ne__`, `__pow__`, in-place `__iadd__` and the like, `__format__`), special methods in protocols other than `__lt__`, and `functools.total_ordering`
 - multiple inheritance, mixing dataclasses and plain classes in one hierarchy, and inheritance involving generic classes
 - `@dataclass` options (`frozen`, `order`), `__post_init__`, and an `__init__` written in a dataclass
 - `@final`, `Self` outside protocols (so a class method's result is its declared class, not `cls`'s), static and class methods and class attributes on generic classes, abstract static and class methods, property deleters, and static and class methods as values
 - `isinstance` on `py` values, and `is` between two expressions (identity)
 - generic functions, built-ins, methods and constructors as values (wrap them in a lambda)
-- iterators and generators (`map` and `filter` return lists)
+- generator `send`, `throw` and `close`, `yield` as an expression, generator return values, `Generator[Y, S, R]`, `yield` inside `try`/`except`, generator expressions and comprehensions, and `async` iterators
 - or-patterns (`A | B`), guards (`case x if …`), `as` patterns, `None` and float literal patterns, mapping patterns, and `*` in tuple patterns (M29 has them in list patterns only)
 - type aliases inside functions and classes, recursive aliases, and showing an alias's name in diagnostics
 - defaults on lambda parameters (not planned, since loop variables are captured per iteration, §3.7), typed `**kwargs` (`Unpack[TypedDict]`), `*args` and `**kwargs` in function types, and `**e` filling named parameters
@@ -1769,7 +1827,7 @@ catch (shapes.UnknownShape e) { Console.WriteLine(e.message); }
 | generic definitions | real .NET generics, where they can be (below) |
 | protocols, type aliases | nothing, as in a program (§8) |
 
-- **Types in signatures** are §8's: `int` is `long`, `float` is `double`, `bool`, `str`, `T?` (`long?` or `string?`), `list[T]` is `List<T>`, `dict[K, V]` is `OrderedDictionary<K, V>`, `tuple[A, B]` is a value tuple, a function type is `Taipan.Runtime.Function<D>` (constructed from a delegate: `new Function<Func<long, long>>("twice", x => x * 2)`), `py` is pythonnet's `PyObject`, and .NET types are themselves. Lists and dicts are shared, not copied, both ways.
+- **Types in signatures** are §8's: `int` is `long`, `float` is `double`, `bool`, `str`, `T?` (`long?` or `string?`), `list[T]` is `List<T>`, `dict[K, V]` is `OrderedDictionary<K, V>`, `tuple[A, B]` is a value tuple, a function type is `Taipan.Runtime.Function<D>` (constructed from a delegate: `new Function<Func<long, long>>("twice", x => x * 2)`), `py` is pythonnet's `PyObject`, `Iterable[T]` is `IEnumerable<T>`, which a C# caller may pass any sequence as, and `Iterator[T]` is `Taipan.Runtime.IIterator<T>`, an `IEnumerable<T>` it can loop over once (M31), and .NET types are themselves. Lists and dicts are shared, not copied, both ways.
 - **Equality and hashing** are .NET's for the C# caller: a class's `Equals` is reference identity (or, since M28, `==` for a class that defines `__hash__`, §8), and an enum's is the record's (field by field, with C#'s `Equals` on each). `Taipan.Runtime.Equality.Equal(a, b)` compares as Taipan's `==` does.
 - `__init__`, `__new__` and the helpers that evaluate defaults are internal, as names starting with `_` are. So are special methods (M28), though `__str__` gives `ToString`, and a class whose body defines `__hash__` overrides `Equals` and `GetHashCode` with `==` and `hash()`. A property is a C# property, a static or class method a public static method (a class method's `cls` is its own class), and a class attribute a public static property. Classes implement the runtime's `IStruct` or `IObject`, which display and equality use; they aren't meant for callers. Deriving from a Taipan class in another .NET language isn't supported.
 - **Generic definitions.** A generic function, class or enum is exported as a .NET generic (`first<T>`, `Box<T>`) when:

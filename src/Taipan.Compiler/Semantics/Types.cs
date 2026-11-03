@@ -29,6 +29,8 @@ public abstract record TaipanType
     {
         ErrorType => true,
         ListOfType list => list.Element.ContainsError,
+        IteratorOfType iterator => iterator.Element.ContainsError,
+        IterableOfType iterable => iterable.Element.ContainsError,
         DictOfType dict => dict.Key.ContainsError || dict.Value.ContainsError,
         OptionalOf optional => optional.Inner.ContainsError,
         ClassType classType => classType.TypeArguments.Any(a => a.ContainsError),
@@ -95,6 +97,18 @@ public sealed record NothingType : TaipanType
 public sealed record ErrorType : TaipanType
 {
     public override string ToString() => "?";
+}
+
+/// <summary><c>Iterator[T]</c>: a single-pass stream of values (SPEC §3.13, M31).</summary>
+public sealed record IteratorOfType(TaipanType Element) : TaipanType
+{
+    public override string ToString() => $"Iterator[{Element}]";
+}
+
+/// <summary><c>Iterable[T]</c>: anything a <c>for</c> loop goes over (SPEC §3.13, M31).</summary>
+public sealed record IterableOfType(TaipanType Element) : TaipanType
+{
+    public override string ToString() => $"Iterable[{Element}]";
 }
 
 public sealed record ListOfType(TaipanType Element) : TaipanType

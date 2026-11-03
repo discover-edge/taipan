@@ -31,4 +31,4 @@ let boxed = Box(lambda: "inside")
 print(boxed.value())
 
 let fns: list[Callable[[int], int]] = [lambda x: x + 1, lambda x: x * 10]
-print(map(lambda f: f(5), fns))
+print(list(map(lambda f: f(5), fns)))

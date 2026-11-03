@@ -114,6 +114,7 @@ public sealed partial class Binder
         {
             Defaults = PendingDefaults(method.Params),
             Kinds = KindsOf(method.Params),
+            IsGenerator = Yields(method.Body),
             IsMarkedOverride = marks.Written.Contains("override"),
             DeclaredIn = owner,
             Kind = kind,
@@ -121,6 +122,7 @@ public sealed partial class Binder
             IsAbstract = isAbstract,
         };
         Index(method.Name.Span, symbol, isDefinition: true);
+        CheckGeneratorReturn(symbol, method.Name);
         // An '@abstractmethod' that was rejected still explains a '...' body.
         if (!isAbstract && stub && marks.Written.Contains("abstractmethod"))
             _stubs.Add(symbol);
@@ -225,6 +227,11 @@ public sealed partial class Binder
     {
         if (symbol.Base is { } baseClass && baseClass.IsHashable && !symbol.IsHashable)
             _diagnostics.ReportUnhashableSubclass(classDef.Name.Span, symbol.Name, baseClass.Name);
+        // A class that's both iterable and an iterator gives one element type (SPEC §3.13).
+        if (symbol.FindMethod("__iter__") is { ReturnType: IteratorOfType iterated } iter && symbol.FindMethod("__next__") is { } next
+            && iterated.Element != next.ReturnType && !iterated.ContainsError && !next.ReturnType.ContainsError
+            && methods.FirstOrDefault(m => m.Symbol == iter || m.Symbol == next) is { Syntax: { } mismatched })
+            _diagnostics.ReportSpecialSignature(mismatched.Name.Span, "__iter__", $"def __iter__(self) -> Iterator[{next.ReturnType}]");
         foreach (var (syntax, method) in methods)
         {
             var op = Enum.GetValues<BinaryOp>().Cast<BinaryOp?>().FirstOrDefault(o => SpecialMethods.Reflected(o!.Value) == method.Name && !SpecialMethods.IsComparison(o.Value));

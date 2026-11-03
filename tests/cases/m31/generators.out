@@ -1,0 +1,20 @@
+yielding 1
+1 a
+yielding 2
+2 b
+yielding 3
+3 c
+yielding 4
+[2, 4, 6] [1, 2, 0, 2, 4]
+<generator object naturals>
+yielding 10
+yielding 11
+10 11
+<map object> [1, 4, 9] []
+<list_iterator object> 7 8 -1
+None
+StopIteration
+[(1, "a"), (2, "b")] ["bb", "ccc"]
+[2, 6, 8] True False
+(1, "x") (2, "y")
+[5, 4, 3, 2]

@@ -26,7 +26,7 @@ public sealed record BindResult(BoundProgram Program, ImmutableArray<Diagnostic>
 public sealed partial class Binder
 {
     private static readonly BigInteger MaxInt = long.MaxValue;
-    private static readonly HashSet<string> BuiltinTypeNames = ["int", "float", "bool", "str", "list", "dict", "py", "Callable", "tuple", "Protocol", "Self", "ABC", "ClassVar"];
+    private static readonly HashSet<string> BuiltinTypeNames = ["int", "float", "bool", "str", "list", "dict", "py", "Callable", "tuple", "Protocol", "Self", "ABC", "ClassVar", "Iterator", "Iterable"];
 
     // Every class the program defines, for checks across a hierarchy (SPEC §4.8).
     private readonly List<ClassSymbol> _allClasses = [];
@@ -939,7 +939,9 @@ public sealed partial class Binder
         {
             Defaults = PendingDefaults(funcDef.Params),
             Kinds = KindsOf(funcDef.Params),
+            IsGenerator = Yields(funcDef.Body),
         };
+        CheckGeneratorReturn(symbol, funcDef.Name);
         _typeParameters = outer;
         DeclareGlobal(funcDef.Name, symbol);
         return symbol;
@@ -1392,7 +1394,7 @@ public sealed partial class Binder
 
         var boundBody = BindBlock(body);
         var stub = body.Statements is [ExprStmt { Expr: EllipsisExpr }];
-        if (symbol.ReturnType != TaipanType.Nothing && !stub && !TypeChecker.Terminates(boundBody))
+        if (symbol.ReturnType != TaipanType.Nothing && !stub && !symbol.IsGenerator && !TypeChecker.Terminates(boundBody))
             _diagnostics.ReportNotAllPathsReturn(name.Span, symbol.Name);
 
         _function = null;
@@ -1565,6 +1567,14 @@ public sealed partial class Binder
             case GenericType { Name.Text: "ClassVar", Arguments: [var held] } classVar:
                 _diagnostics.ReportClassVarMisplaced(classVar.Span);
                 return BindType(held);
+            // Iterator[T] and Iterable[T] (SPEC §3.13).
+            case GenericType { Name.Text: "Iterator" or "Iterable" } stream when ResolveTypeName(stream.Name.Text) is null:
+                if (stream.Arguments is not [var element])
+                {
+                    _diagnostics.ReportWrongTypeArgumentCount(stream.Span, stream.Name.Text, 1, stream.Arguments.Length);
+                    return TaipanType.Error;
+                }
+                return stream.Name.Text == "Iterator" ? new IteratorOfType(BindType(element)) : new IterableOfType(BindType(element));
             case GenericType generic:
                 return BindGenericType(generic.Name, generic.Arguments, generic.Span, ResolveTypeName(generic.Name.Text));
             case QualifiedType qualified:
@@ -1760,6 +1770,7 @@ public sealed partial class Binder
         TryStmt tryStmt => BindTry(tryStmt),
         FuncDefStmt funcDef => BindLocalFunction(funcDef),
         UnpackStmt unpack => BindUnpack(unpack),
+        YieldStmt yield => BindYield(yield),
         TupleAssignStmt assign => BindTupleAssign(assign),
         _ => throw new InvalidOperationException($"unexpected statement {stmt.GetType().Name}"),
     };
@@ -1784,7 +1795,13 @@ public sealed partial class Binder
         var parameters = BindParams(def.Params);
         var returnType = BindReturnType(def.ReturnType);
         // Its defaults see what's visible here, so they may use the bindings it captures (SPEC §4.2).
-        var function = new FunctionSymbol(def.Name.Text, parameters, returnType) { Defaults = BindDefaultValues(def.Params, parameters), Kinds = KindsOf(def.Params) };
+        var function = new FunctionSymbol(def.Name.Text, parameters, returnType)
+        {
+            Defaults = BindDefaultValues(def.Params, parameters),
+            Kinds = KindsOf(def.Params),
+            IsGenerator = Yields(def.Body),
+        };
+        CheckGeneratorReturn(function, def.Name);
         var symbol = new VariableSymbol(def.Name.Text, new FunctionType([.. parameters.Select(p => p.Type)], returnType), VariableKind.Function);
         DeclareLocal(def.Name, symbol);
         _localFunctions[symbol] = function;
@@ -1798,8 +1815,11 @@ public sealed partial class Binder
         for (var i = 0; i < parameters.Length; i++)
             DeclareLocal(def.Params[i].Name, parameters[i]);
         // It runs later, so it doesn't see narrowed vars or paths (SPEC §3.9).
+        var outerNoYield = _noYield;
+        _noYield = 0;
         var body = InDeferredRegion(() => BindBlock(def.Body));
-        if (returnType != TaipanType.Nothing && !TypeChecker.Terminates(body))
+        _noYield = outerNoYield;
+        if (returnType != TaipanType.Nothing && !function.IsGenerator && !TypeChecker.Terminates(body))
             _diagnostics.ReportNotAllPathsReturn(def.Name.Span, def.Name.Text);
         (_function, _loopDepth, _scope) = (outerFunction, outerLoopDepth, outerScope);
         (_handlerDepth, _finallyLoopDepth) = (outerHandlerDepth, outerFinallyLoopDepth);
@@ -1977,6 +1997,13 @@ public sealed partial class Binder
         else if (LeavesMatchExpression(isReturn: true))
             _diagnostics.ReportLeavesMatchExpression(new TextSpan(ret.Span.Start, "return".Length), "return");
         var returnType = TypeChecker.Substitute(_function.ReturnType, _specialization);
+        // A generator's return only ends it (SPEC §3.13).
+        if (_function.IsGenerator)
+        {
+            if (ret.Value is not null)
+                _diagnostics.ReportGeneratorReturnValue(ret.Value.Span);
+            return new BoundReturn(ret.Value is null ? null : BindValue(ret.Value), ret.Span);
+        }
         if (ret.Value is null)
         {
             if (returnType != TaipanType.Nothing)
@@ -2062,13 +2089,19 @@ public sealed partial class Binder
     private BoundTry BindTryBlocks(TryStmt tryStmt)
     {
         var start = _narrowing;
+        // C# can't yield in a try with a catch, nor in a catch or finally (SPEC §3.13).
+        var noYield = tryStmt.Handlers.IsEmpty ? 0 : 1;
+        _noYield += noYield;
         var body = BindBlock(tryStmt.Body);
+        _noYield -= noYield;
         _narrowing = start;
+        _noYield++;
 
         // The classes earlier clauses catch, for clauses that can never match (TP0300).
         var caught = new List<ClassSymbol>();
         var caughtDotNet = new List<Microsoft.CodeAnalysis.INamedTypeSymbol>();
         var handlers = tryStmt.Handlers.Select(clause => { _narrowing = start; return BindHandler(clause, caught, caughtDotNet); }).ToImmutableArray();
+        _noYield--;
         _narrowing = start;
         var elseBlock = tryStmt.Else is null ? null : BindBlock(tryStmt.Else);
         _narrowing = start;
@@ -2078,7 +2111,9 @@ public sealed partial class Binder
         {
             var outer = _finallyLoopDepth;
             _finallyLoopDepth = _loopDepth;
+            _noYield++;
             finallyBlock = BindBlock(tryStmt.Finally);
+            _noYield--;
             _finallyLoopDepth = outer;
         }
         _narrowing = start;
@@ -2356,12 +2391,17 @@ public sealed partial class Binder
         else
         {
             iterable = BindValue(forStmt.Iterable);
+            // A class iterates through its __iter__ or __next__ (SPEC §3.13).
+            if (iterable.Type is ClassType && TypeChecker.ElementOf(iterable.Type) is { } classElement)
+                iterable = Convert(iterable, new IterableOfType(classElement));
             variableType = iterable.Type switch
             {
                 ListOfType list => list.Element,
                 DictOfType dict => dict.Key,
                 PrimitiveType { Name: "str" } => TaipanType.Str,
                 PrimitiveType { Name: "py" } => TaipanType.Py,
+                IteratorOfType iterator => iterator.Element,
+                IterableOfType iterated => iterated.Element,
                 { ContainsError: true } => TaipanType.Error,
                 OptionalOf when ReportIfOptional(iterable, forStmt.Iterable.Span) => TaipanType.Error,
                 _ => CannotIterate(forStmt.Iterable.Span, iterable.Type),
@@ -2449,6 +2489,10 @@ public sealed partial class Binder
     {
         if (expected == TaipanType.Py && value.Type != TaipanType.Py && !value.Type.ContainsError && value.Type.IsConvertibleToPython)
             return new BoundToPy(value, value.Span);
+        // A list, dict, str or class used as an iterable or iterator is wrapped (SPEC §3.13, §8).
+        if (TypeChecker.Unwrap(expected) is IterableOfType or IteratorOfType && value.Type is not (IterableOfType or IteratorOfType or NoneType or OptionalOf)
+            && !value.Type.ContainsError && TypeChecker.IsAssignable(value.Type, expected))
+            return new BoundToIterable(value, TypeChecker.Unwrap(expected), value.Span);
         return ConvertFunction(value, expected);
     }
 
@@ -2577,7 +2621,9 @@ public sealed partial class Binder
         var type = target.Type;
         if (type is not (ListOfType or PrimitiveType { Name: "str" or "py" }) && !type.ContainsError)
         {
-            if (!ReportIfOptional(target, slice.Target.Span))
+            if (type is IteratorOfType or IterableOfType)
+                _diagnostics.ReportNotIterableFromList(slice.Target.Span, $"cannot slice {type}");
+            else if (!ReportIfOptional(target, slice.Target.Span))
                 _diagnostics.ReportCannotSlice(slice.Target.Span, type);
             type = TaipanType.Error;
         }
@@ -2920,6 +2966,9 @@ public sealed partial class Binder
             && (ReportIfOptional(left, left.Span) | ReportIfOptional(right, right.Span)))
             return new BoundBinary(left, op, right, TaipanType.Error, span);
 
+        // `x in c` takes values from a class through its __iter__ or __next__ (SPEC §3.13).
+        if (op is BinaryOp.In or BinaryOp.NotIn && right.Type is ClassType && TypeChecker.ElementOf(right.Type) is { } element)
+            right = Convert(right, new IterableOfType(element));
         // An operator on a class value calls a special method (SPEC §4.8).
         if (SpecialMethods.Forward(op) is { } forward && (left.Type is ClassType || right.Type is ClassType))
         {
@@ -3075,6 +3124,7 @@ public sealed partial class Binder
         PrimitiveType { Name: "str" } when item == TaipanType.Str => TaipanType.Bool,
         ListOfType list when TypeChecker.AreComparable(item, list.Element) => TaipanType.Bool,
         DictOfType dict when TypeChecker.AreComparable(item, dict.Key) => TaipanType.Bool,
+        IteratorOfType or IterableOfType when TypeChecker.ElementOf(container) is { } element && TypeChecker.AreComparable(item, element) => TaipanType.Bool,
         _ => null,
     };
 
@@ -3310,6 +3360,11 @@ public sealed partial class Binder
                 return new BoundIndex(target, BindExpected(indexExpr.Index, dict.Key), dict.Value, indexExpr.Span);
             case PrimitiveType { Name: "str" }:
                 return new BoundIndex(target, BindExpected(indexExpr.Index, TaipanType.Int), TaipanType.Str, indexExpr.Span);
+            // An iterator's values aren't there until they're taken (SPEC §3.13).
+            case IteratorOfType or IterableOfType:
+                BindValue(indexExpr.Index);
+                _diagnostics.ReportNotIterableFromList(indexExpr.Target.Span, $"cannot index {target.Type}");
+                return new BoundErrorExpr(indexExpr.Span);
             default:
                 BindValue(indexExpr.Index);
                 _diagnostics.ReportCannotIndex(indexExpr.Target.Span, target.Type);
@@ -3378,6 +3433,9 @@ public sealed partial class Binder
                 return new BoundErrorExpr(call.Span);
             case DotNetTypeSymbol dotnet:
                 return BindDotNetConstruct(call, dotnet.Type, nameSpan);
+            case FunctionSymbol { Builtin: BuiltinFunction.List or BuiltinFunction.Iter or BuiltinFunction.Next } function:
+                ReportKeywordArguments(call, function.Name);
+                return BindIteratorBuiltin(call, function, expected);
             case FunctionSymbol { Builtin: BuiltinFunction.Repr or BuiltinFunction.Hash } function:
                 ReportKeywordArguments(call, function.Name);
                 return BindReprOrHash(call, function, function.Builtin!.Value);
@@ -3606,6 +3664,13 @@ public sealed partial class Binder
                     break;
                 case (ListOfType p, ListOfType a):
                     Unify(p.Element, a.Element, fromArgument);
+                    break;
+                // An Iterable or Iterator takes its element type from what's passed (SPEC §3.13).
+                case (IterableOfType p, _) when TypeChecker.ElementOf(actual) is { } element:
+                    Unify(p.Element, element, fromArgument);
+                    break;
+                case (IteratorOfType p, _) when TypeChecker.IteratorElementOf(actual) is { } produced:
+                    Unify(p.Element, produced, fromArgument);
                     break;
                 case (DictOfType p, DictOfType a):
                     Unify(p.Key, a.Key, fromArgument);
@@ -4183,6 +4248,9 @@ public sealed partial class Binder
 
         var list = target ?? BindValue(positional[0].Value);
         var listSpan = target is null ? positional[0].Value.Span : ((MemberExpr)call.Callee).Target.Span;
+        // sorted takes any iterable since M31, into a new list (SPEC §6).
+        if (target is null && list.Type is not ListOfType && TypeChecker.ElementOf(list.Type) is { } iterated)
+            list = new BoundToList(BindIterable(list, listSpan).Value, new ListOfType(iterated), list.Span);
         var element = RequireList(list, listSpan);
         var keywords = ImmutableArray.CreateBuilder<(string, BoundExpr)>();
         var given = new HashSet<string>();
@@ -4250,16 +4318,16 @@ public sealed partial class Binder
             BindArguments(call);
             return new BoundErrorExpr(call.Span);
         }
-        var list = BindValue(call.Arguments[1].Value);
-        var element = RequireList(list, call.Arguments[1].Value.Span);
+        // Lazy since M31: an iterator over any iterable (SPEC §6, §3.13).
+        var (values, element) = BindIterable(BindValue(call.Arguments[1].Value), call.Arguments[1].Value.Span);
         if (builtin == BuiltinFunction.Filter)
         {
             var (predicate, _) = BindCallback(call.Arguments[0].Value, [element], required: TaipanType.Bool, hint: null, resultName: "bool");
-            return new BoundCall(function, [predicate, list], element.ContainsError ? TaipanType.Error : list.Type, call.Span);
+            return new BoundCall(function, [predicate, values], element.ContainsError ? TaipanType.Error : new IteratorOfType(element), call.Span);
         }
-        var hint = expected is null ? null : TypeChecker.Unwrap(expected) is ListOfType expectedList ? expectedList.Element : null;
+        var hint = expected is null ? null : TypeChecker.ElementOf(TypeChecker.Unwrap(expected));
         var (mapper, result) = BindCallback(call.Arguments[0].Value, [element], required: null, hint, resultName: "U");
-        return new BoundCall(function, [mapper, list], new ListOfType(result), call.Span);
+        return new BoundCall(function, [mapper, values], new IteratorOfType(result), call.Span);
     }
 
     /// <summary>
@@ -4276,15 +4344,7 @@ public sealed partial class Binder
             return new BoundErrorExpr(call.Span);
         }
 
-        var items = BindValue(positional[0].Value);
-        var itemsSpan = positional[0].Value.Span;
-        TaipanType element = TaipanType.Error;
-        if (items.Type is ListOfType list)
-            element = list.Element;
-        else if (items.Type == TaipanType.Str)
-            element = TaipanType.Str;
-        else if (!items.Type.ContainsError && !ReportIfOptional(items, itemsSpan))
-            _diagnostics.ReportTypeMismatch(itemsSpan, "list or str", items.Type);
+        var (items, element) = BindIterable(BindValue(positional[0].Value), positional[0].Value.Span);
 
         BoundExpr? start = positional.Count == 2 ? BindExpected(positional[1].Value, TaipanType.Int) : null;
         foreach (var argument in call.Arguments.Where(a => a.Name is not null))
@@ -4305,7 +4365,7 @@ public sealed partial class Binder
                 start = BindExpected(argument.Value, TaipanType.Int);
             }
         }
-        var type = element.ContainsError ? TaipanType.Error : new ListOfType(new TupleOfType([TaipanType.Int, element]));
+        var type = element.ContainsError ? TaipanType.Error : new IteratorOfType(new TupleOfType([TaipanType.Int, element]));
         return new BoundCall(function, start is null ? [items] : [items, start], type, call.Span);
     }
 
@@ -4319,10 +4379,10 @@ public sealed partial class Binder
             BindArguments(call);
             return new BoundErrorExpr(call.Span);
         }
-        var lists = call.Arguments.Select(a => BindValue(a.Value)).ToImmutableArray();
-        var elements = lists.Select((l, i) => RequireList(l, call.Arguments[i].Value.Span)).ToImmutableArray();
-        var type = elements.Any(e => e.ContainsError) ? TaipanType.Error : new ListOfType(new TupleOfType(elements));
-        return new BoundCall(function, lists, type, call.Span);
+        var sources = call.Arguments.Select(a => BindIterable(BindValue(a.Value), a.Value.Span)).ToList();
+        var elements = sources.Select(s => s.Element).ToImmutableArray();
+        var type = elements.Any(e => e.ContainsError) ? TaipanType.Error : new IteratorOfType(new TupleOfType(elements));
+        return new BoundCall(function, [.. sources.Select(s => s.Value)], type, call.Span);
     }
 
     private BoundExpr BindBuiltinCall(CallExpr call, FunctionSymbol function, BuiltinFunction builtin, TaipanType? expected)
@@ -4359,6 +4419,10 @@ public sealed partial class Binder
             return new BoundCall(function, arguments, function.ReturnType, call.Span);
         switch (builtin)
         {
+            // An iterator has no length until it's a list (SPEC §3.13).
+            case BuiltinFunction.Len when argument.Type is IteratorOfType or IterableOfType:
+                _diagnostics.ReportNotIterableFromList(argumentSpan, $"'len' takes a list, dict or str, found {argument.Type}");
+                break;
             case BuiltinFunction.Len when argument.Type is not (ListOfType or DictOfType) && argument.Type != TaipanType.Py && !argument.Type.ContainsError:
                 CheckAssignable(argument, TaipanType.Str, argumentSpan, "str, list or dict");
                 break;
