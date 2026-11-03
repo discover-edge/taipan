@@ -136,9 +136,10 @@ public sealed partial class Binder
     /// <paramref name="asExtension"/> as a CPython extension module (SPEC §17).
     /// </summary>
     public static BindResult Bind(
-        ImmutableArray<SourceModule> files, DotNetLibrary? library = null, bool asLibrary = false, bool asNative = false, bool asExtension = false)
+        ImmutableArray<SourceModule> files, DotNetLibrary? library = null, bool asLibrary = false, bool asNative = false, bool asExtension = false,
+        string? libraryNamespace = null)
     {
-        var binder = new Binder(library ?? DotNetLibrary.Framework, asLibrary, asNative, asExtension);
+        var binder = new Binder(library ?? DotNetLibrary.Framework, asLibrary, asNative, asExtension) { _libraryNamespace = libraryNamespace };
         var program = binder.BindProgram(files);
         return new BindResult(program, binder._diagnostics.ToImmutable(), binder._unsupported) { Index = binder._index };
     }
@@ -308,7 +309,7 @@ public sealed partial class Binder
             new BoundBlock(topLevel, unit.Span))
         {
             // A library always compiles against its framework's reference assemblies (SPEC §14.4).
-            References = _asLibrary ? _library.References : _dotnet?.References ?? [],
+            References = _asLibrary || _library.IsExact ? _library.References : _dotnet?.References ?? [],
             Library = library,
             Extension = extension,
             IsAsync = _topLevelAwaits,

@@ -13,6 +13,9 @@ public sealed partial class Binder
     /// <summary>A definition a library might export: where its name is, and the module it's in.</summary>
     private sealed record Candidate(Symbol Symbol, TextSpan Name, Module Module);
 
+    // A library's namespace, when taipan.json or an SDK project sets it (SPEC §18.3).
+    private string? _libraryNamespace;
+
     private BoundLibrary BindLibrary(List<Module> modules, Dictionary<string, Module> byName, List<BoundFunction> functions, List<BoundClass> classes)
     {
         var candidates = new List<Candidate>();
@@ -79,8 +82,9 @@ public sealed partial class Binder
         }
 
         var main = modules[0].File.Name;
+        // The namespace is the main file's name in PascalCase, unless it's set (SPEC §14.1, §18.3).
         return new BoundLibrary(
-            string.Concat(main.Split('_', StringSplitOptions.RemoveEmptyEntries).Select(part => char.ToUpperInvariant(part[0]) + part[1..])),
+            _libraryNamespace ?? string.Concat(main.Split('_', StringSplitOptions.RemoveEmptyEntries).Select(part => char.ToUpperInvariant(part[0]) + part[1..])),
             [.. modules.Select(module => new BoundModule(
                 module.File.Name,
                 module.File.Source,

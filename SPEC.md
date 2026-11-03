@@ -1484,6 +1484,8 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 | TP0233 | can't be used in a native program (M23) |
 | TP0234 | abstract class instantiated (M28) |
 | TP0235 | awaitable never awaited (M33) |
+| TPN001 | an SDK project's main file is missing (M34, §18.5; reported by the build, not the compiler) |
+| TPN002 | an SDK project's `taipan.json` lists references or packages (M34, §18.5) |
 | TP0300 | warning: unreachable code (a statement, `match` arm or `except` clause) |
 | TP0301 | warning: broad `except` clause discards the exception |
 | TP0302 | warning: a library's or extension module's definition can't be exported (M22, M25) |
@@ -1647,9 +1649,9 @@ Types are written as in source: `int`, `str?`, `list[int]`. The type of `None` i
 - language server features beyond §16: formatting, code actions, incremental sync, workspace-wide diagnostics, semantic token deltas and ranges, completion of .NET namespaces and Python modules' names, signature help for built-in functions, references to built-in, Python and .NET names, renaming modules (renaming their files), and editors other than VS Code
 - CPython extension modules beyond §17: classes and enums as Python types, Python functions and objects as arguments, Python interop inside an extension, generic functions, free-threaded CPython, and builds for one exact Python version
 - .NET interop beyond §13: generic .NET types other than `Dictionary<K, V>`, `Task<T>` and delegates (`HashSet<T>`, `IGrouping<K, T>`), explicit type arguments on generic methods, extension-method syntax (`xs.Where(f)`), events, `ref`/`out`/`in` parameters, `params` arrays, `object` and `decimal` results, deriving from .NET classes or implementing .NET interfaces, raising .NET exceptions, `isinstance`/`as`/`match` on .NET types, flags enums, namespace imports (`import dotnet.System.IO as io`), cancelling a `Task`, and packages with native assets
-- an MSBuild project SDK (`TaipanLang.Sdk`), for building `.tpn` files with `dotnet build` as part of a .NET solution
+- build integration beyond §18: design-time builds for IDEs (Visual Studio's project system), multi-targeting, Taipan test projects (tests written in Taipan), native and Python-extension SDK projects, and symbols packages
 - native builds beyond §15: another architecture (`--runtime <rid>`), Python in native programs, native libraries, and size options such as invariant globalization
-- Taipan libraries beyond §14: a configurable namespace, assembly name and version (in `taipan.json`), PascalCase names, XML documentation, value `Equals` and `GetHashCode` for dataclasses, deriving from Taipan classes in other .NET languages, plain delegates for function types, and packing a library as a NuGet package
+- Taipan libraries beyond §14: PascalCase names, XML documentation, value `Equals` and `GetHashCode` for dataclasses, deriving from Taipan classes in other .NET languages, and plain delegates for function types
 
 ---
 
@@ -1663,8 +1665,11 @@ taipan build <file> [<kind>] -o <dir>                write a runnable program to
                                                      --library (M22, §14), --native (M23, §15),
                                                      or --python-extension (M25, §17)
 taipan run   <file> [-- args]                        compile and run
+taipan pack  <file> -o <dir>                         pack a library as a NuGet package (M34, §18.4)
+taipan compile <file> [--library] --out <dll>        compile one assembly, for TaipanLang.Sdk (M34, §18.2)
+               [--reference <dll>]… [--assembly <name>] [--namespace <ns>] [--version <v>]
 taipan lsp [--stdio]                                 run the language server on stdin and stdout (M24, §16)
-taipan --version                                     print "taipan <version>", e.g. "taipan 0.2.0"
+taipan --version                                     print "taipan <version>", e.g. "taipan 0.3.0"
 taipan --help                                        print the usage text
 ```
 - `--version` and `--help` print to stdout and exit `0`. Each takes no other arguments.
@@ -1672,18 +1677,19 @@ taipan --help                                        print the usage text
 - `build -o <dir>` writes `<name>.dll` with `Taipan.Runtime.dll`, `Python.Runtime.dll` and a `runtimeconfig.json`, so `dotnet <dir>/<name>.dll` runs it on the .NET 10 runtime.
 
 ### 12.2 Packages
-Taipan is distributed as two NuGet packages, with the same version:
+Taipan is distributed as NuGet packages, all with the same version:
 
 | Package | Contents |
 |---|---|
 | `TaipanLang` | the `taipan` command, as a .NET tool: the compiler, the runtime and its dependencies (Roslyn, pythonnet) |
 | `TaipanLang.Runtime` | the `Taipan.Runtime` library that compiled programs reference, depending on `pythonnet` |
+| `TaipanLang.Sdk` (M34) | the MSBuild project SDK for `.tpnproj` projects (§18), carrying its own copy of the compiler |
 
 - `TaipanLang` installs with `dotnet tool install -g TaipanLang`, which puts `taipan` on the path. It runs on the .NET 10 runtime, and compiles programs against that runtime's assemblies. It needs no SDK.
 - The NuGet ID `taipan` belongs to another project, hence `TaipanLang`. Assembly and namespace names don't change: the runtime is still `Taipan.Runtime.dll`, namespace `Taipan.Runtime`.
 - `TaipanLang.Runtime` isn't needed to run programs, since the tool carries the runtime. It's published for Taipan libraries referenced from other .NET code (M22).
-- **Version:** one version for both packages and `taipan --version`, set in one place in the build. M20's is `0.2.0`, the first packaged release after v0.1.
-- `dotnet pack -c Release -o <dir>` at the repository root builds both packages.
+- **Version:** one version for every package and `taipan --version`, set in one place in the build. M20's was `0.2.0`, the first packaged release after v0.1; M34's is `0.3.0`, which adds `TaipanLang.Sdk`.
+- `dotnet pack -c Release -o <dir>` at the repository root builds every package.
 - An installed tool behaves exactly as a source build, Python interop included: CPython is found as §10.6 says, at run time.
 - Publishing to nuget.org is done by hand and isn't part of the build.
 
@@ -1725,6 +1731,7 @@ def report(path: str) -> str:
   ```
 
   - `references` are paths to assemblies, relative to `taipan.json`.
+  - Since M34, `assembly`, `namespace`, `version`, `authors` and `description` name a library and its package (§18.3).
   - `packages` maps NuGet package IDs to exact versions. Ranges aren't allowed. A package's own dependencies come with it.
   - Both are optional, and so is the file. Any other key is an error.
 - **Restoring packages** uses the .NET SDK's `dotnet restore`, from the configured NuGet sources. The result is cached per user, keyed by the package list, so the SDK and the network are only needed the first time a list is used. A program without packages needs neither.
@@ -1865,8 +1872,8 @@ catch (shapes.UnknownShape e) { Console.WriteLine(e.message); }
 ```
 
 ### 14.1 Layout and names
-- **The assembly** is `<name>.dll`, where `<name>` is the main file's name without `.tpn`.
-- **The namespace** is `<name>` in PascalCase: each `_`-separated part capitalized and the underscores dropped, so `geometry` is `Geometry` and `health_checks` is `HealthChecks`.
+- **The assembly** is `<name>.dll`, where `<name>` is the main file's name without `.tpn`, unless `taipan.json`'s `assembly` (or an SDK project's `AssemblyName`) names it (M34, §18.3).
+- **The namespace** is `<name>` in PascalCase: each `_`-separated part capitalized and the underscores dropped, so `geometry` is `Geometry` and `health_checks` is `HealthChecks`. Since M34, `taipan.json`'s `namespace` (or an SDK project's `RootNamespace`) sets it instead, as a dotted name: `Acme.Shapes`.
 - **Each module**, the main file included, is a public static class in that namespace, named as the module: `Geometry.geometry`, `Geometry.shapes`. Its functions are static methods, and its constants static read-only properties.
 - **Classes and enums** are nested in their module's class: `Geometry.shapes.Point`, `Geometry.shapes.Shape.Circle`. So two modules may define the same name, as in a program.
 - **Names are as written in Taipan**, case and underscores included: `shapes.area_of(r)`, `p.distance_to(q)`, `p.x`. There's no renaming to PascalCase, just as .NET names aren't renamed in Taipan (§13.4).
@@ -2222,3 +2229,76 @@ A Taipan exception raised by an exported function, or while the module's constan
 
 ### 17.5 Deferred
 §11 lists what's deferred: classes and enums as Python types, passing Python functions or objects (`py`) to Taipan functions, Python interop inside an extension module, generic functions, free-threaded CPython, and builds for one exact Python version.
+
+---
+
+## 18. Build integration (M34)
+Taipan projects build with `dotnet build`, alongside C# projects in one solution, through an MSBuild project SDK, and Taipan libraries pack as NuGet packages.
+
+### 18.1 SDK projects
+A Taipan project is a `.tpnproj` file using the `TaipanLang.Sdk` project SDK, at the version of the compiler it builds with:
+
+```xml
+<Project Sdk="TaipanLang.Sdk/0.3.0">
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Acme.Core/Acme.Core.csproj" />
+    <PackageReference Include="Humanizer.Core" Version="2.14.1" />
+  </ItemGroup>
+</Project>
+```
+
+- **It's an ordinary .NET project.** `TaipanLang.Sdk` builds on `Microsoft.NET.Sdk`, replacing only the compile step, so restore, `PackageReference`, `ProjectReference` (both ways), `Reference`, `dotnet build`, `dotnet run`, `dotnet pack`, `dotnet sln add` and copying to the output directory work as for a C# project. It targets `net10.0`, the runtime the compiler runs on (§14.4).
+- **Sources** are every `.tpn` file under the project's directory, as C# projects glob `.cs` files. **The main file** is `$(TaipanMain)`, which defaults to `<project name>.tpn` beside the project file; the others are its modules, which must be in its directory (§4.7). A missing main file is an error, `TPN001: the main file '<path>' was not found; set TaipanMain`, reported by the build.
+- **`OutputType`** is `Library` (the default) for a Taipan library (§14), or `Exe` for a program, which `dotnet run` runs. A library's main file has no top level (`TP0222`), as for `--library`.
+- **Settings come from MSBuild** (§13.2's `taipan.json` doesn't apply):
+  - `AssemblyName` and `RootNamespace` (each defaulting to the project's name, as MSBuild's do) name a library's assembly and namespace (§14.1), and `Version` its assembly's version.
+  - The assemblies a Taipan file may import from (`from dotnet.<ns> import T`, §13.1) are those MSBuild resolves for the project: the framework's, its `PackageReference`s and their dependencies, its `ProjectReference`s, and its `Reference`s.
+  - A `taipan.json` beside a `.tpnproj` may not list `references` or `packages`: `TPN002: list references and packages in the project file, not taipan.json`. Its other keys are ignored.
+- **The runtime:** the SDK adds a `PackageReference` to `TaipanLang.Runtime` at its own version, so the program or library and anything referencing it get `Taipan.Runtime.dll`.
+- **Diagnostics** are reported to MSBuild in its format, `<path>(<line>,<col>): error TP0200: <message> (help: <hint>)`, so they show in `dotnet build`'s output and IDEs' error lists; errors fail the build, and warnings (`TP03xx`) don't, unless `TreatWarningsAsErrors` is set.
+- **Referencing a Taipan project** from a C# project is a `ProjectReference` to the `.tpnproj`: the library's modules are its public classes (§14.1). **Referencing a C# project** from a Taipan project is a `ProjectReference` to the `.csproj`, whose public types are imported as .NET types (§13).
+- **Incremental:** the compile step runs again only when a `.tpn` file, a reference, or the project changes.
+
+### 18.2 The compile command
+`taipan compile <file> [--library] --out <dll> [--reference <dll>]… [--assembly <name>] [--namespace <ns>] [--version <v>]` is how the SDK runs the compiler. It compiles the main file and its modules into one assembly at `<dll>`, against exactly the assemblies given with `--reference` (framework included), and writes nothing else: no runtime, runtimeconfig or copied references, which MSBuild provides. `taipan.json` isn't read. Diagnostics are written to stderr in MSBuild's format (§18.1), and exit codes are §9's. An argument `@<file>` stands for the arguments in a file, one per line, and `--reference=<dll>` is the one-argument form of `--reference <dll>`, so the SDK passes a long reference list in a response file. It's meant for the SDK, though it works from a shell too.
+
+### 18.3 Naming a library in taipan.json
+For `taipan build --library` and `taipan pack`, `taipan.json` may name the library:
+
+```json
+{
+  "assembly": "Acme.Shapes",
+  "namespace": "Acme.Shapes",
+  "version": "1.2.0",
+  "authors": "Acme",
+  "description": "Shapes and their areas."
+}
+```
+
+- `assembly` is the assembly's name and the package's ID (default: the main file's name), and `namespace` the namespace (default: as §14.1 says). Each must be a dotted .NET name (`Acme.Shapes`), or it's `<path>: 'assembly' must be a dotted name` (and `'namespace'`).
+- `version` is the assembly's and package's version, as NuGet writes one (`1.2.0`, `2.0.0-beta.1`; default `1.0.0`); anything else is `<path>: 'version' must be a version, found '<v>'`.
+- `authors` and `description` go in the package's metadata (defaults: the assembly name, and `A Taipan library.`).
+- These are errors as §13.2's are: `taipan: <message>`, exit code `2`.
+
+### 18.4 Packing
+`taipan pack <file> -o <dir>` builds the library (as `build --library`, §14.4) and writes `<dir>/<assembly>.<version>.nupkg`:
+
+- `lib/net10.0/` holds the library's assembly and the assemblies `taipan.json`'s `references` list, which no package brings.
+- Its dependencies are `TaipanLang.Runtime` at the compiler's version, and each package `taipan.json` lists, at its version.
+- A program (with a top level) can't be packed: `TP0222`, as for a library.
+
+An SDK project packs with `dotnet pack`, as any .NET project does, with MSBuild's package metadata (`PackageId`, `Version`, `Authors`, `Description`).
+
+### 18.5 Build diagnostics
+The SDK's own errors, outside any Taipan file:
+
+| Code | Message |
+|---|---|
+| `TPN001` | `the main file '<path>' was not found; set TaipanMain` |
+| `TPN002` | `list references and packages in the project file, not taipan.json` |
+
+### 18.6 Deferred
+§11 lists what's deferred: design-time builds for IDEs, multi-targeting, Taipan test projects, native and Python-extension SDK projects, and symbols packages.

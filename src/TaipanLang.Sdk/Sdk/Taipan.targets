@@ -1,0 +1,39 @@
+<Project>
+  <!-- Taipan's compile step, in place of C#'s (SPEC §18.1, §18.2). -->
+  <Import Project="$(MSBuildToolsPath)\Microsoft.Common.targets" />
+
+  <!-- A language names its embedded resources; Taipan projects have none. -->
+  <Target Name="CreateManifestResourceNames" />
+
+  <Target Name="CoreCompile"
+          Inputs="@(Compile);@(ReferencePath);$(MSBuildAllProjects)"
+          Outputs="@(IntermediateAssembly)"
+          DependsOnTargets="$(CoreCompileDependsOn)">
+    <Error Code="TPN001" Condition="!Exists('$(TaipanMain)')" Text="the main file '$(TaipanMain)' was not found; set TaipanMain" />
+
+    <PropertyGroup>
+      <_TaipanResponseFile>$(IntermediateOutputPath)taipan.rsp</_TaipanResponseFile>
+      <_TaipanHost Condition="'$(DOTNET_HOST_PATH)' != ''">$(DOTNET_HOST_PATH)</_TaipanHost>
+      <_TaipanHost Condition="'$(DOTNET_HOST_PATH)' == ''">dotnet</_TaipanHost>
+    </PropertyGroup>
+    <ItemGroup>
+      <_TaipanArgument Include="compile;$(TaipanMain)" />
+      <_TaipanArgument Include="--library" Condition="'$(OutputType)' == 'Library'" />
+      <_TaipanArgument Include="--out;@(IntermediateAssembly->'%(FullPath)')" />
+      <_TaipanArgument Include="--assembly;$(AssemblyName);--namespace;$(RootNamespace);--version;$(Version)" />
+      <_TaipanArgument Include="@(ReferencePath->'--reference=%(FullPath)')" />
+    </ItemGroup>
+    <WriteLinesToFile File="$(_TaipanResponseFile)" Lines="@(_TaipanArgument)" Overwrite="true" />
+
+    <Exec Command="&quot;$(_TaipanHost)&quot; &quot;$(TaipanSdkTools)taipan.dll&quot; @&quot;$(_TaipanResponseFile)&quot;"
+          IgnoreExitCode="true" StandardErrorImportance="high" EchoOff="true">
+      <Output TaskParameter="ExitCode" PropertyName="_TaipanExitCode" />
+    </Exec>
+    <!-- Exit codes 1 and 2 come with errors in MSBuild's format, which MSBuild already logged (SPEC §9, §18.1). -->
+    <Error Condition="'$(_TaipanExitCode)' != '0' and '$(_TaipanExitCode)' != '1' and '$(_TaipanExitCode)' != '2'" Text="taipan compile exited with code $(_TaipanExitCode)" />
+
+    <ItemGroup>
+      <FileWrites Include="$(_TaipanResponseFile)" />
+    </ItemGroup>
+  </Target>
+</Project>

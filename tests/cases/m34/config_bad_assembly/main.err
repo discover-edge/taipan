@@ -1,0 +1,1 @@
+taipan: tests/cases/m34/config_bad_assembly/taipan.json: 'assembly' must be a dotted name

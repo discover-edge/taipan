@@ -1,0 +1,2 @@
+# A program ignores the names a library takes from taipan.json (SPEC §18.3).
+print("named")

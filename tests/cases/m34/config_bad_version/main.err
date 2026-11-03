@@ -1,0 +1,1 @@
+taipan: tests/cases/m34/config_bad_version/taipan.json: 'version' must be a version, found 'one'

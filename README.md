@@ -129,6 +129,17 @@ print(sb.ToString())
 ```
 
 - **Taipan as a .NET library:** `taipan build geometry.tpn --library -o out` compiles a program's modules into `geometry.dll` for C# or F# to reference, alongside the `TaipanLang.Runtime` package. Each module is a static class in the namespace `Geometry`, with its classes and enums nested inside, all named as in Taipan. Names starting with `_` stay private, and Taipan exceptions reach the caller as .NET exceptions. Building a library needs the .NET SDK.
+- **In a .NET solution:** a `.tpnproj` using the `TaipanLang.Sdk` project SDK builds `.tpn` files with `dotnet build`, `dotnet run`, `dotnet test` and `dotnet pack`, with `ProjectReference`s to and from C# projects and `PackageReference`s as usual:
+
+```xml
+<Project Sdk="TaipanLang.Sdk/0.3.0">
+  <ItemGroup>
+    <ProjectReference Include="../Greeting/Greeting.csproj" />
+  </ItemGroup>
+</Project>
+```
+
+  Outside a solution, `taipan pack geometry.tpn -o out` packs a library as a NuGet package, named by `assembly`, `namespace` and `version` in `taipan.json`.
 
 ```csharp
 using Geometry;
