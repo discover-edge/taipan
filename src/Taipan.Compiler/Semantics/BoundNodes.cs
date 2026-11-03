@@ -187,7 +187,11 @@ public sealed record BoundForEach(VariableSymbol Variable, BoundExpr Iterable, B
 /// <summary>A <c>match</c>; arms marked unreachable (TP0300) are checked but not emitted.</summary>
 public sealed record BoundMatch(BoundExpr Scrutinee, ImmutableArray<BoundArm> Arms, TextSpan Span) : BoundStmt(Span);
 
-public sealed record BoundArm(BoundPattern Pattern, BoundBlock Body, bool IsReachable);
+public sealed record BoundArm(BoundPattern Pattern, BoundBlock Body, bool IsReachable)
+{
+    /// <summary>The arm's guard, tested after its pattern matches (SPEC §5.1, M38).</summary>
+    public BoundExpr? Guard { get; init; }
+}
 
 /// <summary>
 /// A call to a .NET method (SPEC §13.4), with <see cref="Target"/> null for a static one. Each
@@ -230,17 +234,41 @@ public sealed record BoundMatchExpr(BoundExpr Scrutinee, ImmutableArray<BoundVal
 public sealed record BoundValueArm(BoundPattern Pattern, BoundExpr? Value, BoundRaise? Raise, bool IsReachable)
 {
     public BoundBlock? Body { get; init; }
+
+    /// <summary>The arm's guard (SPEC §5.1, M38).</summary>
+    public BoundExpr? Guard { get; init; }
 }
 
 public abstract record BoundPattern;
 
 public sealed record BoundWildcardPattern : BoundPattern;
 
-/// <summary>A name that binds the value at its position (SPEC §5.1, M29).</summary>
-public sealed record BoundBindingPattern(VariableSymbol Symbol) : BoundPattern;
+/// <summary>
+/// A name that binds the value at its position (SPEC §5.1, M29). <see cref="Typed"/> when its type
+/// is narrower than the position's: an optional's inner type, or a class an or-pattern joins (M38).
+/// </summary>
+public sealed record BoundBindingPattern(VariableSymbol Symbol) : BoundPattern
+{
+    public bool Typed { get; init; }
+}
 
-/// <summary>An int, str or bool literal pattern; <see cref="Value"/> is a <c>long</c>, <c>string</c> or <c>bool</c>.</summary>
+/// <summary>An int, str, bool or (M38) float literal pattern; <see cref="Value"/> is a <c>long</c>, <c>string</c>, <c>bool</c> or <c>double</c>.</summary>
 public sealed record BoundLiteralPattern(object Value) : BoundPattern;
+
+/// <summary><c>None</c> (M38).</summary>
+public sealed record BoundNonePattern : BoundPattern;
+
+/// <summary>A pattern at an optional position that matches only a value that isn't None, checked against the inner type (M38).</summary>
+public sealed record BoundSomePattern(BoundPattern Inner) : BoundPattern;
+
+/// <summary>An or-pattern (M38): its alternatives bind the same symbols.</summary>
+public sealed record BoundOrPattern(ImmutableArray<BoundPattern> Alternatives) : BoundPattern;
+
+/// <summary><c>p as name</c> (M38); <see cref="Typed"/> as for a binding, when <see cref="Pattern"/> narrows the value.</summary>
+public sealed record BoundAsPattern(BoundPattern Pattern, VariableSymbol Symbol, bool Typed) : BoundPattern;
+
+/// <summary>A mapping pattern (M38): literal keys and their values' sub-patterns, and the rest of the dict.</summary>
+public sealed record BoundMappingPattern(DictOfType Dict, ImmutableArray<(object Key, BoundPattern Value)> Entries, VariableSymbol? Rest) : BoundPattern;
 
 /// <summary>
 /// A variant pattern of <see cref="Enum"/>. <see cref="Fields"/> has one sub-pattern per payload
@@ -251,8 +279,18 @@ public sealed record BoundVariantPattern(VariantSymbol Variant, TaipanType Enum,
 /// <summary>A class pattern (SPEC §5.1): the class, and a sub-pattern for each field it names, in source order.</summary>
 public sealed record BoundClassPattern(ClassType Class, ImmutableArray<(FieldSymbol Field, BoundPattern Pattern)> Fields) : BoundPattern;
 
-/// <summary>A tuple pattern (M29): one sub-pattern per element.</summary>
-public sealed record BoundTuplePattern(TupleOfType Tuple, ImmutableArray<BoundPattern> Elements) : BoundPattern;
+/// <summary>
+/// A tuple pattern (M29): one sub-pattern per element. A <c>*</c> (M38) stands for wildcards from
+/// <see cref="StarAt"/>, <see cref="StarCount"/> of them, which <see cref="Rest"/> (if any) binds as a list.
+/// </summary>
+public sealed record BoundTuplePattern(TupleOfType Tuple, ImmutableArray<BoundPattern> Elements) : BoundPattern
+{
+    public int StarAt { get; init; } = -1;
+
+    public int StarCount { get; init; }
+
+    public VariableSymbol? Rest { get; init; }
+}
 
 /// <summary>
 /// A list pattern (M29): the sub-patterns before a star and after it. Without a star the list has

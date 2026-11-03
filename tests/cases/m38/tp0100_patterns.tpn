@@ -1,0 +1,13 @@
+def f(d: dict[str, int], t: tuple[int, int, int]) -> None:
+    match d:
+        {**rest, "a": 1}:
+            pass
+        {**_}:
+            pass
+        _:
+            pass
+    match t:
+        (*a, *b):
+            pass
+        _:
+            pass

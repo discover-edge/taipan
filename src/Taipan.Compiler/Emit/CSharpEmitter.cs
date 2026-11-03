@@ -1192,19 +1192,23 @@ public sealed partial class CSharpEmitter
         if (_loops.TryPeek(out var loop))
             loop.SwitchDepth++;
 
+        // An arm whose or-pattern binds names is one section per alternative (SPEC §8, M38).
         foreach (var arm in match.Arms.Where(a => a.IsReachable))
         {
-            Line(CaseLabel(arm.Pattern));
-            Line("{");
-            _indent++;
-            EmitStatements(arm.Body.Statements);
-            var jumpsAway = TypeChecker.Terminates(arm.Body) || arm.Body.Statements.LastOrDefault() is BoundBreak or BoundContinue;
-            if (!jumpsAway)
-                Line("break;");
-            _indent--;
-            Line("}");
+            foreach (var label in CaseLabels(arm.Pattern, arm.Guard))
+            {
+                Line(label);
+                Line("{");
+                _indent++;
+                EmitStatements(arm.Body.Statements);
+                var jumpsAway = TypeChecker.Terminates(arm.Body) || arm.Body.Statements.LastOrDefault() is BoundBreak or BoundContinue;
+                if (!jumpsAway)
+                    Line("break;");
+                _indent--;
+                Line("}");
+            }
         }
-        if (!match.Arms.Any(a => a.IsReachable && Irrefutable(a.Pattern)))
+        if (!match.Arms.Any(a => a.IsReachable && a.Guard is null && Irrefutable(a.Pattern)))
         {
             Line("default:");
             Line("    throw new global::System.Diagnostics.UnreachableException();");
@@ -1219,21 +1223,33 @@ public sealed partial class CSharpEmitter
     // A pattern C# knows matches everything, after which a default label would be unreachable.
     private static bool Irrefutable(BoundPattern pattern) => pattern switch
     {
-        BoundWildcardPattern or BoundBindingPattern => true,
-        BoundTuplePattern tuple => tuple.Elements.All(Irrefutable),
+        BoundWildcardPattern => true,
+        BoundBindingPattern binding => !binding.Typed,
+        BoundTuplePattern tuple => tuple.Rest is null && tuple.Elements.All(Irrefutable),
+        BoundAsPattern { Typed: false } named => Irrefutable(named.Pattern),
+        BoundOrPattern choice => choice.Alternatives.Any(Irrefutable),
         _ => false,
     };
 
-    private string CaseLabel(BoundPattern pattern) =>
-        pattern is BoundWildcardPattern ? "default:" : $"case {GuardedPattern(pattern)}:";
+    /// <summary>A switch statement's labels for an arm: one per alternative its or-patterns expand to (SPEC §8).</summary>
+    private IEnumerable<string> CaseLabels(BoundPattern pattern, BoundExpr? guard) =>
+        pattern is BoundWildcardPattern && guard is null
+            ? ["default:"]
+            : GuardedPatterns(pattern, guard).Select(p => p.StartsWith("_ ", StringComparison.Ordinal) || p == "_" ? $"case var {p}:" : $"case {p}:");
 
-    /// <summary>A pattern and, for a list pattern's starred name, the guard that binds it (SPEC §8).</summary>
-    private string GuardedPattern(BoundPattern pattern)
-    {
-        var guards = new List<string>();
-        var text = Pattern(pattern, guards);
-        return guards.Count == 0 ? text : $"{text} when {string.Join(" && ", guards)}";
-    }
+    /// <summary>
+    /// A pattern as C# cases, each with the <c>when</c> that binds what C# patterns can't (a starred
+    /// name, a mapping's values) and tests the arm's guard (SPEC §8).
+    /// </summary>
+    private List<string> GuardedPatterns(BoundPattern pattern, BoundExpr? guard) =>
+        [.. Expand(pattern).Select(alternative =>
+        {
+            var guards = new List<string>();
+            var text = Pattern(alternative, guards);
+            if (guard is not null)
+                guards.Add($"({Expr(guard)})");
+            return guards.Count == 0 ? text : $"{text} when {string.Join(" && ", guards)}";
+        })];
 
     /// <summary>A pattern as C# writes it in a <c>case</c> label or a switch expression's arm.</summary>
     private string Pattern(BoundPattern pattern, List<string> guards)
@@ -1243,8 +1259,23 @@ public sealed partial class CSharpEmitter
         {
             case BoundWildcardPattern:
                 return "_";
+            case BoundBindingPattern { Typed: true } binding when binding.Symbol.Type is not TupleOfType:
+                return $"{TypeName(binding.Symbol.Type)} @{_locals[binding.Symbol]}";
             case BoundBindingPattern binding:
                 return $"var @{_locals[binding.Symbol]}";
+            case BoundNonePattern:
+                return "null";
+            case BoundSomePattern some:
+                return Sub(some.Inner);
+            case BoundOrPattern choice:
+                return $"({string.Join(" or ", choice.Alternatives.Select(Sub))})";
+            case BoundAsPattern { Pattern: BoundWildcardPattern, Typed: false } named:
+                return $"var @{_locals[named.Symbol]}";
+            case BoundAsPattern named:
+                var designation = named.Typed && named.Symbol.Type is not TupleOfType ? TypeName(named.Symbol.Type) : "var";
+                return $"({Sub(named.Pattern)}) and {designation} @{_locals[named.Symbol]}";
+            case BoundMappingPattern mapping:
+                return MappingPattern(mapping, guards);
             case BoundLiteralPattern literal:
                 return Literal(literal.Value);
             case BoundVariantPattern { Fields.IsEmpty: true } variant:
@@ -1255,6 +1286,15 @@ public sealed partial class CSharpEmitter
                 return TypeName(classPattern.Class);
             case BoundClassPattern classPattern:
                 return $"{TypeName(classPattern.Class)} {{ {string.Join(", ", classPattern.Fields.Select(f => $"@{Member(f.Field, classPattern.Class)}: {Sub(f.Pattern)}"))} }}";
+            case BoundTuplePattern { Rest: { } tupleRest } tuple:
+            {
+                // The starred elements are held, then gathered into a list in the guard (SPEC §8, M38).
+                var held = Enumerable.Range(0, tuple.StarCount).Select(_ => $"@{_locals.Fresh("element")}").ToList();
+                var elements = tuple.Elements.Select((e, i) => i >= tuple.StarAt && i < tuple.StarAt + tuple.StarCount ? $"var {held[i - tuple.StarAt]}" : Sub(e));
+                var list = TypeName(tupleRest.Type);
+                guards.Add($"{Runtime}.Ops.Let(new {list} {{ {string.Join(", ", held)} }}, out {list} @{_locals[tupleRest]})");
+                return $"({string.Join(", ", elements)})";
+            }
             case BoundTuplePattern tuple:
                 return $"({string.Join(", ", tuple.Elements.Select(Sub))})";
             case BoundListPattern list:
@@ -1285,8 +1325,9 @@ public sealed partial class CSharpEmitter
         var reachable = match.Arms.Where(a => a.IsReachable).ToList();
         if (reachable.Any(a => a.Body is not null))
             return BlockMatchExpr(match, reachable, Value);
-        var arms = reachable.Select(arm => $"{GuardedPattern(arm.Pattern)} => {(arm.Raise is { } raise ? Throw(raise) : Value(arm.Value!))}").ToList();
-        if (!reachable.Any(a => Irrefutable(a.Pattern)))
+        var arms = reachable.SelectMany(arm => GuardedPatterns(arm.Pattern, arm.Guard)
+            .Select(pattern => $"{pattern} => {(arm.Raise is { } raise ? Throw(raise) : Value(arm.Value!))}")).ToList();
+        if (!reachable.Any(a => a.Guard is null && Irrefutable(a.Pattern)))
             arms.Add("_ => throw new global::System.Diagnostics.UnreachableException()");
         return $"{Operand(match.Scrutinee)} switch {{ {string.Join(", ", arms)} }}";
     }
@@ -1304,19 +1345,22 @@ public sealed partial class CSharpEmitter
         _indent++;
         foreach (var arm in arms)
         {
-            Line(arm.Pattern is BoundWildcardPattern ? "default:" : $"case {GuardedPattern(arm.Pattern)}:");
-            Line("{");
-            _indent++;
-            if (arm.Body is { } body)
-                EmitStatements(body.Statements);
-            if (arm.Raise is { } raise)
-                Line($"{Throw(raise)};");
-            else if (arm.Value is { } armValue)
-                Line($"return {value(armValue)};");
-            _indent--;
-            Line("}");
+            foreach (var label in CaseLabels(arm.Pattern, arm.Guard))
+            {
+                Line(label);
+                Line("{");
+                _indent++;
+                if (arm.Body is { } body)
+                    EmitStatements(body.Statements);
+                if (arm.Raise is { } raise)
+                    Line($"{Throw(raise)};");
+                else if (arm.Value is { } armValue)
+                    Line($"return {value(armValue)};");
+                _indent--;
+                Line("}");
+            }
         }
-        if (!arms.Any(a => Irrefutable(a.Pattern)))
+        if (!arms.Any(a => a.Guard is null && Irrefutable(a.Pattern)))
         {
             Line("default:");
             Line("    throw new global::System.Diagnostics.UnreachableException();");

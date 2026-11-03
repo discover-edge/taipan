@@ -878,7 +878,13 @@ public sealed class DiagnosticBag
     // ---- Destructuring (SPEC §3.8, §5.1, M29) ----
 
     public void ReportTwoStars(TextSpan span, string where) =>
-        Add("TP0100", span, where == "a list pattern" ? "a list pattern can have only one '*'" : "an unpacking can have only one '*' at each level");
+        Add("TP0100", span, where is "a list pattern" or "a tuple pattern" ? $"{where} can have only one '*'" : "an unpacking can have only one '*' at each level");
+
+    public void ReportRestNotLast(TextSpan span) =>
+        Add("TP0100", span, "'**' must come last in a mapping pattern");
+
+    public void ReportRestWildcard(TextSpan span) =>
+        Add("TP0100", span, "'**_' can't be used; leave it out");
 
     public void ReportLoneStar(TextSpan span) =>
         Add("TP0100", span, "a starred name can't be unpacked to alone", "add another name, or drop the '*'");
@@ -895,8 +901,26 @@ public sealed class DiagnosticBag
     public void ReportCannotMatchPattern(TextSpan span, object type, string kind) =>
         Add("TP0200", span, $"{type} cannot match a {kind} pattern");
 
-    public void ReportOptionalPattern(TextSpan span, object type) =>
-        Add("TP0203", span, $"{type} can only be matched by '_' or a binding", "'None' patterns aren't supported yet; bind it and test it with 'is some'");
+    public void ReportUnreachableAlternative(TextSpan span) =>
+        Warn("TP0300", span, "unreachable alternative");
+
+    public void ReportCannotBeNone(TextSpan span, object type) =>
+        Add("TP0200", span, $"{type} can't be None");
+
+    public void ReportAlternativeNames(TextSpan span, string name) =>
+        Add("TP0200", span, $"alternatives bind different names: '{name}' is not bound in every one");
+
+    public void ReportAlternativeTypes(TextSpan span, string name, object first, object second) =>
+        Add("TP0200", span, $"'{name}' is {first} in one alternative and {second} in another");
+
+    public void ReportMappingKeyType(TextSpan span, object key) =>
+        Add("TP0200", span, $"mapping keys must be int, str or bool, found {key}");
+
+    public void ReportDuplicateMappingKey(TextSpan span, string key) =>
+        Add("TP0214", span, $"key {key} appears twice in a mapping pattern");
+
+    public void ReportStarredTuplePatternCount(TextSpan span, object type, int elements, int patterns) =>
+        Add("TP0209", span, $"{type} has {elements} elements, found at least {patterns} patterns");
 
     public void ReportArmGivesNoValue(TextSpan span) =>
         Add("TP0200", span, "this arm gives no value", "end it with an expression");

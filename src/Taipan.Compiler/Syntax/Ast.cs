@@ -175,7 +175,11 @@ public sealed record WithItem(Expr Manager, Identifier? Binding, TextSpan Span) 
 public sealed record ExceptClause(ImmutableArray<Expr> Types, TextSpan TypesSpan, Identifier? Binding, Block Body, TextSpan Span) : Node(Span);
 
 /// <summary>An arm written inline (<c>Ok: print("ok")</c>) has a one-statement body.</summary>
-public sealed record MatchArm(Pattern Pattern, Block Body, TextSpan Span) : Node(Span);
+public sealed record MatchArm(Pattern Pattern, Block Body, TextSpan Span) : Node(Span)
+{
+    /// <summary>The arm's <c>if</c> condition, tested after its pattern matches (SPEC §5.1, M38).</summary>
+    public Expr? Guard { get; init; }
+}
 
 // ---- Conditions ----
 
@@ -199,6 +203,23 @@ public sealed record StringPattern(string Value, TextSpan Span) : Pattern(Span);
 
 public sealed record BoolPattern(bool Value, TextSpan Span) : Pattern(Span);
 
+/// <summary>A float literal pattern (M38); <see cref="Value"/> includes the sign.</summary>
+public sealed record FloatPattern(double Value, TextSpan Span) : Pattern(Span);
+
+/// <summary><c>None</c>, at an optional position (M38).</summary>
+public sealed record NonePattern(TextSpan Span) : Pattern(Span);
+
+/// <summary><c>A | B | …</c>: matches when any alternative does (SPEC §5.1, M38).</summary>
+public sealed record OrPattern(ImmutableArray<Pattern> Alternatives, TextSpan Span) : Pattern(Span);
+
+/// <summary><c>p as name</c>: binds the value <see cref="Pattern"/> matched (M38).</summary>
+public sealed record AsPattern(Pattern Pattern, Identifier Name, TextSpan Span) : Pattern(Span);
+
+/// <summary><c>{"k": p, **rest}</c>: a dict with these keys (SPEC §5.1, M38). Each key is a literal pattern.</summary>
+public sealed record MappingPattern(ImmutableArray<MappingEntry> Entries, Identifier? Rest, TextSpan Span) : Pattern(Span);
+
+public sealed record MappingEntry(Pattern Key, Pattern Value, TextSpan Span) : Node(Span);
+
 /// <summary>
 /// <c>Variant</c>, <c>Enum.Variant</c>, <c>module.Enum.Variant</c>, or any of them with bindings; or a class pattern,
 /// <c>Class(…)</c> or <c>module.Class(…)</c> (SPEC §5.1). <see cref="Bindings"/> is null when there are no parentheses.
@@ -209,13 +230,13 @@ public sealed record VariantPattern(Identifier? Module, Identifier? Enum, Identi
 /// <summary>An argument of a variant or class pattern: positional, or <c>field=pattern</c> when <see cref="Field"/> is set (M15; a sub-pattern since M29).</summary>
 public sealed record PatternBinding(Identifier? Field, Pattern Pattern, TextSpan Span) : Node(Span);
 
-/// <summary><c>(p, q)</c>: one sub-pattern per element of a tuple (SPEC §5.1, M29).</summary>
+/// <summary><c>(p, q)</c>: one sub-pattern per element of a tuple (SPEC §5.1, M29), with at most one <see cref="StarPattern"/> since M38.</summary>
 public sealed record TuplePattern(ImmutableArray<Pattern> Elements, TextSpan Span) : Pattern(Span);
 
 /// <summary><c>[p, *rest, q]</c>: a list's elements, with at most one <see cref="StarPattern"/> (SPEC §5.1, M29).</summary>
 public sealed record ListPattern(ImmutableArray<Pattern> Elements, TextSpan Span) : Pattern(Span);
 
-/// <summary><c>*name</c> or <c>*_</c> in a list pattern: the rest of the list.</summary>
+/// <summary><c>*name</c> or <c>*_</c> in a list or tuple pattern: the rest of the elements.</summary>
 public sealed record StarPattern(Identifier Name, TextSpan Span) : Pattern(Span);
 
 public sealed record ErrorPattern(TextSpan Span) : Pattern(Span);
@@ -366,6 +387,9 @@ public sealed record MatchExpr(Expr Scrutinee, ImmutableArray<ValueArm> Arms, Te
 public sealed record ValueArm(Pattern Pattern, Expr? Value, RaiseStmt? Raise, TextSpan Span) : Node(Span)
 {
     public Block? Block { get; init; }
+
+    /// <summary>The arm's <c>if</c> condition (SPEC §5.1, M38).</summary>
+    public Expr? Guard { get; init; }
 }
 
 /// <summary><c>*x</c>: only an unpacking target that takes the rest (SPEC §3.8, M29).</summary>

@@ -1,0 +1,16 @@
+@dataclass
+class Point:
+    x: int
+    y: int
+
+def f(p: Point, t: tuple[int, str]) -> None:
+    match p:
+        Point(x, 0) | Point(0, y):
+            pass
+        _:
+            pass
+    match t:
+        (n, "a") | (0, n):
+            pass
+        _:
+            pass

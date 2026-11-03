@@ -1,0 +1,3 @@
+tests/cases/m38/tp0100_patterns.tpn:3:12: error TP0100: '**' must come last in a mapping pattern
+tests/cases/m38/tp0100_patterns.tpn:5:10: error TP0100: '**_' can't be used; leave it out
+tests/cases/m38/tp0100_patterns.tpn:10:14: error TP0100: a tuple pattern can have only one '*'

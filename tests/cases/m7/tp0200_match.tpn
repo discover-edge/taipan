@@ -10,9 +10,9 @@ match l:
     1: pass
     Other.Red2: pass
     _: pass
-match 1.5:
+match {"x"}:
     _: pass
-match {1: 2}:
+match iter([1]):
     _: pass
 match 3:
     "x": pass

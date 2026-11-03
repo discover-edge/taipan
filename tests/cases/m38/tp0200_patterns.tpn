@@ -1,0 +1,23 @@
+def f(n: int, xs: list[int], keyed: dict[tuple[int, int], str], words: dict[str, int]) -> None:
+    match n:
+        None:
+            pass
+        k if 1:
+            pass
+        _:
+            pass
+    match xs:
+        {"a": 1}:
+            pass
+        _:
+            pass
+    match keyed:
+        {1: "x"}:
+            pass
+        _:
+            pass
+    match words:
+        {"a": 1, "a": 2}:
+            pass
+        _:
+            pass

@@ -1,0 +1,2 @@
+tests/cases/m38/tp0200_or_names.tpn:8:23: error TP0200: alternatives bind different names: 'x' is not bound in every one
+tests/cases/m38/tp0200_or_names.tpn:13:10: error TP0200: 'n' is int in one alternative and str in another

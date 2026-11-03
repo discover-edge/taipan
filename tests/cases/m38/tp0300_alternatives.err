@@ -1,0 +1,2 @@
+tests/cases/m38/tp0300_alternatives.tpn:3:13: warning TP0300: unreachable alternative
+tests/cases/m38/tp0300_alternatives.tpn:9:13: warning TP0300: unreachable alternative
