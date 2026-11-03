@@ -77,6 +77,9 @@ public interface IObject : IClass
 {
     /// <summary>The runtime class's name.</summary>
     string TypeName { get; }
+
+    /// <summary>The module the class is defined in, as <c>type[C]</c> displays it (SPEC §3.17).</summary>
+    string ModuleName => "__main__";
 }
 
 /// <summary>Implemented by every enum variant. A variant without a payload displays as its bare name.</summary>

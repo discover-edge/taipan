@@ -67,6 +67,7 @@ public sealed partial class Binder
     {
         BoundBreak or BoundContinue => true,
         BoundBlock block => block.Statements.Any(Exits),
+        BoundWith with => !with.Suppresses && Exits(with.Body),
         BoundIf { Else: { } elseBlock } ifStmt => ifStmt.Clauses.All(c => Exits(c.Body)) && Exits(elseBlock),
         BoundMatch match => match.Arms.Where(a => a.IsReachable).All(a => Exits(a.Body)),
         BoundTry tryStmt => (tryStmt.Finally is { } finallyBlock && Exits(finallyBlock))

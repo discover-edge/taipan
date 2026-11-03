@@ -1,0 +1,12 @@
+from types import TracebackType
+
+class Quiet:
+    def __enter__(self) -> Quiet:
+        return self
+
+    def __exit__(self, exc_type: type[BaseException]?, exc: BaseException?, tb: TracebackType?) -> bool:
+        return True
+
+def first(xs: list[int]) -> int:
+    with Quiet():
+        return xs[0]

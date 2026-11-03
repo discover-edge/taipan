@@ -22,6 +22,12 @@ public abstract record TaipanType
     /// <summary>The type of <c>None</c>, assignable to every optional (SPEC §3.4).</summary>
     public static readonly TaipanType None = new NoneType();
 
+    /// <summary>An open text file or standard stream (SPEC §6.1, M37).</summary>
+    public static readonly TaipanType TextIO = new OpaqueType("TextIO", "Taipan.Runtime.TextFile");
+
+    /// <summary><c>types.TracebackType</c> (SPEC §3.17, M37).</summary>
+    public static readonly TaipanType Traceback = new OpaqueType("TracebackType", "Taipan.Runtime.Traceback");
+
     public bool IsError => this is ErrorType;
 
     /// <summary>True for the error type or a collection type built from it, like <c>list[?]</c>.</summary>
@@ -94,6 +100,18 @@ public sealed record PrimitiveType(string Name) : TaipanType
 public sealed record NothingType : TaipanType
 {
     public override string ToString() => "nothing";
+}
+
+/// <summary>A runtime object with members the binder knows: <c>TextIO</c>, <c>TracebackType</c> (M37).</summary>
+public sealed record OpaqueType(string Name, string RuntimeName) : TaipanType
+{
+    public override string ToString() => Name;
+}
+
+/// <summary><c>type[C]</c>: a class as a value, which only <c>__exit__</c> receives (SPEC §3.17, M37).</summary>
+public sealed record ClassOfType(ClassType Class) : TaipanType
+{
+    public override string ToString() => $"type[{Class}]";
 }
 
 public sealed record ErrorType : TaipanType

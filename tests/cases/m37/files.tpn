@@ -1,0 +1,91 @@
+import sys
+
+let dir = sys.argv[1]
+let path = f"{dir}/notes.txt"
+
+let out = open(path, "w")
+with out:
+    print(out.write("first\n"))
+    out.writelines(["second\n", "third"])
+    print(out.name == path, out.mode, out.encoding, out.closed)
+print(out.closed)
+try:
+    out.write("late")
+except ValueError as e:
+    print(e)
+
+with open(path) as f:
+    print(repr(f.readline()))
+    print(repr(f.read(3)))
+    print(next(f), end="")
+    print(list(f))
+    print(repr(f.read()))
+    try:
+        f.write("x")
+    except OSError as e:
+        print("OSError", e)
+
+with open(path, "a") as f:
+    f.write("\nfourth\n")
+with open(path, "rt") as f:
+    print(f.readlines())
+var count = 0
+for line in open(path):
+    count += len(line)
+print(count)
+
+with open("tests/cases/m37/lines.txt") as f:
+    print([len(line) for line in f])
+with open("tests/cases/m37/lines.txt", newline="") as f:
+    print([len(line) for line in f])
+with open(f"{dir}/plain.txt", "w", newline="") as f:
+    f.write("one\ntwo\n")
+with open(f"{dir}/plain.txt", newline="") as f:
+    print(f.readlines())
+
+with open(f"{dir}/new.txt", "x") as f:
+    f.write("made")
+try:
+    open(f"{dir}/new.txt", "xt")
+except FileExistsError as e:
+    print(e.errno, e.strerror, e.filename == f"{dir}/new.txt")
+try:
+    open("tests/cases/m37/missing.txt")
+except FileNotFoundError as e:
+    print(e)
+try:
+    open(dir)
+except OSError as e:
+    print(isinstance(e, IsADirectoryError), e.errno)
+
+with open(f"{dir}/latin.txt", "w", encoding="latin-1") as f:
+    f.write("café")
+with open(f"{dir}/latin.txt", encoding="LATIN1") as f:
+    print(f.read())
+try:
+    with open(f"{dir}/latin.txt") as f:
+        f.read()
+except UnicodeDecodeError as e:
+    print("decode:", isinstance(e, ValueError))
+try:
+    with open(f"{dir}/ascii.txt", "w", encoding="ascii") as f:
+        f.write("naïve")
+except UnicodeEncodeError as e:
+    print("encode:", isinstance(e, UnicodeError))
+
+with open(f"{dir}/bom.txt", "w", encoding="utf-8-sig") as f:
+    f.write("x")
+with open(f"{dir}/bom.txt") as f:
+    print(len(f.read()))
+with open(f"{dir}/bom.txt", encoding="utf_8_sig") as f:
+    print(len(f.read()))
+with open(f"{dir}/emoji.txt", "w") as f:
+    print(f.write("🐍ok"))
+with open(f"{dir}/emoji.txt") as f:
+    print(f.read(2))
+
+with open(f"{dir}/printed.txt", "w") as f:
+    print("a", 1, sep=":", file=f)
+    print("b", file=f, end="!", flush=True)
+with open(f"{dir}/printed.txt") as f:
+    print(f.read())

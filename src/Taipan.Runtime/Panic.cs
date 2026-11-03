@@ -16,17 +16,26 @@ public static class Panic
     public static TaipanPanic Create(string message) => new(message);
 
     /// <summary>
-    /// Runs a program's top level. A panic, an exception nothing caught, prints <c>panic: message</c>
-    /// and the <c>.tpn</c> location of the innermost Taipan frame where it was raised to
-    /// <see cref="Io.Error"/>, and returns 101.
+    /// Runs a program's top level with its arguments (<c>sys.argv</c>, SPEC §6.1). A panic, an
+    /// exception nothing caught, prints <c>panic: message</c> and the <c>.tpn</c> location of the
+    /// innermost Taipan frame where it was raised to <see cref="Io.Error"/>, and returns 101. An
+    /// uncaught <c>SystemExit</c> returns its code (SPEC §3.10). Files left open are closed.
     /// </summary>
-    public static int Run(Action topLevel)
+    public static int Run(Action topLevel, string[] arguments)
     {
+        Sys.Start(arguments);
         try
         {
             topLevel();
             Io.Out.Flush();
             return 0;
+        }
+        catch (SystemExit exit)
+        {
+            Io.Out.Flush();
+            if (exit.PrintsMessage)
+                Io.Error.WriteLine(exit.message);
+            return unchecked((int)exit.code);
         }
         catch (Exception e)
         {
@@ -37,6 +46,10 @@ public static class Panic
                 Io.Error.WriteLine($"  at {location}");
             return ExitCode;
         }
+        finally
+        {
+            TextFile.CloseAll();
+        }
     }
 
     private static string MessageFor(Exception e) => e switch
@@ -45,7 +58,7 @@ public static class Panic
         OverflowException => "integer overflow",
         PythonError python => $"Python {python.type}: {python.message}",
         DotNetError dotnet => DotNetMessage(dotnet.Exception),
-        TaipanException exception => MessageFor(exception),
+        TaipanBaseException exception => MessageFor(exception),
         _ => DotNetMessage(e),
     };
 
@@ -56,7 +69,7 @@ public static class Panic
     /// SPEC §3.10: the runtime's own exceptions are written to stand alone, so they print just the
     /// message; a compiled class prints its name too, as Python does.
     /// </summary>
-    private static string MessageFor(TaipanException exception)
+    private static string MessageFor(TaipanBaseException exception)
     {
         var name = ((IObject)exception).TypeName;
         // As Python prints str(e), a class's __str__ gives the text (SPEC §4.8).

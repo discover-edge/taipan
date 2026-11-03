@@ -20,6 +20,7 @@ public static class TypeChecker
         || (to is OptionalOf optional && (from is NoneType || (from is not OptionalOf && IsSubtype(from, optional.Inner))))
         || (from is OptionalOf { Inner: ClassType fromClass } && to is OptionalOf { Inner: ClassType toClass } && Derives(fromClass, toClass))
         || (from is ClassType fromType && to is ClassType toType && Derives(fromType, toType))
+        || (from is ClassOfType fromClassOf && to is ClassOfType toClassOf && Derives(fromClassOf.Class, toClassOf.Class))
         // A .NET object parameter takes int, float, bool, str and .NET values (SPEC §13.3).
         || (to is DotNetType { IsObject: true } && from is PrimitiveType { Name: not "py" } or DotNetType)
         || (from is DotNetType fromNet && to is DotNetType toNet && DotNetTypes.Derives(fromNet.Symbol, toNet.Symbol))
@@ -48,6 +49,7 @@ public static class TypeChecker
         PrimitiveType { Name: "str" } => TaipanType.Str,
         IteratorOfType iterator => iterator.Element,
         IterableOfType iterable => iterable.Element,
+        OpaqueType { Name: "TextIO" } => TaipanType.Str,
         ClassType classType when classType.Symbol.FindMethod("__iter__") is { ReturnType: var result } => Substitute(result, MapOf(classType)) is IteratorOfType iterator ? iterator.Element : null,
         ClassType => IteratorElementOf(type),
         _ => null,
@@ -57,6 +59,8 @@ public static class TypeChecker
     public static TaipanType? IteratorElementOf(TaipanType type) => type switch
     {
         IteratorOfType iterator => iterator.Element,
+        // A file is an iterator over its lines (SPEC §6.1).
+        OpaqueType { Name: "TextIO" } => TaipanType.Str,
         ClassType classType when classType.Symbol.FindMethod("__next__") is { ReturnType: var result } => Substitute(result, MapOf(classType)),
         _ => null,
     };
@@ -205,7 +209,11 @@ public static class TypeChecker
     public static bool Terminates(BoundStmt stmt) => stmt switch
     {
         BoundReturn or BoundRaise => true,
+        // sys.exit raises SystemExit (SPEC §6.1).
+        BoundExprStmt { Expr: BoundCall { Function.Builtin: BuiltinFunction.Exit } } => true,
         BoundBlock block => block.Statements.Any(Terminates),
+        // One whose __exit__ may suppress can end after any statement (SPEC §3.17).
+        BoundWith with => !with.Suppresses && Terminates(with.Body),
         BoundIf { Else: { } elseBlock } ifStmt => ifStmt.Clauses.All(c => Terminates(c.Body)) && Terminates(elseBlock),
         // Exhaustive once it type-checks (SPEC §5.1).
         BoundMatch match => match.Arms.Where(a => a.IsReachable).All(a => Terminates(a.Body)),

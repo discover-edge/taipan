@@ -1,0 +1,7 @@
+import sys
+
+try:
+    sys.exit()
+except Exception as e:
+    print("caught", e)
+print("after")

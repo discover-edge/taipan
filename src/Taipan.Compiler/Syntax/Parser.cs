@@ -31,6 +31,9 @@ public sealed class Parser
     private int _previousEnd;
     private bool _recovering;
 
+    // Parsing a with item's expression, outside any brackets: `as` ends it rather than converting (SPEC §2).
+    private bool _withItem;
+
     private Parser(SourceText source, ImmutableArray<Token> tokens, DiagnosticBag diagnostics, bool isHole)
     {
         _source = source;
@@ -683,6 +686,8 @@ public sealed class Parser
                 return ParseMatchStmt();
             case TokenKind.TryKeyword:
                 return ParseTryStmt();
+            case TokenKind.WithKeyword:
+                return ParseWithStmt();
             case TokenKind.DefKeyword or TokenKind.At or TokenKind.AsyncKeyword:
                 var start = Current.Span.Start;
                 var decorators = ParseDecorators();
@@ -972,6 +977,40 @@ public sealed class Parser
         var start = Next().Span.Start;
         var value = !_recovering && CanStartExpression(Current.Kind) ? ParseExpr() : null;
         return new RaiseStmt(value, SpanFrom(start));
+    }
+
+    // with_stmt = "with" with_item { "," with_item } ":" block
+    private WithStmt ParseWithStmt()
+    {
+        var start = Next().Span.Start;
+        var items = ImmutableArray.CreateBuilder<WithItem>();
+        do
+        {
+            if (items.Count > 0)
+                Next();
+            items.Add(ParseWithItem());
+        }
+        while (At(TokenKind.Comma));
+        Expect(TokenKind.Colon);
+        var body = ParseBlock();
+        return new WithStmt(items.ToImmutable(), body, SpanFrom(start));
+    }
+
+    // with_item = expr [ "as" NAME ], where a top-level `as` names the item's variable (SPEC §2)
+    private WithItem ParseWithItem()
+    {
+        var start = Current.Span.Start;
+        var outer = _withItem;
+        _withItem = true;
+        var manager = ParseExpr();
+        _withItem = outer;
+        Identifier? binding = null;
+        if (At(TokenKind.AsKeyword))
+        {
+            Next();
+            binding = ExpectIdentifier();
+        }
+        return new WithItem(manager, binding, SpanFrom(start));
     }
 
     // try_stmt = "try" ":" block { except_clause } [ "else" ":" block ] [ "finally" ":" block ]
@@ -1660,11 +1699,14 @@ public sealed class Parser
         return Binary(left, BinaryOp.Power, ParseUnary());
     }
 
-    // cast = postfix [ "as" type ]
+    // cast = postfix [ "as" type ]. In a with item, a top-level `as` is the item's (SPEC §2).
     private Expr ParseCast()
     {
+        var withItem = _withItem;
+        _withItem = false;
         var value = ParsePostfix();
-        if (!At(TokenKind.AsKeyword))
+        _withItem = withItem;
+        if (withItem || !At(TokenKind.AsKeyword))
             return value;
         Next();
         // In a cast, `??` after the type is the coalescing operator: `x as int? ?? 0` (SPEC §2).

@@ -1,0 +1,7 @@
+import sys
+
+class Late(Exception):
+    pass
+
+def count_args() -> int:
+    return len(sys.argv)

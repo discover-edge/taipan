@@ -1,0 +1,10 @@
+tests/cases/m37/tp0200_open.tpn:2:23: error TP0200: invalid mode 'rb'
+  help: binary files ('b') are deferred
+tests/cases/m37/tp0200_open.tpn:3:23: error TP0200: invalid mode 'r+'
+  help: read-write modes ('+') are deferred
+tests/cases/m37/tp0200_open.tpn:4:23: error TP0200: invalid mode 'q'
+  help: use 'r', 'w', 'a' or 'x'
+tests/cases/m37/tp0200_open.tpn:5:23: error TP0200: 'open' needs a literal mode
+tests/cases/m37/tp0200_open.tpn:6:32: error TP0200: unknown encoding 'utf-16'
+  help: use 'utf-8', 'utf-8-sig', 'ascii' or 'latin-1'
+tests/cases/m37/tp0200_open.tpn:7:31: error TP0200: newline must be None or ''

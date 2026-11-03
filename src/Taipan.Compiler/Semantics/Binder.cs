@@ -26,7 +26,7 @@ public sealed record BindResult(BoundProgram Program, ImmutableArray<Diagnostic>
 public sealed partial class Binder
 {
     private static readonly BigInteger MaxInt = long.MaxValue;
-    private static readonly HashSet<string> BuiltinTypeNames = ["int", "float", "bool", "str", "list", "dict", "py", "Callable", "tuple", "Protocol", "Self", "ABC", "ClassVar", "Iterator", "Iterable", "Awaitable", "set"];
+    private static readonly HashSet<string> BuiltinTypeNames = ["int", "float", "bool", "str", "list", "dict", "py", "Callable", "tuple", "Protocol", "Self", "ABC", "ClassVar", "Iterator", "Iterable", "Awaitable", "set", "TextIO"];
 
     // Every class the program defines, for checks across a hierarchy (SPEC §4.8).
     private readonly List<ClassSymbol> _allClasses = [];
@@ -90,6 +90,7 @@ public sealed partial class Binder
     private readonly Dictionary<TypeAliasSymbol, (Module Module, TypeAliasDef Syntax, int Order)> _aliases = [];
     private readonly List<TypeAliasSymbol> _resolving = [];
     private Module? _module;
+    private Module? _mainModule;
     private readonly HashSet<string> _scriptNames = [];
     private Scope _scope;
     private FunctionSymbol? _function;
@@ -170,6 +171,7 @@ public sealed partial class Binder
         var modules = files.Select(f => new Module(f, new Scope(_builtins))).ToList();
         var byName = modules.ToDictionary(m => m.File.Name);
         var main = modules[0];
+        _mainModule = main;
 
         // Type names first, in source order, so a clash is reported at the later definition.
         foreach (var module in modules)
@@ -370,6 +372,20 @@ public sealed partial class Binder
                         var symbol = new VariableSymbol(bound.Text, TaipanType.Py, VariableKind.Constant);
                         if (DeclareGlobal(bound, symbol, isDefinition: false))
                             module.PythonImports.Add(new BoundPythonImport(symbol, name.Name.Text, name.Span, _source));
+                    }
+                    break;
+                // sys, os and types are part of Taipan, never files (SPEC §4.7, M37).
+                case ImportStmt import when BuiltinModules.IsBuiltin(import.Module.Text):
+                    DeclareGlobal(import.Alias ?? import.Module, BuiltinModules.Symbol(import.Module.Text, (import.Alias ?? import.Module).Text), isDefinition: false);
+                    break;
+                case FromImportStmt from when BuiltinModules.IsBuiltin(from.Module.Text):
+                    var builtinModule = BuiltinModules.Symbol(from.Module.Text, from.Module.Text);
+                    foreach (var name in from.Names)
+                    {
+                        if (builtinModule.Definitions.TryGetValue(name.Name.Text, out var member))
+                            DeclareImported(name, member);
+                        else
+                            _diagnostics.ReportNoDefinition(name.Name.Span, from.Module.Text, name.Name.Text);
                     }
                     break;
                 case ImportStmt import when byName.TryGetValue(import.Module.Text, out var target):
@@ -658,7 +674,10 @@ public sealed partial class Binder
             return protocol;
         }
         var isDataclass = CheckDecorators(classDef.Decorators, "dataclass");
-        var symbol = new ClassSymbol(classDef.Name.Text, NewTypeParameters(classDef.TypeParams), isDataclass);
+        var symbol = new ClassSymbol(classDef.Name.Text, NewTypeParameters(classDef.TypeParams), isDataclass)
+        {
+            Module = _module == _mainModule ? null : _module?.File.Name,
+        };
         if (BuiltinTypeNames.Contains(symbol.Name))
             _diagnostics.ReportDuplicateDefinition(classDef.Name.Span, symbol.Name);
         else if (DeclareGlobal(classDef.Name, symbol))
@@ -1482,6 +1501,10 @@ public sealed partial class Binder
                     CollectScriptNames(arm.Body);
                 }
                 break;
+            case WithStmt with:
+                _scriptNames.UnionWith(with.Items.Select(i => i.Binding?.Text).OfType<string>());
+                CollectScriptNames(with.Body);
+                break;
         }
     }
 
@@ -1564,6 +1587,26 @@ public sealed partial class Binder
                 if (_asNative)
                     _diagnostics.ReportNativePython(py.Span, _asExtension);
                 return TaipanType.Py;
+            case NamedType { Name.Text: "TextIO" } file when ResolveTypeName("TextIO") is null:
+                Index(file.Name.Span, new SemanticIndex.BuiltinType("TextIO"));
+                return TaipanType.TextIO;
+            case NamedType named when _global.Lookup(named.Name.Text) is BuiltinTypeSymbol builtinType:
+                Index(named.Name.Span, builtinType);
+                return builtinType.Type;
+            // type[C] (SPEC §3.17, M37).
+            case GenericType { Name.Text: "type" } classOf when ResolveTypeName("type") is null:
+                if (classOf.Arguments is not [var classSyntax])
+                {
+                    _diagnostics.ReportWrongTypeArgumentCount(classOf.Span, "type", 1, classOf.Arguments.Length);
+                    return TaipanType.Error;
+                }
+                Index(classOf.Name.Span, new SemanticIndex.BuiltinType("type"));
+                var ofClass = BindType(classSyntax);
+                if (ofClass is ClassType { Symbol.IsProtocol: false } heldClass)
+                    return new ClassOfType(heldClass);
+                if (!ofClass.ContainsError)
+                    _diagnostics.ReportTypeOfNonClass(classSyntax.Span, ofClass);
+                return TaipanType.Error;
             case NamedType { Name.Text: "Callable" } bare:
                 _diagnostics.ReportBareCallable(bare.Span);
                 return TaipanType.Error;
@@ -1687,6 +1730,11 @@ public sealed partial class Binder
         }
         Index(qualified.Module.Span, module);
         RecordReceiver(name.Span, module);
+        if (module.Definitions.GetValueOrDefault(name.Text) is BuiltinTypeSymbol builtinType && arguments.IsEmpty)
+        {
+            Index(name.Span, builtinType);
+            return builtinType.Type;
+        }
         if (module.Definitions.GetValueOrDefault(name.Text) is TypeAliasSymbol alias)
         {
             Index(name.Span, alias);
@@ -1830,6 +1878,7 @@ public sealed partial class Binder
         RaiseStmt raise => BindRaise(raise),
         DelStmt delete => BindDelete(delete),
         TryStmt tryStmt => BindTry(tryStmt),
+        WithStmt with => BindWith(with),
         FuncDefStmt funcDef => BindLocalFunction(funcDef),
         UnpackStmt unpack => BindUnpack(unpack),
         YieldStmt yield => BindYield(yield),
@@ -1878,10 +1927,10 @@ public sealed partial class Binder
         for (var i = 0; i < parameters.Length; i++)
             DeclareLocal(def.Params[i].Name, parameters[i]);
         // It runs later, so it doesn't see narrowed vars or paths (SPEC §3.9).
-        var outerNoYield = _noYield;
-        _noYield = 0;
+        var (outerNoYield, outerWithDepth) = (_noYield, _withDepth);
+        (_noYield, _withDepth) = (0, 0);
         var body = InDeferredRegion(() => BindBlock(def.Body));
-        _noYield = outerNoYield;
+        (_noYield, _withDepth) = (outerNoYield, outerWithDepth);
         if (function.BodyResult != TaipanType.Nothing && !function.IsGenerator && !TypeChecker.Terminates(body))
             _diagnostics.ReportNotAllPathsReturn(def.Name.Span, def.Name.Text);
         (_function, _loopDepth, _scope) = (outerFunction, outerLoopDepth, outerScope);
@@ -2128,7 +2177,7 @@ public sealed partial class Binder
         if (value.Type.ContainsError)
             return new BoundRaise(value, raise.Span);
         if (TypeChecker.Unwrap(value.Type) is ClassType { Symbol: var symbol } && BuiltinClasses.IsException(symbol))
-            CheckAssignable(value, BuiltinClasses.Exception.Type, syntax.Span);
+            CheckAssignable(value, BuiltinClasses.BaseException.Type, syntax.Span, TypeChecker.Unwrap(value.Type).ToString());
         else
             _diagnostics.ReportCannotRaise(syntax.Span, value.Type);
         return new BoundRaise(value, raise.Span);
@@ -2234,7 +2283,7 @@ public sealed partial class Binder
         }
         else if (dotnetClasses.Count == 0)
         {
-            bindingType = bound.Aggregate((a, b) => a.CommonBase(b) ?? BuiltinClasses.Exception).Type;
+            bindingType = bound.Aggregate((a, b) => a.CommonBase(b) ?? BuiltinClasses.BaseException).Type;
         }
         else if (!bound.Any())
         {
@@ -2261,7 +2310,7 @@ public sealed partial class Binder
         _scope = outer;
 
         // Catching everything is deliberate when the block re-raises or uses the exception (TP0301).
-        var broad = classes.Contains(BuiltinClasses.Exception);
+        var broad = classes.Contains(BuiltinClasses.Exception) || classes.Contains(BuiltinClasses.BaseException);
         if (broad && !Raises(body) && !(binding is not null && Uses(body, binding)))
             _diagnostics.ReportBroadHandler(new TextSpan(clause.Span.Start, "except".Length));
 
@@ -2511,6 +2560,8 @@ public sealed partial class Binder
             PrimitiveType { Name: "py" } => TaipanType.Py,
             IteratorOfType iterator => iterator.Element,
             IterableOfType iterated => iterated.Element,
+            // A file gives its lines (SPEC §6.1).
+            OpaqueType { Name: "TextIO" } => TaipanType.Str,
             { ContainsError: true } => TaipanType.Error,
             OptionalOf when ReportIfOptional(iterable, syntax.Span) => TaipanType.Error,
             _ => CannotIterate(syntax.Span, iterable.Type),
@@ -2566,7 +2617,7 @@ public sealed partial class Binder
         if (expected == TaipanType.Py && value.Type != TaipanType.Py && !value.Type.ContainsError && value.Type.IsConvertibleToPython)
             return new BoundToPy(value, value.Span);
         // A list, dict, str or class used as an iterable or iterator is wrapped (SPEC §3.13, §8).
-        if (TypeChecker.Unwrap(expected) is IterableOfType or IteratorOfType && value.Type is not (IterableOfType or IteratorOfType or NoneType or OptionalOf)
+        if (TypeChecker.Unwrap(expected) is IterableOfType or IteratorOfType && value.Type is not (IterableOfType or IteratorOfType or NoneType or OptionalOf or OpaqueType)
             && !value.Type.ContainsError && TypeChecker.IsAssignable(value.Type, expected))
             return new BoundToIterable(value, TypeChecker.Unwrap(expected), value.Span);
         return ConvertFunction(value, expected);
@@ -2983,7 +3034,7 @@ public sealed partial class Binder
                 return new BoundErrorExpr(span);
             case FunctionSymbol function:
                 return new BoundFunctionValue(function, new FunctionType([.. function.Parameters.Select(p => p.Type)], function.ReturnType), span);
-            case ClassSymbol or EnumSymbol:
+            case ClassSymbol or EnumSymbol or BuiltinTypeSymbol:
                 _diagnostics.ReportTypeAsValue(span, name);
                 return new BoundErrorExpr(span);
             case TypeAliasSymbol alias:
@@ -3421,6 +3472,8 @@ public sealed partial class Binder
             return new BoundPyGetAttr(target, name, member.Span);
         if (target.Type is DotNetType net)
             return BindDotNetMember(target, net.Symbol, member);
+        if (IoAttribute(target.Type, name) is { } ioAttribute)
+            return new BoundRuntimeProperty(target, name, ioAttribute, member.Span);
 
         if (target.Type is ClassType { Symbol: var classSymbol })
         {
@@ -3558,6 +3611,8 @@ public sealed partial class Binder
             case FunctionSymbol { Builtin: BuiltinFunction.Repr or BuiltinFunction.Hash } function:
                 ReportKeywordArguments(call, function.Name);
                 return BindReprOrHash(call, function, function.Builtin!.Value);
+            case FunctionSymbol { Builtin: BuiltinFunction.Print or BuiltinFunction.Input or BuiltinFunction.Open or BuiltinFunction.Exit or BuiltinFunction.GetEnv } io:
+                return BindIoBuiltin(call, io, io.Builtin!.Value);
             case FunctionSymbol { Builtin: { } builtin } function:
                 ReportKeywordArguments(call, function.Name);
                 return BindBuiltinCall(call, function, builtin, expected);

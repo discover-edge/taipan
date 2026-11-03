@@ -9,4 +9,6 @@ public static class Io
     public static TextWriter Out { get; set; } = Console.Out;
 
     public static TextWriter Error { get; set; } = Console.Error;
+
+    public static TextReader In { get; set; } = Console.In;
 }

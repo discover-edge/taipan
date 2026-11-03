@@ -8,7 +8,9 @@ namespace Taipan.Tests;
 /// <c>.err</c> (stderr, exact), <c>.exit</c> (default 0, or 1 when <c>.err</c> exists), and
 /// <c>.cs</c> (the exact output of <c>taipan emit</c>), <c>.requires</c> (naming <c>python</c>
 /// for a case that needs CPython), and <c>.library</c>, <c>.native</c> or <c>.python-extension</c>
-/// (empty, for a case checked and emitted with that option, SPEC §14, §15, §17).
+/// (empty, for a case checked and emitted with that option, SPEC §14, §15, §17), <c>.args</c>
+/// (program arguments, one per line, with <c>{tmp}</c> standing for a fresh temporary directory)
+/// and <c>.in</c> (the program's stdin) (SPEC §6.1).
 /// </summary>
 [Collection(RunningPrograms.Name)]
 public class GoldenTests
@@ -50,7 +52,9 @@ public class GoldenTests
         var expectedExit = exitText is not null ? int.Parse(exitText.Trim()) : expectedErr is not null ? 1 : 0;
 
         string[] flags = [.. ((string[])["library", "native", "python-extension"]).Where(f => File.Exists(Path.ChangeExtension(casePath, $".{f}"))).Select(f => $"--{f}")];
-        var (exit, stdout, stderr) = RunCli([expectedOut is not null ? "run" : "check", casePath, .. flags]);
+        using var input = new ProgramInput(casePath);
+        string[] run = expectedOut is not null ? ["run", casePath, .. flags, "--", .. input.Arguments] : ["check", casePath, .. flags];
+        var (exit, stdout, stderr) = RunCli(run, input.Stdin);
         Assert.Equal(expectedErr ?? "", stderr);
         Assert.Equal(expectedOut ?? "", stdout);
         Assert.Equal(expectedExit, exit);
@@ -59,11 +63,11 @@ public class GoldenTests
             Assert.Equal(expectedCSharp, RunCli(["emit", casePath, .. flags]).Stdout);
     }
 
-    private static (int Exit, string Stdout, string Stderr) RunCli(string[] args)
+    private static (int Exit, string Stdout, string Stderr) RunCli(string[] args, string stdin = "")
     {
         var stdout = new StringWriter();
         var stderr = new StringWriter();
-        var exit = Cli.Cli.Run(args, stdout, stderr);
+        var exit = Cli.Cli.Run(args, new StringReader(stdin), stdout, stderr);
         return (exit, Normalize(stdout.ToString()), Normalize(stderr.ToString()));
     }
 
@@ -74,6 +78,37 @@ public class GoldenTests
     }
 
     private static string Normalize(string text) => text.Replace("\r\n", "\n");
+}
+
+/// <summary>
+/// A case's program arguments, from <c>.args</c> with <c>{tmp}</c> standing for a temporary
+/// directory that's created for the run and deleted after it, and its stdin, from <c>.in</c> (SPEC §6.1).
+/// </summary>
+public sealed class ProgramInput : IDisposable
+{
+    private readonly string _temporary = Path.Combine(Path.GetTempPath(), $"taipan-{Guid.NewGuid():N}");
+
+    public ProgramInput(string casePath)
+    {
+        var args = Path.ChangeExtension(casePath, ".args");
+        Arguments = File.Exists(args)
+            ? [.. File.ReadAllLines(args).Where(a => a.Length > 0).Select(a => a.Replace("{tmp}", _temporary))]
+            : [];
+        if (Arguments.Any(a => a.Contains(_temporary)))
+            Directory.CreateDirectory(_temporary);
+        var stdin = Path.ChangeExtension(casePath, ".in");
+        Stdin = File.Exists(stdin) ? File.ReadAllText(stdin) : "";
+    }
+
+    public string[] Arguments { get; }
+
+    public string Stdin { get; }
+
+    public void Dispose()
+    {
+        if (Directory.Exists(_temporary))
+            Directory.Delete(_temporary, recursive: true);
+    }
 }
 
 /// <summary>

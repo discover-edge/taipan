@@ -1,0 +1,5 @@
+The quick brown fox
+jumps over the lazy dog.
+
+café crème, naïve
+last line without newline

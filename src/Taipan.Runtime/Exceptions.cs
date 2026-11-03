@@ -4,21 +4,21 @@ using Python.Runtime;
 namespace Taipan.Runtime;
 
 /// <summary>
-/// Taipan's <c>Exception</c> (SPEC §3.10), the base of every exception a <c>try</c> can catch. It
-/// follows the shape the emitter gives a plain class (SPEC §8): a hidden constructor, a static
-/// <c>__new__</c> and an <c>__init__</c> method, so compiled classes can derive from it.
+/// Taipan's <c>BaseException</c> (SPEC §3.10, M37), the base of every exception a <c>try</c> can
+/// catch. It follows the shape the emitter gives a plain class (SPEC §8): a hidden constructor, a
+/// static <c>__new__</c> and an <c>__init__</c> method, so compiled classes can derive from it.
 /// </summary>
-public class TaipanException : Exception, IObject
+public class TaipanBaseException : Exception, IObject
 {
     public string @message { get; set; } = "";
 
-    protected TaipanException() { }
+    protected TaipanBaseException() { }
 
-    internal TaipanException(string message) => this.message = message;
+    internal TaipanBaseException(string message) => this.message = message;
 
-    public static TaipanException @__new__(string @message)
+    public static TaipanBaseException @__new__(string @message)
     {
-        var self = new TaipanException();
+        var self = new TaipanBaseException();
         self.@__init__(message);
         return self;
     }
@@ -28,7 +28,8 @@ public class TaipanException : Exception, IObject
     public static string @__init___message_default() => "";
 
     // A built-in class's name is its C# name; a compiled subclass gives its own.
-    string IObject.TypeName => GetType() == typeof(TaipanException) ? "Exception" : GetType().Name;
+    string IObject.TypeName => GetType() == typeof(TaipanBaseException) ? "BaseException"
+        : GetType() == typeof(TaipanException) ? "Exception" : GetType().Name;
 
     // An exception displays as its message, and inside a container with its class (SPEC §6), unless
     // its class defines __str__ or __repr__ (SPEC §4.8).
@@ -39,6 +40,49 @@ public class TaipanException : Exception, IObject
     public override string Message => message;
 
     public override string ToString() => Display.Format(this);
+}
+
+/// <summary>Taipan's <c>Exception</c> (SPEC §3.10): every exception but <c>SystemExit</c> derives from it.</summary>
+public class TaipanException : TaipanBaseException
+{
+    protected TaipanException() { }
+
+    internal TaipanException(string message) : base(message) { }
+
+    public static new TaipanException @__new__(string @message) => Exceptions.Init(new TaipanException(), message);
+}
+
+/// <summary><c>SystemExit</c> (SPEC §3.10, M37), which <c>sys.exit</c> raises.</summary>
+public class SystemExit : TaipanBaseException
+{
+    protected SystemExit() { }
+
+    internal SystemExit(long code, string? message)
+        : base(message ?? code.ToString(System.Globalization.CultureInfo.InvariantCulture))
+    {
+        this.code = code;
+        PrintsMessage = message is not null;
+    }
+
+    public long @code { get; set; }
+
+    /// <summary>Whether it came from <c>sys.exit(message)</c>, whose message is printed when it ends the program.</summary>
+    internal bool PrintsMessage { get; }
+
+    public static SystemExit @__new__(long @code)
+    {
+        var self = new SystemExit();
+        self.@__init__(code);
+        return self;
+    }
+
+    public void @__init__(long @code)
+    {
+        this.code = code;
+        message = code.ToString(System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    public static long @__init___code_default() => 0;
 }
 
 // Each built-in exception class (SPEC §3.10) has a constructor for the runtime's own errors, and the
@@ -134,6 +178,102 @@ public class RuntimeError : TaipanException
     public static new RuntimeError @__new__(string @message) => Exceptions.Init(new RuntimeError(), message);
 }
 
+public class EOFError : TaipanException
+{
+    protected EOFError() { }
+
+    internal EOFError(string message) : base(message) { }
+
+    public static new EOFError @__new__(string @message) => Exceptions.Init(new EOFError(), message);
+}
+
+/// <summary><c>OSError</c> (SPEC §3.10, M37), with Python's <c>errno</c>, <c>strerror</c> and <c>filename</c>.</summary>
+public class OSError : TaipanException
+{
+    protected OSError() { }
+
+    internal OSError(string message) : base(message) { }
+
+    internal OSError(long errno, string strerror, string filename)
+        : base($"[Errno {errno}] {strerror}: {Display.PythonRepr(filename)}")
+    {
+        this.errno = errno;
+        this.strerror = strerror;
+        this.filename = filename;
+    }
+
+    public long? @errno { get; set; }
+
+    public string? @strerror { get; set; }
+
+    public string? @filename { get; set; }
+
+    public static new OSError @__new__(string @message) => Exceptions.Init(new OSError(), message);
+}
+
+public class FileNotFoundError : OSError
+{
+    protected FileNotFoundError() { }
+
+    internal FileNotFoundError(long errno, string strerror, string filename) : base(errno, strerror, filename) { }
+
+    public static new FileNotFoundError @__new__(string @message) => Exceptions.Init(new FileNotFoundError(), message);
+}
+
+public class FileExistsError : OSError
+{
+    protected FileExistsError() { }
+
+    internal FileExistsError(long errno, string strerror, string filename) : base(errno, strerror, filename) { }
+
+    public static new FileExistsError @__new__(string @message) => Exceptions.Init(new FileExistsError(), message);
+}
+
+public class PermissionError : OSError
+{
+    protected PermissionError() { }
+
+    internal PermissionError(long errno, string strerror, string filename) : base(errno, strerror, filename) { }
+
+    public static new PermissionError @__new__(string @message) => Exceptions.Init(new PermissionError(), message);
+}
+
+public class IsADirectoryError : OSError
+{
+    protected IsADirectoryError() { }
+
+    internal IsADirectoryError(long errno, string strerror, string filename) : base(errno, strerror, filename) { }
+
+    public static new IsADirectoryError @__new__(string @message) => Exceptions.Init(new IsADirectoryError(), message);
+}
+
+public class UnicodeError : ValueError
+{
+    protected UnicodeError() { }
+
+    internal UnicodeError(string message) : base(message) { }
+
+    public static new UnicodeError @__new__(string @message) => Exceptions.Init(new UnicodeError(), message);
+}
+
+public class UnicodeDecodeError : UnicodeError
+{
+    protected UnicodeDecodeError() { }
+
+    internal UnicodeDecodeError(string message) : base(message) { }
+
+    public static new UnicodeDecodeError @__new__(string @message) => Exceptions.Init(new UnicodeDecodeError(), message);
+}
+
+public class UnicodeEncodeError : UnicodeError
+{
+    protected UnicodeEncodeError() { }
+
+    internal UnicodeEncodeError(string message) : base(message) { }
+
+    public static new UnicodeEncodeError @__new__(string @message) => Exceptions.Init(new UnicodeEncodeError(), message);
+}
+
 /// <summary>A Python exception from a <c>py</c> operation (SPEC §10.5). Only the runtime makes one.</summary>
 public sealed class PythonError : TaipanException
 {
@@ -168,7 +308,7 @@ public sealed class DotNetError : TaipanException
 /// <summary>What compiled <c>try</c> statements and <c>raise</c> use (SPEC §8).</summary>
 public static class Exceptions
 {
-    internal static T Init<T>(T self, string message) where T : TaipanException
+    internal static T Init<T>(T self, string message) where T : TaipanBaseException
     {
         self.@__init__(message);
         return self;
@@ -184,13 +324,16 @@ public static class Exceptions
     /// The Taipan exception a caught one stands for. Checked arithmetic, and .NET code, throw
     /// .NET's own overflow; any other .NET exception is a <see cref="DotNetError"/>.
     /// </summary>
-    public static TaipanException From(Exception exception) => exception switch
+    public static TaipanBaseException From(Exception exception) => exception switch
     {
-        TaipanException taipan => taipan,
+        TaipanBaseException taipan => taipan,
         OverflowException => new OverflowError("integer overflow"),
         TaipanPanic => throw new ArgumentException("a panic is not catchable", nameof(exception)),
         _ => new DotNetError(exception),
     };
+
+    /// <summary>Throws <paramref name="exception"/>, where C# needs a call rather than a statement: <c>sys.exit</c> as a value (SPEC §6.1).</summary>
+    public static void Throw(Exception exception) => throw exception;
 
     /// <summary><c>raise e</c> in a native program (SPEC §15.3): <c>e</c>, with any location it recorded cleared.</summary>
     public static Exception Raise(Exception exception)

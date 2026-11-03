@@ -59,7 +59,7 @@ public sealed partial class CSharpEmitter
     {
         _ when iterable is BoundRangeValues => Expr(iterable),
         PrimitiveType { Name: "py" } => $"{Interop}.Iterate({Expr(iterable)})",
-        IteratorOfType or IterableOfType => Expr(iterable),
+        IteratorOfType or IterableOfType or OpaqueType => Expr(iterable),
         _ => $"{Runtime}.Iter.Over({Expr(iterable)})",
     };
 

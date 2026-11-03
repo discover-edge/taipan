@@ -59,20 +59,30 @@ public static class RoslynCompiler
     /// assemblies it references (SPEC §13.2) loaded from their paths. Returns its exit code: 0,
     /// or 101 after a panic.
     /// </summary>
-    public static int Run(byte[] image, ImmutableArray<string> assemblies, TextWriter stdout, TextWriter stderr)
+    public static int Run(byte[] image, ImmutableArray<string> assemblies, TextWriter stdout, TextWriter stderr) =>
+        Run(image, assemblies, Console.In, stdout, stderr, null, []);
+
+    /// <summary>
+    /// Runs a compiled program in-process, with <paramref name="stdin"/> as its input and
+    /// <paramref name="programPath"/> and <paramref name="arguments"/> as <c>sys.argv</c> (SPEC §6.1).
+    /// </summary>
+    public static int Run(byte[] image, ImmutableArray<string> assemblies, TextReader stdin, TextWriter stdout, TextWriter stderr,
+        string? programPath, string[] arguments)
     {
         var context = new AssemblyLoadContext("taipan-program", isCollectible: true);
         var byName = assemblies.ToLookup(path => Path.GetFileNameWithoutExtension(path), StringComparer.OrdinalIgnoreCase);
         context.Resolving += (loader, name) =>
             byName[name.Name ?? ""].FirstOrDefault() is { } path ? loader.LoadFromAssemblyPath(path) : null;
-        var (savedOut, savedError) = (Io.Out, Io.Error);
+        var (savedIn, savedOut, savedError, savedPath) = (Io.In, Io.Out, Io.Error, Sys.ProgramPath);
         try
         {
+            Io.In = stdin;
             Io.Out = stdout;
             Io.Error = stderr;
+            Sys.ProgramPath = programPath;
             var assembly = context.LoadFromStream(new MemoryStream(image));
             var entryPoint = assembly.EntryPoint ?? throw new InvalidOperationException("compiled program has no entry point");
-            return (int)entryPoint.Invoke(null, null)!;
+            return (int)entryPoint.Invoke(null, [arguments])!;
         }
         catch (TargetInvocationException e) when (e.InnerException is not null)
         {
@@ -81,7 +91,7 @@ public static class RoslynCompiler
         }
         finally
         {
-            (Io.Out, Io.Error) = (savedOut, savedError);
+            (Io.In, Io.Out, Io.Error, Sys.ProgramPath) = (savedIn, savedOut, savedError, savedPath);
             context.Unload();
         }
     }

@@ -59,3 +59,7 @@ def stats(xs: list[int]) -> set[int]:
     var n = 2 ** 3
     n **= 2
     return set(xs) | {max(xs), abs(min(xs)), sum(xs)} & {n}
+
+def copy(path: str) -> None:
+    with open(path) as f:
+        print(f.read(), file=sys.stderr)

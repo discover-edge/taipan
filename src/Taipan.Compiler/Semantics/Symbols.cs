@@ -20,9 +20,12 @@ public sealed class VariableSymbol(string name, TaipanType type, VariableKind ki
     public TaipanType Type { get; } = type;
 
     public VariableKind Kind { get; } = kind;
+
+    /// <summary>For a built-in module's value (SPEC §6.1, M37), the runtime member it compiles to: <c>Sys.@argv</c>.</summary>
+    public string? RuntimePath { get; init; }
 }
 
-public enum BuiltinFunction { Print, Len, Str, Int, Float, Range, Sorted, Map, Filter, Enumerate, Zip, IsInstance, Super, Repr, Hash, List, Iter, Next, Abs, Min, Max, Sum, Any, All, Round, DivMod, Set }
+public enum BuiltinFunction { Print, Len, Str, Int, Float, Range, Sorted, Map, Filter, Enumerate, Zip, IsInstance, Super, Repr, Hash, List, Iter, Next, Abs, Min, Max, Sum, Any, All, Round, DivMod, Set, Input, Open, Exit, GetEnv }
 
 /// <summary>What kind of method a function is (SPEC §4.8, M28); <see cref="Instance"/> for a function.</summary>
 public enum MemberKind { Instance, Property, Static, Class }
@@ -159,6 +162,8 @@ public sealed class FunctionSymbol(
         new("round", [], TaipanType.Error, BuiltinFunction.Round),
         new("divmod", [], TaipanType.Error, BuiltinFunction.DivMod),
         new("set", [], TaipanType.Error, BuiltinFunction.Set),
+        new("input", [], TaipanType.Str, BuiltinFunction.Input),
+        new("open", [], TaipanType.TextIO, BuiltinFunction.Open),
     ];
 }
 
@@ -200,6 +205,9 @@ public sealed class ClassSymbol(string name, ImmutableArray<TypeParameterSymbol>
 
     /// <summary>For a built-in class (SPEC §3.10), the C# class in <c>Taipan.Runtime</c> that implements it.</summary>
     public string? RuntimeName { get; init; }
+
+    /// <summary>The module defining the class, as <c>type[C]</c> displays it (SPEC §3.17); null in the main file.</summary>
+    public string? Module { get; init; }
 
     /// <summary>
     /// For a protocol (SPEC §3.11), the type <c>Self</c> stands for in its methods' signatures;
@@ -319,7 +327,11 @@ public sealed class ClassSymbol(string name, ImmutableArray<TypeParameterSymbol>
 /// </summary>
 public static class BuiltinClasses
 {
-    public static ClassSymbol Exception { get; } = CreateException();
+    public static ClassSymbol BaseException { get; } = CreateBaseException();
+
+    public static ClassSymbol Exception { get; } = Builtin("Exception", "TaipanException", BaseException);
+
+    public static ClassSymbol SystemExit { get; } = CreateSystemExit();
 
     public static ClassSymbol PythonError { get; } = CreatePythonError();
 
@@ -332,9 +344,9 @@ public static class BuiltinClasses
     /// <summary>Whether only the runtime makes exceptions of this class, so it can't be constructed or derived from.</summary>
     public static bool IsRuntimeOnly(ClassSymbol symbol) => symbol == PythonError || symbol == DotNetError;
 
-    private static ClassSymbol CreateException()
+    private static ClassSymbol CreateBaseException()
     {
-        var exception = Builtin("Exception", "TaipanException", null);
+        var exception = Builtin("BaseException", "TaipanBaseException", null);
         var message = new FieldSymbol("message", TaipanType.Str) { Owner = exception };
         exception.Fields = [message];
         var self = new VariableSymbol("self", exception.Type, VariableKind.Parameter);
@@ -343,6 +355,32 @@ public static class BuiltinClasses
             Defaults = [new BoundLiteral("", TaipanType.Str, default)],
         };
         return exception;
+    }
+
+    // SystemExit(code: int = 0), with its code (SPEC §3.10, M37).
+    private static ClassSymbol CreateSystemExit()
+    {
+        var exit = Builtin("SystemExit", BaseException);
+        exit.Fields = [new FieldSymbol("code", TaipanType.Int) { Owner = exit }];
+        var self = new VariableSymbol("self", exit.Type, VariableKind.Parameter);
+        exit.Init = new FunctionSymbol("__init__", [new VariableSymbol("code", TaipanType.Int, VariableKind.Parameter)], TaipanType.Nothing, self: self)
+        {
+            Defaults = [new BoundLiteral(0L, TaipanType.Int, default)],
+        };
+        return exit;
+    }
+
+    // OSError's errno, strerror and filename (SPEC §3.10, M37).
+    private static ClassSymbol CreateOSError()
+    {
+        var error = Builtin("OSError", Exception);
+        error.Fields =
+        [
+            new FieldSymbol("errno", new OptionalOf(TaipanType.Int)) { Owner = error },
+            new FieldSymbol("strerror", new OptionalOf(TaipanType.Str)) { Owner = error },
+            new FieldSymbol("filename", new OptionalOf(TaipanType.Str)) { Owner = error },
+        ];
+        return error;
     }
 
     private static ClassSymbol CreatePythonError()
@@ -367,8 +405,13 @@ public static class BuiltinClasses
     {
         var arithmetic = Builtin("ArithmeticError", Exception);
         var lookup = Builtin("LookupError", Exception);
+        var value = Builtin("ValueError", Exception);
+        var os = CreateOSError();
+        var unicode = Builtin("UnicodeError", value);
         return
         [
+            BaseException,
+            SystemExit,
             Exception,
             arithmetic,
             Builtin("ZeroDivisionError", arithmetic),
@@ -376,12 +419,21 @@ public static class BuiltinClasses
             lookup,
             Builtin("IndexError", lookup),
             Builtin("KeyError", lookup),
-            Builtin("ValueError", Exception),
+            value,
             Builtin("TypeError", Exception),
             Builtin("RuntimeError", Exception),
             Builtin("StopIteration", Exception),
             PythonError,
             DotNetError,
+            Builtin("EOFError", Exception),
+            os,
+            Builtin("FileNotFoundError", os),
+            Builtin("FileExistsError", os),
+            Builtin("PermissionError", os),
+            Builtin("IsADirectoryError", os),
+            unicode,
+            Builtin("UnicodeDecodeError", unicode),
+            Builtin("UnicodeEncodeError", unicode),
         ];
     }
 
@@ -390,8 +442,8 @@ public static class BuiltinClasses
     private static ClassSymbol Builtin(string name, string runtimeName, ClassSymbol? baseClass) =>
         new(name, [], isDataclass: false) { RuntimeName = $"Taipan.Runtime.{runtimeName}", Base = baseClass, HasSubclasses = true };
 
-    /// <summary>Whether <paramref name="symbol"/> is <c>Exception</c> or derives from it.</summary>
-    public static bool IsException(ClassSymbol symbol) => symbol.DerivesFrom(Exception);
+    /// <summary>Whether <paramref name="symbol"/> can be raised and caught: <c>BaseException</c> or a class deriving from it (SPEC §3.10).</summary>
+    public static bool IsException(ClassSymbol symbol) => symbol.DerivesFrom(BaseException);
 
     /// <summary>The built-in protocol <c>Comparable</c>: <c>def __lt__(self, other: Self) -> bool</c> (SPEC §3.11).</summary>
     public static ClassSymbol Comparable { get; } = CreateComparable();
@@ -493,4 +545,44 @@ public sealed class ModuleSymbol(string name, IReadOnlyDictionary<string, Symbol
     public IReadOnlyDictionary<string, ClassSymbol> Classes { get; } = classes;
 
     public IReadOnlyDictionary<string, EnumSymbol> Enums { get; } = enums;
+}
+
+/// <summary>A built-in type reached by name from a built-in module: <c>types.TracebackType</c> (SPEC §3.17, M37).</summary>
+public sealed class BuiltinTypeSymbol(string name, TaipanType type) : Symbol(name)
+{
+    public TaipanType Type { get; } = type;
+}
+
+/// <summary>The built-in modules <c>sys</c>, <c>os</c> and <c>types</c> (SPEC §4.7, §6.1, M37).</summary>
+public static class BuiltinModules
+{
+    public static bool IsBuiltin(string name) => name is "sys" or "os" or "types";
+
+    /// <summary>The module's names; a new symbol each time, as a file's own import is (SPEC §4.7).</summary>
+    public static ModuleSymbol Symbol(string module, string boundName) =>
+        new(boundName, Definitions[module], new Dictionary<string, ClassSymbol>(), new Dictionary<string, EnumSymbol>());
+
+    private static readonly Dictionary<string, IReadOnlyDictionary<string, Symbol>> Definitions = new()
+    {
+        ["sys"] = new Dictionary<string, Symbol>
+        {
+            ["argv"] = Value("argv", new ListOfType(TaipanType.Str), "Sys"),
+            ["stdin"] = Value("stdin", TaipanType.TextIO, "Sys"),
+            ["stdout"] = Value("stdout", TaipanType.TextIO, "Sys"),
+            ["stderr"] = Value("stderr", TaipanType.TextIO, "Sys"),
+            ["exit"] = new FunctionSymbol("exit", [], TaipanType.Nothing, BuiltinFunction.Exit),
+        },
+        ["os"] = new Dictionary<string, Symbol>
+        {
+            ["environ"] = Value("environ", new DictOfType(TaipanType.Str, TaipanType.Str), "Os"),
+            ["getenv"] = new FunctionSymbol("getenv", [], TaipanType.Error, BuiltinFunction.GetEnv),
+        },
+        ["types"] = new Dictionary<string, Symbol>
+        {
+            ["TracebackType"] = new BuiltinTypeSymbol("TracebackType", TaipanType.Traceback),
+        },
+    };
+
+    private static VariableSymbol Value(string name, TaipanType type, string runtimeClass) =>
+        new(name, type, VariableKind.Constant) { RuntimePath = $"Taipan.Runtime.{runtimeClass}.@{name}" };
 }

@@ -33,7 +33,10 @@ public static class Cli
           taipan --help
         """;
 
-    public static int Run(string[] args, TextWriter stdout, TextWriter stderr)
+    public static int Run(string[] args, TextWriter stdout, TextWriter stderr) => Run(args, Console.In, stdout, stderr);
+
+    /// <summary>Runs a command; <paramref name="stdin"/> is the input of a program that <c>run</c> runs (SPEC §6.1).</summary>
+    public static int Run(string[] args, TextReader stdin, TextWriter stdout, TextWriter stderr)
     {
         if (args.Length == 0)
             return UsageError(stderr, null);
@@ -47,9 +50,9 @@ public static class Cli
         {
             "check" or "emit" or "build" when target is null => UsageError(stderr, "--library, --native and --python-extension can't be combined"),
             "check" => Check(rest, target!.Value, stderr),
+            "run" => RunFile(rest, stdin, stdout, stderr),
             "emit" => Emit(rest, target!.Value, stdout, stderr),
             "build" => Build(rest, target!.Value, stdout, stderr),
-            "run" => RunFile(rest, stdout, stderr),
             "pack" => Pack(rest, stdout, stderr),
             "compile" => CompileAssembly(rest, stderr),
             // Clients such as VS Code's pass --stdio, the only transport (SPEC §16.1).
@@ -232,8 +235,8 @@ public static class Cli
         return $"{Path.GetFullPath(source.Path)}({position.Line},{position.Column}): {(diagnostic.IsWarning ? "warning" : "error")} {diagnostic.Code}: {diagnostic.Message}{help}";
     }
 
-    // Arguments after `--` are accepted; v0.1 programs have no way to read them.
-    private static int RunFile(string[] args, TextWriter stdout, TextWriter stderr)
+    // Arguments after `--` are the program's, in sys.argv after its path (SPEC §6.1).
+    private static int RunFile(string[] args, TextReader stdin, TextWriter stdout, TextWriter stderr)
     {
         if (args.Length == 0)
             return UsageError(stderr, "run takes a file");
@@ -244,7 +247,7 @@ public static class Cli
             return exit;
 
         var image = RoslynCompiler.Compile(program, Path.GetFileNameWithoutExtension(args[0]));
-        return RoslynCompiler.Run(image, project!.RuntimeAssemblies, stdout, stderr);
+        return RoslynCompiler.Run(image, project!.RuntimeAssemblies, stdin, stdout, stderr, args[0], args.Length > 2 ? args[2..] : []);
     }
 
     /// <summary>

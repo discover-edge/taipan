@@ -379,7 +379,7 @@ public static unsafe class PythonExtension
         {
             case PythonErrorSet:
                 break;
-            case TaipanException taipan:
+            case TaipanBaseException taipan:
                 SetError(PythonClassOf(taipan.GetType()), taipan.message);
                 break;
             case OverflowException:
@@ -420,8 +420,14 @@ public static unsafe class PythonExtension
         {
             if (Exceptions.TryGetValue(current, out var pythonClass))
                 return pythonClass;
-            if (current.Assembly == typeof(TaipanException).Assembly && typeof(TaipanException).IsAssignableFrom(current))
-                return Global(current == typeof(TaipanException) ? "PyExc_Exception" : $"PyExc_{current.Name}");
+            if (current.Assembly == typeof(TaipanException).Assembly && typeof(TaipanBaseException).IsAssignableFrom(current))
+            {
+                // Python's UnicodeDecodeError and UnicodeEncodeError can't be made from a message alone.
+                return Global(current == typeof(TaipanException) ? "PyExc_Exception"
+                    : current == typeof(TaipanBaseException) ? "PyExc_BaseException"
+                    : current == typeof(UnicodeDecodeError) || current == typeof(UnicodeEncodeError) ? "PyExc_UnicodeError"
+                    : $"PyExc_{current.Name}");
+            }
         }
         return Global("PyExc_Exception");
     }

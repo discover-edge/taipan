@@ -1,0 +1,10 @@
+class Half:
+    def __enter__(self) -> Half:
+        return self
+
+class Wrong:
+    def __enter__(self) -> Wrong:
+        return self
+
+    def __exit__(self, exc: BaseException?) -> bool:
+        return False

@@ -1,0 +1,3 @@
+enter
+got 7
+exit <class 'IndexError'>

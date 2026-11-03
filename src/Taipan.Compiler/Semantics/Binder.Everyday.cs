@@ -216,6 +216,18 @@ public sealed partial class Binder
                     _ => null,
                 };
             }
+            // A file's methods (SPEC §6.1, M37).
+            case OpaqueType { Name: "TextIO" }:
+                return name switch
+                {
+                    "read" => Method("TextFile", Of(str), Of(str, integer)),
+                    "readline" => Method("TextFile", Of(str)),
+                    "readlines" => Method("TextFile", Of(new ListOfType(str))),
+                    "write" => Method("TextFile", Of(integer, str)),
+                    "writelines" => Method("TextFile", Of(nothing, new IterableOfType(str))),
+                    "flush" or "close" => Method("TextFile", Of(nothing)),
+                    _ => null,
+                };
             case PrimitiveType { Name: "str" }:
             {
                 var separator = new OptionalOf(str);

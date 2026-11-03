@@ -41,6 +41,7 @@ public static class TokenFacts
         ["yield"] = TokenKind.YieldKeyword,
         ["async"] = TokenKind.AsyncKeyword,
         ["await"] = TokenKind.AwaitKeyword,
+        ["with"] = TokenKind.WithKeyword,
     };
 
     private static readonly Dictionary<TokenKind, string> KeywordText =

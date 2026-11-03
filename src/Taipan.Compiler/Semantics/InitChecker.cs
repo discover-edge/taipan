@@ -118,6 +118,11 @@ public sealed class InitChecker
                 return state with { Terminated = true };
             case BoundTry tryStmt:
                 return Try(tryStmt, state);
+            case BoundWith with:
+                Expression(with.Manager, state);
+                // A suppressing __exit__ can end the block after any statement (SPEC §3.17).
+                var body = Block(with.Body.Statements, with.Suppresses ? state.Copy() : state, topLevel: false);
+                return with.Suppresses ? Merge([body, state.Copy()]) : body;
             case BoundLocalFunction function:
                 // Its body could run at any time, so it sees the object as it is now.
                 Expressions(BoundTree.Expressions(function), state);

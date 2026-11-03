@@ -322,3 +322,20 @@
 61:49 "(xs)} " -
 61:55 "&" keyword.operator.arithmetic.taipan
 61:56 " {n}" -
+63:1 "def" storage.type.function.taipan
+63:5 "copy" entity.name.function.taipan
+63:9 "(path: " -
+63:16 "str" support.type.builtin.taipan
+63:19 ") " -
+63:21 "->" punctuation.separator.annotation.result.taipan
+63:24 "None" constant.language.taipan
+63:28 ":" -
+64:5 "with" keyword.control.flow.taipan
+64:10 "open" support.function.builtin.taipan
+64:14 "(path) " -
+64:21 "as" keyword.control.import.taipan
+64:23 " f:" -
+65:9 "print" support.function.builtin.taipan
+65:14 "(f.read(), file" -
+65:29 "=" keyword.operator.assignment.taipan
+65:30 "sys.stderr)" -

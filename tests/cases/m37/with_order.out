@@ -1,0 +1,11 @@
+enter v
+evaluating returned
+exit v None
+returned
+enter outer
+exit outer cannot enter inner
+caught cannot enter inner
+replaced by from exit
+enter exiting
+exit exiting 2
+base caught 2 True

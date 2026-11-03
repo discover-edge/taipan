@@ -50,5 +50,5 @@ public abstract record @Status
 
 public static class TaipanEntry
 {
-    public static int Main() => global::Taipan.Runtime.Panic.Run(TaipanProgram.TopLevel);
+    public static int Main(string[] args) => global::Taipan.Runtime.Panic.Run(TaipanProgram.TopLevel, args);
 }

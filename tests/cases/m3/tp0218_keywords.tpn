@@ -2,6 +2,6 @@ def add(a: int, b: int) -> int:
     return a + b
 
 add(a=1, b=2, c=3)
-print(sep=" ")
+print("x", color="red")
 for i in range(stop=3):
     pass

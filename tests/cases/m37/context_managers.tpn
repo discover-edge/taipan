@@ -1,0 +1,70 @@
+from types import TracebackType
+
+class Quiet:
+    def __enter__(self) -> int:
+        return 42
+
+    def __exit__(self, exc_type: type[BaseException]?, exc: BaseException?, tb: TracebackType?) -> bool:
+        if exc_type is not None:
+            print("suppressed", exc_type.__name__, exc)
+            return True
+        return False
+
+class Tag:
+    label: str
+
+    def __init__(self, label: str):
+        self.label = label
+
+    def __enter__(self) -> str:
+        print("enter", self.label)
+        return self.label
+
+    def __exit__(self, exc_type: type[BaseException]?, exc: BaseException?, tb: TracebackType?) -> None:
+        print("exit", self.label, exc_type, tb is not None)
+
+class Loud(Tag):
+    pass
+
+with Quiet() as n:
+    print("n", n)
+    raise ValueError("v")
+print("after quiet")
+
+with Tag("outer") as a, Loud("inner") as b:
+    print("body", a, b)
+
+for i in range(3):
+    with Tag(f"loop{i}"):
+        if i == 0:
+            continue
+        if i == 2:
+            break
+        print("middle", i)
+
+def find(xs: list[int]) -> int:
+    for x in xs:
+        with Tag("find"):
+            if x > 1:
+                return x
+    return -1
+
+print(find([1, 2, 3]))
+
+try:
+    with Tag("exit"):
+        raise SystemExit(3)
+except SystemExit as e:
+    print("exit code", e.code, e)
+
+with Tag("nested"):
+    with Quiet():
+        raise IndexError("deep")
+    print("still here")
+
+def first(path: list[str]) -> str:
+    with Quiet():
+        return path[5]
+    return "fallback"
+
+print(first(["a"]))

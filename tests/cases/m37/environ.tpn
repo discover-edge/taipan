@@ -1,0 +1,9 @@
+import os
+from os import getenv, environ
+
+print("PATH" in os.environ)
+print(getenv("TAIPAN_SURELY_UNSET_VARIABLE"))
+print(os.getenv("TAIPAN_SURELY_UNSET_VARIABLE", "fallback"))
+environ["TAIPAN_SURELY_UNSET_VARIABLE"] = "set"
+print(os.getenv("TAIPAN_SURELY_UNSET_VARIABLE"))
+print(os.environ.get("PATH") is not None)

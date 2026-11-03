@@ -53,7 +53,8 @@ public class NativeEmissionTests
         foreach (var warning in loaded.Diagnostics.Concat(bound.Diagnostics).Concat(emitted.Diagnostics))
             stderr.WriteLine(warning.Format(warning.Source!));
         var image = RoslynCompiler.Compile(emitted, Path.GetFileNameWithoutExtension(casePath), debugInformation: false);
-        var exit = RoslynCompiler.Run(image, project.RuntimeAssemblies, stdout, stderr);
+        using var input = new ProgramInput(casePath);
+        var exit = RoslynCompiler.Run(image, project.RuntimeAssemblies, new StringReader(input.Stdin), stdout, stderr, casePath, input.Arguments);
 
         Assert.Equal(expectedErr ?? "", Normalize(stderr.ToString()));
         Assert.Equal(ReadSidecar(casePath, ".out"), Normalize(stdout.ToString()));

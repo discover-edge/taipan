@@ -1,0 +1,7 @@
+var mode = "r"
+let a = open("a.txt", "rb")
+let b = open("b.txt", "r+")
+let c = open("c.txt", "q")
+let d = open("d.txt", mode)
+let e = open("e.txt", encoding="utf-16")
+let f = open("f.txt", newline="\n")

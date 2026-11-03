@@ -16,11 +16,11 @@ public sealed partial class LanguageServer
     private const string Placeholder = "__taipan_cursor__";
     private const string ModulePlaceholder = "__taipan_module__";
 
-    private static readonly string[] BuiltinTypes = ["bool", "Callable", "dict", "float", "int", "Iterable", "Iterator", "list", "py", "str", "tuple"];
+    private static readonly string[] BuiltinTypes = ["bool", "Callable", "dict", "float", "int", "Iterable", "Iterator", "list", "py", "str", "TextIO", "tuple"];
 
     private static readonly string[] StatementKeywords =
         ["async", "await", "break", "class", "const", "continue", "def", "del", "elif", "else", "enum", "except", "False", "finally", "for", "from",
-         "if", "import", "lambda", "let", "match", "None", "not", "pass", "raise", "return", "True", "try", "type", "var", "while", "yield"];
+         "if", "import", "lambda", "let", "match", "None", "not", "pass", "raise", "return", "True", "try", "type", "var", "while", "with", "yield"];
 
     private static readonly string[] ExpressionKeywords = ["await", "False", "lambda", "match", "None", "not", "True"];
 

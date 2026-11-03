@@ -1,0 +1,2 @@
+tests/cases/m37/tp0225_exit_signature.tpn:1:7: error TP0225: 'Half' defines '__enter__' but not '__exit__'
+tests/cases/m37/tp0225_exit_signature.tpn:9:9: error TP0225: '__exit__' must be 'def __exit__(self, exc_type: type[BaseException]?, exc: BaseException?, tb: TracebackType?) -> bool'
