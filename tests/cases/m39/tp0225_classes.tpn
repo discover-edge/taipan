@@ -1,0 +1,40 @@
+@dataclass
+class Loose:
+    a: int
+
+@dataclass(frozen=True)
+class Strict(Loose):
+    b: int
+
+@dataclass(order=True)
+class Bag:
+    items: list[int]
+
+@dataclass(order=True)
+class Ranked:
+    n: int
+
+    def __lt__(self, other: Ranked) -> bool:
+        return True
+
+class Plain:
+    def __post_init__(self) -> None:
+        pass
+
+@dataclass
+class Wrong:
+    n: int
+
+    def __post_init__(self, k: int) -> None:
+        pass
+
+@final
+class Sealed:
+    pass
+
+class Opened(Sealed):
+    pass
+
+@total_ordering
+class Unordered:
+    pass

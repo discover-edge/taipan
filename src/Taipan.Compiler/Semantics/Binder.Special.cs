@@ -31,7 +31,7 @@ public sealed partial class Binder
     /// <c>C.a</c> or <c>cls.a</c>, read: a class attribute (SPEC §4.8). Anything else on a class
     /// needs an instance, or is a method used without calling it.
     /// </summary>
-    private BoundExpr BindClassMember(MemberExpr member, ClassSymbol owner)
+    private BoundExpr BindClassMember(MemberExpr member, ClassSymbol owner, ClassType? throughType = null, bool viaCls = false)
     {
         var name = member.Member.Text;
         if (owner.FindClassAttribute(name) is { } attribute)
@@ -44,9 +44,8 @@ public sealed partial class Binder
             case { Kind: MemberKind.Property }:
                 _diagnostics.ReportPropertyThroughClass(member.Member.Span, name);
                 break;
-            case { IsClassLevel: true }:
-                _diagnostics.ReportMethodAsValue(member.Member.Span, name);
-                break;
+            case { IsClassLevel: true } classLevel:
+                return BindClassMethodValue(member, owner, null, viaCls, classLevel, throughType ?? (viaCls ? owner.Type : null));
             case not null:
                 _diagnostics.ReportNeedsInstance(member.Member.Span, name, owner.Name);
                 break;
@@ -72,7 +71,7 @@ public sealed partial class Binder
         if (classSymbol.FindMethod(name) is { Kind: MemberKind.Property } property)
         {
             Index(member.Member.Span, property);
-            return new BoundPropertyGet(target, property, TypeChecker.Substitute(property.ReturnType, TypeChecker.MapOf(target.Type)), member.Span);
+            return new BoundPropertyGet(target, property, TypeChecker.SubstituteSelf(TypeChecker.Substitute(property.ReturnType, TypeChecker.MapOf(target.Type)), target.Type), member.Span);
         }
         return null;
     }
@@ -81,12 +80,12 @@ public sealed partial class Binder
     /// <c>C.m(…)</c> or <c>cls.m(…)</c>: a static or class method, found from that class upwards
     /// (SPEC §4.8). Instance methods, properties and fields need an instance.
     /// </summary>
-    private BoundExpr BindClassMethodCall(CallExpr call, MemberExpr member, ClassSymbol owner, bool viaCls)
+    private BoundExpr BindClassMethodCall(CallExpr call, MemberExpr member, ClassSymbol owner, bool viaCls, ClassType? throughType = null)
     {
         var name = member.Member.Text;
         var method = owner.FindMethod(name);
         if (method is { IsClassLevel: true })
-            return BindStaticCall(call, member, owner, null, viaCls, method);
+            return BindStaticCall(call, member, owner, null, viaCls, method, throughType ?? (viaCls ? owner.Type : null));
         BindArguments(call);
         if (name == "__init__")
             _diagnostics.ReportInitCalled(member.Member.Span);
@@ -100,11 +99,30 @@ public sealed partial class Binder
     }
 
     /// <summary>A static or class method's call, its arguments matched as for any method (SPEC §4.2).</summary>
-    private BoundExpr BindStaticCall(CallExpr call, MemberExpr member, ClassSymbol through, BoundExpr? instance, bool viaCls, FunctionSymbol method)
+    private BoundExpr BindStaticCall(CallExpr call, MemberExpr member, ClassSymbol through, BoundExpr? instance, bool viaCls, FunctionSymbol method,
+        ClassType? throughType = null)
     {
         Index(member.Member.Span, method);
-        var (arguments, shape, _, valid) = BindCallArguments(call, method, method.Name, member.Member.Span, [], t => t, method.ReturnType, null);
-        return new BoundClassMethodCall(through, instance, viaCls, method, arguments, method.ReturnType, call.Span) { Shape = valid ? shape : null };
+        // A generic class's type arguments come from the instance, are written (`Box[int].of`), or are
+        // inferred from the arguments, as a constructor's are (SPEC §4.9).
+        throughType ??= instance?.Type as ClassType;
+        var inferring = !through.TypeParameters.IsEmpty && throughType is null;
+        var map = throughType is null ? [] : TypeChecker.MapOf(throughType);
+        var result = TypeChecker.Substitute(method.ReturnType, map);
+        var (arguments, shape, inferred, valid) = BindCallArguments(call, method, method.Name, member.Member.Span,
+            inferring ? through.TypeParameters : [], t => TypeChecker.Substitute(t, map), result, null);
+        if (inferring)
+        {
+            throughType = valid ? new ClassType(through, [.. through.TypeParameters.Select(p => inferred.GetValueOrDefault(p, TaipanType.Error))]) : null;
+            result = valid ? TypeChecker.Substitute(method.ReturnType, inferred) : TaipanType.Error;
+        }
+        // A Self result is of the class or instance it's called through (SPEC §4.9).
+        result = TypeChecker.SubstituteSelf(result, throughType ?? through.Type);
+        return new BoundClassMethodCall(through, instance, viaCls, method, arguments, result, call.Span)
+        {
+            Shape = valid ? shape : null,
+            ThroughType = through.TypeParameters.IsEmpty ? null : throughType,
+        };
     }
 
     /// <summary>

@@ -1,0 +1,2 @@
+tests/cases/m39/tp0228_classes.tpn:11:9: error TP0228: 'Animal.name' is final
+tests/cases/m39/tp0228_classes.tpn:15:21: error TP0228: 'me' must return Self, as 'Animal.me' does

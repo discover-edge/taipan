@@ -1,0 +1,11 @@
+@dataclass(slots=True)
+class A:
+    n: int
+
+@dataclass(frozen=1)
+class B:
+    n: int
+
+@final(strict=True)
+class C:
+    pass

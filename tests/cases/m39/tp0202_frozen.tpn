@@ -1,0 +1,13 @@
+@dataclass(frozen=True)
+class Point:
+    x: int
+    y: int
+
+    def __post_init__(self) -> None:
+        self.y = 0
+
+    def move(self) -> None:
+        self.x += 1
+
+let p = Point(1, 2)
+p.x = 3

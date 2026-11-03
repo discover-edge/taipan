@@ -1,0 +1,8 @@
+tests/cases/m39/tp0200_classes.tpn:3:16: error TP0200: expected Self, found Animal
+tests/cases/m39/tp0200_classes.tpn:6:22: error TP0200: a class attribute can't use 'T'
+tests/cases/m39/tp0200_classes.tpn:19:16: error TP0200: 'of' is generic, so it cannot be used as a value
+  help: wrap it in a lambda
+tests/cases/m39/tp0200_classes.tpn:20:17: error TP0200: dict keys must be hashable, found Tagged
+  help: 'tags' is list[str], which isn't hashable
+tests/cases/m39/tp0200_classes.tpn:21:7: error TP0200: operator 'in' cannot be applied to int and Plain
+tests/cases/m39/tp0200_classes.tpn:21:21: error TP0200: cannot index Plain

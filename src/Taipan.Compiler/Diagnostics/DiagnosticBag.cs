@@ -505,6 +505,39 @@ public sealed class DiagnosticBag
     public void ReportMisplacedDecorator(TextSpan span, string name, string? help = "'@dataclass' goes on a class, '@override' on a method") =>
         Add("TP0224", span, $"'@{name}' cannot be used here", help);
 
+    public void ReportDecoratorArguments(TextSpan span, string name) =>
+        Add("TP0224", span, name == "dataclass" ? "'@dataclass' takes only 'frozen=' and 'order=', each True or False" : $"'@{name}' takes no arguments");
+
+    public void ReportFrozenBase(TextSpan span, bool frozen) =>
+        Add("TP0225", span, frozen ? "a frozen dataclass can't derive from one that isn't" : "a dataclass that isn't frozen can't derive from a frozen one");
+
+    public void ReportFinalBase(TextSpan span, string name) =>
+        Add("TP0225", span, $"cannot derive from final class '{name}'");
+
+    public void ReportFinalOverride(TextSpan span, string owner, string method) =>
+        Add("TP0228", span, $"'{owner}.{method}' is final");
+
+    public void ReportUnorderedField(TextSpan span, string field, object type) =>
+        Add("TP0225", span, $"'order=True' needs fields that can be ordered: '{field}' is {type}");
+
+    public void ReportOrderGenerates(TextSpan span, string method) =>
+        Add("TP0225", span, $"'order=True' generates '{method}'; remove it");
+
+    public void ReportPostInitPlain(TextSpan span) =>
+        Add("TP0225", span, "'__post_init__' is only for dataclasses");
+
+    public void ReportTotalOrderingRoot(TextSpan span) =>
+        Add("TP0225", span, "'@total_ordering' needs '__lt__', '__le__', '__gt__' or '__ge__'");
+
+    public void ReportClassAttributeTypeParameter(TextSpan span, string parameter) =>
+        Add("TP0200", span, $"a class attribute can't use '{parameter}'");
+
+    public void ReportExpectedSelf(TextSpan span, object found) =>
+        Add("TP0200", span, $"expected Self, found {found}");
+
+    public void ReportFrozenAssign(TextSpan span, string field, string className) =>
+        Add("TP0202", span, $"cannot assign to '{field}': '{className}' is frozen");
+
     public void ReportDuplicateDecorator(TextSpan span, string name) =>
         Add("TP0224", span, $"duplicate decorator '@{name}'");
 
@@ -695,9 +728,6 @@ public sealed class DiagnosticBag
     public void ReportClassAttributeValue(TextSpan span, string name) =>
         Add("TP0225", span, $"class attribute '{name}' needs a value");
 
-    public void ReportGenericClassMembers(TextSpan span, string what) =>
-        Add("TP0225", span, $"generic classes cannot have {what}");
-
     public void ReportAbstractBody(TextSpan span) =>
         Add("TP0225", span, "an abstract method's body must be '...'");
 
@@ -735,9 +765,9 @@ public sealed class DiagnosticBag
         Add("TP0234", span, $"'{className}' cannot add abstract method '{method}', since '{baseClass}.{classMethod}' calls 'cls(…)'");
 
     /// <summary><paramref name="definer"/> is the class whose <c>__eq__</c> removes the hash; null for a dataclass.</summary>
-    public void ReportUnhashableKey(TextSpan span, object type, string? definer) =>
+    public void ReportUnhashableKey(TextSpan span, object type, string? definer, string? help = null) =>
         Add("TP0200", span, $"dict keys must be hashable, found {type}",
-            definer is null ? "a dataclass needs its own '__hash__' to be a key" : $"'{definer}' defines '__eq__' without '__hash__'");
+            help ?? (definer is null ? "a dataclass needs its own '__hash__' to be a key" : $"'{definer}' defines '__eq__' without '__hash__'"));
 
     public void ReportSumOfNonNumbers(TextSpan span, object element) =>
         Add("TP0200", span, $"sum() takes numbers, found {element}", element is Semantics.PrimitiveType { Name: "str" } ? "use ''.join(…)" : null);

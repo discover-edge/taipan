@@ -1,0 +1,16 @@
+class Counter:
+    n: int
+
+    def __init__(self, n: int):
+        self.n = n
+
+    def __add__(self, k: int) -> Counter:
+        return Counter(self.n + k)
+
+    def __isub__(self, k: int) -> int:
+        return self.n - k
+
+let c = Counter(1)
+c += 1
+var d = Counter(1)
+d -= 1

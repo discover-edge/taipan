@@ -191,6 +191,16 @@ public sealed partial class CSharpEmitter
             Line();
             EmitEnum(enumSymbol, _names[enumSymbol]);
         }
+        foreach (var classDef in _program.Classes.Where(s => !s.Symbol.TypeParameters.IsEmpty && !s.Symbol.ClassAttributes.IsEmpty))
+        {
+            Line();
+            Line($"{_typeAccess} static class @{_names[classDef.Symbol]}__ClassVars");
+            Line("{");
+            _indent++;
+            EmitClassAttributes(classDef.Symbol, holder: true);
+            _indent--;
+            Line("}");
+        }
 
         while (_pending.TryDequeue(out var instance))
             EmitInstance(instance);
@@ -536,6 +546,8 @@ public sealed partial class CSharpEmitter
     private void EmitClass(BoundClass classDef, string className)
     {
         var symbol = classDef.Symbol;
+        // Self in the class's signatures is the class itself in C# (SPEC §8, M39).
+        _selfClass = ClassTypeOf(classDef);
         // Field defaults and methods sit in the class, where globals are qualified; they can't use self.
         _self = new VariableSymbol("self", symbol.Type, VariableKind.Parameter);
         if (symbol.IsDataclass)
@@ -567,6 +579,9 @@ public sealed partial class CSharpEmitter
             Line($"    {InitCall(_currentModule!)};");
         foreach (var field in symbol.Fields)
             Line($"    this.@{FieldName(className, field)} = @{FieldName(className, field)};");
+        // Only the most derived constructor runs __post_init__, once every field is set (SPEC §4.9).
+        if (symbol.FindMethod("__post_init__") is not null)
+            Line($"    if (GetType() == typeof(@{className})) this.@__post_init__();");
         Line("}");
         if (_library is not null)
             EmitDataclassOverloads(symbol, className);
@@ -596,6 +611,8 @@ public sealed partial class CSharpEmitter
     {
         var self = _self;
         EmitClassAttributes(classDef.Symbol);
+        foreach (var generated in classDef.Symbol.Methods.Values.Where(m => m.Generated is not null))
+            EmitGeneratedComparison(generated, ClassTypeOf(classDef));
         foreach (var method in classDef.Methods.Where(m => !m.Symbol.IsClassLevel))
         {
             Line();
@@ -763,7 +780,7 @@ public sealed partial class CSharpEmitter
                 break;
             case BoundClassAttributeAssign assign:
                 LineDirective(assign.Span);
-                Line($"{TypePath(assign.Attribute.Owner)}.@{assign.Attribute.Name} = {Expr(assign.Value)};");
+                Line($"{AttributeOwner(assign.Attribute.Owner)}.@{assign.Attribute.Name} = {Expr(assign.Value)};");
                 break;
             case BoundDotNetAssign assign:
                 LineDirective(assign.Span);
@@ -777,6 +794,11 @@ public sealed partial class CSharpEmitter
                 LineDirective(assign.Span);
                 EmitCompound(assign.IsCompound, [assign.Target, assign.Index],
                     () => Line($"{Runtime}.Ops.SetIndex({Expr(assign.Target)}, {Expr(assign.Index)}, {Expr(assign.Value)});"));
+                break;
+            case BoundClassIndexAssign assign:
+                LineDirective(assign.Span);
+                EmitCompound(assign.IsCompound, [assign.Target, assign.Index],
+                    () => Line($"{Operand(assign.Target)}.@__setitem__({Expr(assign.Index)}, {Expr(assign.Value)});"));
                 break;
             case BoundPySetAttr assign:
                 LineDirective(assign.Span);
@@ -835,7 +857,7 @@ public sealed partial class CSharpEmitter
                 LineDirective(exprStmt.Span);
                 Line($"throw {Exit(exit)};");
                 break;
-            case BoundExprStmt { Expr: BoundCall or BoundPrint or BoundMethodCall or BoundBuiltinMethodCall or BoundPyCall or BoundInvoke or BoundSort or BoundSuperCall or BoundClassMethodCall or BoundRuntimeMethodCall or BoundDotNetCall { Method.ReturnsVoid: true } } exprStmt:
+            case BoundExprStmt { Expr: BoundCall or BoundPrint or BoundInPlaceCheck or BoundMethodCall or BoundBuiltinMethodCall or BoundPyCall or BoundInvoke or BoundSort or BoundSuperCall or BoundClassMethodCall or BoundRuntimeMethodCall or BoundDotNetCall { Method.ReturnsVoid: true } } exprStmt:
                 LineDirective(exprStmt.Span);
                 Line($"{Expr(exprStmt.Expr)};");
                 break;
@@ -1401,7 +1423,7 @@ public sealed partial class CSharpEmitter
             }
         }
 
-        return expr switch
+        var text = expr switch
         {
             BoundLiteral literal => Literal(literal.Value),
             BoundVariable variable when variable.Symbol == _self => "this",
@@ -1429,6 +1451,8 @@ public sealed partial class CSharpEmitter
             BoundRuntimeMethodCall call => $"{Runtime}.{call.Kind}Methods.@{call.Name}({string.Join(", ", [Expr(call.Target), .. call.Arguments.Select(Expr)])})",
             BoundRuntimeProperty property => $"{Operand(property.Target)}.@{property.Name}",
             BoundPrint print => Print(print),
+            BoundCallableObject callable => CallableObject(callable),
+            BoundInPlaceCheck check => $"{Runtime}.Ops.InPlace({Expr(check.Target)}, {Expr(check.Call)}, \"{check.Op}\", \"{check.Call.Method.Name}\")",
             BoundDictLiteral dict => DictLiteral(dict),
             BoundConstruct construct => Construct(construct),
             BoundConstructVariant construct => ConstructVariant(construct),
@@ -1479,6 +1503,7 @@ public sealed partial class CSharpEmitter
             BoundDotNetMember member => DotNetMember(member),
             _ => throw new InvalidOperationException($"unexpected bound expression {expr.GetType().Name}"),
         };
+        return SelfCast(expr, text);
     }
 
     /// <summary>
@@ -1691,6 +1716,9 @@ public sealed partial class CSharpEmitter
                 $"string.CompareOrdinal({l}, {r}) {TypeChecker.Display(binary.Op)} 0",
             BinaryOp.Less or BinaryOp.LessEqual or BinaryOp.Greater or BinaryOp.GreaterEqual =>
                 $"{left} {TypeChecker.Display(binary.Op)} {right}",
+            // __contains__ (SPEC §4.9): the item is evaluated first, as in Python.
+            BinaryOp.In or BinaryOp.NotIn when Concrete(binary.Right.Type) is ClassType && SpecialMethods.Method(Concrete(binary.Right.Type), "__contains__") is not null =>
+                $"{(binary.Op == BinaryOp.NotIn ? "!" : "")}{Runtime}.Ops.Reversed({l}, {r}, static (@container, @item) => @container.@__contains__(@item))",
             BinaryOp.In when Concrete(binary.Right.Type) is IteratorOfType or IterableOfType => $"{Runtime}.Iterators.In({l}, {r})",
             BinaryOp.NotIn when Concrete(binary.Right.Type) is IteratorOfType or IterableOfType => $"!{Runtime}.Iterators.In({l}, {r})",
             BinaryOp.In => $"{Runtime}.Ops.In({l}, {r})",
@@ -1731,6 +1759,7 @@ public sealed partial class CSharpEmitter
             BuiltinFunction.DivMod => $"{Runtime}.Numbers.DivMod({AsFloatIf(true, call.Arguments[0])}, {AsFloatIf(true, call.Arguments[1])})",
             BuiltinFunction.Set => $"new {TypeName(Concrete(call.Type))}({arguments})",
             BuiltinFunction.Len when argumentType == TaipanType.Py => $"{Interop}.Len({arguments})",
+            BuiltinFunction.Len when argumentType is ClassType => $"{Runtime}.Ops.CheckLength({Operand(call.Arguments[0])}.@__len__())",
             BuiltinFunction.Len => $"{Runtime}.Builtins.Len({arguments})",
             BuiltinFunction.Str => $"{Runtime}.Display.Format({arguments})",
             BuiltinFunction.Repr => $"{Runtime}.Display.Repr({arguments})",
@@ -2013,6 +2042,7 @@ public sealed partial class CSharpEmitter
         TupleOfType tuple => $"({string.Join(", ", tuple.Elements.Select(TypeName))})",
         DotNetType net => net.Symbol.ToDisplayString(Microsoft.CodeAnalysis.SymbolDisplayFormat.FullyQualifiedFormat),
         OpaqueType opaque => $"global::{opaque.RuntimeName}",
+        SelfType when _selfClass is { } selfClass => TypeName(selfClass),
         ClassOfType => $"{Runtime}.ClassValue",
         var other => throw new InvalidOperationException($"no C# type for {other}"),
     };

@@ -25,6 +25,9 @@ public abstract record TaipanType
     /// <summary>An open text file or standard stream (SPEC §6.1, M37).</summary>
     public static readonly TaipanType TextIO = new OpaqueType("TextIO", "Taipan.Runtime.TextFile");
 
+    /// <summary><c>Self</c> in a class method's result (SPEC §4.9, M39): the type of what it's called on.</summary>
+    public static readonly TaipanType Self = new SelfType();
+
     /// <summary><c>types.TracebackType</c> (SPEC §3.17, M37).</summary>
     public static readonly TaipanType Traceback = new OpaqueType("TracebackType", "Taipan.Runtime.Traceback");
 
@@ -112,6 +115,12 @@ public sealed record OpaqueType(string Name, string RuntimeName) : TaipanType
 public sealed record ClassOfType(ClassType Class) : TaipanType
 {
     public override string ToString() => $"type[{Class}]";
+}
+
+/// <summary>A class method's <c>Self</c> result (M39); replaced by the receiver's type at each call.</summary>
+public sealed record SelfType : TaipanType
+{
+    public override string ToString() => "Self";
 }
 
 public sealed record ErrorType : TaipanType

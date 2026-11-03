@@ -94,6 +94,15 @@ public sealed class FunctionSymbol(
     /// <summary>For a setter, its property.</summary>
     public FunctionSymbol? SetterOf { get; set; }
 
+    /// <summary>Whether the method is marked <c>@final</c>, so it can't be overridden (SPEC §4.9, M39).</summary>
+    public bool IsFinal { get; init; }
+
+    /// <summary>
+    /// For a method the compiler writes, what it's generated from (SPEC §4.9, M39): <c>order</c> for
+    /// a dataclass's <c>order=True</c>, or the method <c>@total_ordering</c> derives it from.
+    /// </summary>
+    public string? Generated { get; init; }
+
     /// <summary>Whether the function's body yields, which makes it a generator (SPEC §3.13, M31).</summary>
     public bool IsGenerator { get; init; }
 
@@ -266,7 +275,41 @@ public sealed class ClassSymbol(string name, ImmutableArray<TypeParameterSymbol>
     /// any other class is as its base is, so a plain class is by identity.
     /// </summary>
     public bool IsHashable =>
-        Methods.ContainsKey("__hash__") || !IsDataclass && !Methods.ContainsKey("__eq__") && Base?.IsHashable != false;
+        Methods.ContainsKey("__hash__") || !IsDataclass && !Methods.ContainsKey("__eq__") && Base?.IsHashable != false
+        || IsFrozen && !Methods.ContainsKey("__eq__") && UnhashableField is null;
+
+    /// <summary>A frozen dataclass's first field whose type can't be a key, which makes the class unhashable too (SPEC §4.9).</summary>
+    public FieldSymbol? UnhashableField
+    {
+        get
+        {
+            // A class reached again through its own fields is taken as hashable, as the first visit decides.
+            if (!Hashing.Add(this))
+                return null;
+            try
+            {
+                return AllFields.FirstOrDefault(f => !DictOfType.IsValidKey(f.Type));
+            }
+            finally
+            {
+                Hashing.Remove(this);
+            }
+        }
+    }
+
+    [ThreadStatic]
+    private static HashSet<ClassSymbol>? _hashing;
+
+    private static HashSet<ClassSymbol> Hashing => _hashing ??= [];
+
+    /// <summary>The dataclass options and class decorators of SPEC §4.9 (M39).</summary>
+    public bool IsFrozen { get; set; }
+
+    public bool IsOrdered { get; set; }
+
+    public bool IsFinal { get; set; }
+
+    public bool TotalOrdering { get; set; }
 
     /// <summary>The classes that derive directly from this one.</summary>
     public List<ClassSymbol> Subclasses { get; } = [];

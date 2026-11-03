@@ -38,7 +38,11 @@ public sealed record FuncDef(
 
 /// <summary><c>@name</c> on the line before a class or <c>def</c> (SPEC §2, M15).</summary>
 /// <summary><c>@name</c>, or <c>@name.member</c> for a property's setter (SPEC §4.8, M28).</summary>
-public sealed record Decorator(Identifier Name, Identifier? Member, TextSpan Span) : Node(Span);
+public sealed record Decorator(Identifier Name, Identifier? Member, TextSpan Span) : Node(Span)
+{
+    /// <summary>The arguments in parentheses after the name, or null without them (M39: <c>@dataclass(frozen=True)</c>).</summary>
+    public ImmutableArray<Argument>? Arguments { get; init; }
+}
 
 /// <summary>How a parameter takes its argument (SPEC §4.2, M30).</summary>
 public enum ParamKind { Normal, PositionalOnly, KeywordOnly, VarArgs, VarKeywords }

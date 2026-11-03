@@ -1,0 +1,3 @@
+tests/cases/m39/tp0006_format_spec.tpn:10:12: error TP0006: invalid format spec '10.2q'
+tests/cases/m39/tp0006_format_spec.tpn:11:12: error TP0006: invalid format spec 'n'
+tests/cases/m39/tp0006_format_spec.tpn:13:18: error TP0006: invalid format spec '10.2q'

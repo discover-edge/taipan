@@ -38,6 +38,21 @@ public static class SpecialMethods
         ["__iter__"] = (0, null),
         ["__next__"] = (0, null),
         ["__enter__"] = (0, null),
+        ["__post_init__"] = (0, TaipanType.Nothing),
+        // M39 (SPEC §4.9); __call__ takes any parameters, checked separately.
+        ["__len__"] = (0, TaipanType.Int),
+        ["__getitem__"] = (1, null),
+        ["__setitem__"] = (2, TaipanType.Nothing),
+        ["__contains__"] = (1, TaipanType.Bool),
+        ["__call__"] = (-1, null),
+        ["__iadd__"] = (1, null),
+        ["__isub__"] = (1, null),
+        ["__imul__"] = (1, null),
+        ["__itruediv__"] = (1, null),
+        ["__ifloordiv__"] = (1, null),
+        ["__imod__"] = (1, null),
+        ["__ipow__"] = (1, null),
+        ["__format__"] = (1, TaipanType.Str),
         ["__exit__"] = (3, null),
     };
 
@@ -61,7 +76,12 @@ public static class SpecialMethods
     public static bool HasSignature(FunctionSymbol method, ClassSymbol owner, bool hasDefaults)
     {
         var (arity, result) = Signatures[method.Name];
+        // __call__ takes what any method may, defaults and keywords included (SPEC §4.9).
+        if (method.Name == "__call__")
+            return method.ReturnType is not NothingType || method.ReturnType.ContainsError;
         if (method.Parameters.Length != arity || hasDefaults)
+            return false;
+        if (method.Name == "__format__" && method.Parameters[0].Type != TaipanType.Str && !method.Parameters[0].Type.ContainsError)
             return false;
         // __exit__ takes exactly Python's three optionals, and suppresses only when it returns bool (SPEC §3.17).
         if (method.Name == "__exit__")
@@ -81,6 +101,21 @@ public static class SpecialMethods
     /// <summary>The signature a message shows: <c>def __eq__(self, other: Money) -> bool</c>.</summary>
     public static string Signature(string name, ClassSymbol owner)
     {
+        switch (name)
+        {
+            case "__post_init__":
+                return "def __post_init__(self) -> None";
+            case "__getitem__":
+                return "def __getitem__(self, key: K) -> V";
+            case "__setitem__":
+                return "def __setitem__(self, key: K, value: V) -> None";
+            case "__contains__":
+                return "def __contains__(self, item: T) -> bool";
+            case "__call__":
+                return "def __call__(self, …) -> R";
+            case "__format__":
+                return "def __format__(self, spec: str) -> str";
+        }
         if (name == "__exit__")
             return "def __exit__(self, exc_type: type[BaseException]?, exc: BaseException?, tb: TracebackType?) -> bool";
         var (arity, result) = Signatures[name];
@@ -101,6 +136,13 @@ public static class SpecialMethods
         "__iter__" => $"iter({target})",
         "__next__" => $"next({target})",
         "__enter__" or "__exit__" => $"with {target}:",
+        "__len__" => $"len({target})",
+        "__getitem__" => $"{target}[…]",
+        "__setitem__" => $"{target}[…] = …",
+        "__contains__" => "in",
+        "__call__" => $"{target}(…)",
+        "__format__" => $"f\"{{{target}:…}}\"",
+        _ when InPlaceOperator(name) is { } op => op,
         _ => Operator(name) ?? name,
     };
 
@@ -145,6 +187,43 @@ public static class SpecialMethods
         _ => null,
     };
 
+    /// <summary>The in-place method <c>x op= y</c> calls first (SPEC §4.9, M39): <c>__iadd__</c> for <c>+=</c>.</summary>
+    public static string? InPlace(Syntax.AssignOp op) => op switch
+    {
+        Syntax.AssignOp.Add => "__iadd__",
+        Syntax.AssignOp.Subtract => "__isub__",
+        Syntax.AssignOp.Multiply => "__imul__",
+        Syntax.AssignOp.Divide => "__itruediv__",
+        Syntax.AssignOp.FloorDivide => "__ifloordiv__",
+        Syntax.AssignOp.Modulo => "__imod__",
+        Syntax.AssignOp.Power => "__ipow__",
+        _ => null,
+    };
+
+    private static string? InPlaceOperator(string name) => name switch
+    {
+        "__iadd__" => "+=",
+        "__isub__" => "-=",
+        "__imul__" => "*=",
+        "__itruediv__" => "/=",
+        "__ifloordiv__" => "//=",
+        "__imod__" => "%=",
+        "__ipow__" => "**=",
+        _ => null,
+    };
+
+    /// <summary>
+    /// A class value as a function (SPEC §4.9): its <c>__call__</c>'s parameters and result, when
+    /// they're all ordinary positional ones; null otherwise.
+    /// </summary>
+    public static FunctionType? CallShape(TaipanType type)
+    {
+        if (Method(type, "__call__") is not var (method, _, result) || method.Kinds.Any(k => k != Syntax.ParamKind.Normal && k != Syntax.ParamKind.PositionalOnly))
+            return null;
+        var map = TypeChecker.MapOf(type);
+        return new FunctionType([.. method.Parameters.Select(p => TypeChecker.Substitute(p.Type, map))], result);
+    }
+
     public static bool IsComparison(BinaryOp op) => op is BinaryOp.Less or BinaryOp.LessEqual or BinaryOp.Greater or BinaryOp.GreaterEqual;
 
     /// <summary>
@@ -157,7 +236,7 @@ public static class SpecialMethods
             return null;
         var map = TypeChecker.MapOf(classType);
         var parameter = method.Parameters.IsEmpty ? null : TypeChecker.Substitute(method.Parameters[0].Type, map);
-        return (method, parameter, TypeChecker.Substitute(method.ReturnType, map));
+        return (method, parameter, TypeChecker.SubstituteSelf(TypeChecker.Substitute(method.ReturnType, map), type));
     }
 
     /// <summary>

@@ -1,0 +1,6 @@
+2 x . True True
+.x.
+..o!
+["a", "bb", "ccc"]
+[2, 5]
+__len__() should return >= 0

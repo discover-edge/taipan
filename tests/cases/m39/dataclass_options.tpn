@@ -1,0 +1,43 @@
+@dataclass(frozen=True, order=True)
+class Version:
+    major: int
+    minor: int = 0
+
+    def __post_init__(self) -> None:
+        if self.major < 0:
+            raise ValueError("negative version")
+
+let versions = [Version(2, 1), Version(1, 9), Version(2), Version(1, 10)]
+print(sorted(versions))
+print(Version(1, 2) < Version(1, 10), Version(2) >= Version(1, 99), max(versions))
+let names = {Version(1): "one", Version(2, 0): "two"}
+print(names[Version(2)], Version(1, 2) == Version(1, 2), hash(Version(3)) == hash(Version(3)))
+try:
+    Version(-1)
+except ValueError as e:
+    print(e)
+
+@dataclass
+class Item:
+    name: str
+    price: float
+    label: str = ""
+
+    def __post_init__(self) -> None:
+        self.label = f"{self.name} ({self.price})"
+
+print(Item("pen", 1.5).label)
+
+@dataclass(order=True)
+class Base:
+    n: int
+
+@dataclass(order=True)
+class Derived(Base):
+    extra: str = ""
+
+print(Derived(1, "a") < Derived(1, "b"))
+try:
+    print(Base(1) < Derived(2))
+except TypeError as e:
+    print(e)

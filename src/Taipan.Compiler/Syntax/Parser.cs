@@ -305,9 +305,11 @@ public sealed class Parser
                 Next();
                 member = ExpectIdentifier();
             }
+            // decorator arguments (M39, SPEC §4.9): `@dataclass(frozen=True)`
+            ImmutableArray<Argument>? arguments = At(TokenKind.OpenParen) ? ParseCall() : null;
             var span = SpanFrom(start);
             Expect(TokenKind.Newline);
-            decorators.Add(new Decorator(name, member, span));
+            decorators.Add(new Decorator(name, member, span) { Arguments = arguments });
         }
         return decorators.ToImmutable();
     }

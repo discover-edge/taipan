@@ -21,6 +21,8 @@ public static class TypeChecker
         || (from is OptionalOf { Inner: ClassType fromClass } && to is OptionalOf { Inner: ClassType toClass } && Derives(fromClass, toClass))
         || (from is ClassType fromType && to is ClassType toType && Derives(fromType, toType))
         || (from is ClassOfType fromClassOf && to is ClassOfType toClassOf && Derives(fromClassOf.Class, toClassOf.Class))
+        // A class with __call__ is a function value of its shape (SPEC §4.9).
+        || (from is ClassType && to is FunctionType && SpecialMethods.CallShape(from) is { } shape && IsSubtype(shape, to))
         // A .NET object parameter takes int, float, bool, str and .NET values (SPEC §13.3).
         || (to is DotNetType { IsObject: true } && from is PrimitiveType { Name: not "py" } or DotNetType)
         || (from is DotNetType fromNet && to is DotNetType toNet && DotNetTypes.Derives(fromNet.Symbol, toNet.Symbol))
@@ -222,4 +224,23 @@ public static class TypeChecker
             || (tryStmt.Handlers.All(h => Terminates(h.Body)) && (Terminates(tryStmt.Body) || (tryStmt.Else is { } elseBlock && Terminates(elseBlock)))),
         _ => false,
     };
+
+    /// <summary>A method's result with <c>Self</c> (M39, SPEC §4.9) replaced by the type it's called on.</summary>
+    public static TaipanType SubstituteSelf(TaipanType type, TaipanType receiver) => type switch
+    {
+        SelfType => receiver,
+        OptionalOf optional => Flatten(SubstituteSelf(optional.Inner, receiver)),
+        ListOfType list => new ListOfType(SubstituteSelf(list.Element, receiver)),
+        SetOfType set => new SetOfType(SubstituteSelf(set.Element, receiver)),
+        IteratorOfType iterator => new IteratorOfType(SubstituteSelf(iterator.Element, receiver)),
+        IterableOfType iterable => new IterableOfType(SubstituteSelf(iterable.Element, receiver)),
+        AwaitableOfType awaitable => new AwaitableOfType(SubstituteSelf(awaitable.Result, receiver)),
+        DictOfType dict => new DictOfType(SubstituteSelf(dict.Key, receiver), SubstituteSelf(dict.Value, receiver)),
+        TupleOfType tuple => new TupleOfType([.. tuple.Elements.Select(e => SubstituteSelf(e, receiver))]),
+        FunctionType function => new FunctionType([.. function.Parameters.Select(p => SubstituteSelf(p, receiver))], SubstituteSelf(function.Result, receiver)),
+        _ => type,
+    };
+
+    /// <summary>Whether a type mentions <c>Self</c> (M39).</summary>
+    public static bool MentionsSelf(TaipanType type) => SubstituteSelf(type, TaipanType.Error) != type;
 }

@@ -1,0 +1,7 @@
+tests/cases/m39/tp0225_classes.tpn:6:14: error TP0225: a frozen dataclass can't derive from one that isn't
+tests/cases/m39/tp0225_classes.tpn:11:5: error TP0225: 'order=True' needs fields that can be ordered: 'items' is list[int]
+tests/cases/m39/tp0225_classes.tpn:17:9: error TP0225: 'order=True' generates '__lt__'; remove it
+tests/cases/m39/tp0225_classes.tpn:21:9: error TP0225: '__post_init__' is only for dataclasses
+tests/cases/m39/tp0225_classes.tpn:28:9: error TP0225: '__post_init__' must be 'def __post_init__(self) -> None'
+tests/cases/m39/tp0225_classes.tpn:35:14: error TP0225: cannot derive from final class 'Sealed'
+tests/cases/m39/tp0225_classes.tpn:39:7: error TP0225: '@total_ordering' needs '__lt__', '__le__', '__gt__' or '__ge__'

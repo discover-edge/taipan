@@ -422,6 +422,9 @@ public sealed record BoundClassAttribute(ClassAttributeSymbol Attribute, BoundEx
 public sealed record BoundClassMethodCall(ClassSymbol Through, BoundExpr? Instance, bool ViaCls, FunctionSymbol Method,
     ImmutableArray<BoundExpr> Arguments, TaipanType Type, TextSpan Span) : BoundExpr(Type, Span)
 {
+    /// <summary>A generic class's type arguments the call is made with (SPEC §4.9, M39); null for a class that isn't generic.</summary>
+    public ClassType? ThroughType { get; init; }
+
     /// <inheritdoc cref="BoundCall.Shape"/>
     public ArgumentShape? Shape { get; init; }
 }
@@ -594,3 +597,15 @@ public sealed record BoundRuntimeProperty(BoundExpr Target, string Name, TaipanT
 /// </summary>
 public sealed record BoundWith(BoundExpr Manager, VariableSymbol? Binding, TaipanType Enter, bool Suppresses, BoundBlock Body, TextSpan Span)
     : BoundStmt(Span);
+
+/// <summary><c>x[k] = v</c> on a class: its <c>__setitem__</c> (SPEC §4.9, M39). A compound one reads through <c>__getitem__</c> first.</summary>
+public sealed record BoundClassIndexAssign(BoundExpr Target, BoundExpr Index, BoundExpr Value, bool IsCompound, TextSpan Span) : BoundStmt(Span);
+
+/// <summary>A value of a class with <c>__call__</c>, used as a function (SPEC §4.9, M39).</summary>
+public sealed record BoundCallableObject(BoundExpr Value, FunctionType Function, TextSpan Span) : BoundExpr(Function, Span);
+
+/// <summary>
+/// <c>x op= y</c> on a <c>let</c> through an in-place method (SPEC §4.9, M39): the call, checked at run
+/// time to give <c>x</c> itself back, since a <c>let</c> can't be rebound.
+/// </summary>
+public sealed record BoundInPlaceCheck(BoundExpr Target, BoundMethodCall Call, string Op, TextSpan Span) : BoundExpr(TaipanType.Nothing, Span);

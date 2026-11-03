@@ -1,0 +1,16 @@
+class Animal:
+    @final
+    def name(self) -> str:
+        return "animal"
+
+    def me(self) -> Self:
+        return self
+
+class Dog(Animal):
+    @override
+    def name(self) -> str:
+        return "dog"
+
+    @override
+    def me(self) -> Dog:
+        return self

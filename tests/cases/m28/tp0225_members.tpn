@@ -36,21 +36,6 @@ class C:
     def width(self, value: int):
         pass
 
-class Box[T]:
-    item: T
-    total: ClassVar[int] = 0
-
-    def __init__(self, item: T):
-        self.item = item
-
-    @staticmethod
-    def make() -> int:
-        return 0
-
-    @classmethod
-    def build(cls) -> int:
-        return 0
-
 class Shape(ABC):
     @abstractmethod
     def area(self) -> float:
