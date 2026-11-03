@@ -1,0 +1,2 @@
+tests/cases/m35/tp0206_set.tpn:2:9: error TP0206: cannot infer the type of an empty set
+  help: add a type annotation

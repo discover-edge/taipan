@@ -257,15 +257,15 @@
     "builtin": {
       "patterns": [
         {
-          "match": "\\b(print|len|range|repr|hash|sorted|map|filter|enumerate|zip|iter|next|isinstance|super)\\b",
+          "match": "\\b(print|len|range|repr|hash|sorted|map|filter|enumerate|zip|iter|next|isinstance|super|abs|min|max|sum|any|all|round|divmod)\\b",
           "name": "support.function.builtin.taipan"
         },
         {
-          "match": "\\b(int|float|str|list)\\b(?=\\s*\\()",
+          "match": "\\b(int|float|str|list|set)\\b(?=\\s*\\()",
           "name": "support.function.builtin.taipan"
         },
         {
-          "match": "\\b(int|float|str|bool|list|dict|tuple|Iterator|Iterable|Callable)\\b",
+          "match": "\\b(int|float|str|bool|list|dict|set|tuple|Iterator|Iterable|Callable|Awaitable)\\b",
           "name": "support.type.builtin.taipan"
         }
       ]
@@ -281,11 +281,11 @@
           "name": "keyword.operator.comparison.taipan"
         },
         {
-          "match": "\\+=|-=|\\*=|/=|=",
+          "match": "\\*\\*=|//=|%=|\\+=|-=|\\*=|/=|=",
           "name": "keyword.operator.assignment.taipan"
         },
         {
-          "match": "//|\\?\\?|[+\\-*/%]",
+          "match": "\\*\\*|//|\\?\\?|[+\\-*/%|&^]",
           "name": "keyword.operator.arithmetic.taipan"
         }
       ]

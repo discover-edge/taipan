@@ -739,6 +739,21 @@ public sealed class DiagnosticBag
         Add("TP0200", span, $"dict keys must be hashable, found {type}",
             definer is null ? "a dataclass needs its own '__hash__' to be a key" : $"'{definer}' defines '__eq__' without '__hash__'");
 
+    public void ReportSumOfNonNumbers(TextSpan span, object element) =>
+        Add("TP0200", span, $"sum() takes numbers, found {element}", element is Semantics.PrimitiveType { Name: "str" } ? "use ''.join(…)" : null);
+
+    public void ReportAnyAllNotBool(TextSpan span, string function, object element) =>
+        Add("TP0200", span, $"'{function}' takes bools, found {element}", "test each value, as in any(x > 0 for x in xs)");
+
+    public void ReportCannotOrder(TextSpan span, string function, object element) =>
+        Add("TP0200", span, $"'{function}' needs values that can be ordered, found {element}", "pass a key, e.g. 'key=lambda x: ...'");
+
+    public void ReportNegativeIntExponent(TextSpan span) =>
+        Add("TP0200", span, "an int can't be raised to a negative power", "use a float base, as in 2.0 ** -1");
+
+    public void ReportInvalidSetElement(TextSpan span, object type) =>
+        Add("TP0200", span, $"set elements must be hashable, found {type}");
+
     public void ReportCannotHash(TextSpan span, object type) =>
         Add("TP0200", span, $"cannot hash {type}");
 

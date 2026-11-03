@@ -1,0 +1,11 @@
+# Built-ins with the wrong argument types (SPEC §6, M35).
+class Box:
+    pass
+
+print(min([Box(), Box()]))
+print(sum(["a", "b"]))
+print(any([1, 2]))
+print(2 ** -1)
+print({[1]})
+let t: set[str] = {1}
+print({1} | {"a"})

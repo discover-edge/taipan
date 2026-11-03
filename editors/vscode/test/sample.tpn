@@ -54,3 +54,8 @@ def numbers() -> Iterator[int]:
 
 async def fetch(url: str) -> str:
     return await load(url)
+
+def stats(xs: list[int]) -> set[int]:
+    var n = 2 ** 3
+    n **= 2
+    return set(xs) | {max(xs), abs(min(xs)), sum(xs)} & {n}

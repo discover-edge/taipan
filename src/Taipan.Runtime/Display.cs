@@ -40,6 +40,9 @@ public static class Display
         IClass c => c.__str__(),
         IStruct s => StructForm(s),
         IDictionary d => "{" + string.Join(", ", d.Keys.Cast<object>().Select(k => $"{Repr(k)}: {Repr(d[k])}")) + "}",
+        // A set (SPEC §3.15): `set()` when empty, as `{}` is a dict.
+        ISet { Count: 0 } => "set()",
+        ISet set => "{" + string.Join(", ", set.Values.Select(Repr)) + "}",
         IList l => "[" + string.Join(", ", l.Cast<object?>().Select(Repr)) + "]",
         // Python objects (SPEC §10.2), else a .NET value's own ToString (SPEC §13.3).
         _ => ExternalFormat?.Invoke(value, false) ?? value.ToString() ?? "",

@@ -1,0 +1,11 @@
+tests/cases/m35/tp0200_builtins.tpn:5:11: error TP0200: 'min' needs values that can be ordered, found Box
+  help: pass a key, e.g. 'key=lambda x: ...'
+tests/cases/m35/tp0200_builtins.tpn:6:11: error TP0200: sum() takes numbers, found str
+  help: use ''.join(…)
+tests/cases/m35/tp0200_builtins.tpn:7:11: error TP0200: 'any' takes bools, found int
+  help: test each value, as in any(x > 0 for x in xs)
+tests/cases/m35/tp0200_builtins.tpn:8:12: error TP0200: an int can't be raised to a negative power
+  help: use a float base, as in 2.0 ** -1
+tests/cases/m35/tp0200_builtins.tpn:9:8: error TP0200: set elements must be hashable, found list[int]
+tests/cases/m35/tp0200_builtins.tpn:10:20: error TP0200: expected str, found int
+tests/cases/m35/tp0200_builtins.tpn:11:7: error TP0200: operator '|' cannot be applied to set[int] and set[str]

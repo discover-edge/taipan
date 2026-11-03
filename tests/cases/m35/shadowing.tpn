@@ -1,0 +1,10 @@
+# A local may reuse a built-in function's name, as in Python (SPEC §4.5, M35).
+def total(xs: list[int]) -> int:
+    var sum = 0
+    for x in xs:
+        sum += x
+    return sum
+
+let max = 7
+let min = [3, 1]
+print(total([1, 2, 3]), max, min)

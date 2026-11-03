@@ -119,7 +119,7 @@ public sealed record UnpackedTarget(Expr Target, bool Starred, TextSpan Span) : 
 /// <summary><c>(a, b)</c> inside an unpacking: unpacks that element in turn (M29).</summary>
 public sealed record UnpackedGroup(ImmutableArray<Unpacked> Items, TextSpan Span) : Unpacked(Span);
 
-public enum AssignOp { Assign, Add, Subtract, Multiply, Divide }
+public enum AssignOp { Assign, Add, Subtract, Multiply, Divide, FloorDivide, Modulo, Power }
 
 /// <summary><see cref="Target"/> is a <see cref="NameExpr"/>, <see cref="MemberExpr"/> or <see cref="IndexExpr"/>.</summary>
 public sealed record AssignStmt(Expr Target, AssignOp Op, Expr Value, TextSpan Span) : Stmt(Span);
@@ -287,6 +287,9 @@ public sealed record ListExpr(ImmutableArray<Expr> Elements, TextSpan Span) : Ex
 
 public sealed record DictExpr(ImmutableArray<DictEntry> Entries, TextSpan Span) : Expr(Span);
 
+/// <summary><c>{a, b}</c>, a set literal (SPEC §3.15, M35).</summary>
+public sealed record SetExpr(ImmutableArray<Expr> Elements, TextSpan Span) : Expr(Span);
+
 public sealed record DictEntry(Expr Key, Expr Value, TextSpan Span) : Node(Span);
 
 public enum UnaryOp { Negate, Not }
@@ -298,7 +301,9 @@ public sealed record AwaitExpr(Expr Operand, TextSpan Span) : Expr(Span);
 
 public enum BinaryOp
 {
-    Add, Subtract, Multiply, Divide, FloorDivide, Modulo,
+    Add, Subtract, Multiply, Divide, FloorDivide, Modulo, Power,
+    // Set operators (M35, SPEC §3.15).
+    Union, Intersection, SymmetricDifference,
     Equal, NotEqual, Less, LessEqual, Greater, GreaterEqual, In, NotIn,
     And, Or, Coalesce,
 }

@@ -22,7 +22,7 @@ public sealed class VariableSymbol(string name, TaipanType type, VariableKind ki
     public VariableKind Kind { get; } = kind;
 }
 
-public enum BuiltinFunction { Print, Len, Str, Int, Float, Range, Sorted, Map, Filter, Enumerate, Zip, IsInstance, Super, Repr, Hash, List, Iter, Next }
+public enum BuiltinFunction { Print, Len, Str, Int, Float, Range, Sorted, Map, Filter, Enumerate, Zip, IsInstance, Super, Repr, Hash, List, Iter, Next, Abs, Min, Max, Sum, Any, All, Round, DivMod, Set }
 
 /// <summary>What kind of method a function is (SPEC §4.8, M28); <see cref="Instance"/> for a function.</summary>
 public enum MemberKind { Instance, Property, Static, Class }
@@ -149,6 +149,16 @@ public sealed class FunctionSymbol(
         new("list", [], TaipanType.Error, BuiltinFunction.List),
         new("iter", [], TaipanType.Error, BuiltinFunction.Iter),
         new("next", [], TaipanType.Error, BuiltinFunction.Next),
+        // M35 (SPEC §6).
+        new("abs", [], TaipanType.Error, BuiltinFunction.Abs),
+        new("min", [], TaipanType.Error, BuiltinFunction.Min),
+        new("max", [], TaipanType.Error, BuiltinFunction.Max),
+        new("sum", [], TaipanType.Error, BuiltinFunction.Sum),
+        new("any", [], TaipanType.Bool, BuiltinFunction.Any),
+        new("all", [], TaipanType.Bool, BuiltinFunction.All),
+        new("round", [], TaipanType.Error, BuiltinFunction.Round),
+        new("divmod", [], TaipanType.Error, BuiltinFunction.DivMod),
+        new("set", [], TaipanType.Error, BuiltinFunction.Set),
     ];
 }
 

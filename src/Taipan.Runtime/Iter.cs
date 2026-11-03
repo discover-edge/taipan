@@ -8,6 +8,9 @@ public static class Iter
 {
     public static IEnumerable<T> Over<T>(List<T> list) => Guard(list, "list");
 
+    /// <summary>A set iterates over its values, in insertion order (SPEC §3.15).</summary>
+    public static IEnumerable<T> Over<T>(OrderedSet<T> set) where T : notnull => Guard(set, "set");
+
     // Dicts with an iteration in progress, with nesting counts. .NET's enumerator catches added
     // and removed keys but not a changed value, which Ops.SetIndex checks against this.
     private static readonly Dictionary<object, int> IteratingDicts = new(ReferenceEqualityComparer.Instance);

@@ -50,7 +50,8 @@ Taipan is a statically typed, compiled language with Python's surface syntax. Th
   - `TP0006` (M26): a conversion other than `!r` or `!s`, a format spec containing `{` or `}` (nested specs, `{x:{width}}`, aren't supported), and an `=` or conversion with nothing before it.
   - An f-string, or a hole, still open at end of line is `TP0003`.
 - **Operators and punctuation:**
-  `+ - * / // % == != < <= > >= = += -= *= /= -> ?? ? . ... , : ( ) [ ] { } @`
+  `+ - * / // % ** == != < <= > >= = += -= *= /= //= %= **= -> ?? ? . ... , : ( ) [ ] { } @`
+  - `**` and `**=` (M35) are operators. In a parameter list and a call, `**` still marks `**kwargs` and `**e` (M30).
   - `@` begins a decorator (M15, §4.3). It isn't an operator.
   - `...` is one token (M17), the body of a protocol method (§3.11). Three dots always lex as `...`, so `1...` is the int `1` followed by `...`.
 - Any other character outside a string or comment, including a non-ASCII letter or a lone `\r`, is `TP0004`.
@@ -125,7 +126,7 @@ let_stmt      = "let" ( NAME [ ":" type ] | names ) "=" expr_list ;
 var_stmt      = "var" ( NAME [ ":" type ] | names ) "=" expr_list ;
 names         = unpacked "," unpacked { "," unpacked } [ "," ] ;      (* unpacking: M12, §3.8 *)
 unpacked      = NAME | "*" NAME | "(" names ")" ;                    (* "*" and nesting: M29 *)
-assign_stmt   = target ( "=" | "+=" | "-=" | "*=" | "/=" ) expr
+assign_stmt   = target ( "=" | "+=" | "-=" | "*=" | "/=" | "//=" | "%=" | "**=" ) expr   (* "//=", "%=", "**=": M35 *)
               | targets "=" expr_list ;                              (* M12 *)
 targets       = unpack_target "," unpack_target { "," unpack_target } [ "," ] ;
 unpack_target = target | "*" target | "(" targets ")" ;              (* "*" and nesting: M29 *)
@@ -176,7 +177,8 @@ comparison    = additive [ comp_op additive | "is" [ "not" ] "None" ] ;   (* no 
 comp_op       = "==" | "!=" | "<" | "<=" | ">" | ">=" | "in" | "not" "in" ;
 additive      = term { ( "+" | "-" ) term } ;
 term          = unary { ( "*" | "/" | "//" | "%" ) unary } ;
-unary         = "-" unary | "await" unary | cast ;                 (* await: M33, §3.14 *)
+unary         = "-" unary | "await" unary | power ;                (* await: M33, §3.14 *)
+power         = cast [ "**" unary ] ;                               (* M35: right-associative, binding tighter than a unary minus on its left *)
 cast          = postfix [ "as" type ] ;                            (* M10 *)
 postfix       = atom { call | "." NAME | "[" subscript "]" } ;
 subscript     = expr { "," expr } [ "," ] | [ expr ] ":" [ expr ] [ ":" [ expr ] ] ;   (* a slice: M12, §5.4; "x[a, b]" indexes with the tuple (a, b): M33 *)
@@ -187,6 +189,7 @@ atom          = INT | FLOAT | STRING | FSTRING | "True" | "False" | "None"
               | "(" expr "," [ expr { "," expr } [ "," ] ] ")"         (* a tuple: M12; one element is TP0209 *)
               | "[" [ expr { "," expr } [ "," ] ] "]"
               | "{" [ expr ":" expr { "," expr ":" expr } [ "," ] ] "}"
+              | "{" expr { "," expr } [ "," ] "}"                 (* a set: M35, §3.15; "{}" is a dict *)
               | match_expr ;                                         (* anywhere: M29, §5.1.1 *)
 ```
 
@@ -237,6 +240,7 @@ atom          = INT | FLOAT | STRING | FSTRING | "True" | "False" | "None"
 | `list[T]` | growable array | `List<T>` |
 | `dict[K, V]` | hash map that keeps insertion order; `K` ∈ {`int`, `str`, `bool`}, a tuple of valid keys (M12), or a plain class, compared by identity (M15), or since M28 any hashable class (§4.8), otherwise `TP0200` | `OrderedDictionary<K, V>` |
 | `tuple[A, B, …]` | fixed-size, immutable group of values (M12, §3.8) | `ValueTuple<A, B, …>` |
+| `set[T]` | unordered collection of distinct values, kept in insertion order (M35, §3.15); `T` as a dict key | `Taipan.Runtime.OrderedSet<T>` |
 | `T?` | optional `T` | `T?` (C# nullable) |
 | `py` | dynamic Python object (M10, §10) | `Python.Runtime.PyObject` |
 | `C` | instance of a class `C` (M15, §4.3) | a C# class (§8) |
@@ -494,10 +498,10 @@ finally:
   | `OverflowError` | `ArithmeticError` | int overflow, and `int(x)` of an infinite or out-of-range float |
   | `LookupError` | `Exception` | |
   | `IndexError` | `LookupError` | an index out of range, and `pop()` on an empty list |
-  | `KeyError` | `LookupError` | a missing dict key |
-  | `ValueError` | `Exception` | `int(x)` of a NaN, `split("")` and `replace("", …)`, and a slice step of 0 |
+  | `KeyError` | `LookupError` | a missing dict key; a missing set value in `remove` and `pop` from an empty set (M35) |
+  | `ValueError` | `Exception` | `int(x)` of a NaN, `split("")` and `replace("", …)`, and a slice step of 0; since M35, `min`/`max` of an empty iterable, a missing value in `list.remove`/`index` and `str.index`, a `range` step of 0, and a negative `int` exponent |
   | `TypeError` | `Exception` | a failed `as` (§4.3, §10.4) |
-  | `RuntimeError` | `Exception` | changing a list or dict while iterating over it; `StopIteration` escaping a generator (M31) |
+  | `RuntimeError` | `Exception` | changing a list, dict or set (M35) while iterating over it; `StopIteration` escaping a generator (M31) |
   | `StopIteration` | `Exception` | `next()` on an exhausted iterator, or a class's `__next__` ending (M31, §3.13) |
   | `PythonError` | `Exception` | a Python exception from a `py` operation (§10.5) |
   | `DotNetError` | `Exception` | a .NET exception from a .NET call, caught as `Exception` (M21, §13.6) |
@@ -737,6 +741,23 @@ print(await first, await second)
 - **An awaitable is awaited.** An expression statement whose value is an `Awaitable` is `TP0235`, `this awaitable is never awaited`, with help `write 'await …'`, since its exceptions would be lost. Store it to await it later (`let pending = fetch(url)`).
 - **Deferred:** async generators, `async for`, `async with`, async lambdas, and helpers such as `asyncio.gather`. A `yield` in an `async def` is `TP0215`.
 
+### 3.15 Sets (M35)
+```python
+let seen = {"a", "b"}
+var tags: set[str] = set()
+tags.add("x")
+print(seen | tags, "a" in seen, len(seen & {"b", "c"}))   # {"a", "b", "x"} True 1
+```
+
+- **`set[T]`** holds distinct values of a type that can be a dict key (§3.1): `TP0200`, `set elements must be hashable, found <T>`, otherwise. A set itself can't be a set element or a dict key, since it changes.
+- **Literals:** `{a, b, …}`, with the element type inferred as a list's is (§3.2). `{}` is an empty dict, as in Python, so an empty set is `set()`, which needs an expected type as `[]` does (`TP0206`). `set(xs)` takes any iterable's values.
+- **Order:** a set keeps its values in the order they were first added, for iteration and display. Python's set order is arbitrary, and for strings differs between runs, so Taipan's is one of the orders Python might give; code that depends on the order should sort.
+- **Display:** `{1, 2, 3}`, with elements as inside a list (§6); `set()` when empty. **Equality** ignores order.
+- **Operators:** `a | b` (union), `a & b` (intersection), `a - b` (difference), `a ^ b` (symmetric difference), each a new set in the order of `a`'s values, then `b`'s; `a <= b` and `a < b` (subset, proper subset), `a >= b` and `a > b` (superset); `x in a`, `x not in a`. Both operands must be sets of the same element type.
+- **Methods:** `add(x)`, `remove(x)` (`KeyError` if absent), `discard(x)`, `pop() -> T` (the first value; `KeyError` if empty), `clear()`, `copy() -> set[T]`, `update(xs)`, `union(xs)`, `intersection(xs)`, `difference(xs)`, `symmetric_difference(xs)` (each taking any `Iterable[T]`, giving a new set), `issubset(xs)`, `issuperset(xs)`, `isdisjoint(xs) -> bool`.
+- `len`, `for`, `sorted`, `list`, `min`, `max`, `sum`, `any` and `all` take sets as iterables (§3.13). Changing a set while iterating over it raises `RuntimeError`, `set mutated during iteration`, as for a list or dict.
+- Sets aren't passed to Python (§10.3) or .NET (§13.3) yet.
+
 ## 4. Declarations
 
 ### 4.1 Bindings
@@ -915,7 +936,7 @@ class Point:
 ### 4.5 Names and checking rules
 - **Namespaces:** types (`int`, `float`, `bool`, `str`, user classes and enums) and values (functions, constants, variables, parameters, built-in functions) are separate. An unknown type name is `TP0201`.
 - **Global scope:** functions, constants and built-in functions share one global scope. Defining a name twice there, including a `def` or `const` with a built-in function's name, is `TP0214`.
-- **Shadowing (`TP0207`)** covers every name visible at the declaration, including globals and built-ins: `let len = 3` is `TP0207`. A function body can't see top-level `let`/`var` bindings (§4.1), so declaring the same name inside a function is allowed.
+- **Shadowing (`TP0207`)** covers every name visible at the declaration, including globals and built-in classes and types. Since M35, a local or parameter may reuse a built-in function's name, as in Python (`var sum = 0`, `let max = 3`), except one that's also a type's (`int`, `float`, `str`, `list`, `set`); calling it afterwards is checked as for any value, so `sum(xs)` with `sum: int` is `TP0200`. A function body can't see top-level `let`/`var` bindings (§4.1), so declaring the same name inside a function is allowed.
 - **Parameters** are immutable, like `let`. They're declared in the function's outermost scope, so `let x` in a body with a parameter `x` is `TP0207`. Two parameters with the same name are `TP0214`.
 - **Assignment** to anything other than a `var` (a `let`, a parameter, a loop variable, a constant or a function) is `TP0202`. Compound assignment `x op= e` is checked as `x = x op e`, so `var n = 1` then `n /= 2` is `TP0200`.
 - **Use before declaration:** a local or top-level binding referenced before its `let`/`var` is `TP0201`.
@@ -1025,8 +1046,8 @@ class Shape(ABC):
 | `__eq__` | `(self, other: C) -> bool`, where `C` is the class or one of its bases | `==`, `!=`, `in`, `contains`, list and dict equality, dict keys |
 | `__hash__` | `(self) -> int` | dict keys, `hash()` |
 | `__lt__`, `__le__`, `__gt__`, `__ge__` | `(self, other: T) -> bool`, for any `T` | `<`, `<=`, `>`, `>=`; `sorted` and `sort` use `__lt__` only (§3.11) |
-| `__add__`, `__sub__`, `__mul__`, `__truediv__`, `__floordiv__`, `__mod__` | `(self, other: T) -> R`, for any `T` and `R` | `+ - * / // %` with the class value on the left |
-| `__radd__`, `__rsub__`, `__rmul__`, `__rtruediv__`, `__rfloordiv__`, `__rmod__` | `(self, other: T) -> R` | the same operators with the class value on the right |
+| `__add__`, `__sub__`, `__mul__`, `__truediv__`, `__floordiv__`, `__mod__`, and `__pow__` (M35) | `(self, other: T) -> R`, for any `T` and `R` | `+ - * / // % **` with the class value on the left |
+| `__radd__`, `__rsub__`, `__rmul__`, `__rtruediv__`, `__rfloordiv__`, `__rmod__`, `__rpow__` (M35) | `(self, other: T) -> R` | the same operators with the class value on the right |
 | `__neg__` | `(self) -> R` | unary `-` |
 | `__iter__` | `(self) -> Iterator[T]` | `for`, `iter()` and every built-in that takes an `Iterable[T]` (M31, §3.13) |
 | `__next__` | `(self) -> T` | `next()`, and taking a value from the class as an `Iterator[T]` (M31, §3.13) |
@@ -1214,16 +1235,22 @@ def area(s: Shape) -> float:
 | `%` | int, int | int | result takes the divisor's sign (Python semantics) |
 | `+` | str, str | str | concatenation |
 | `+` | list[T], list[T] | list[T] | new list |
+| `**` | int, int | int | M35: checked; a negative exponent raises `ValueError`, `negative exponent; use a float base, as in 2.0 ** -1`, and is `TP0200` when it's a literal; `0 ** 0` is `1` |
+| `**` | numeric, with a float | float | M35: as Python's: `0.0 ** -1` raises `ZeroDivisionError`, and a negative base with a fractional exponent raises `ValueError` (Python would give a complex number) |
+| `**` | a class with `__pow__` (or `__rpow__`) | the method's | M35, §4.8 |
+| `\| & - ^`, `<= < >= >` | set[T], set[T] | set[T], bool | M35, §3.15 |
 | `== !=` | same type, int/float, or related classes | bool | structural for dataclasses, enums, lists, dicts, tuples; identity for plain classes (§4.3) and functions (§3.7); a class's `__eq__` since M28 (§4.8) |
 | `is None`, `is not None` | T? | bool | M15; narrows (§3.9) |
 | `< <= > >=` | numeric, or str (ordinal), or tuples of those (M12) | bool | tuples compare lexicographically |
 | `< >` | a class with `__lt__`, or a type parameter bounded by a protocol with `__lt__` (M17) | bool | `a < b` is `a.__lt__(b)`, `a > b` is `b.__lt__(a)` (§3.11) |
 | `< <= > >=`, `+ - * / // %`, unary `-` | a class with the matching special method (M28) | the method's | §4.8 |
-| `in`, `not in` | T in list[T]; K in dict[K,V]; str in str | bool | |
+| `in`, `not in` | T in list[T]; K in dict[K,V]; str in str; T in set[T] (M35) | bool | |
 | `??` | T?, T | T | |
 | `and or not` | bool | bool | short-circuit |
 
 Comparing values of unrelated types is `TP0200`.
+
+`-2 ** 2` is `-4` and `2 ** 3 ** 2` is `512`, as in Python: `**` binds tighter than a unary minus on its left, and groups to the right. `//=`, `%=` and `**=` (M35) assign as `+=` does.
 
 In `a == b` and `a != b`, `a`'s type is `b`'s expected type (§4.6), so `m == Nothing` with `m: Maybe[int]`, and `xs == []`, are valid.
 
@@ -1264,8 +1291,8 @@ In `a == b` and `a != b`, `a`'s type is `b`'s expected type (§4.6), so `m == No
 
 **Functions**
 - `print(*args)` writes each argument's display form, space-separated, then a newline.
-- `len(x) -> int` takes a list, dict, or str (an iterator is `TP0200`, with help `convert it with 'list(…)' first`). For a `str` it counts Unicode code points, so `len("🐍")` is `1`.
-- `range(stop)` and `range(start, stop)` iterate only (they're not a list).
+- `len(x) -> int` takes a list, dict, str or, since M35, set (an iterator is `TP0200`, with help `convert it with 'list(…)' first`). For a `str` it counts Unicode code points, so `len("🐍")` is `1`.
+- `range(stop)`, `range(start, stop)` and, since M35, `range(start, stop, step)` iterate only (they're not a list). A negative `step` counts down, and a `step` of 0 raises `ValueError`, `range() arg 3 must not be zero`.
 - `str(x) -> str` gives the display form.
 - `repr(x) -> str` (M28) gives the form a value has inside a list, as `!r` writes it: `repr("a")` is `"a"` with its quotes. A class's `__repr__` defines it (§4.8).
 - `hash(x) -> int` (M28) takes any value that can be a dict key (§3.1), and is `TP0200` otherwise, `cannot hash <T>`. Equal values hash equally. For an `int` or `bool` it's Python's (`hash(-1)` is `-2`), for a class with `__hash__` it's that method's result reduced as Python reduces it (§4.8), and otherwise its value is unspecified and may differ between runs, as `str` hashes do in Python.
@@ -1288,15 +1315,27 @@ In `a == b` and `a != b`, `a`'s type is `b`'s expected type (§4.6), so `m == No
   - `C` must derive from `x`'s class, or be it or one of its bases. An unrelated class is `TP0200`, since the test could never be `True`.
   - It narrows `x` (§3.9).
 - `super()` (M15) is valid only as `super().m(…)` in a method (§4.3).
+- **Since M35**, as in Python:
+  - `abs(x)` gives an `int` for an `int` (`OverflowError` for the smallest one) and a `float` for a `float`.
+  - `min(a, b, …)` and `max(a, b, …)` take two or more arguments, and `min(xs)` and `max(xs)` any iterable. The values, or their keys with `key=`, must be ordered as `sorted`'s are (`TP0200` otherwise, as for `sorted`). With `int` and `float` arguments mixed, the result is a `float`, so `max(0, 2.5)` is `2.5` and `max(3, 2.5)` is `3.0`, where Python keeps the `3`. An empty iterable raises `ValueError`, `min() iterable argument is empty`, unless `default=` gives a value, which must have the element type (`None` gives `T?`). Of equal values, the first is the result. `key` and `default` are keyword-only.
+  - `sum(xs)` and `sum(xs, start)` add an iterable of `int` or `float` values to `start` (default `0`): an `int` for `int` values and an `int` start, a `float` otherwise. Other element types are `TP0200`, `sum() takes numbers, found <T>`, with help `use ''.join(…)` for `str`.
+  - `any(xs)` and `all(xs)` take an iterable of `bool`, stopping at the first `True` or `False`. Since Taipan has no truthiness, other element types are `TP0200`, with help `test each value, as in any(x > 0 for x in xs)`.
+  - `round(x)` gives the nearest `int`, with ties to the even one (`round(2.5)` is `2`), and `round(x, n)` a `float` rounded to `n` digits after the point, as Python rounds the exact value (`round(2.675, 2)` is `2.67`). On an `int`, `round(x)` is `x` and `round(x, n)` rounds to `-n` tens (`round(1234, -2)` is `1200`). A NaN or infinity raises `ValueError` or `OverflowError`.
+  - `divmod(a, b)` is `(a // b, a % b)`, a `tuple[int, int]` or `tuple[float, float]`.
+  - `set()` and `set(xs)` (§3.15).
 - `zip(xs: Iterable[A], ys: Iterable[B], …) -> Iterator[tuple[A, B, …]]` (M12) groups the values of two or more iterables, stopping at the shortest, as in Python: `zip(names, ages, cities)` is an `Iterator[tuple[str, int, str]]`. For each tuple it takes a value from each iterable in turn, left to right, and stops at the first that has none, so `zip(naturals(0), ["a", "b"])` ends. Before M26 it took exactly two lists, and before M31 it gave a new list. One iterable, which would need a one-element tuple, is `TP0209`.
 - `sorted(xs: Iterable[T], …)` takes any iterable since M31, and still gives a new list.
 - `sorted`, `sort`, `map`, `filter`, `enumerate` and `zip` iterate their lists (§5.2), so a function argument that changes a list panics with `list mutated during iteration`. Since M31 the lazy ones do so when they're iterated.
 
 **Methods**
-- `list[T]`: `append(x: T)`, `pop() -> T` (removes and returns the last element; panics if empty), `insert(i: int, x: T)` (Python semantics: a negative `i` counts from the end, and out-of-range indices clamp), `contains(x: T) -> bool`, `sort(key=…, reverse=False)` (M11: sorts in place, with the same rules as `sorted`)
-- `dict[K, V]`: `get(k: K) -> V?` (M6), `keys() -> list[K]`, `values() -> list[V]`, `items() -> list[tuple[K, V]]` (M12) (new lists, in insertion order), `remove(k: K) -> bool` (`True` if the key was present)
+- `list[T]`: `append(x: T)`, `pop() -> T` (removes and returns the last element; `IndexError` if empty), `insert(i: int, x: T)` (Python semantics: a negative `i` counts from the end, and out-of-range indices clamp), `contains(x: T) -> bool`, `sort(key=…, reverse=False)` (M11: sorts in place, with the same rules as `sorted`)
+- `dict[K, V]`: `get(k: K) -> V?` (M6), and since M35 `get(k: K, default: V) -> V`, `keys() -> list[K]`, `values() -> list[V]`, `items() -> list[tuple[K, V]]` (M12) (new lists, in insertion order), `remove(k: K) -> bool` (`True` if the key was present)
 - `str`: `upper() -> str`, `lower() -> str` (invariant-culture case mapping), `strip() -> str` (removes leading and trailing whitespace), `split(sep: str) -> list[str]` (an empty `sep` panics), `startswith(p: str) -> bool`, `endswith(p: str) -> bool`, `replace(old: str, new: str) -> str` (every occurrence; an empty `old` panics)
-- Equality inside `contains`, `in`, `==` and `!=` is structural, as for `==`. Dict equality ignores order.
+- **Since M35**, with Python's names and behavior:
+  - `list[T]`: `extend(xs: Iterable[T])`, `remove(x: T)` (the first equal value; `ValueError`, `list.remove(x): x not in list`, if none), `index(x: T) -> int` (`ValueError` if absent), `count(x: T) -> int`, `reverse()`, `clear()`, `copy() -> list[T]`, `pop(i: int) -> T` (a negative `i` counts from the end; `IndexError` out of range).
+  - `dict[K, V]`: `pop(k: K) -> V` (`KeyError` if absent), `pop(k: K, default: V) -> V`, `setdefault(k: K, default: V) -> V`, `update(other: dict[K, V])`, `clear()`, `copy() -> dict[K, V]`.
+  - `str`: `join(xs: Iterable[str])`, `find(sub) -> int` and `rfind(sub) -> int` (`-1` if absent), `index(sub) -> int` (`ValueError` if absent), `count(sub) -> int`, `split()` and `split(None, maxsplit)` on runs of whitespace, `split(sep, maxsplit)`, `rsplit(sep, maxsplit)`, `splitlines()`, `strip(chars)`, `lstrip()`, `lstrip(chars)`, `rstrip()`, `rstrip(chars)`, `partition(sep)` and `rpartition(sep) -> tuple[str, str, str]`, `removeprefix(p)`, `removesuffix(p)`, `title()`, `capitalize()`, `swapcase()`, `zfill(width)`, `ljust(width, fill=" ")`, `rjust(width, fill=" ")`, `center(width, fill=" ")`, and the tests `isdigit()`, `isalpha()`, `isalnum()`, `isspace()`, `isupper()`, `islower()`. Indices and widths count code points, as `len` does, and the tests and case mappings use Unicode's categories, invariant of culture, as Python's do. `maxsplit` may be given by keyword.
+- Equality inside `contains`, `in`, `==` and `!=` is structural, as for `==`. Dict and set equality ignore order.
 
 **Display form** (used by `print`, `str()`, and f-strings)
 
@@ -1310,6 +1349,7 @@ In `a == b` and `a != b`, `a`'s type is `b`'s expected type (§4.6), so `m == No
 | list | `[1, 2, 3]` |
 | tuple | `(1, "a")` (M12) |
 | dict | `{"a": 1}` |
+| set | `{1, 2}`, or `set()` when empty (M35) |
 | dataclass | `Service(name="api", replicas=3, healthy=3)`, by runtime class, with inherited fields first |
 | plain class | `<Dog object>`, by runtime class (M15) |
 | class with `__str__` or `__repr__` | as §4.8 says (M28): `__str__` at top level, `__repr__` inside a container |
@@ -1519,6 +1559,7 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0200 | `isinstance needs a class, found <T>` / `'<C>' is not a class` / `'<C>' is generic` / `<T> can never be a <C>` (`isinstance`, `as` and class patterns on unrelated classes) / `'<C>' is a class; write '<C>()'` (a class pattern without parentheses) (M15) |
 | TP0200 | `no overload of '<T>.<m>' takes (<A1>, <A2>)` / `'<T>' is a static class` (constructing it, or using it as a type) / `'<T>' cannot be constructed` (an interface, abstract class or enum) / `<v> is out of range for <N>` (a literal argument, `<N>` the .NET type's name, such as `Int32`) / `'<T>.<m>' returned null` (`TypeError`, at run time) / `'<C>' is not an exception class` (a .NET class not deriving from `System.Exception`) / `cannot bind both Taipan and .NET exceptions`, with help `write separate clauses` (M21) |
 | TP0200 | `every arm of this 'match' raises`, with help `use a 'match' statement` (M19) / `this arm gives no value`, with help `end it with an expression` / `<T> cannot match a tuple pattern` / `<T> cannot match a list pattern` / `'*<x>' would hold <A> and <B>` (a starred name in a tuple) (M29) |
+| TP0200 | `set elements must be hashable, found <T>` / `sum() takes numbers, found <T>`, with help `use ''.join(…)` for `str` / `'any' takes bools, found <T>` (and `'all'`), with help `test each value, as in any(x > 0 for x in xs)` / `'min' needs values that can be ordered, found <T>` (and `'max'`), with help `pass a key, e.g. 'key=lambda x: ...'` / `an int can't be raised to a negative power`, with help `use a float base, as in 2.0 ** -1` (M35) |
 | TP0200 | `format spec '<spec>' isn't valid for <T>`, with help naming the part that isn't / `format specs apply to int, float and str, found <T>` (M26) |
 | TP0200 | `'<A>' is a type alias, not a value`, with help `use '<N>'` when it names a class or enum (M18) |
 | TP0200 | `cannot raise <T>` (with help `write '<C>(…)'` for a class name) / `'<C>' is not an exception class` / `'PythonError' cannot be constructed` (and `'DotNetError'`, M21) (M16) |
@@ -1632,11 +1673,11 @@ Types are written as in source: `int`, `str?`, `list[int]`. The type of `None` i
 ## 11. Deferred (post-v0.1)
 ROADMAP.md plans most of these from M35 on. They were never part of v0.1:
 
-- everyday built-ins: `abs`, `min`, `max`, `sum`, `any`, `all`, `round`, `divmod` and `**`, most methods of `str`, `list` and `dict` beyond §6, and sets (`set[T]`)
+- built-ins beyond M35: `frozenset`, `|=` and the other in-place set operators, `str.format` and `%` formatting, `sorted`'s and `min`'s keys on mixed types, and passing sets to Python and .NET
 - program arguments, `sys.exit`, `input()`, environment variables, files (`open`), and `with` statements and context managers
 - protocols as types of values, protocol fields, generic protocols, protocols extending other protocols, and a check that a class used with a protocol declares it
 - class bounds (`[T: Animal]`), bounds on classes' and enums' type parameters, and built-in types' ordinary methods satisfying protocols
-- special methods beyond §4.8 (`__bool__`, `__len__`, `__getitem__`, `__contains__`, `__call__`, `__ne__`, `__pow__`, in-place `__iadd__` and the like, `__format__`), special methods in protocols other than `__lt__`, and `functools.total_ordering`
+- special methods beyond §4.8 (`__bool__`, `__len__`, `__getitem__`, `__contains__`, `__call__`, `__ne__`, in-place `__iadd__` and the like, `__format__`), special methods in protocols other than `__lt__`, and `functools.total_ordering`
 - mixing dataclasses and plain classes in one hierarchy, and inheritance involving generic classes
 - `@dataclass` options (`frozen`, `order`), `__post_init__`, and an `__init__` written in a dataclass
 - `@final`, `Self` outside protocols (so a class method's result is its declared class, not `cls`'s), static and class methods and class attributes on generic classes, abstract static and class methods, property deleters, and static and class methods as values
@@ -2161,11 +2202,11 @@ This adds a local store per statement and a filter per method; it's emitted only
   | the name after `class` or `enum` | `entity.name.type` |
   | `@name` | `entity.name.function.decorator` |
   | `self`, `cls` | `variable.language.special` |
-  | §6's built-in functions; `int`, `float`, `str` and `list` only before `(`, since they're types otherwise | `support.function.builtin` |
-  | built-in types (`int float str bool list dict tuple Iterator Iterable Callable`) | `support.type.builtin` |
-  | `+ - * / // % ??` | `keyword.operator.arithmetic` |
+  | §6's built-in functions; `int`, `float`, `str`, `list` and `set` only before `(`, since they're types otherwise | `support.function.builtin` |
+  | built-in types (`int float str bool list dict set tuple Iterator Iterable Callable Awaitable`) | `support.type.builtin` |
+  | `+ - * / // % ** ??`, and `\| & ^` (M35) | `keyword.operator.arithmetic` |
   | `== != < <= > >=` | `keyword.operator.comparison` |
-  | `= += -= *= /=` | `keyword.operator.assignment` |
+  | `= += -= *= /= //= %= **=` | `keyword.operator.assignment` |
   | `->` | `punctuation.separator.annotation.result` |
 
 - **The golden token list.** `editors/vscode/test/sample.tpn` exercises every row above, and `sample.tokens` lists the tokens the grammar gives it, one per line: `<line>:<column> <text> <scopes>`, with columns from 1, the text as a JSON string, and the token's scopes after `source.taipan`, space-separated (`-` when there are none). Tokens of only whitespace are left out.
