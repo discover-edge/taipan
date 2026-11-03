@@ -19,9 +19,9 @@ public sealed class DotNetLibrary
 
     private readonly CSharpCompilation _compilation;
 
-    private DotNetLibrary(ImmutableArray<string> references, string frameworkDirectory)
+    private DotNetLibrary(ImmutableArray<string> references, string? frameworkDirectory)
     {
-        References = [.. FrameworkAssemblies(frameworkDirectory), .. references];
+        References = [.. frameworkDirectory is null ? [] : FrameworkAssemblies(frameworkDirectory), .. references];
         _compilation = CSharpCompilation.Create(
             "taipan-metadata", references: References.Select(path => MetadataReference.CreateFromFile(path)));
     }
@@ -40,6 +40,13 @@ public sealed class DotNetLibrary
             : WithReferences.GetOrAdd(
                 string.Join("\n", [frameworkDirectory ?? RuntimeDirectory, .. references]),
                 _ => new(() => new DotNetLibrary(references, frameworkDirectory ?? RuntimeDirectory))).Value;
+
+    /// <summary>Exactly these assemblies, framework included, as MSBuild resolves them for an SDK project (SPEC §18.2).</summary>
+    public static DotNetLibrary Exactly(ImmutableArray<string> references) =>
+        WithReferences.GetOrAdd("exactly\n" + string.Join("\n", references), _ => new(() => new DotNetLibrary(references, null) { IsExact = true })).Value;
+
+    /// <summary>Whether the program compiles against these assemblies only, even if it uses no .NET type.</summary>
+    public bool IsExact { get; private init; }
 
     private static string RuntimeDirectory => Path.GetDirectoryName(typeof(object).Assembly.Location)!;
 

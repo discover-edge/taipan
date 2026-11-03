@@ -3,6 +3,7 @@
     <Project Path="src/Taipan.Cli/Taipan.Cli.csproj" />
     <Project Path="src/Taipan.Compiler/Taipan.Compiler.csproj" />
     <Project Path="src/Taipan.Runtime/Taipan.Runtime.csproj" />
+    <Project Path="src/TaipanLang.Sdk/TaipanLang.Sdk.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Fixtures/Acme.Geometry/Acme.Geometry.csproj" />

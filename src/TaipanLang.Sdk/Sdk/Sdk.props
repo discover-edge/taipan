@@ -1,0 +1,22 @@
+<Project>
+  <!-- TaipanLang.Sdk (SPEC §18.1): a Microsoft.NET.Sdk project whose sources are .tpn files. -->
+  <Import Project="$(MSBuildThisFileDirectory)Version.props" />
+  <Import Project="Sdk.props" Sdk="Microsoft.NET.Sdk" />
+
+  <PropertyGroup>
+    <TaipanSdkTools>$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)', '..', 'tools'))</TaipanSdkTools>
+    <Language>Taipan</Language>
+    <DefaultLanguageSourceExtension>.tpn</DefaultLanguageSourceExtension>
+    <LanguageTargets>$(MSBuildThisFileDirectory)Taipan.targets</LanguageTargets>
+    <TargetFramework Condition="'$(TargetFramework)' == ''">net10.0</TargetFramework>
+    <!-- The compiler writes the whole assembly; there's no C# to generate. -->
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <ProduceReferenceAssembly>false</ProduceReferenceAssembly>
+    <!-- The compiler embeds its debug information in the assembly. -->
+    <DebugType>embedded</DebugType>
+    <!-- So `dotnet sln add` accepts a .tpnproj. -->
+    <DefaultProjectTypeGuid>{9A19103F-16F7-4668-BE54-9A1E7A4F7556}</DefaultProjectTypeGuid>
+  </PropertyGroup>
+</Project>

@@ -1,0 +1,13 @@
+<Project>
+  <PropertyGroup>
+    <!-- The main file: <project name>.tpn beside the project, unless it's set (SPEC §18.1). -->
+    <TaipanMain Condition="'$(TaipanMain)' == ''">$(MSBuildProjectDirectory)/$(MSBuildProjectName).tpn</TaipanMain>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Programs and libraries reference the runtime they're compiled for. -->
+    <PackageReference Include="TaipanLang.Runtime" Version="$(TaipanSdkVersion)" />
+  </ItemGroup>
+
+  <Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk" />
+</Project>

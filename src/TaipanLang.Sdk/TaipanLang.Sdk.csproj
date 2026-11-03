@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The MSBuild project SDK for .tpnproj projects (SPEC §18), carrying its own copy of the compiler. -->
+  <PropertyGroup>
+    <IsPackable>true</IsPackable>
+    <PackageId>TaipanLang.Sdk</PackageId>
+    <PackageType>MSBuildSdk</PackageType>
+    <Description>The MSBuild project SDK that builds Taipan (.tpnproj) projects with dotnet build.</Description>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <!-- An SDK package has no lib folder. -->
+    <NoWarn>$(NoWarn);NU5128</NoWarn>
+    <TaipanCompilerDirectory>$(MSBuildThisFileDirectory)../Taipan.Cli/bin/$(Configuration)/$(TargetFramework)/</TaipanCompilerDirectory>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Taipan.Cli/Taipan.Cli.csproj" ReferenceOutputAssembly="false" Private="false" />
+    <None Include="Sdk/*.props;Sdk/*.targets" Pack="true" PackagePath="Sdk/" />
+  </ItemGroup>
+
+  <!-- The compiler's build output goes in tools/, and the version the SDK references the runtime at in Sdk/. -->
+  <Target Name="PackTaipanCompiler" BeforeTargets="_GetPackageFiles">
+    <PropertyGroup>
+      <TaipanVersionProps>$(IntermediateOutputPath)Version.props</TaipanVersionProps>
+    </PropertyGroup>
+    <WriteLinesToFile File="$(TaipanVersionProps)" Overwrite="true"
+                      Lines="&lt;Project&gt;&lt;PropertyGroup&gt;&lt;TaipanSdkVersion&gt;$(Version)&lt;/TaipanSdkVersion&gt;&lt;/PropertyGroup&gt;&lt;/Project&gt;" />
+    <ItemGroup>
+      <None Include="$(TaipanVersionProps)" Pack="true" PackagePath="Sdk/" />
+      <None Include="$(TaipanCompilerDirectory)**/*" Exclude="$(TaipanCompilerDirectory)**/*.pdb" Pack="true" PackagePath="tools/%(RecursiveDir)" />
+    </ItemGroup>
+  </Target>
+</Project>

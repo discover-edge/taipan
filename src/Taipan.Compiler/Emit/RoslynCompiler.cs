@@ -22,7 +22,7 @@ public static class RoslynCompiler
     /// Without <paramref name="debugInformation"/>, stack traces have no lines, as in a native build,
     /// so panics report only what the program recorded (SPEC §15.3); tests use that to check it.
     /// </remarks>
-    public static byte[] Compile(EmittedProgram program, string assemblyName, bool debugInformation = true)
+    public static byte[] Compile(EmittedProgram program, string assemblyName, bool debugInformation = true, string? version = null)
     {
         var csharp = program.Code;
         var tree = CSharpSyntaxTree.ParseText(
@@ -30,6 +30,7 @@ public static class RoslynCompiler
             new CSharpParseOptions(LanguageVersion.Latest),
             path: assemblyName + ".g.cs",
             encoding: Encoding.UTF8);
+        SyntaxTree[] trees = version is null ? [tree] : [tree, VersionTree(version)];
 
         // A library has no entry point (SPEC §14.4).
         var options = new CSharpCompilationOptions(
@@ -39,7 +40,7 @@ public static class RoslynCompiler
             checkOverflow: true,
             nullableContextOptions: NullableContextOptions.Enable);
 
-        var compilation = CSharpCompilation.Create(assemblyName, [tree], ReferencesFor(program), options);
+        var compilation = CSharpCompilation.Create(assemblyName, trees, ReferencesFor(program), options);
         using var image = new MemoryStream();
         var result = debugInformation
             ? compilation.Emit(image, options: new EmitOptions(debugInformationFormat: DebugInformationFormat.Embedded))
@@ -113,19 +114,41 @@ public static class RoslynCompiler
         return path;
     }
 
+    /// <summary>
+    /// A library's version (SPEC §18.3): its numeric part as the assembly's version, and the whole as
+    /// its informational version, since a prerelease isn't an assembly version.
+    /// </summary>
+    private static SyntaxTree VersionTree(string version)
+    {
+        var numeric = version.Split('-', '+')[0];
+        var parts = numeric.Split('.');
+        var assemblyVersion = string.Join(".", parts.Concat(Enumerable.Repeat("0", 4 - parts.Length)));
+        return CSharpSyntaxTree.ParseText(
+            $"[assembly: global::System.Reflection.AssemblyVersion(\"{assemblyVersion}\")]\n"
+            + $"[assembly: global::System.Reflection.AssemblyFileVersion(\"{assemblyVersion}\")]\n"
+            + $"[assembly: global::System.Reflection.AssemblyInformationalVersion(\"{version}\")]\n",
+            new CSharpParseOptions(LanguageVersion.Latest), path: "version.g.cs", encoding: Encoding.UTF8);
+    }
+
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, MetadataReference> ByPath = new();
 
     /// <summary>
     /// A program using .NET compiles against every assembly it may use (SPEC §13.2), which include
     /// the defaults' framework assemblies; any other against the defaults.
     /// </summary>
-    private static ImmutableArray<MetadataReference> ReferencesFor(EmittedProgram program) => program.References.IsEmpty
-        ? References.Value
-        : [
+    private static ImmutableArray<MetadataReference> ReferencesFor(EmittedProgram program)
+    {
+        if (program.References.IsEmpty)
+            return References.Value;
+        // An SDK project's references bring the runtime from its package already (SPEC §18.1).
+        var given = program.References.Select(Path.GetFileName).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return
+        [
             .. program.References.Select(path => ByPath.GetOrAdd(path, p => MetadataReference.CreateFromFile(p))),
-            MetadataReference.CreateFromFile(typeof(Panic).Assembly.Location),
-            MetadataReference.CreateFromFile(Interop.PythonRuntimeAssembly),
+            .. ((string[])[typeof(Panic).Assembly.Location, Interop.PythonRuntimeAssembly])
+                .Where(path => !given.Contains(Path.GetFileName(path))).Select(path => MetadataReference.CreateFromFile(path)),
         ];
+    }
 
     // Compiles against the running framework's assemblies plus Taipan.Runtime.
     private static ImmutableArray<MetadataReference> LoadReferences()
