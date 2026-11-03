@@ -1,0 +1,2 @@
+# An element type that can't be inferred (SPEC §3.16).
+let empty = [x for x in []]

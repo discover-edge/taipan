@@ -132,6 +132,9 @@ public sealed class LocalNames
         // A lambda's body is an expression, seen here as a statement so its own lambdas are found.
         foreach (var lambda in BoundTree.Lambdas(stmt))
             yield return ([new BoundExprStmt(lambda.Body, lambda.Span)], lambda.Parameters);
+        // A comprehension's variables are its lambdas' parameters (SPEC §3.16).
+        foreach (var comprehension in BoundTree.Comprehensions(stmt))
+            yield return ([.. BoundTree.Parts(comprehension)], [.. comprehension.Clauses.OfType<BoundComprehensionFor>().Select(c => c.Variable)]);
         switch (stmt)
         {
             case BoundBlock block:

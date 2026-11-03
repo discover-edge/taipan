@@ -182,7 +182,8 @@ power         = cast [ "**" unary ] ;                               (* M35: righ
 cast          = postfix [ "as" type ] ;                            (* M10 *)
 postfix       = atom { call | "." NAME | "[" subscript "]" } ;
 subscript     = expr { "," expr } [ "," ] | [ expr ] ":" [ expr ] [ ":" [ expr ] ] ;   (* a slice: M12, §5.4; "x[a, b]" indexes with the tuple (a, b): M33 *)
-call          = "(" [ arg { "," arg } [ "," ] ] ")" ;
+call          = "(" [ arg { "," arg } [ "," ] ] ")"
+              | "(" expr comp_for ")" ;                              (* a generator expression as the only argument: M36 *)
 arg           = expr | NAME "=" expr | "*" expr | "**" expr ;        (* "*" and "**": M30, §4.2 *)
 atom          = INT | FLOAT | STRING | FSTRING | "True" | "False" | "None"
               | NAME | "self" | "(" expr ")" | "..."                 (* "...": M17, a protocol method's body *)
@@ -190,7 +191,10 @@ atom          = INT | FLOAT | STRING | FSTRING | "True" | "False" | "None"
               | "[" [ expr { "," expr } [ "," ] ] "]"
               | "{" [ expr ":" expr { "," expr ":" expr } [ "," ] ] "}"
               | "{" expr { "," expr } [ "," ] "}"                 (* a set: M35, §3.15; "{}" is a dict *)
+              | "[" expr comp_for "]" | "{" expr ":" expr comp_for "}" | "{" expr comp_for "}"   (* comprehensions: M36, §3.16 *)
+              | "(" expr comp_for ")"                              (* a generator expression: M36 *)
               | match_expr ;                                         (* anywhere: M29, §5.1.1 *)
+comp_for      = "for" ( NAME | names ) "in" coalesce { "for" ( NAME | names ) "in" coalesce | "if" coalesce } ;   (* M36, §3.16 *)
 ```
 
 **Grammar notes**
@@ -757,6 +761,22 @@ print(seen | tags, "a" in seen, len(seen & {"b", "c"}))   # {"a", "b", "x"} True
 - **Methods:** `add(x)`, `remove(x)` (`KeyError` if absent), `discard(x)`, `pop() -> T` (the first value; `KeyError` if empty), `clear()`, `copy() -> set[T]`, `update(xs)`, `union(xs)`, `intersection(xs)`, `difference(xs)`, `symmetric_difference(xs)` (each taking any `Iterable[T]`, giving a new set), `issubset(xs)`, `issuperset(xs)`, `isdisjoint(xs) -> bool`.
 - `len`, `for`, `sorted`, `list`, `min`, `max`, `sum`, `any` and `all` take sets as iterables (§3.13). Changing a set while iterating over it raises `RuntimeError`, `set mutated during iteration`, as for a list or dict.
 - Sets aren't passed to Python (§10.3) or .NET (§13.3) yet.
+
+### 3.16 Comprehensions (M36)
+```python
+let squares = [x * x for x in range(5) if x % 2 == 0]        # [0, 4, 16]
+let pairs = [(c, n) for c in "ab" for n in [1, 2]]           # [("a", 1), ("a", 2), ("b", 1), ("b", 2)]
+let lengths = {word: len(word) for word in ["hi", "taipan"]}
+let total = sum(x * x for x in squares)
+```
+
+- **Syntax** (§2): `[e for … ]` is a list comprehension, `{k: v for …}` a dict comprehension, `{e for …}` a set comprehension, and `(e for …)` a generator expression. After `e` come one or more clauses, the first a `for`: `for <targets> in <iterable>`, with targets as a `for` loop's (§5.2, so `for k, v in d.items()` unpacks), and `if <condition>`. Clauses nest left to right, as in Python. A generator expression that's a call's only argument drops its own parentheses: `sum(x * x for x in xs)`.
+- **Types:** a list comprehension is a `list[T]`, `T` the type of `e`; a dict comprehension a `dict[K, V]`; a set comprehension a `set[T]` (whose `T` must be hashable, §3.15); a generator expression an `Iterator[T]` (§3.13). With an expected type (§4.6), `e` (or `k` and `v`) is checked against its element type, so `let xs: list[float] = [n for n in ints]` widens each `int`. Each `for` takes any iterable (§3.13), and each `if` a `bool` (`TP0205`).
+- **Scope:** a comprehension has its own scope, as in Python 3. Its targets are `let` bindings visible in the clauses after their `for` and in `e`, and nowhere after the comprehension (`TP0201`). They may reuse an outer name, which is untouched after the comprehension, so `[x for x in xs]` is valid where `x` exists. A function value made inside captures each iteration's variable, as a `for` loop's does (§3.7).
+- **Narrowing:** an `if` narrows for the clauses after it and for `e`, as an `if` statement does (§3.9): `[n + 1 for n in maybe if n is not None]` is a `list[int]` for a `list[int?]`.
+- **Evaluation:** a list, dict or set comprehension runs at once, in order, as nested loops would. A generator expression is lazy (§3.13): its first `for`'s iterable is evaluated when it's created, and everything else as values are asked for, as in Python. It displays as `<generator object <genexpr>>`.
+- **Not allowed inside:** `await` (`TP0215`, `'await' can't be inside a comprehension`). `yield` and assignment are statements, so they can't be inside one. Async comprehensions are deferred.
+- Changing a list, dict or set while a comprehension iterates over it raises `RuntimeError`, as for a loop.
 
 ## 4. Declarations
 
@@ -1420,6 +1440,7 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 | class attributes (M28) | `public static T @a { get; set; }` on the declaring class, initialized by its C# static initializer. |
 | abstract classes (M28) | `public abstract class`, with `public abstract` methods. An abstract class has no `@__new__`, since nothing constructs it. |
 | `Iterable[T]` / `Iterator[T]` (M31) | `IEnumerable<T>`, and the covariant interface `Taipan.Runtime.IIterator<T>`, an `IEnumerable<T>` over one stream: a second loop over it continues where the first stopped. A list, dict, str or class converts to `Iterable[T]` through a runtime wrapper that starts a fresh pass each time, and keeps the mutation check (§5.2). |
+| comprehensions (M36) | A chain of lazy LINQ operators through `Taipan.Runtime.Comprehensions`: each `for` a `SelectMany` (the last a `Select` of the element), each `if` a `Where`, each over lambdas whose parameters are the loop variables. A list, set or dict comprehension collects it at once; a generator expression wraps it in an `Iterator<T>` (§3.13). |
 | generators (M31) | A C# iterator method returning `IEnumerable<T>`, with `yield return` and `yield break`; the generator function calls it and wraps the result in an `Iterator<T>`, so its body starts at the first value asked for. `yield from e` is a `foreach` that yields each value. |
 | async functions (M33) | A C# `async` method returning `Task<T>` (`Task` for `Awaitable[None]`); `await` is C#'s. `Awaitable[T]` is `Task<T>`. A main file with a top-level `await` gets an `async Task Main`. |
 | `map`, `filter`, `zip`, `enumerate` (M31) | Runtime iterators over `IEnumerable<T>`, which call their function or take from their sources only when asked for a value. |
@@ -1584,7 +1605,7 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0211 | `'<f>' cannot use top-level variable '<x>'`, with help `pass it as a parameter, or make it a const` |
 | TP0213 | `optional types cannot be nested` |
 | TP0214 | `duplicate definition of '<x>'` |
-| TP0215 | `'await' outside an async function` / `'yield' in an async function` (M33) / `'yield' outside a function` / `'yield' can't be inside a 'try' with 'except', or in 'finally'` (M31) / `'<k>' can't leave a 'match' expression`, with help `use a 'match' statement` (M29) / `'break' outside a loop` / `'continue' outside a loop` / `'return' outside a function` / `'raise' without an exception outside an except block` / `'return' cannot be used in a finally block` (and `'break'`, `'continue'`) (M16) |
+| TP0215 | `'await' can't be inside a comprehension` (M36) / `'await' outside an async function` / `'yield' in an async function` (M33) / `'yield' outside a function` / `'yield' can't be inside a 'try' with 'except', or in 'finally'` (M31) / `'<k>' can't leave a 'match' expression`, with help `use a 'match' statement` (M29) / `'break' outside a loop` / `'continue' outside a loop` / `'return' outside a function` / `'raise' without an exception outside an except block` / `'return' cannot be used in a finally block` (and `'break'`, `'continue'`) (M16) |
 | TP0216 | `'<v>' is ambiguous: it is a variant of <E1> and <E2>`, with help `qualify it, e.g. '<E1>.<v>'` |
 | TP0217 | `const initializer must be a constant expression` / `class attribute value must be a constant expression` (M28) |
 | TP0218 | `'<p>' is positional-only, so it can't be passed by keyword` (M30) / `'<f>' takes no keyword arguments` (a built-in) / `a function value takes no keyword arguments` / `'<f>' has no parameter '<k>'` (M14; also for `sorted`, `sort` and `enumerate`) |
@@ -1683,7 +1704,7 @@ ROADMAP.md plans most of these from M35 on. They were never part of v0.1:
 - `@final`, `Self` outside protocols (so a class method's result is its declared class, not `cls`'s), static and class methods and class attributes on generic classes, abstract static and class methods, property deleters, and static and class methods as values
 - `isinstance` on `py` values, and `is` between two expressions (identity)
 - generic functions, built-ins, methods and constructors as values (wrap them in a lambda)
-- async generators, `async for`, `async with`, async lambdas and `asyncio`-style helpers (M33), generator `send`, `throw` and `close`, `yield` as an expression, generator return values, `Generator[Y, S, R]`, `yield` inside `try`/`except`, generator expressions and comprehensions, and `async` iterators
+- async generators, `async for`, `async with`, async lambdas and `asyncio`-style helpers (M33), generator `send`, `throw` and `close`, `yield` as an expression, generator return values, `Generator[Y, S, R]`, `yield` inside `try`/`except`, async comprehensions, and `async` iterators
 - or-patterns (`A | B`), guards (`case x if …`), `as` patterns, `None` and float literal patterns, mapping patterns, and `*` in tuple patterns (M29 has them in list patterns only)
 - type aliases inside functions and classes, recursive aliases, and showing an alias's name in diagnostics
 - typed `**kwargs` (`Unpack[TypedDict]`), `*args` and `**kwargs` in function types, and `**e` filling named parameters

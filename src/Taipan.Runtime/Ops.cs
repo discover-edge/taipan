@@ -36,6 +36,23 @@ public static class Ops
         return left / right;
     }
 
+    /// <summary><c>range(…)</c> as a comprehension's iterable (SPEC §3.16, M36).</summary>
+    public static IEnumerable<long> Range(long start, long stop, long step = 1)
+    {
+        RangeStep(step);
+        for (var i = start; step > 0 ? i < stop : i > stop; i += step)
+            yield return i;
+    }
+
+    /// <summary>A dict comprehension's pairs, each key's last value at its first position, as Python's (SPEC §3.16).</summary>
+    public static OrderedDictionary<TKey, TValue> ToDict<TKey, TValue>(IEnumerable<(TKey, TValue)> pairs) where TKey : notnull
+    {
+        var dict = new OrderedDictionary<TKey, TValue>();
+        foreach (var (key, value) in pairs)
+            dict[key] = value;
+        return dict;
+    }
+
     /// <summary><c>range</c>'s step, which can't be 0 (SPEC §6, M35).</summary>
     public static long RangeStep(long step) => step != 0 ? step : throw new ValueError("range() arg 3 must not be zero");
 

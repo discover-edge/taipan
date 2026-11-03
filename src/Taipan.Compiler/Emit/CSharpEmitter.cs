@@ -1368,6 +1368,8 @@ public sealed partial class CSharpEmitter
             BoundListLiteral list => ListLiteral(list),
             BoundSetLiteral set => SetLiteral(set),
             BoundMinMax minMax => MinMax(minMax),
+            BoundComprehension comprehension => Comprehension(comprehension),
+            BoundRangeValues range => RangeValues(range),
             BoundRuntimeMethodCall call => $"{Runtime}.{call.Kind}Methods.@{call.Name}({string.Join(", ", [Expr(call.Target), .. call.Arguments.Select(Expr)])})",
             BoundDictLiteral dict => DictLiteral(dict),
             BoundConstruct construct => Construct(construct),

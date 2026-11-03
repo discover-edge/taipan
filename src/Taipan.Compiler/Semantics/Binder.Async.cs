@@ -23,7 +23,9 @@ public sealed partial class Binder
     {
         var keyword = new Text.TextSpan(awaitExpr.Span.Start, "await".Length);
         var inAsync = _lambdaDepth == 0 && (_function is { IsAsync: true } || _function is null && _inTopLevel);
-        if (!inAsync)
+        if (_comprehensionDepth > 0)
+            _diagnostics.ReportAwaitInComprehension(keyword);
+        else if (!inAsync)
             _diagnostics.ReportAwaitOutsideAsync(keyword);
         else if (_function is null)
             _topLevelAwaits = true;

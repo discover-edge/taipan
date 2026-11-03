@@ -798,6 +798,9 @@ public sealed class DiagnosticBag
     public void ReportAwaitOutsideAsync(TextSpan span) =>
         Add("TP0215", span, "'await' outside an async function");
 
+    public void ReportAwaitInComprehension(TextSpan span) =>
+        Add("TP0215", span, "'await' can't be inside a comprehension");
+
     public void ReportYieldInAsync(TextSpan span) =>
         Add("TP0215", span, "'yield' in an async function");
 

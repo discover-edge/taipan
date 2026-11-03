@@ -1515,7 +1515,7 @@ public sealed partial class Binder
     {
         if (_scope.LookupLocal(name.Text) is not null)
             _diagnostics.ReportDuplicateDefinition(name.Span, name.Text);
-        else if (_scope.Parent?.Lookup(name.Text) is { } outer && !IsShadowableBuiltin(outer))
+        else if (!_mayShadow && _scope.Parent?.Lookup(name.Text) is { } outer && !IsShadowableBuiltin(outer))
             _diagnostics.ReportShadowing(name.Span, name.Text);
         _scope.Declare(symbol);
         if (symbol is VariableSymbol variable)
@@ -2455,23 +2455,7 @@ public sealed partial class Binder
         }
         else
         {
-            iterable = BindValue(forStmt.Iterable);
-            // A class iterates through its __iter__ or __next__ (SPEC §3.13).
-            if (iterable.Type is ClassType && TypeChecker.ElementOf(iterable.Type) is { } classElement)
-                iterable = Convert(iterable, new IterableOfType(classElement));
-            variableType = iterable.Type switch
-            {
-                ListOfType list => list.Element,
-                SetOfType set => set.Element,
-                DictOfType dict => dict.Key,
-                PrimitiveType { Name: "str" } => TaipanType.Str,
-                PrimitiveType { Name: "py" } => TaipanType.Py,
-                IteratorOfType iterator => iterator.Element,
-                IterableOfType iterated => iterated.Element,
-                { ContainsError: true } => TaipanType.Error,
-                OptionalOf when ReportIfOptional(iterable, forStmt.Iterable.Span) => TaipanType.Error,
-                _ => CannotIterate(forStmt.Iterable.Span, iterable.Type),
-            };
+            (iterable, variableType) = BindLoopIterable(forStmt.Iterable);
         }
 
         // The loop variable is a let scoped to the body (SPEC §5.2). With several names, the
@@ -2509,6 +2493,29 @@ public sealed partial class Binder
     {
         _diagnostics.ReportCannotIterate(span, type);
         return TaipanType.Error;
+    }
+
+    /// <summary>What a <c>for</c> loop, or a comprehension's <c>for</c>, goes over, and the type of each value (SPEC §5.2).</summary>
+    private (BoundExpr Iterable, TaipanType Element) BindLoopIterable(Expr syntax)
+    {
+        var iterable = BindValue(syntax);
+        // A class iterates through its __iter__ or __next__ (SPEC §3.13).
+        if (iterable.Type is ClassType && TypeChecker.ElementOf(iterable.Type) is { } classElement)
+            iterable = Convert(iterable, new IterableOfType(classElement));
+        var element = iterable.Type switch
+        {
+            ListOfType list => list.Element,
+            SetOfType set => set.Element,
+            DictOfType dict => dict.Key,
+            PrimitiveType { Name: "str" } => TaipanType.Str,
+            PrimitiveType { Name: "py" } => TaipanType.Py,
+            IteratorOfType iterator => iterator.Element,
+            IterableOfType iterated => iterated.Element,
+            { ContainsError: true } => TaipanType.Error,
+            OptionalOf when ReportIfOptional(iterable, syntax.Span) => TaipanType.Error,
+            _ => CannotIterate(syntax.Span, iterable.Type),
+        };
+        return (iterable, element);
     }
 
     private (BoundExpr? Start, BoundExpr Stop, BoundExpr? Step) BindRangeArguments(CallExpr call)
@@ -2841,6 +2848,7 @@ public sealed partial class Binder
         CallExpr call => BindCall(call, expected),
         ListExpr list => BindList(list, expected),
         SetExpr set => BindSet(set, expected),
+        ComprehensionExpr comprehension => BindComprehension(comprehension, expected),
         DictExpr dict => BindDict(dict, expected),
         MemberExpr member => BindMember(member, expected),
         IndexExpr index => BindIndexOf(BindValue(index.Target), index),
