@@ -29,7 +29,8 @@ public static class BoundTree
         BoundForRange forStmt => [.. ((BoundExpr?[])[forStmt.Start, forStmt.Stop, forStmt.Step]).OfType<BoundExpr>()],
         BoundForEach forEach => [forEach.Iterable],
         BoundWith with => [with.Manager],
-        BoundMatch match => [match.Scrutinee],
+        // Guards (M38) are evaluated in the statement, before their arm's block.
+        BoundMatch match => [match.Scrutinee, .. match.Arms.Select(a => a.Guard).OfType<BoundExpr>()],
         BoundUnpack unpack => [unpack.Value, .. unpack.Stores.SelectMany(Expressions)],
         // A nested def's defaults are emitted at its calls, in the same method (SPEC §8).
         BoundLocalFunction function => function.Function.Defaults.OfType<BoundExpr>(),
@@ -110,7 +111,7 @@ public static class BoundTree
         BoundTupleRest rest => [rest.Tuple],
         BoundSlice slice => ((BoundExpr?[])[slice.Target, slice.Start, slice.Stop, slice.Step]).OfType<BoundExpr>(),
         // A block arm's statements are a nested block, reached through ArmBlocks (M29).
-        BoundMatchExpr match => [match.Scrutinee, .. match.Arms.Select(a => a.Value ?? a.Raise?.Value).OfType<BoundExpr>()],
+        BoundMatchExpr match => [match.Scrutinee, .. match.Arms.Select(a => a.Guard).OfType<BoundExpr>(), .. match.Arms.Select(a => a.Value ?? a.Raise?.Value).OfType<BoundExpr>()],
         BoundDotNetCall call => [.. ((BoundExpr?[])[call.Target]).OfType<BoundExpr>(), .. call.Arguments.Select(a => a.Value)],
         BoundDotNetIndex index => [index.Target, .. index.Arguments.Select(a => a.Value)],
         BoundDotNetOperator op => [.. op.Arguments.Select(a => a.Value)],

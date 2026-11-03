@@ -1,0 +1,112 @@
+@dataclass
+class Point:
+    x: int
+    y: int
+
+class Shape:
+    pass
+
+class Circle(Shape):
+    r: float
+
+    def __init__(self, r: float):
+        self.r = r
+        super().__init__()
+
+class Square(Shape):
+    side: float
+
+    def __init__(self, side: float):
+        self.side = side
+        super().__init__()
+
+def describe(n: int) -> str:
+    match n:
+        0 | 1:
+            return "tiny"
+        k if k < 0:
+            return f"negative {k}"
+        2 | 3 | 5 | 7 as prime:
+            return f"prime {prime}"
+        _:
+            return "other"
+
+def where(p: Point) -> str:
+    match p:
+        Point(0, 0):
+            return "origin"
+        Point(x=0 | 1 as px, y=py) if py > 0:
+            return f"near the y axis {px} {py}"
+        Point(a, b) if a == b:
+            return f"diagonal {a}"
+        _:
+            return "elsewhere"
+
+def size(s: Shape) -> float:
+    match s:
+        Circle(r=measure) | Square(side=measure):
+            return measure
+        _:
+            return 0.0
+
+def kind(s: Shape) -> str:
+    match s:
+        (Circle() | Square()) as shape:
+            return f"round {isinstance(shape, Circle)}"
+        _:
+            return "shapeless"
+
+def temperature(t: float?) -> str:
+    match t:
+        None:
+            return "unknown"
+        0.0:
+            return "freezing"
+        -1.5 | 1.5:
+            return "close"
+        100:
+            return f"boiling {t + 0.5}"
+        v:
+            return f"{v + 1}"
+
+def config(d: dict[str, int]) -> str:
+    match d:
+        {"port": 80 | 443 as port}:
+            return f"web {port}"
+        {"port": p, **rest}:
+            return f"port {p} with {rest}"
+        {}:
+            return "no port"
+
+def ends(t: tuple[int, int, int, int]) -> str:
+    match t:
+        (0, *rest):
+            return f"zero then {rest}"
+        (first, *_, last) if first == last:
+            return f"same ends {first}"
+        (*init, 9):
+            return f"nine after {init}"
+        _:
+            return "plain"
+
+def pair(p: tuple[int?, str]) -> str:
+    match p:
+        (None, s):
+            return f"none {s}"
+        (0, "a" | "b" as s):
+            return f"zero {s}"
+        (n, s):
+            return f"{n} {s}"
+
+for n in [0, 1, -4, 5, 9]:
+    print(describe(n))
+for p in [Point(0, 0), Point(1, 4), Point(0, -2), Point(3, 3), Point(2, 5)]:
+    print(where(p))
+print(size(Circle(2.5)), size(Square(4.0)), size(Shape()))
+print(kind(Circle(1.0)), kind(Square(1.0)), kind(Shape()))
+for t in [None, 0.0, -0.0, 1.5, -1.5, 100.0, 21.5]:
+    print(temperature(t))
+print(config({"port": 443}), config({"port": 8080, "debug": 1, "workers": 4}), config({"debug": 0}))
+for t in [(0, 1, 2, 3), (4, 5, 6, 4), (1, 2, 3, 9), (1, 2, 3, 4)]:
+    print(ends(t))
+print(pair((None, "x")), pair((0, "b")), pair((0, "c")), pair((7, "a")))

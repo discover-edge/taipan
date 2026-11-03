@@ -1,0 +1,1 @@
+tests/cases/m38/tp0209_star.tpn:3:9: error TP0209: tuple[int, int] has 2 elements, found at least 3 patterns

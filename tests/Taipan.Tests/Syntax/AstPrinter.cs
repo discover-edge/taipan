@@ -51,6 +51,7 @@ public static class AstPrinter
             .Where(p => !(p.Name == "Member" && node is Decorator { Member: null }))
             .Where(p => !(p.Name == "Receiver" && node is MethodDef { Receiver: Receiver.Self }))
             .Where(p => !(p.Name == "Block" && node is ValueArm { Block: null }))
+            .Where(p => !(p.Name == "Guard" && node is MatchArm { Guard: null } or ValueArm { Guard: null }))
             .Where(p => !(p.Name == "Unpack" && node is Argument { Unpack: ArgumentUnpack.None }))
             .Where(p => !(p.Name == "Kind" && node is Param { Kind: ParamKind.Normal }))
             .Where(p => !(p.Name == "IsAsync" && node is FuncDef { IsAsync: false } or MethodDef { IsAsync: false }))

@@ -1,4 +1,0 @@
-tests/cases/m29/tp0203_patterns.tpn:8:16: error TP0203: int? can only be matched by '_' or a binding
-  help: 'None' patterns aren't supported yet; bind it and test it with 'is some'
-tests/cases/m29/tp0203_patterns.tpn:15:10: error TP0203: str? can only be matched by '_' or a binding
-  help: 'None' patterns aren't supported yet; bind it and test it with 'is some'

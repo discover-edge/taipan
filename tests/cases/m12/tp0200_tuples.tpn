@@ -3,7 +3,7 @@ let i = 0
 print(t[i])
 print(t[2])
 let a, b = 5
-match {1: t}:
+match {t}:
     _: pass
 print(t[1:])
 let d = {"a": 1}

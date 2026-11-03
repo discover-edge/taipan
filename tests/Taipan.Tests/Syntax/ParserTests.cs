@@ -365,6 +365,38 @@ public class ParserTests
             "MatchArm(WildcardPattern, Block([PassStmt]))])",
             Snapshot("match x:\n    0: pass\n    -1: pass\n    \"a\": pass\n    True: pass\n    False: pass\n    _: pass\n"));
 
+    // ---- patterns and guards (M38) ----
+
+    [Theory]
+    [InlineData("0 | 1", "OrPattern([IntPattern(0), IntPattern(1)])")]
+    [InlineData("A | B as x", "AsPattern(OrPattern([VariantPattern(null, null, A, null), VariantPattern(null, null, B, null)]), x)")]
+    [InlineData("(A | B)", "OrPattern([VariantPattern(null, null, A, null), VariantPattern(null, null, B, null)])")]
+    [InlineData("None", "NonePattern")]
+    [InlineData("-1.5", "FloatPattern(-1.5)")]
+    [InlineData("(a, *rest)", "TuplePattern([VariantPattern(null, null, a, null), StarPattern(rest)])")]
+    [InlineData("{\"k\": v, 1: _, **rest}",
+        "MappingPattern([MappingEntry(StringPattern(\"k\"), VariantPattern(null, null, v, null)), MappingEntry(IntPattern(1), WildcardPattern)], rest)")]
+    [InlineData("{}", "MappingPattern([], null)")]
+    [InlineData("Point(x=0 | 1 as px)", "VariantPattern(null, null, Point, [PatternBinding(x, AsPattern(OrPattern([IntPattern(0), IntPattern(1)]), px))])")]
+    public void NewPatterns(string pattern, string expected) =>
+        Assert.Equal($"MatchStmt(NameExpr(x), [MatchArm({expected}, Block([PassStmt]))])", Snapshot($"match x:\n    {pattern}: pass\n"));
+
+    [Fact]
+    public void Guards() =>
+        Assert.Equal(
+            "MatchStmt(NameExpr(x), [MatchArm(VariantPattern(null, null, n, null), Block([PassStmt]), " +
+            "BinaryExpr(NameExpr(n), Greater, IntLiteral(0)))])\n" +
+            "LetStmt(y, null, MatchExpr(NameExpr(x), [ValueArm(WildcardPattern, StringLiteral(\"a\"), null, NameExpr(c))]))",
+            Snapshot("match x:\n    n if n > 0: pass\nlet y = match x:\n    _ if c: \"a\"\n"));
+
+    [Theory]
+    [InlineData("match d:\n    {**rest, \"a\": 1}: pass\n", "2:8 TP0100: '**' must come last in a mapping pattern")]
+    [InlineData("match d:\n    {**_}: pass\n", "2:6 TP0100: '**_' can't be used; leave it out")]
+    [InlineData("match t:\n    (*a, *b): pass\n", "2:10 TP0100: a tuple pattern can have only one '*'")]
+    [InlineData("match d:\n    {x: 1}: pass\n", "2:6 TP0100: expected a literal key, found a pattern")]
+    public void PatternSyntaxErrors(string text, string expected) =>
+        Assert.Equal(expected, Errors(text).First());
+
     // ---- match_expr / value_arm (M19) ----
 
     [Fact]

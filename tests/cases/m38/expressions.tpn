@@ -1,0 +1,29 @@
+enum Health:
+    Ok
+    Degraded(healthy: int, total: int)
+    Down
+
+def label(h: Health?) -> str:
+    return match h:
+        None: "unknown"
+        Ok | Degraded(_, 0): "fine"
+        Degraded(n, total) if n * 2 < total: f"mostly down ({n}/{total})"
+        Degraded(n, _) as d: f"degraded {n} {d}"
+        Down: "down"
+
+for h in [None, Ok, Degraded(1, 0), Degraded(1, 4), Degraded(3, 4), Down]:
+    print(label(h))
+
+for x in [3, -3, 0]:
+    let sign = match x:
+        k if k > 0: "positive"
+        k if k < 0: "negative"
+        _: "zero"
+    print(sign)
+
+let maybe: int? = 4
+match maybe:
+    None:
+        print("nothing")
+    n:
+        print(n + 1)

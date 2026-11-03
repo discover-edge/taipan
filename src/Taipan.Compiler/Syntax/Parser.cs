@@ -1182,11 +1182,12 @@ public sealed class Parser
         return new MatchStmt(scrutinee, arms, SpanFrom(start));
     }
 
-    // arm = pattern ":" ( simple_stmt NEWLINE | block )
+    // arm = pattern [ guard ] ":" ( simple_stmt NEWLINE | block )
     private MatchArm ParseArm()
     {
         var start = Current.Span.Start;
         var pattern = ParsePattern();
+        var guard = ParseGuard();
         Expect(TokenKind.Colon);
 
         Block body;
@@ -1200,7 +1201,16 @@ public sealed class Parser
             body = new Block([stmt], stmt.Span);
             ExpectStatementEnd(stmt);
         }
-        return new MatchArm(pattern, body, new TextSpan(start, Math.Max(0, body.Span.End - start)));
+        return new MatchArm(pattern, body, new TextSpan(start, Math.Max(0, body.Span.End - start))) { Guard = guard };
+    }
+
+    // guard = "if" expr (M38)
+    private Expr? ParseGuard()
+    {
+        if (!At(TokenKind.IfKeyword))
+            return null;
+        Next();
+        return ParseExpr();
     }
 
     // match_expr = "match" expr ":" NEWLINE INDENT value_arm { value_arm } DEDENT
@@ -1215,41 +1225,80 @@ public sealed class Parser
         return new MatchExpr(scrutinee, arms, SpanFrom(start));
     }
 
-    // value_arm = pattern ":" ( ( expr | raise_stmt ) NEWLINE | block )
+    // value_arm = pattern [ guard ] ":" ( ( expr | raise_stmt ) NEWLINE | block )
     private ValueArm ParseValueArm()
     {
         var start = Current.Span.Start;
         var pattern = ParsePattern();
+        var guard = ParseGuard();
         Expect(TokenKind.Colon);
         if (At(TokenKind.Newline))
         {
             var block = ParseBlock();
-            return new ValueArm(pattern, null, null, SpanFrom(start)) { Block = block };
+            return new ValueArm(pattern, null, null, SpanFrom(start)) { Block = block, Guard = guard };
         }
         var raise = At(TokenKind.RaiseKeyword) ? ParseRaiseStmt() : null;
         var value = raise is null ? ParseExpr() : null;
-        var arm = new ValueArm(pattern, value, raise, SpanFrom(start));
+        var arm = new ValueArm(pattern, value, raise, SpanFrom(start)) { Guard = guard };
         if (_index != _matchArmsEnd)
             Expect(TokenKind.Newline);
         return arm;
     }
 
-    // pattern  = "_" | [ "-" ] INT | STRING | "True" | "False" | qual_name [ "(" [ pat_args ] ")" ]
-    //          | "(" pattern "," [ pattern { "," pattern } [ "," ] ] ")" | "[" [ list_pat { "," list_pat } [ "," ] ] "]"
-    // list_pat = pattern | "*" NAME
+    // pattern = or_pattern [ "as" NAME ] (M38)
     private Pattern ParsePattern()
+    {
+        var start = Current.Span.Start;
+        var pattern = ParseOrPattern();
+        if (!At(TokenKind.AsKeyword))
+            return pattern;
+        Next();
+        var name = ExpectIdentifier();
+        return new AsPattern(pattern, name, SpanFrom(start));
+    }
+
+    // or_pattern = closed_pattern { "|" closed_pattern } (M38)
+    private Pattern ParseOrPattern()
+    {
+        var start = Current.Span.Start;
+        var first = ParseClosedPattern();
+        if (!At(TokenKind.Pipe))
+            return first;
+        var alternatives = ImmutableArray.CreateBuilder<Pattern>();
+        alternatives.Add(first);
+        while (At(TokenKind.Pipe))
+        {
+            Next();
+            alternatives.Add(ParseClosedPattern());
+        }
+        return new OrPattern(alternatives.ToImmutable(), SpanFrom(start));
+    }
+
+    // closed_pattern = "_" | [ "-" ] INT | [ "-" ] FLOAT | STRING | "True" | "False" | "None"
+    //                | qual_name [ "(" [ pat_args ] ")" ] | "(" pattern ")"
+    //                | "(" list_pat "," [ list_pat { "," list_pat } [ "," ] ] ")" | "[" [ list_pat { "," list_pat } [ "," ] ] "]"
+    //                | "{" [ map_pat { "," map_pat } [ "," ] ] "}"
+    // list_pat = pattern | "*" NAME
+    private Pattern ParseClosedPattern()
     {
         var start = Current.Span.Start;
         if (At(TokenKind.Name) && Current.Text == "_")
             return new WildcardPattern(Next().Span);
+        if (At(TokenKind.NoneKeyword))
+            return new NonePattern(Next().Span);
         if (At(TokenKind.OpenParen))
+            return ParseParenthesizedPattern();
+        if (At(TokenKind.OpenBrace))
+            return ParseMappingPattern();
+        if (At(TokenKind.Minus) && Peek(1).Kind == TokenKind.Float)
         {
             Next();
-            var elements = ParseCommaList(TokenKind.CloseParen, ParsePattern);
-            Expect(TokenKind.CloseParen);
-            if (elements.Length < 2)
-                ReportSyntaxError(bag => bag.ReportOneElementTuplePattern(SpanFrom(start)));
-            return new TuplePattern(elements, SpanFrom(start));
+            return new FloatPattern(-ParseFloatValue(Next()), SpanFrom(start));
+        }
+        if (At(TokenKind.Float))
+        {
+            var token = Next();
+            return new FloatPattern(ParseFloatValue(token), token.Span);
         }
         if (At(TokenKind.OpenBracket))
         {
@@ -1287,6 +1336,79 @@ public sealed class Parser
 
         ReportExpected("pattern");
         return new ErrorPattern(Here);
+    }
+
+    // "(" pattern ")" is a group; with a comma, a tuple (M29), with at most one "*" (M38).
+    private Pattern ParseParenthesizedPattern()
+    {
+        var start = Next().Span.Start;
+        if (At(TokenKind.CloseParen))
+        {
+            Next();
+            ReportSyntaxError(bag => bag.ReportOneElementTuplePattern(SpanFrom(start)));
+            return new TuplePattern([], SpanFrom(start));
+        }
+        var first = ParseListElementPattern();
+        if (At(TokenKind.CloseParen) && first is not StarPattern)
+        {
+            Next();
+            return first;
+        }
+        var elements = ImmutableArray.CreateBuilder<Pattern>();
+        elements.Add(first);
+        while (At(TokenKind.Comma))
+        {
+            Next();
+            if (At(TokenKind.CloseParen))
+                break;
+            elements.Add(ParseListElementPattern());
+        }
+        Expect(TokenKind.CloseParen);
+        if (elements.Count < 2)
+            ReportSyntaxError(bag => bag.ReportOneElementTuplePattern(SpanFrom(start)));
+        var stars = elements.OfType<StarPattern>().ToList();
+        if (stars.Count > 1)
+            ReportSyntaxError(bag => bag.ReportTwoStars(stars[1].Span, "a tuple pattern"));
+        return new TuplePattern(elements.ToImmutable(), SpanFrom(start));
+    }
+
+    // "{" [ map_pat { "," map_pat } [ "," ] ] "}"  where  map_pat = map_key ":" pattern | "**" NAME (M38)
+    private MappingPattern ParseMappingPattern()
+    {
+        var start = Next().Span.Start;
+        var entries = ImmutableArray.CreateBuilder<MappingEntry>();
+        Identifier? rest = null;
+        while (!At(TokenKind.CloseBrace) && !At(TokenKind.EndOfFile))
+        {
+            var entryStart = Current.Span.Start;
+            if (At(TokenKind.Star) && Peek(1).Kind == TokenKind.Star)
+            {
+                Next();
+                Next();
+                var name = ExpectIdentifier();
+                if (name.Text == "_")
+                    ReportSyntaxError(bag => bag.ReportRestWildcard(SpanFrom(entryStart)));
+                else if (rest is not null)
+                    ReportSyntaxError(bag => bag.ReportRestNotLast(rest.Span));
+                rest ??= name;
+            }
+            else
+            {
+                if (rest is not null)
+                    ReportSyntaxError(bag => bag.ReportRestNotLast(rest.Span));
+                var key = ParseClosedPattern();
+                if (key is not (IntPattern or StringPattern or BoolPattern or ErrorPattern))
+                    ReportSyntaxError(bag => bag.ReportExpected(key.Span, "a literal key", "a pattern"));
+                Expect(TokenKind.Colon);
+                var value = ParsePattern();
+                entries.Add(new MappingEntry(key, value, SpanFrom(entryStart)));
+            }
+            if (!At(TokenKind.Comma))
+                break;
+            Next();
+        }
+        Expect(TokenKind.CloseBrace);
+        return new MappingPattern(entries.ToImmutable(), rest is { Text: "_" } ? null : rest, SpanFrom(start));
     }
 
     // qual_name [ "(" [ pat_args ] ")" ]  where  qual_name = NAME [ "." NAME [ "." NAME ] ]
@@ -2045,6 +2167,9 @@ public sealed class Parser
 
     private static BigInteger ParseIntValue(Token token) =>
         BigInteger.Parse(token.Text.Replace("_", ""), CultureInfo.InvariantCulture);
+
+    private static double ParseFloatValue(Token token) =>
+        double.Parse(token.Text.Replace("_", ""), CultureInfo.InvariantCulture);
 
     private BinaryExpr Binary(Expr left, BinaryOp op, Expr right) =>
         new(left, op, right, SpanFrom(left.Span.Start));

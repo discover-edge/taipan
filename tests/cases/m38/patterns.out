@@ -1,0 +1,25 @@
+tiny
+tiny
+negative -4
+prime 5
+other
+origin
+near the y axis 1 4
+elsewhere
+diagonal 3
+elsewhere
+2.5 4.0 0.0
+round True round False shapeless
+unknown
+freezing
+freezing
+close
+close
+boiling 100.5
+22.5
+web 443 port 8080 with {"debug": 1, "workers": 4} no port
+zero then [1, 2, 3]
+same ends 4
+nine after [1, 2, 3]
+plain
+none x zero b 0 c 7 a

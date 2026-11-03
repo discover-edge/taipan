@@ -1,4 +1,4 @@
-# An optional position takes only '_' and bindings (SPEC §5.1).
+# Since M38 an optional position takes any pattern (SPEC §5.1); before, these two arms were TP0203.
 enum Slot:
     Filled(value: int?)
     Free

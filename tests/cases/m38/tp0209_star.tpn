@@ -1,0 +1,6 @@
+def f(t: tuple[int, int]) -> None:
+    match t:
+        (a, b, *c, d):
+            pass
+        _:
+            pass

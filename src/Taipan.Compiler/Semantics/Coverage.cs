@@ -20,6 +20,23 @@ public sealed class Coverage(TaipanType type)
     /// <summary>A constructor; as a missing case, <see cref="Whole"/> when no arm uses it, so it's shown bare.</summary>
     private sealed record Ctor(object Key, ImmutableArray<Space> Args, bool Whole = false) : Space;
 
+    /// <summary>An or-pattern (M38): rows with one are seen as one row per alternative.</summary>
+    private sealed record Or(ImmutableArray<Space> Alternatives) : Space;
+
+    // An optional's two constructors (M38): None, and a value, whose one argument is of the inner type.
+    private sealed record NoneKey
+    {
+        public static readonly NoneKey Instance = new();
+    }
+
+    private sealed record SomeKey
+    {
+        public static readonly SomeKey Instance = new();
+    }
+
+    /// <summary>A mapping pattern with keys (M38), by its keys; its arguments are their values' patterns.</summary>
+    private sealed record MappingKey(string Keys, int Count);
+
     // The keys of constructors that aren't symbols or literals.
     private sealed record TupleKey
     {
@@ -38,14 +55,36 @@ public sealed class Coverage(TaipanType type)
     private readonly List<Space[]> _rows = [];
     private readonly TaipanType[] _types = [type];
 
-    /// <summary>Records an arm; false if the arms before it already cover everything it matches (unreachable).</summary>
-    public bool Add(BoundPattern pattern)
+    /// <summary>
+    /// Records an arm; false if the arms before it already cover everything it matches (unreachable).
+    /// A guarded arm covers nothing (M38), so it's checked but not recorded. <paramref name="dead"/>
+    /// lists the alternatives of a top-level or-pattern that can't match anything earlier ones don't.
+    /// </summary>
+    public bool Add(BoundPattern pattern, bool guarded, out List<int> dead)
     {
         var row = new[] { SpaceOf(pattern) };
         var useful = Useful(_rows, row, _types);
-        _rows.Add(row);
+        dead = [];
+        if (useful && Unnamed(pattern) is BoundOrPattern choice)
+        {
+            var before = new List<Space[]>(_rows);
+            for (var i = 0; i < choice.Alternatives.Length; i++)
+            {
+                var alternative = new[] { SpaceOf(choice.Alternatives[i]) };
+                if (!Useful(before, alternative, _types))
+                    dead.Add(i);
+                before.Add(alternative);
+            }
+        }
+        if (!guarded)
+            _rows.Add(row);
         return useful;
     }
+
+    /// <summary>Whether the arms so far cover None, at the top of an optional scrutinee (M38).</summary>
+    public bool CoversNone() => !Useful(_rows, [new Ctor(NoneKey.Instance, [])], _types);
+
+    private static BoundPattern Unnamed(BoundPattern pattern) => pattern is BoundAsPattern named ? Unnamed(named.Pattern) : pattern;
 
     /// <summary>The cases no arm covers, as patterns: <c>Down</c>, <c>Degraded(0, _)</c>, <c>[_, *_]</c>.</summary>
     public List<string> Missing() =>
@@ -59,6 +98,14 @@ public sealed class Coverage(TaipanType type)
         BoundClassPattern classPattern => new Ctor(classPattern.Class.Symbol, [.. classPattern.Class.Symbol.AllFields.Select(f =>
             classPattern.Fields.FirstOrDefault(p => p.Field == f).Pattern is { } sub ? SpaceOf(sub) : Any.Instance)]),
         BoundTuplePattern tuple => new Ctor(TupleKey.Instance, [.. tuple.Elements.Select(SpaceOf)]),
+        BoundNonePattern => new Ctor(NoneKey.Instance, []),
+        BoundSomePattern some => new Ctor(SomeKey.Instance, [SpaceOf(some.Inner)]),
+        BoundOrPattern choice => new Or([.. choice.Alternatives.Select(SpaceOf)]),
+        BoundAsPattern named => SpaceOf(named.Pattern),
+        // One without keys matches every dict, as in Python.
+        BoundMappingPattern { Entries.IsEmpty: true } => Any.Instance,
+        BoundMappingPattern mapping => new Ctor(new MappingKey(string.Join("\0", mapping.Entries.Select(e => $"{e.Key.GetType().Name}:{e.Key}")), mapping.Entries.Length),
+            [.. mapping.Entries.Select(e => SpaceOf(e.Value))]),
         BoundListPattern { HasStar: false } list => new Ctor(new ListLength(list.Before.Length, AtLeast: false), [.. list.Before.Select(SpaceOf)]),
         BoundListPattern list => new Ctor(new ListStar(list.Before.Length, list.After.Length), [.. list.Before.Concat(list.After).Select(SpaceOf)]),
         _ => Any.Instance,
@@ -70,6 +117,9 @@ public sealed class Coverage(TaipanType type)
     {
         if (q.Length == 0)
             return rows.Count == 0;
+        rows = Expand(rows);
+        if (q[0] is Or alternatives)
+            return alternatives.Alternatives.Any(a => Useful(rows, [a, .. q[1..]], types));
         var type = types[0];
         if (q[0] is Ctor { Key: ListStar star } starred)
         {
@@ -101,6 +151,7 @@ public sealed class Coverage(TaipanType type)
     {
         if (types.Length == 0)
             return rows.Count == 0 ? [[]] : [];
+        rows = Expand(rows);
         var type = types[0];
         var found = new List<Space[]>();
         if (Signature(rows, type) is { } signature)
@@ -157,6 +208,8 @@ public sealed class Coverage(TaipanType type)
             case ListOfType:
                 var longest = Longest(rows);
                 return [.. Enumerable.Range(0, longest + 1).Select(n => (object)new ListLength(n, AtLeast: false)), new ListLength(longest + 1, AtLeast: true)];
+            case OptionalOf:
+                return [NoneKey.Instance, SomeKey.Instance];
             default:
                 return null;
         }
@@ -171,6 +224,7 @@ public sealed class Coverage(TaipanType type)
             EnumType enumType => enumType.Symbol.Variants.Where(v => !keys.Contains(v))
                 .Select(v => new Ctor(v, [.. v.Fields.Select(_ => (Space)Any.Instance)], Whole: true)),
             PrimitiveType { Name: "bool" } => new object[] { true, false }.Where(b => !keys.Contains(b)).Select(b => new Ctor(b, [])),
+            OptionalOf => keys.Contains(NoneKey.Instance) ? [new Ctor(SomeKey.Instance, [Any.Instance])] : [new Ctor(NoneKey.Instance, [])],
             _ => [Any.Instance],
         };
     }
@@ -221,6 +275,29 @@ public sealed class Coverage(TaipanType type)
     private static Space[] Fill(ImmutableArray<Space> args, ListStar star, int length) =>
         [.. args[..star.Before], .. Enumerable.Repeat((Space)Any.Instance, length - star.Before - star.After), .. args[star.Before..]];
 
+    /// <summary>The rows with an or-pattern first, as one row per alternative (M38).</summary>
+    private static List<Space[]> Expand(List<Space[]> rows)
+    {
+        if (!rows.Any(r => r[0] is Or))
+            return rows;
+        var result = new List<Space[]>();
+        void Add(Space head, Space[] row)
+        {
+            if (head is Or choice)
+            {
+                foreach (var alternative in choice.Alternatives)
+                    Add(alternative, row);
+            }
+            else
+            {
+                result.Add([head, .. row[1..]]);
+            }
+        }
+        foreach (var row in rows)
+            Add(row[0], row);
+        return result;
+    }
+
     /// <summary>The rows whose first column is a wildcard, without it.</summary>
     private static List<Space[]> Default(List<Space[]> rows) => [.. rows.Where(r => r[0] is Any).Select(r => r[1..])];
 
@@ -232,6 +309,8 @@ public sealed class Coverage(TaipanType type)
             TypeChecker.Substitute(f.Type, TypeChecker.MapOf(symbol == classType.Symbol ? classType : symbol.Type)))],
         (TupleKey, TupleOfType tuple) => [.. tuple.Elements],
         (ListLength length, ListOfType list) => [.. Enumerable.Repeat(list.Element, length.Length)],
+        (SomeKey, OptionalOf optional) => [optional.Inner],
+        (MappingKey mapping, DictOfType dict) => [.. Enumerable.Repeat(dict.Value, mapping.Count)],
         _ => [],
     };
 
@@ -248,6 +327,8 @@ public sealed class Coverage(TaipanType type)
             VariantSymbol variant when ctor.Whole || args.Count == 0 => variant.Name,
             VariantSymbol variant => $"{variant.Name}({string.Join(", ", args)})",
             bool b => b ? "True" : "False",
+            NoneKey => "None",
+            SomeKey => args[0],
             ClassSymbol symbol => $"{symbol.Name}({string.Join(", ", symbol.AllFields.Select((f, i) => (f, i)).Where(p => args[p.i] != "_").Select(p => $"{p.f.Name}={args[p.i]}"))})",
             TupleKey => $"({string.Join(", ", args)})",
             ListLength { AtLeast: true } => $"[{string.Join("", args.Select(a => a + ", "))}*_]",

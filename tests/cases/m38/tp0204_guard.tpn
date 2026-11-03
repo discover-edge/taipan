@@ -1,0 +1,6 @@
+def pick(b: bool, flag: bool) -> int:
+    match b:
+        True if flag:
+            return 1
+        False:
+            return 0

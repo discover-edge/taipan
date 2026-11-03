@@ -121,7 +121,14 @@ public sealed partial class Binder
     /// <summary>A tuple's elements from <paramref name="start"/> to <paramref name="end"/>, as a list of their joined type.</summary>
     private BoundExpr TupleRest(BoundExpr tuple, TupleOfType type, int start, int end, UnpackedName? name, TextSpan span)
     {
-        var parts = type.Elements[start..end];
+        if (StarredElement(type.Elements[start..end], name?.Name.Text ?? "_", span) is not { } element)
+            return new BoundErrorExpr(span);
+        return new BoundTupleRest(tuple, start, end, new ListOfType(element), span);
+    }
+
+    /// <summary>A starred name's element type for some of a tuple's elements: joined as a list literal's are (SPEC §3.8), or null after reporting.</summary>
+    private TaipanType? StarredElement(ImmutableArray<TaipanType> parts, string name, TextSpan span)
+    {
         TaipanType? element = parts.IsEmpty ? null : parts[0];
         foreach (var part in parts.Skip(1))
         {
@@ -130,15 +137,12 @@ public sealed partial class Binder
                 element = joined;
                 continue;
             }
-            _diagnostics.ReportStarredJoin(span, name?.Name.Text ?? "_", element!, part);
-            return new BoundErrorExpr(span);
+            _diagnostics.ReportStarredJoin(span, name, element!, part);
+            return null;
         }
         if (element is null)
-        {
             _diagnostics.ReportCannotInferEmpty(span, "list");
-            return new BoundErrorExpr(span);
-        }
-        return new BoundTupleRest(tuple, start, end, new ListOfType(element), span);
+        return element;
     }
 
     // ---- match (SPEC §5.1) ----
@@ -148,9 +152,9 @@ public sealed partial class Binder
         var (scrutinee, type) = BindScrutinee(match.Scrutinee);
         // After a match statement, what holds at the end of every arm that can finish (SPEC §3.9).
         var ends = new List<Narrowing>();
-        var arms = BindArms(scrutinee, type, match.Span, [.. match.Arms.Select(a => a.Pattern)], (i, pattern, reachable) =>
+        var arms = BindArms(scrutinee, type, match.Span, [.. match.Arms.Select(a => (a.Pattern, a.Guard))], (i, pattern, guard, reachable) =>
         {
-            var arm = new BoundArm(pattern, BindBlock(match.Arms[i].Body), reachable);
+            var arm = new BoundArm(pattern, BindBlock(match.Arms[i].Body), reachable) { Guard = guard };
             if (reachable && !Exits(arm.Body))
                 ends.Add(_narrowing);
             return arm;
@@ -171,15 +175,15 @@ public sealed partial class Binder
     private BoundExpr BindMatchExpr(MatchExpr match, TaipanType? expected)
     {
         var (scrutinee, type) = BindScrutinee(match.Scrutinee);
-        var arms = BindArms(scrutinee, type, match.Span, [.. match.Arms.Select(a => a.Pattern)], (i, pattern, reachable) =>
+        var arms = BindArms(scrutinee, type, match.Span, [.. match.Arms.Select(a => (a.Pattern, a.Guard))], (i, pattern, guard, reachable) =>
         {
             var arm = match.Arms[i];
             if (arm.Block is { } block)
-                return BindBlockArm(pattern, block, reachable, expected);
+                return BindBlockArm(pattern, block, reachable, expected) with { Guard = guard };
             if (arm.Raise is { } raise)
-                return new BoundValueArm(pattern, null, BindRaise(raise), reachable);
+                return new BoundValueArm(pattern, null, BindRaise(raise), reachable) { Guard = guard };
             var value = expected is null ? BindValue(arm.Value!) : BindExpected(arm.Value!, expected);
-            return new BoundValueArm(pattern, value, null, reachable);
+            return new BoundValueArm(pattern, value, null, reachable) { Guard = guard };
         });
 
         var values = arms.Where(a => a.IsReachable && a.Value is not null).Select(a => a.Value!).ToImmutableArray();
@@ -231,10 +235,10 @@ public sealed partial class Binder
     {
         var scrutinee = BindValue(syntax);
         var type = scrutinee.Type;
-        if (ReportIfOptional(scrutinee, syntax.Span))
-            type = TaipanType.Error;
-        else if (!type.ContainsError && type is not (EnumType or ClassType or TupleOfType or ListOfType)
-            && type != TaipanType.Int && type != TaipanType.Str && type != TaipanType.Bool)
+        // Since M38: a float, a dict, or an optional of any of these (SPEC §5.1).
+        var inner = TypeChecker.Unwrap(type);
+        if (!type.ContainsError && inner is not (EnumType or ClassType or TupleOfType or ListOfType or DictOfType)
+            && inner != TaipanType.Int && inner != TaipanType.Str && inner != TaipanType.Bool && inner != TaipanType.Float)
         {
             _diagnostics.ReportCannotMatch(syntax.Span, type);
             type = TaipanType.Error;
@@ -246,30 +250,45 @@ public sealed partial class Binder
     /// Binds each arm's pattern and then, with its bindings in scope and a class pattern's narrowing
     /// applied, its body; then checks reachability and exhaustiveness (SPEC §5.1).
     /// </summary>
-    private ImmutableArray<TArm> BindArms<TArm>(
-        BoundExpr scrutinee, TaipanType type, TextSpan matchSpan, ImmutableArray<Pattern> patterns, Func<int, BoundPattern, bool, TArm> bindBody)
+    private ImmutableArray<TArm> BindArms<TArm>(BoundExpr scrutinee, TaipanType type, TextSpan matchSpan,
+        ImmutableArray<(Pattern Pattern, Expr? Guard)> patterns, Func<int, BoundPattern, BoundExpr?, bool, TArm> bindBody)
     {
         var coverage = new Coverage(type);
         var arms = ImmutableArray.CreateBuilder<TArm>();
         var allValid = true;
         for (var i = 0; i < patterns.Length; i++)
         {
+            var (syntax, guardSyntax) = patterns[i];
             var bindings = new PatternBindings();
-            var pattern = BindPattern(patterns[i], type, bindings);
+            // After arms that cover None, a top-level binding is of the inner type (SPEC §5.1, M38).
+            var pattern = type is OptionalOf optional && !type.ContainsError && coverage.CoversNone()
+                ? BindUnwrapped(syntax, optional, bindings)
+                : BindPattern(syntax, type, bindings);
             allValid &= bindings.Valid;
-            var reachable = !bindings.Valid || coverage.Add(pattern);
+            // A guarded arm covers nothing, since its guard may be false (SPEC §5.1, M38).
+            var dead = new List<int>();
+            var reachable = !bindings.Valid || coverage.Add(pattern, guarded: guardSyntax is not null, out dead);
             if (!reachable)
-                _diagnostics.ReportUnreachableArm(patterns[i].Span);
+                _diagnostics.ReportUnreachableArm(syntax.Span);
+            else if (bindings.Valid && Alternatives(syntax) is { } alternatives)
+                foreach (var index in dead)
+                    _diagnostics.ReportUnreachableAlternative(alternatives[index].Span);
 
             var outer = _scope;
             _scope = new Scope(outer);
             foreach (var (identifier, symbol) in bindings.Names)
                 DeclareLocal(identifier, symbol);
-            // A class pattern narrows the scrutinee in its arm (SPEC §5.1).
+            // A class pattern, or one that can't match None, narrows the scrutinee in its arm (SPEC §5.1).
             var (outerNarrowing, mark) = (_narrowing, _endings.Count);
-            if (pattern is BoundClassPattern classPattern)
-                _narrowing = _narrowing.With(Narrow(scrutinee, classPattern.Class.Symbol.DerivesFrom(((ClassType)type).Symbol) ? classPattern.Class : type));
-            arms.Add(bindBody(i, pattern, reachable));
+            if (!type.ContainsError && Narrows(pattern, type) is { } narrowed)
+                _narrowing = _narrowing.With(Narrow(scrutinee, narrowed));
+            BoundExpr? guard = null;
+            if (guardSyntax is not null)
+            {
+                guard = BindCondition(new ExprCondition(guardSyntax, guardSyntax.Span));
+                _narrowing = _narrowing.With(Facts(guard, whenTrue: true));
+            }
+            arms.Add(bindBody(i, pattern, guard, reachable));
             // Each arm starts from the state before the match; a statement collects the arms' ends.
             _narrowing = Replay(outerNarrowing, mark);
             _scope = outer;
@@ -301,12 +320,9 @@ public sealed partial class Binder
             return new BoundWildcardPattern();
         }
 
-        // An optional position takes only '_' and bindings: None patterns are deferred.
-        if (type is OptionalOf && pattern is not (WildcardPattern or VariantPattern { Module: null, Enum: null, Bindings: null }))
-        {
-            _diagnostics.ReportOptionalPattern(pattern.Span, type);
-            return Invalid();
-        }
+        // At an optional position, a pattern other than None, '_' or a binding matches only a value (SPEC §5.1, M38).
+        if (type is OptionalOf optional && pattern is not (WildcardPattern or NonePattern or OrPattern or AsPattern) && !IsBareBinding(pattern, type))
+            return new BoundSomePattern(BindPattern(pattern, optional.Inner, bindings));
         switch (pattern)
         {
             case WildcardPattern:
@@ -317,7 +333,24 @@ public sealed partial class Binder
                     _diagnostics.ReportIntegerOutOfRange(intPattern.Span);
                     return Invalid();
                 }
+                // An int literal matches a float equal to it, as in Python (M38).
+                if (type == TaipanType.Float)
+                    return new BoundLiteralPattern((double)(long)intPattern.Value);
                 return LiteralPattern(pattern, TaipanType.Int, type, (long)intPattern.Value, bindings);
+            case FloatPattern floatPattern:
+                return LiteralPattern(pattern, TaipanType.Float, type, floatPattern.Value, bindings);
+            case NonePattern:
+                if (type is OptionalOf)
+                    return new BoundNonePattern();
+                if (!type.ContainsError)
+                    _diagnostics.ReportCannotBeNone(pattern.Span, type);
+                return Invalid();
+            case OrPattern orPattern:
+                return BindOrPattern(orPattern, type, bindings);
+            case AsPattern asPattern:
+                return BindAsPattern(asPattern, type, bindings);
+            case MappingPattern mappingPattern:
+                return BindMappingPattern(mappingPattern, type, bindings);
             case StringPattern stringPattern:
                 return LiteralPattern(pattern, TaipanType.Str, type, stringPattern.Value, bindings);
             case BoolPattern boolPattern:
@@ -343,27 +376,27 @@ public sealed partial class Binder
     /// then checked as that pattern, and reported as one of the wrong type.
     /// </summary>
     private bool IsBinding(string name, TaipanType type) =>
-        !(type is EnumType e && e.Symbol.FindVariant(name) is not null)
+        !(TypeChecker.Unwrap(type) is EnumType e && e.Symbol.FindVariant(name) is not null)
         && _scope.Lookup(name) is not (VariantSymbol or AmbiguousVariantSymbol or ClassSymbol);
 
     /// <summary>
     /// A bare name that isn't a variant of its position's enum binds the value (SPEC §5.1). In an
     /// enum position, a capitalized one is taken for a misspelled variant (TP0210).
     /// </summary>
-    private BoundPattern BindName(Identifier name, TaipanType type, PatternBindings bindings)
+    private BoundBindingPattern BindName(Identifier name, TaipanType type, PatternBindings bindings, bool typed = false, bool variantLike = true)
     {
-        if (type is EnumType && char.IsUpper(name.Text[0]))
+        if (variantLike && type is EnumType && char.IsUpper(name.Text[0]))
         {
             _diagnostics.ReportNoVariant(name.Span, type, name.Text);
             bindings.Valid = false;
-            return new BoundWildcardPattern();
+            return new BoundBindingPattern(new VariableSymbol(name.Text, TaipanType.Error, VariableKind.Let));
         }
         var symbol = new VariableSymbol(name.Text, type, VariableKind.Let);
         if (bindings.Names.Any(b => b.Item1.Text == name.Text))
             _diagnostics.ReportDuplicateDefinition(name.Span, name.Text);
         else
             bindings.Names.Add((name, symbol));
-        return new BoundBindingPattern(symbol);
+        return new BoundBindingPattern(symbol) { Typed = typed };
     }
 
     private BoundPattern LiteralPattern(Pattern pattern, TaipanType patternType, TaipanType type, object value, PatternBindings bindings)
@@ -415,11 +448,17 @@ public sealed partial class Binder
 
     private BoundPattern BindTuplePattern(TuplePattern pattern, TaipanType type, PatternBindings bindings)
     {
-        if (type is TupleOfType tuple)
+        var star = pattern.Elements.IndexOf(pattern.Elements.FirstOrDefault(e => e is StarPattern)!);
+        if (type is TupleOfType tuple && star >= 0)
         {
-            if (tuple.Elements.Length == pattern.Elements.Length)
-                return new BoundTuplePattern(tuple, [.. pattern.Elements.Zip(tuple.Elements, (p, t) => BindPattern(p, t, bindings))]);
-            _diagnostics.ReportTuplePatternCount(pattern.Span, tuple, tuple.Elements.Length, pattern.Elements.Length);
+            if (BindStarredTuplePattern(pattern, tuple, star, bindings) is { } starred)
+                return starred;
+        }
+        else if (type is TupleOfType exact)
+        {
+            if (exact.Elements.Length == pattern.Elements.Length)
+                return new BoundTuplePattern(exact, [.. pattern.Elements.Zip(exact.Elements, (p, t) => BindPattern(p, t, bindings))]);
+            _diagnostics.ReportTuplePatternCount(pattern.Span, exact, exact.Elements.Length, pattern.Elements.Length);
         }
         else if (!type.ContainsError)
         {
@@ -427,7 +466,12 @@ public sealed partial class Binder
         }
         bindings.Valid = false;
         foreach (var element in pattern.Elements)
-            BindPattern(element, TaipanType.Error, bindings);
+        {
+            if (element is StarPattern { Name.Text: not "_" } starName)
+                BindName(starName.Name, TaipanType.Error, bindings, variantLike: false);
+            else if (element is not StarPattern)
+                BindPattern(element, TaipanType.Error, bindings);
+        }
         return new BoundWildcardPattern();
     }
 
@@ -450,8 +494,8 @@ public sealed partial class Binder
             if (part is StarPattern starPattern)
             {
                 star ??= starPattern;
-                if (starPattern.Name.Text != "_" && BindName(starPattern.Name, list ?? (TaipanType)TaipanType.Error, bindings) is BoundBindingPattern binding)
-                    rest = binding.Symbol;
+                if (starPattern.Name.Text != "_")
+                    rest = BindName(starPattern.Name, list ?? (TaipanType)TaipanType.Error, bindings, variantLike: false).Symbol;
                 continue;
             }
             (star is null ? before : after).Add(BindPattern(part, element, bindings));

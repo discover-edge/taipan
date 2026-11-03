@@ -544,4 +544,24 @@ public static class Ops
             throw new OverflowError($"cannot convert {Display.Format(value)} to int");
         return (long)value;
     }
+
+    /// <summary>Gives <paramref name="value"/> a name in a pattern's <c>when</c>, as a tuple pattern's starred name (SPEC §8, M38). Always true.</summary>
+    public static bool Let<T>(T value, out T result)
+    {
+        result = value;
+        return true;
+    }
+
+    /// <summary>A mapping pattern's <c>**rest</c> (SPEC §5.1, M38): a new dict of the other keys, in order. Always true.</summary>
+    public static bool MappingRest<TKey, TValue>(OrderedDictionary<TKey, TValue> dict, TKey[] keys, out OrderedDictionary<TKey, TValue> rest)
+        where TKey : notnull
+    {
+        rest = new OrderedDictionary<TKey, TValue>();
+        foreach (var (key, value) in dict)
+        {
+            if (!keys.Contains(key))
+                rest[key] = value;
+        }
+        return true;
+    }
 }

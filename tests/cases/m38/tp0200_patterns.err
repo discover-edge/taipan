@@ -1,0 +1,5 @@
+tests/cases/m38/tp0200_patterns.tpn:3:9: error TP0200: int can't be None
+tests/cases/m38/tp0200_patterns.tpn:5:14: error TP0205: condition must be bool, found int
+tests/cases/m38/tp0200_patterns.tpn:10:9: error TP0200: list[int] cannot match a mapping pattern
+tests/cases/m38/tp0200_patterns.tpn:15:10: error TP0200: mapping keys must be int, str or bool, found tuple[int, int]
+tests/cases/m38/tp0200_patterns.tpn:20:18: error TP0214: key "a" appears twice in a mapping pattern

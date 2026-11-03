@@ -105,7 +105,8 @@ public sealed class LocalNames
     {
         BoundIf ifStmt => ifStmt.Clauses.Select(c => c.Condition).OfType<BoundIsSome>().Select(c => c.Binding),
         BoundWhile { Condition: BoundIsSome isSome } => [isSome.Binding],
-        BoundMatch match => match.Arms.SelectMany(a => PatternBindings(a.Pattern)),
+        BoundMatch match => match.Arms.SelectMany(a => PatternBindings(a.Pattern))
+            .Concat(match.Arms.Select(a => a.Guard).OfType<BoundExpr>().SelectMany(MatchExpressionBindings)),
         // A match expression's arms bind in the statement's own expressions (SPEC §5.1.1).
         _ => BoundTree.Expressions(stmt).SelectMany(MatchExpressionBindings),
     };
@@ -115,7 +116,12 @@ public sealed class LocalNames
         BoundBindingPattern p => [p.Symbol],
         BoundVariantPattern p => p.Fields.SelectMany(PatternBindings),
         BoundClassPattern p => p.Fields.SelectMany(f => PatternBindings(f.Pattern)),
-        BoundTuplePattern p => p.Elements.SelectMany(PatternBindings),
+        BoundTuplePattern p => [.. p.Elements.SelectMany(PatternBindings), .. ((VariableSymbol?[])[p.Rest]).OfType<VariableSymbol>()],
+        BoundSomePattern p => PatternBindings(p.Inner),
+        // Each alternative binds the same symbols (SPEC §5.1, M38).
+        BoundOrPattern p => p.Alternatives.SelectMany(PatternBindings).Distinct(),
+        BoundAsPattern p => [.. PatternBindings(p.Pattern), p.Symbol],
+        BoundMappingPattern p => [.. p.Entries.SelectMany(e => PatternBindings(e.Value)), .. ((VariableSymbol?[])[p.Rest]).OfType<VariableSymbol>()],
         BoundListPattern p => [.. p.Before.SelectMany(PatternBindings), .. ((VariableSymbol?[])[p.Rest]).OfType<VariableSymbol>(), .. p.After.SelectMany(PatternBindings)],
         _ => [],
     };

@@ -1,0 +1,57 @@
+class Animal:
+    pass
+
+class Dog(Animal):
+    name: str
+
+    def __init__(self, name: str):
+        self.name = name
+        super().__init__()
+
+class Cat(Animal):
+    name: str
+
+    def __init__(self, name: str):
+        self.name = name
+        super().__init__()
+
+def pair(p: tuple[int, int]?) -> str:
+    match p:
+        None:
+            return "none"
+        (0, y) | (y, 0):
+            return f"axis {y}"
+        (a, b):
+            return f"{a},{b}"
+
+def pet(a: Animal?) -> str:
+    match a:
+        (Dog(name=n) as d) | (Cat(name=n) as d):
+            return f"{n} {isinstance(d, Dog)}"
+        None:
+            return "nobody"
+        _:
+            return "animal"
+
+def conf(d: dict[str, list[int]]) -> str:
+    return match d:
+        {"a": [x, *_]} | {"b": [_, x]}: f"x={x}"
+        {"c": []} if len(d) > 1: "c and more"
+        _: "other"
+
+def opt_list(xs: list[int?]) -> int:
+    var total = 0
+    for x in xs:
+        match x:
+            None:
+                total += 100
+            1 | 2:
+                total += 1
+            n:
+                total += n
+    return total
+
+print(pair(None), pair((0, 5)), pair((7, 0)), pair((2, 3)))
+print(pet(Dog("rex")), pet(Cat("tom")), pet(None), pet(Animal()))
+print(conf({"a": [1, 2]}), conf({"b": [3, 4]}), conf({"c": [], "z": []}), conf({"c": []}))
+print(opt_list([None, 1, 2, 10]))
