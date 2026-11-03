@@ -1,0 +1,11 @@
+["a", "bb", "ccc"]
+["1", "2"] [3, 4]
+7 4
+ccc True
+rex
+2 b
+[Point(x=1, y=0), Point(x=2, y=0)]
+Point(x=3, y=4)
+Circle(r=1.5)
+hi
+True <built-in function len> <class 'str'> <class '__main__.Dog'> <function Shape.Circle> <function first>

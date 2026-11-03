@@ -59,7 +59,11 @@ public sealed record Param(Identifier Name, TypeSyntax Type, Expr? Default, Text
 /// <summary>A class (SPEC §4.3, M15). <see cref="Bases"/> has at most one entry once it type-checks.</summary>
 public sealed record ClassDef(
     ImmutableArray<Decorator> Decorators, Identifier Name, ImmutableArray<TypeParam> TypeParams, ImmutableArray<TypeSyntax> Bases,
-    ImmutableArray<FieldDef> Fields, ImmutableArray<MethodDef> Methods, TextSpan Span) : TopItem(Span);
+    ImmutableArray<FieldDef> Fields, ImmutableArray<MethodDef> Methods, TextSpan Span) : TopItem(Span)
+{
+    /// <summary>Type aliases in the class body (SPEC §3.18, M40).</summary>
+    public ImmutableArray<TypeAliasDef> Aliases { get; init; } = [];
+}
 
 /// <summary>What a method's first parameter is: <c>self</c>, <c>cls</c>, or neither (SPEC §4.8, M28).</summary>
 public enum Receiver { Self, Cls, None }
@@ -100,6 +104,9 @@ public sealed record TypeParam(Identifier Name, ImmutableArray<TypeSyntax> Const
 public abstract record Stmt(TextSpan Span) : TopItem(Span);
 
 public sealed record Block(ImmutableArray<Stmt> Statements, TextSpan Span) : Node(Span);
+
+/// <summary>A type alias in a block (SPEC §3.18, M40).</summary>
+public sealed record TypeAliasStmt(TypeAliasDef Alias, TextSpan Span) : Stmt(Span);
 
 public sealed record LetStmt(Identifier Name, TypeSyntax? Type, Expr Value, TextSpan Span) : Stmt(Span);
 
@@ -380,6 +387,9 @@ public sealed record LambdaExpr(ImmutableArray<Identifier> Parameters, Expr Body
 
 /// <summary><c>x is None</c>, or <c>x is not None</c> when <see cref="Negated"/> (SPEC §3.4).</summary>
 public sealed record IsNoneExpr(Expr Operand, bool Negated, TextSpan Span) : Expr(Span);
+
+/// <summary><c>a is b</c>, or <c>a is not b</c> when <see cref="Negated"/>: identity (SPEC §3.18, M40).</summary>
+public sealed record IsExpr(Expr Left, Expr Right, bool Negated, TextSpan Span) : Expr(Span);
 
 /// <summary><c>x as T</c>: converts a py value to a Taipan type, or between classes (SPEC §10.4, §4.3).</summary>
 public sealed record CastExpr(Expr Value, TypeSyntax Type, TextSpan Span) : Expr(Span);

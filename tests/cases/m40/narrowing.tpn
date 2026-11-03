@@ -1,0 +1,58 @@
+# Narrowing II (SPEC §3.18): elements, paths rooted at a var, and '==' with a literal.
+class Node:
+    label: str?
+    next: Node?
+
+    def __init__(self, label: str?, next: Node?):
+        self.label = label
+        self.next = next
+
+def first_len(xs: list[str?]) -> int:
+    if xs[0] is None:
+        return -1
+    return len(xs[0])
+
+def lookup(d: dict[str, int?], key: str) -> int:
+    if d[key] is not None:
+        return d[key] + 1
+    return 0
+
+def pair_sum(t: tuple[int?, int?]) -> int:
+    if t[0] is not None and t[-1] is not None:
+        return t[0] + t[-1]
+    return 0
+
+def code(x: int?) -> int:
+    if x == 3:
+        return x * 10
+    if x != None:
+        return x
+    return 0
+
+def word(s: str?) -> str:
+    if s != "skip":
+        return "none or other"
+    return s.upper()
+
+print(first_len(["abc", None]), first_len([None]))
+print(lookup({"a": 1, "b": None}, "a"), lookup({"a": 1, "b": None}, "b"))
+print(pair_sum((1, 2)), pair_sum((None, 2)))
+print(code(3), code(4), code(None))
+print(word("skip"), word(None))
+
+var node = Node("a", Node(None, None))
+if node.next is not None:
+    print(node.next.label)
+if node.label is not None:
+    print(node.label.upper())
+
+var grid: list[list[int?]] = [[1, None], [None, 4]]
+let row = 0
+if grid[row][0] is not None:
+    print(grid[row][0] + 100)
+
+let names: list[str?] = ["x", None]
+for i in range(2):
+    let n = names
+    if n[i] is not None:
+        print(i, n[i])

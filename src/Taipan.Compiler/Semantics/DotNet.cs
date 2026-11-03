@@ -120,7 +120,7 @@ public sealed record DotNetType(INamedTypeSymbol Symbol) : TaipanType
 
     public override int GetHashCode() => SymbolEqualityComparer.Default.GetHashCode(Symbol);
 
-    public override string ToString() => IsObject ? "object" : Symbol.ToDisplayString(Format);
+    protected override string Describe() => IsObject ? "object" : Symbol.ToDisplayString(Format);
 }
 
 /// <summary>A generic method's type parameters, as Taipan types (SPEC §13.8).</summary>

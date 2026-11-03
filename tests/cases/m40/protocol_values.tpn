@@ -1,0 +1,90 @@
+# Protocols as types, protocol fields and generic protocols (SPEC §3.18).
+class Drawable(Protocol):
+    name: str
+    def draw(self) -> str: ...
+
+class Shape(Protocol):
+    def area(self) -> float: ...
+    def scaled(self, k: float) -> Self: ...
+
+class Circle:
+    name: str
+    r: float
+
+    def __init__(self, r: float):
+        self.name = "circle"
+        self.r = r
+
+    def draw(self) -> str:
+        return f"({self.r})"
+
+    def area(self) -> float:
+        return 3.0 * self.r * self.r
+
+    def scaled(self, k: float) -> Circle:
+        return Circle(self.r * k)
+
+@dataclass
+class Label:
+    name: str
+
+    def draw(self) -> str:
+        return self.name.upper()
+
+class HasArea(Protocol):
+    def area(self) -> float: ...
+
+class Source[T](Protocol):
+    def take(self) -> T?: ...
+
+class Countdown(Source[int]):
+    n: int
+
+    def __init__(self, n: int):
+        self.n = n
+
+    def take(self) -> int?:
+        if self.n == 0:
+            return None
+        self.n -= 1
+        return self.n + 1
+
+def drain[T](s: Source[T]) -> list[T]:
+    var out: list[T] = []
+    while s.take() is some v:
+        out.append(v)
+    return out
+
+def total(shapes: list[HasArea]) -> float:
+    var sum = 0.0
+    for s in shapes:
+        sum += s.area()
+    return sum
+
+let items: list[Drawable] = [Circle(1.0), Label("hi")]
+for d in items:
+    print(d.name, d.draw())
+items[1].name = "renamed"
+print(items[1].draw(), items[1])
+
+let s: Shape = Circle(1.0)
+let bigger: Shape = s.scaled(2.0)
+print(bigger.area())
+let h: HasArea = bigger
+print(total([h, Circle(2.0)]))
+
+print(drain(Countdown(3)))
+let src: Source[int] = Countdown(2)
+print(drain(src))
+
+let maybe: Drawable? = None
+print(maybe is None, items[0] is items[0], items[0] == items[1])
+if isinstance(items[0], Circle):
+    print("circle of", items[0].r)
+match items[1]:
+    Label(name=n):
+        print("label", n)
+    _:
+        print("other")
+let c = items[0] as Circle
+print(c.r)

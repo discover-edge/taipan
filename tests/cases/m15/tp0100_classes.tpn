@@ -8,7 +8,7 @@ def f():
         pass
 
 def g(x: int?) -> bool:
-    return x is 3
+    return x is
 
 @dataclass
 let y = 1

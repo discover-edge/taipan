@@ -1,0 +1,24 @@
+# isinstance on py values (SPEC §3.18).
+from python import json
+
+def describe(v: py) -> str:
+    if isinstance(v, bool):
+        return f"bool {not v}"
+    if isinstance(v, int):
+        return f"int {v + 1}"
+    if isinstance(v, str):
+        return f"str {v.upper()}"
+    if isinstance(v, list):
+        return "list"
+    if isinstance(v, dict):
+        return "dict"
+    return "other"
+
+let values = json.loads("[1, \"a\", true, [2], {\"k\": 3}, 2.5, null]")
+for v in values:
+    print(describe(v))
+let f = json.loads("2.5")
+if isinstance(f, float):
+    print(f * 2)
+let n = json.loads("4")
+print(isinstance(n, float), isinstance(n, json.JSONDecodeError))

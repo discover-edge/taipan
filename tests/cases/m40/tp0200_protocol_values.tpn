@@ -1,0 +1,27 @@
+# Protocol types: values that don't satisfy them, and what a protocol value can't do (SPEC §3.18).
+class Drawable(Protocol):
+    name: str
+    def draw(self) -> str: ...
+
+class Point:
+    x: int = 0
+
+class Named:
+    name: str?
+
+    def __init__(self):
+        self.name = None
+
+    def draw(self) -> str:
+        return ""
+
+class Unrelated:
+    pass
+
+let a: Drawable = Point()
+let b: Drawable = Named()
+let c: list[Drawable] = [Named()]
+let ds: list[Drawable] = []
+let keys: dict[Drawable, int] = {}
+print(isinstance(ds[0], Unrelated))
+let comparable: list[Comparable] = []

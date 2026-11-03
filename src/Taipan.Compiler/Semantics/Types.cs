@@ -31,6 +31,21 @@ public abstract record TaipanType
     /// <summary><c>types.TracebackType</c> (SPEC §3.17, M37).</summary>
     public static readonly TaipanType Traceback = new OpaqueType("TracebackType", "Taipan.Runtime.Traceback");
 
+    /// <summary>
+    /// The alias this type was written with, as diagnostics show it (SPEC §3.18, M40): <c>Handler</c>,
+    /// <c>Pair[int]</c>. It isn't part of the type, so equality ignores it.
+    /// </summary>
+    public string? Alias { get; init; }
+
+    public virtual bool Equals(TaipanType? other) => other is not null && EqualityContract == other.EqualityContract;
+
+    public override int GetHashCode() => EqualityContract.GetHashCode();
+
+    public sealed override string ToString() => Alias ?? Describe();
+
+    /// <summary>The type as written without an alias.</summary>
+    protected abstract string Describe();
+
     public bool IsError => this is ErrorType;
 
     /// <summary>True for the error type or a collection type built from it, like <c>list[?]</c>.</summary>
@@ -97,69 +112,69 @@ public abstract record TaipanType
 
 public sealed record PrimitiveType(string Name) : TaipanType
 {
-    public override string ToString() => Name;
+    protected override string Describe() => Name;
 }
 
 public sealed record NothingType : TaipanType
 {
-    public override string ToString() => "nothing";
+    protected override string Describe() => "nothing";
 }
 
 /// <summary>A runtime object with members the binder knows: <c>TextIO</c>, <c>TracebackType</c> (M37).</summary>
 public sealed record OpaqueType(string Name, string RuntimeName) : TaipanType
 {
-    public override string ToString() => Name;
+    protected override string Describe() => Name;
 }
 
 /// <summary><c>type[C]</c>: a class as a value, which only <c>__exit__</c> receives (SPEC §3.17, M37).</summary>
 public sealed record ClassOfType(ClassType Class) : TaipanType
 {
-    public override string ToString() => $"type[{Class}]";
+    protected override string Describe() => $"type[{Class}]";
 }
 
 /// <summary>A class method's <c>Self</c> result (M39); replaced by the receiver's type at each call.</summary>
 public sealed record SelfType : TaipanType
 {
-    public override string ToString() => "Self";
+    protected override string Describe() => "Self";
 }
 
 public sealed record ErrorType : TaipanType
 {
-    public override string ToString() => "?";
+    protected override string Describe() => "?";
 }
 
 /// <summary><c>Iterator[T]</c>: a single-pass stream of values (SPEC §3.13, M31).</summary>
 public sealed record IteratorOfType(TaipanType Element) : TaipanType
 {
-    public override string ToString() => $"Iterator[{Element}]";
+    protected override string Describe() => $"Iterator[{Element}]";
 }
 
 /// <summary><c>Awaitable[T]</c>: a value that will give a <c>T</c>, or nothing for <c>Awaitable[None]</c> (SPEC §3.14, M33).</summary>
 public sealed record AwaitableOfType(TaipanType Result) : TaipanType
 {
-    public override string ToString() => $"Awaitable[{(Result is NothingType ? "None" : Result)}]";
+    protected override string Describe() => $"Awaitable[{(Result is NothingType ? "None" : Result)}]";
 }
 
 /// <summary><c>Iterable[T]</c>: anything a <c>for</c> loop goes over (SPEC §3.13, M31).</summary>
 public sealed record IterableOfType(TaipanType Element) : TaipanType
 {
-    public override string ToString() => $"Iterable[{Element}]";
+    protected override string Describe() => $"Iterable[{Element}]";
 }
 
 public sealed record ListOfType(TaipanType Element) : TaipanType
 {
-    public override string ToString() => $"list[{Element}]";
+    protected override string Describe() => $"list[{Element}]";
 }
 
 /// <summary><c>set[T]</c>: distinct values in insertion order (SPEC §3.15, M35).</summary>
 public sealed record SetOfType(TaipanType Element) : TaipanType
 {
-    public override string ToString() => $"set[{Element}]";
+    protected override string Describe() => $"set[{Element}]";
 }
 
 public sealed record DictOfType(TaipanType Key, TaipanType Value) : TaipanType
 {
-    public override string ToString() => $"dict[{Key}, {Value}]";
+    protected override string Describe() => $"dict[{Key}, {Value}]";
 
     /// <summary>Dict keys are int, str, bool, tuples of keys, and hashable classes (SPEC §3.1, §4.8).</summary>
     public static bool IsValidKey(TaipanType type) =>
@@ -182,7 +197,7 @@ public sealed record ClassType(ClassSymbol Symbol, ImmutableArray<TaipanType> Ty
 
     public override int GetHashCode() => Symbol.GetHashCode();
 
-    public override string ToString() => GenericName(Symbol.Name, TypeArguments);
+    protected override string Describe() => GenericName(Symbol.Name, TypeArguments);
 
     internal static string GenericName(string name, ImmutableArray<TaipanType> arguments) =>
         arguments.IsEmpty ? name : $"{name}[{string.Join(", ", arguments)}]";
@@ -190,13 +205,13 @@ public sealed record ClassType(ClassSymbol Symbol, ImmutableArray<TaipanType> Ty
 
 public sealed record NoneType : TaipanType
 {
-    public override string ToString() => "None";
+    protected override string Describe() => "None";
 }
 
 /// <summary><c>T?</c>. <see cref="Inner"/> is never itself optional (SPEC §3.1).</summary>
 public sealed record OptionalOf(TaipanType Inner) : TaipanType
 {
-    public override string ToString() => $"{Inner}?";
+    protected override string Describe() => $"{Inner}?";
 }
 
 /// <summary>An enum, with its type arguments if it's generic (SPEC §3.6). Equal when both match.</summary>
@@ -207,7 +222,7 @@ public sealed record EnumType(EnumSymbol Symbol, ImmutableArray<TaipanType> Type
 
     public override int GetHashCode() => Symbol.GetHashCode();
 
-    public override string ToString() => ClassType.GenericName(Symbol.Name, TypeArguments);
+    protected override string Describe() => ClassType.GenericName(Symbol.Name, TypeArguments);
 }
 
 /// <summary>
@@ -221,7 +236,7 @@ public sealed record FunctionType(ImmutableArray<TaipanType> Parameters, TaipanT
 
     public override int GetHashCode() => HashCode.Combine(Parameters.Length, Result);
 
-    public override string ToString() =>
+    protected override string Describe() =>
         $"Callable[[{string.Join(", ", Parameters)}], {(Result is NothingType ? "None" : Result.ToString())}]";
 }
 
@@ -232,11 +247,11 @@ public sealed record TupleOfType(ImmutableArray<TaipanType> Elements) : TaipanTy
 
     public override int GetHashCode() => Elements.Length;
 
-    public override string ToString() => $"tuple[{string.Join(", ", Elements)}]";
+    protected override string Describe() => $"tuple[{string.Join(", ", Elements)}]";
 }
 
 /// <summary>A type parameter inside a generic definition: an opaque type (SPEC §3.6).</summary>
 public sealed record TypeParameterType(TypeParameterSymbol Symbol) : TaipanType
 {
-    public override string ToString() => Symbol.Name;
+    protected override string Describe() => Symbol.Name;
 }

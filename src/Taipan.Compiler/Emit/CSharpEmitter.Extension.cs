@@ -48,7 +48,7 @@ public sealed partial class CSharpEmitter
         }));
         var defaults = string.Join(", ", parameters.Select((_, i) => function.DefaultFor(i) is null ? "false" : "true"));
         string Convert(TaipanType type, string name, string value) =>
-            $"{PythonExtension}.Argument(\"{function.Name}\", \"{name}\", \"{Escape(type.ToString())}\", {value}, static @v => {ToTaipan(type, "@v", 1)})";
+            $"{PythonExtension}.Argument(\"{function.Name}\", \"{name}\", \"{Escape(TypeChecker.Unaliased(type).ToString())}\", {value}, static @v => {ToTaipan(type, "@v", 1)})";
         var arguments = parameters.Select((p, i) => function.Kinds[i] switch
         {
             // Each collected argument converts to the element type (SPEC §17.3, M30).

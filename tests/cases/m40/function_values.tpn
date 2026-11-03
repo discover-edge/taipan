@@ -1,0 +1,46 @@
+# Generic functions, built-ins and constructors as values (SPEC §3.18).
+class Dog:
+    name: str
+
+    def __init__(self, name: str):
+        self.name = name
+
+@dataclass
+class Point:
+    x: int
+    y: int = 0
+
+enum Shape:
+    Circle(r: float)
+    Empty
+
+def first[T](xs: list[T]) -> T?:
+    if len(xs) == 0:
+        return None
+    return xs[0]
+
+def apply[T, R](f: Callable[[T], R], x: T) -> R:
+    return f(x)
+
+let words = ["ccc", "a", "bb"]
+print(sorted(words, key=len))
+print(list(map(str, [1, 2])), list(map(int, ["3", "4"])))
+print(apply(first, [7, 8]), apply(len, "four"))
+let f: Callable[[list[str]], str?] = first
+print(f(words), f is f)
+let make = Dog
+print(make("rex").name)
+let dogs = list(map(Dog, ["a", "b"]))
+print(len(dogs), dogs[1].name)
+let points = list(map(Point, [1, 2]))
+print(points)
+let pt: Callable[[int, int], Point] = Point
+print(pt(3, 4))
+let circle = Shape.Circle
+print(circle(1.5))
+let shout: Callable[[str], None] = print
+shout("hi")
+let g1: Callable[[str], int] = len
+let g2: Callable[[str], int] = len
+let s: Callable[[int], str] = str
+print(g1 == g2, g1, s, make, circle, f)

@@ -208,6 +208,9 @@ public sealed class ClassAttributeSymbol(string name, TaipanType type, ClassSymb
 /// </summary>
 public sealed class ClassSymbol(string name, ImmutableArray<TypeParameterSymbol> typeParameters, bool isDataclass) : Symbol(name)
 {
+    /// <summary>The type aliases its body declares (SPEC §3.18, M40).</summary>
+    public Dictionary<string, TypeAliasSymbol> Aliases { get; } = [];
+
     public ImmutableArray<TypeParameterSymbol> TypeParameters { get; } = typeParameters;
 
     public bool IsDataclass { get; } = isDataclass;
@@ -227,10 +230,16 @@ public sealed class ClassSymbol(string name, ImmutableArray<TypeParameterSymbol>
     public bool IsProtocol => SelfParameter is not null;
 
     /// <summary>The protocols the class declares in its base list (SPEC §3.11), checked at its definition.</summary>
-    public ImmutableArray<ClassSymbol> Protocols { get; set; } = [];
+    public ImmutableArray<ClassType> Protocols { get; set; } = [];
 
     /// <summary>The base class, if any; never part of a cycle once the declarations are checked.</summary>
-    public ClassSymbol? Base { get; set; }
+    public ClassSymbol? Base => BaseType?.Symbol;
+
+    /// <summary>
+    /// The base class with its type arguments, in terms of this class's own type parameters:
+    /// <c>Box[T]</c> for <c>class Labeled[T](Box[T])</c> (SPEC §3.18, M40).
+    /// </summary>
+    public ClassType? BaseType { get; set; }
 
     /// <summary>Whether any class derives from this one.</summary>
     public bool HasSubclasses { get; set; }
@@ -275,8 +284,9 @@ public sealed class ClassSymbol(string name, ImmutableArray<TypeParameterSymbol>
     /// any other class is as its base is, so a plain class is by identity.
     /// </summary>
     public bool IsHashable =>
-        Methods.ContainsKey("__hash__") || !IsDataclass && !Methods.ContainsKey("__eq__") && Base?.IsHashable != false
-        || IsFrozen && !Methods.ContainsKey("__eq__") && UnhashableField is null;
+        // A protocol value may hold a class that isn't hashable (SPEC §3.18).
+        !IsProtocol && (Methods.ContainsKey("__hash__") || !IsDataclass && !Methods.ContainsKey("__eq__") && Base?.IsHashable != false
+            || IsFrozen && !Methods.ContainsKey("__eq__") && UnhashableField is null);
 
     /// <summary>A frozen dataclass's first field whose type can't be a key, which makes the class unhashable too (SPEC §4.9).</summary>
     public FieldSymbol? UnhashableField
@@ -336,7 +346,9 @@ public sealed class ClassSymbol(string name, ImmutableArray<TypeParameterSymbol>
         var self = new VariableSymbol("self", Type, VariableKind.Parameter);
         if (Base?.Constructor is not { } baseInit)
             return new FunctionSymbol("__init__", [], TaipanType.Nothing, self: self);
-        var parameters = baseInit.Parameters.Select(p => new VariableSymbol(p.Name, p.Type, VariableKind.Parameter)).ToImmutableArray();
+        // A generic base's parameters take its type arguments (SPEC §3.18).
+        var map = TypeChecker.MapOf(Type);
+        var parameters = baseInit.Parameters.Select(p => new VariableSymbol(p.Name, TypeChecker.Substitute(p.Type, map), VariableKind.Parameter)).ToImmutableArray();
         return new FunctionSymbol("__init__", parameters, TaipanType.Nothing, self: self) { DefaultsFrom = baseInit, Kinds = baseInit.Kinds };
     }
 
@@ -483,7 +495,7 @@ public static class BuiltinClasses
     private static ClassSymbol Builtin(string name, ClassSymbol? baseClass) => Builtin(name, name, baseClass);
 
     private static ClassSymbol Builtin(string name, string runtimeName, ClassSymbol? baseClass) =>
-        new(name, [], isDataclass: false) { RuntimeName = $"Taipan.Runtime.{runtimeName}", Base = baseClass, HasSubclasses = true };
+        new(name, [], isDataclass: false) { RuntimeName = $"Taipan.Runtime.{runtimeName}", BaseType = baseClass?.Type, HasSubclasses = true };
 
     /// <summary>Whether <paramref name="symbol"/> can be raised and caught: <c>BaseException</c> or a class deriving from it (SPEC §3.10).</summary>
     public static bool IsException(ClassSymbol symbol) => symbol.DerivesFrom(BaseException);
@@ -501,7 +513,8 @@ public static class BuiltinClasses
     }
 
     /// <summary>A protocol with no methods yet, and its own <c>Self</c>.</summary>
-    public static ClassSymbol Protocol(string name) => new(name, [], isDataclass: false) { SelfParameter = new TypeParameterSymbol("Self") };
+    public static ClassSymbol Protocol(string name, ImmutableArray<TypeParameterSymbol> typeParameters = default) =>
+        new(name, typeParameters.IsDefault ? [] : typeParameters, isDataclass: false) { SelfParameter = new TypeParameterSymbol("Self") };
 }
 
 /// <summary>Built-in methods of list, dict and str (SPEC §6).</summary>
@@ -547,8 +560,17 @@ public sealed class TypeParameterSymbol(string name) : Symbol(name)
     /// <summary>The types a constrained parameter can stand for (SPEC §3.6); empty if unconstrained.</summary>
     public ImmutableArray<TaipanType> Constraints { get; set; } = [];
 
-    /// <summary>The protocol a bounded parameter's type arguments must satisfy (SPEC §3.11); null if unbounded.</summary>
-    public ClassSymbol? Bound { get; set; }
+    /// <summary>
+    /// The protocol a bounded parameter's type arguments must satisfy (SPEC §3.11), or since M40 the
+    /// class they must derive from (§3.18), with its type arguments; null if unbounded.
+    /// </summary>
+    public ClassType? Bound { get; set; }
+
+    /// <summary>The bound when it's a protocol.</summary>
+    public ClassSymbol? Protocol => Bound is { Symbol.IsProtocol: true } bound ? bound.Symbol : null;
+
+    /// <summary>The bound when it's a class (SPEC §3.18).</summary>
+    public ClassType? ClassBound => Bound is { Symbol.IsProtocol: false } bound ? bound : null;
 }
 
 /// <summary>
@@ -560,6 +582,12 @@ public sealed class TypeAliasSymbol(string name, ImmutableArray<TypeParameterSym
     public ImmutableArray<TypeParameterSymbol> TypeParameters { get; } = typeParameters;
 
     public TaipanType? Target { get; set; }
+
+    /// <summary>
+    /// For an alias in a block or class (SPEC §3.18, M40), its right-hand side, which is bound where
+    /// it's used, since it may use the type parameters around it.
+    /// </summary>
+    public Syntax.TypeSyntax? LocalType { get; init; }
 
     /// <summary>The class or enum the alias names, for help pointing at it, or null if it names another type.</summary>
     public string? TargetName => Target switch

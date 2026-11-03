@@ -1,0 +1,13 @@
+# 'is' needs values with an identity, of related types (SPEC §3.18).
+class Animal:
+    pass
+
+class Car:
+    pass
+
+let n = 3
+print(n is 3)
+let s = "x"
+print(s is s)
+print((1, 2) is (1, 2))
+print(Animal() is Car())

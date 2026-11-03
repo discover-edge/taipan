@@ -1,0 +1,73 @@
+# Inheritance with generic classes (SPEC §3.18).
+class Box[T]:
+    value: T
+
+    def __init__(self, value: T):
+        self.value = value
+
+    def get(self) -> T:
+        return self.value
+
+    def describe(self) -> str:
+        return f"Box({self.value})"
+
+class IntBox(Box[int]):
+    def __init__(self, value: int):
+        super().__init__(value)
+
+    @override
+    def get(self) -> int:
+        return self.value * 10
+
+class Labeled[T](Box[T]):
+    label: str
+
+    def __init__(self, label: str, value: T):
+        self.label = label
+        super().__init__(value)
+
+    @override
+    def describe(self) -> str:
+        return f"{self.label}: {super().describe()}"
+
+class Pair[K, V](Box[tuple[K, V]]):
+    def first(self) -> K:
+        return self.value[0]
+
+class Base:
+    name: str
+
+    def __init__(self, name: str):
+        self.name = name
+
+class Keyed[K](Base):
+    key: K
+
+    def __init__(self, name: str, key: K):
+        self.key = key
+        super().__init__(name)
+
+@dataclass
+class Node[T]:
+    item: T
+
+@dataclass
+class Leaf[T](Node[T]):
+    depth: int = 0
+
+def show(b: Box[int]) -> str:
+    return f"{b.describe()} -> {b.get()}"
+
+let boxes: list[Box[int]] = [Box(1), IntBox(2), Labeled("l", 3)]
+for b in boxes:
+    print(show(b))
+let pair = Pair(("a", 2))
+print(pair.first(), pair.get())
+let k = Keyed("k", 3.5)
+print(k.name, k.key)
+let leaf = Leaf("x", 2)
+print(leaf, leaf == Leaf("x", 2), leaf.item)
+let mixed = [IntBox(5), Labeled("m", 6)]
+print(mixed[0].get(), mixed[1].get())
+if isinstance(boxes[1], IntBox):
+    print("intbox", boxes[1].get())

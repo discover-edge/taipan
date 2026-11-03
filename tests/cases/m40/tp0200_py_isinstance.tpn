@@ -1,0 +1,7 @@
+# isinstance on py takes int, float, str, bool, list, dict, tuple or a Python class (SPEC §3.18).
+from python import json
+
+let v = json.loads("1")
+print(isinstance(v, (int, str)))
+print(isinstance(v, list[int]))
+print(isinstance(v, set))

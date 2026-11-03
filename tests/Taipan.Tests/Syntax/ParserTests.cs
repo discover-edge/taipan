@@ -90,8 +90,9 @@ public class ParserTests
     [Fact]
     public void TypeAliasInBlock() =>
         Assert.Equal(
-            ["2:5 TP0100: a type alias must be at the top level", "6:5 TP0100: a type alias must be at the top level"],
-            Errors("def f():\n    type T = int\n    pass\n\nclass C:\n    type U[A] = list[A]\n    x: int\n"));
+            "FuncDef(f, [], [], null, Block([TypeAliasStmt(TypeAliasDef(T, [], NamedType(int))), PassStmt]))\n" +
+            "ClassDef(C, [], [], [FieldDef(x, NamedType(int))], [], [TypeAliasDef(U, [A], ListType(NamedType(A)))])",
+            Snapshot("def f():\n    type T = int\n    pass\n\nclass C:\n    type U[A] = list[A]\n    x: int\n"));
 
     // ---- func_def / params / param ----
 
@@ -158,6 +159,12 @@ public class ParserTests
             Snapshot("x is not None and y is None\n"));
 
     [Fact]
+    public void IsBetweenExpressions() =>
+        Assert.Equal(
+            "ExprStmt(BinaryExpr(IsExpr(NameExpr(x), NameExpr(y), False), Or, IsExpr(NameExpr(a), MemberExpr(NameExpr(b), c), True)))",
+            Snapshot("x is y or a is not b.c\n"));
+
+    [Fact]
     public void ClassPatternBindings() =>
         Assert.Equal(
             "MatchStmt(NameExpr(e), [MatchArm(VariantPattern(null, null, Pair, [a, PatternBinding(right, b)]), Block([PassStmt]))])",
@@ -167,7 +174,7 @@ public class ParserTests
     [InlineData("@dataclass(frozen=True) class A:\n    x: int\n", "1:25 TP0100: expected newline, found 'class'")]
     [InlineData("@dataclass\nlet y = 1\n", "2:1 TP0100: expected 'def' or 'class', found 'let'")]
     [InlineData("def f():\n    class C:\n        pass\n", "2:5 TP0100: expected statement, found 'class'")]
-    [InlineData("if x is not 3:\n    pass\n", "1:13 TP0100: expected 'None', found integer")]
+    [InlineData("if x is not:\n    pass\n", "1:12 TP0100: expected expression, found ':'")]
     public void ClassSyntaxErrors(string text, string expected) =>
         Assert.Equal([expected], Errors(text));
 
@@ -710,7 +717,7 @@ public class ParserTests
     [InlineData("else:\n    pass\n", "1:1 TP0100: expected statement, found 'else'")]
     [InlineData("    x\n", "1:5 TP0100: expected statement, found indent")]
     [InlineData("x = y z\n", "1:7 TP0100: expected newline, found name 'z'")]
-    [InlineData("if x is y:\n    pass\n", "1:9 TP0100: expected 'some', 'not' or 'None', found name 'y'")]
+    [InlineData("if x is:\n    pass\n", "1:8 TP0100: expected expression, found ':'")]
     [InlineData("match x:\n    +: pass\n", "2:5 TP0100: expected pattern, found '+'")]
     [InlineData("def f(:\n    pass\n", "1:7 TP0100: expected name, found ':'")]
     [InlineData("enum E:\n    V()\n", "2:7 TP0100: expected name, found ')'")]

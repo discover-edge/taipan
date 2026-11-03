@@ -8,6 +8,9 @@ public interface IFunction
 
     /// <summary>What equality compares: the function this value is, or was converted from (SPEC §3.3).</summary>
     object Identity { get; }
+
+    /// <summary>How it displays: <c>&lt;function name&gt;</c>, or for a built-in or class as a value, Python's form (SPEC §3.18).</summary>
+    string Display { get; }
 }
 
 /// <summary>
@@ -21,16 +24,24 @@ public sealed class Function<TDelegate> : IFunction where TDelegate : Delegate
         Name = name;
         Invoke = invoke;
         Identity = this;
+        Display = $"<function {name}>";
     }
 
-    private Function(string name, TDelegate invoke, object identity)
+    /// <summary>A built-in, class or variant as a value (SPEC §3.18), shown as <paramref name="display"/>.</summary>
+    public Function(string name, TDelegate invoke, string display)
+        : this(name, invoke) => Display = display;
+
+    private Function(string name, TDelegate invoke, object identity, string display)
     {
         Name = name;
         Invoke = invoke;
         Identity = identity;
+        Display = display;
     }
 
     public string Name { get; }
+
+    public string Display { get; }
 
     public TDelegate Invoke { get; }
 
@@ -41,7 +52,7 @@ public sealed class Function<TDelegate> : IFunction where TDelegate : Delegate
     /// delegate wrapped by <paramref name="adapt"/>, still equal to it and displayed the same.
     /// </summary>
     public static Function<TDelegate> Convert<TSource>(Function<TSource> source, Func<TSource, TDelegate> adapt) where TSource : Delegate =>
-        new(source.Name, adapt(source.Invoke), source.Identity);
+        new(source.Name, adapt(source.Invoke), source.Identity, source.Display);
 
-    public override string ToString() => Display.Format(this);
+    public override string ToString() => Runtime.Display.Format(this);
 }

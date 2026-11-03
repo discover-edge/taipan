@@ -60,11 +60,11 @@ def seen_by_lambda(x: int?) -> int:
     let f: Callable[[], int] = lambda: y + 1
     return f()
 
-def rooted_at_var(b: Box) -> int:
-    var c = b
-    if c.value is None:
+def var_index(xs: list[int?], i: int) -> int:
+    var j = i
+    if xs[j] is None:
         return 0
-    return c.value + 1
+    return xs[j] + 1
 
 class Animal:
     pass

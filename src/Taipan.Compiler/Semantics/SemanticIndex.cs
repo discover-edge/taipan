@@ -183,5 +183,5 @@ public sealed class SemanticIndex
     }
 
     private static string TypeParameters(IEnumerable<TypeParameterSymbol> parameters) =>
-        parameters.Any() ? $"[{string.Join(", ", parameters.Select(p => p.Bound is { } bound ? $"{p.Name}: {bound.Name}" : p.Name))}]" : "";
+        parameters.Any() ? $"[{string.Join(", ", parameters.Select(p => p.Bound is { } bound ? $"{p.Name}: {bound}" : p.Name))}]" : "";
 }

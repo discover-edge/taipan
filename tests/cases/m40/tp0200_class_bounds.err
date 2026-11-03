@@ -1,0 +1,4 @@
+tests/cases/m40/tp0200_class_bounds.tpn:17:17: error TP0220: a bound can't use type parameters
+tests/cases/m40/tp0200_class_bounds.tpn:20:17: error TP0220: bounds are only supported on functions
+tests/cases/m40/tp0200_class_bounds.tpn:23:7: error TP0200: 'Car' does not derive from 'Animal'
+tests/cases/m40/tp0200_class_bounds.tpn:24:7: error TP0200: 'int' does not derive from 'Animal'

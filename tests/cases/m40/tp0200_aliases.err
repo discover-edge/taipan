@@ -1,0 +1,6 @@
+tests/cases/m40/tp0200_aliases.tpn:6:18: error TP0200: expected int, found Handler
+tests/cases/m40/tp0200_aliases.tpn:7:12: error TP0200: expected Pair[int], found int
+tests/cases/m40/tp0200_aliases.tpn:11:20: error TP0200: expected Count, found str
+tests/cases/m40/tp0200_aliases.tpn:12:13: error TP0200: 'Count' is a type alias, not a value
+tests/cases/m40/tp0200_aliases.tpn:19:22: error TP0200: expected Label, found int
+tests/cases/m40/tp0200_aliases.tpn:21:14: error TP0201: undefined type 'Label'

@@ -270,14 +270,6 @@ public sealed class Parser
         return new TypeAliasDef(name, typeParams, type, span);
     }
 
-    /// <summary>An alias in a block or class body is TP0100, and its line is skipped (SPEC §2).</summary>
-    private ExprStmt ParseMisplacedTypeAlias()
-    {
-        var span = Current.Span;
-        ReportSyntaxError(bag => bag.ReportAliasNotTopLevel(span));
-        return new ExprStmt(new ErrorExpr(span), span);
-    }
-
     // { decorator } ( func_def | class_def ) at the top level
     private TopItem ParseDecoratedDef()
     {
@@ -496,14 +488,17 @@ public sealed class Parser
         }
         Expect(TokenKind.Colon);
         var members = ParseIndentedBody(ParseClassMember);
-        return new ClassDef(decorators, name, typeParams, bases, [.. members.OfType<FieldDef>()], [.. members.OfType<MethodDef>()], SpanFrom(start));
+        return new ClassDef(decorators, name, typeParams, bases, [.. members.OfType<FieldDef>()], [.. members.OfType<MethodDef>()], SpanFrom(start))
+        {
+            Aliases = [.. members.OfType<TypeAliasDef>()],
+        };
     }
 
-    // class_member = NAME ":" type [ "=" expr ] NEWLINE | method_def | "pass" NEWLINE
+    // class_member = NAME ":" type [ "=" expr ] NEWLINE | method_def | type_alias | "pass" NEWLINE
     private Node ParseClassMember()
     {
         if (AtTypeAlias())
-            return ParseMisplacedTypeAlias();
+            return ParseTypeAlias();
         if (At(TokenKind.DefKeyword) || At(TokenKind.At) || At(TokenKind.AsyncKeyword))
         {
             var start = Current.Span.Start;
@@ -675,7 +670,10 @@ public sealed class Parser
     private Stmt ParseStmt()
     {
         if (AtTypeAlias())
-            return ParseMisplacedTypeAlias();
+        {
+            var alias = ParseTypeAlias();
+            return new TypeAliasStmt(alias, alias.Span);
+        }
         switch (Current.Kind)
         {
             case TokenKind.IfKeyword:
@@ -1666,7 +1664,7 @@ public sealed class Parser
         return new UnaryExpr(UnaryOp.Not, operand, SpanFrom(start));
     }
 
-    // comparison = additive [ comp_op additive | "is" [ "not" ] "None" ]   — a second comp_op is TP0212 (SPEC §2.1)
+    // comparison = additive [ comp_op additive | "is" [ "not" ] ( "None" | additive ) ]   — a second comp_op is TP0212 (SPEC §2.1)
     private Expr ParseComparison()
     {
         var left = ParseBitOr();
@@ -1676,8 +1674,15 @@ public sealed class Parser
             var negated = At(TokenKind.NotKeyword);
             if (negated)
                 Next();
-            Expect(TokenKind.NoneKeyword, negated ? null : "'some', 'not' or 'None'");
-            left = new IsNoneExpr(left, negated, SpanFrom(left.Span.Start));
+            if (At(TokenKind.NoneKeyword))
+            {
+                Next();
+                left = new IsNoneExpr(left, negated, SpanFrom(left.Span.Start));
+            }
+            else
+            {
+                left = new IsExpr(left, ParseBitOr(), negated, SpanFrom(left.Span.Start));
+            }
         }
         else if (TryParseCompOp(out var op, out _))
         {

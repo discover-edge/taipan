@@ -1,0 +1,4 @@
+tests/cases/m40/tp0207_aliases.tpn:6:10: error TP0207: 'T' shadows an outer binding
+tests/cases/m40/tp0207_aliases.tpn:7:10: error TP0207: 'Point' shadows an outer binding
+tests/cases/m40/tp0207_aliases.tpn:9:10: error TP0214: duplicate definition of 'Same'
+tests/cases/m40/tp0207_aliases.tpn:13:10: error TP0214: duplicate definition of 'Inner'

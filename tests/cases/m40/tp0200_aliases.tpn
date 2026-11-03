@@ -1,0 +1,21 @@
+# Errors with local and class aliases, and diagnostics that show an alias's name (SPEC §3.18).
+type Handler = Callable[[str], int]
+type Pair[T] = tuple[T, T]
+
+def use(h: Handler) -> Pair[int]:
+    let n: int = h
+    return h("x")
+
+def local():
+    type Count = int
+    let c: Count = "three"
+    let d = Count(3)
+
+class Shelf:
+    type Label = str
+    label: Label
+
+    def __init__(self):
+        self.label = 4
+
+let outside: Label = "x"

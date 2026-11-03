@@ -1,0 +1,24 @@
+# Class bounds: the type argument must derive from the class, and a bound can't use type parameters (SPEC §3.18).
+class Animal:
+    name: str = ""
+
+class Car:
+    pass
+
+class Box[T]:
+    value: T
+
+    def __init__(self, value: T):
+        self.value = value
+
+def name_of[A: Animal](a: A) -> str:
+    return a.name
+
+def wrong[T, B: Box[T]](b: B):
+    pass
+
+class Holder[A: Animal]:
+    pass
+
+print(name_of(Car()))
+print(name_of(3))

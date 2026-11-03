@@ -1,0 +1,9 @@
+tests/cases/m40/tp0206_function_values.tpn:9:9: error TP0206: cannot infer the type of 'first'
+  help: give it a type, e.g. 'let f: Callable[[…], …] = first'
+tests/cases/m40/tp0206_function_values.tpn:10:9: error TP0206: cannot infer the type of 'len'
+  help: give it a type, e.g. 'let f: Callable[[…], …] = len'
+tests/cases/m40/tp0206_function_values.tpn:11:31: error TP0200: expected str, list, dict or set, found int
+tests/cases/m40/tp0206_function_values.tpn:12:31: error TP0200: 'range' cannot be used as a value
+  help: wrap it in a lambda
+tests/cases/m40/tp0206_function_values.tpn:13:9: error TP0200: 'Pet' has '*args' or '**kwargs', so it cannot be used as a value
+  help: wrap it in a lambda

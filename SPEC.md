@@ -108,7 +108,7 @@ type_param    = NAME [ ":" ( "(" type { "," type } [ "," ] ")"     (* constraint
 class_def     = { decorator } "class" NAME [ type_params ] [ "(" base { "," base } ")" ] ":"   (* M15, §4.3 *)
                 NEWLINE INDENT class_member { class_member } DEDENT ;
 base          = NAME [ "." NAME ] [ "[" type { "," type } "]" ] ;   (* more than one class base is TP0225; protocols may be added: M17 *)
-class_member  = NAME ":" type [ "=" expr ] NEWLINE | method_def | "pass" NEWLINE ;
+class_member  = NAME ":" type [ "=" expr ] NEWLINE | method_def | type_alias | "pass" NEWLINE ;   (* type_alias: M40 *)
 method_def    = { decorator } [ "async" ] "def" NAME "(" [ method_params ] ")" [ "->" type ] ":" ( block | "..." NEWLINE ) ;   (* M5; "...": M17; async: M33 *)
 method_params = ( "self" | "cls" ) { "," param } [ "," ] | params ;  (* M28: "cls", or neither, for class and static methods, §4.8 *)
 
@@ -118,7 +118,7 @@ named_fields  = NAME ":" type { "," NAME ":" type } [ "," ] ;
 
 block         = NEWLINE INDENT stmt { stmt } DEDENT ;
 
-stmt          = simple_stmt NEWLINE | compound_stmt ;
+stmt          = simple_stmt NEWLINE | compound_stmt | type_alias ;   (* type_alias in a block: M40, §3.18 *)
 simple_stmt   = let_stmt | var_stmt | assign_stmt | return_stmt | raise_stmt | del_stmt | yield_stmt
               | "pass" | "break" | "continue" | expr ;
 del_stmt      = "del" target { "," target } ;                       (* M26, §5.5 *)
@@ -182,7 +182,7 @@ coalesce      = or_expr [ "??" coalesce ] ;                        (* right-asso
 or_expr       = and_expr { "or" and_expr } ;
 and_expr      = not_expr { "and" not_expr } ;
 not_expr      = "not" not_expr | comparison ;
-comparison    = additive [ comp_op additive | "is" [ "not" ] "None" ] ;   (* no chaining; 'is not None': M15 *)
+comparison    = additive [ comp_op additive | "is" [ "not" ] ( "None" | additive ) ] ;   (* no chaining; 'is not None': M15; 'is' between objects: M40 *)
 comp_op       = "==" | "!=" | "<" | "<=" | ">" | ">=" | "in" | "not" "in" ;
 additive      = term { ( "+" | "-" ) term } ;
 term          = unary { ( "*" | "/" | "//" | "%" ) unary } ;
@@ -216,10 +216,10 @@ comp_for      = "for" ( NAME | names ) "in" coalesce { "for" ( NAME | names ) "i
 - In a parameter list, a parameter without a default after one with a default is `TP0100`, as in Python. Since M30 that applies only before `*`, and the order of `/`, `*`, `*args` and `**kwargs` is checked as §4.2 says (`TP0100`).
 - **Decorators (M15)** are only `@dataclass` on a `class` and `@override` on a method (§4.3), and since M28 `@property`, `@<name>.setter`, `@staticmethod`, `@classmethod` and `@abstractmethod` on a method (§4.8). A decorator takes no arguments, except `@dataclass(frozen=…, order=…)` since M39 (§4.9); arguments on any other decorator are `TP0224`. Since M39, `@final` on a class or method and `@total_ordering` on a class are valid too. Any other decorator name, a decorator in any other place, a repeated one, or one that can't be combined with another (§4.8) is `TP0224`. A dotted decorator other than `@<property>.setter` is `TP0224`.
 - **Receivers (M28):** an instance method, property or setter must take `self` first, a `@classmethod` must take `cls` first, and a `@staticmethod` takes neither. Otherwise it's `TP0225`, `'<m>' must take 'self' first` (or `'cls'`, or `a static method takes neither 'self' nor 'cls'`). As before M28, `self` and `cls` are written without a type.
-- **`is`:** `x is None` and `x is not None` are comparisons that give `bool`, usable in any expression (M15). `x is some v` binds a name, so it's only a whole `if`/`elif`/`while` condition. Any other right operand of `is`, including another expression (`x is y`), is `TP0100`, `expected 'some', 'not' or 'None'`.
+- **`is`:** `x is None` and `x is not None` are comparisons that give `bool`, usable in any expression (M15). `x is some v` binds a name, so it's only a whole `if`/`elif`/`while` condition. Before M40, any other right operand of `is`, including another expression (`x is y`), was `TP0100`, `expected 'some', 'not' or 'None'`. Since M40, `x is y` and `x is not y` compare identity (§3.18).
 - **`try` (M16):** a `try` needs at least one `except` clause or a `finally`, and an `else` needs at least one `except`. A bare `except:` must be the last clause. Otherwise it's `TP0100`. An `except` clause names its types (`except KeyError`, `except zoo.NotFound`, `except json.JSONDecodeError`) rather than taking an expression, so in `except KeyError as e` the `as` names the binding rather than starting a cast.
 - A class body holds field declarations, methods and `pass`. Classes are top-level only, so a `class` inside a block is `TP0100`.
-- **Type aliases (M18)** are top-level only too. A line that starts with `type`, a name and `=` or `[` inside a block or class body is `TP0100`, `a type alias must be at the top level`. Python allows them in functions and classes; that's deferred.
+- **Type aliases (M18)** were top-level only too until M40: a line that starts with `type`, a name and `=` or `[` inside a block or class body was `TP0100`, `a type alias must be at the top level`. Since M40 an alias may be a statement in a block or a member of a class body (§3.18).
 - **Protocols (M17)** are written as classes with the base `Protocol`, and their methods' bodies as `...` (§3.11). The parser treats them as any other class, and `...` as any other atom. The type checker applies the protocol rules.
 - **Type parameter bounds (M17):** in `[T: Comparable]` the bound is a type, and in `[N: (int, float)]` a parenthesized constraint tuple. `[T: (Comparable)]` is a one-type constraint (`TP0220`), not a bound.
 - **`...` (M17)** is an atom, so it parses wherever an expression may appear, and a method's body may be `...` on the same line as its colon: `def area(self) -> float: ...`. Only a protocol method's body may be `...` (§3.11).
@@ -234,7 +234,7 @@ comp_for      = "for" ( NAME | names ) "in" coalesce { "for" ( NAME | names ) "i
   - **X** is a token, or one of the categories `expression`, `type`, `statement`, `pattern`, `indented block`.
   - **Y** describes the token found: a keyword or punctuation token in quotes (`':'`, `'else'`), `name 'x'`, `integer`, `float`, `string`, `f-string`, `newline`, `indent`, `dedent`, or `end of file`.
   - The error points at the start of the token found.
-  - Specific messages: `cannot assign to this expression` (an `assign_stmt` target that isn't a `target`), `positional argument follows keyword argument`, `parameter without a default follows parameter with a default` (M14), `a bare 'except' must be the last except clause` (M16, at the bare `except`, after which parsing continues normally), `a type alias must be at the top level` (M18, at `type`), and `'match' can only be the whole value of 'let', 'var', an assignment or 'return'` (M19, at `match`). A `try` with no `except` or `finally`, or an `else` with no `except`, is `expected 'except' or 'finally', found …`.
+  - Specific messages: `cannot assign to this expression` (an `assign_stmt` target that isn't a `target`), `positional argument follows keyword argument`, `parameter without a default follows parameter with a default` (M14), `a bare 'except' must be the last except clause` (M16, at the bare `except`, after which parsing continues normally), `a type alias must be at the top level` (M18, at `type`, until M40), and `'match' can only be the whole value of 'let', 'var', an assignment or 'return'` (M19, at `match`). A `try` with no `except` or `finally`, or an `else` with no `except`, is `expected 'except' or 'finally', found …`.
 - A chained comparison is reported by the parser as `TP0212`, with message `chained comparison not supported` and help `write 'a < b and b < c'`. Parsing continues normally.
 - **Recovery:** after a `TP0100`, the parser skips tokens up to and including the next `NEWLINE` at the current block depth. If the next line is indented further (an `INDENT` follows), that whole block is skipped as well. A `DEDENT` that closes the current block stops the skip without being consumed. Parsing then resumes at the next statement. So each statement reports at most one `TP0100`, and independent errors on separate statements are all reported.
 
@@ -263,7 +263,7 @@ comp_for      = "for" ( NAME | names ) "in" coalesce { "for" ( NAME | names ) "i
 | `TracebackType` | where an exception was raised, from `types` (M37, §3.17) | `Taipan.Runtime.Traceback` |
 | `Callable[[A, B], R]` | function value (M11, §3.7) | `Taipan.Runtime.Function<D>` (§8) |
 | `Iterator[T]`, `Iterable[T]` | single-pass stream, and anything a `for` loop goes over (M31, §3.13) | `Taipan.Runtime.IIterator<T>`, `IEnumerable<T>` (§8) |
-| `Comparable`, user protocols | structural interface, only as a type parameter bound (M17, §3.11) | none: bounded generics are monomorphized |
+| `Comparable`, user protocols | structural interface: a type parameter bound (M17, §3.11), and since M40 a type (§3.18) | a C# interface for a protocol used as a type (M40); nothing for a bound, since bounded generics are monomorphized |
 
 - A function without `-> type` returns nothing (C# `void`). Using its result as a value is `TP0200`. Since M26, `-> None` says the same explicitly, as in Python's type hints, for functions, methods (including `__init__`) and nested `def`s; a function declared `-> None` is the same as one without a return type in every way, its display and function type (`Callable[[…], None]`) included.
 - `T??` is `TP0213`. Optionals don't nest.
@@ -281,6 +281,7 @@ comp_for      = "for" ( NAME | names ) "in" coalesce { "for" ( NAME | names ) "i
 - `T` is `U?` and `S` is assignable to `U`
 - `S` is the type of `None` and `T` is any optional
 - `S` is a class that derives from `T`, directly or indirectly, or `S` is `V?` and `T` is `U?` for such classes (M15, §4.3). So a `Dog` can be passed where an `Animal` is expected, and a `Dog?` where an `Animal?` is.
+- `T` is a protocol type that `S` satisfies, or `S` is `V?` and `T` is `P?` for such a `V` and `P` (M40, §3.18). A type parameter bounded by a class is assignable to that class (M40).
 - `S` is `Callable[[P1, …, Pn], R]` and `T` is `Callable[[Q1, …, Qn], U]`, where each `Qi` is assignable to `Pi`, and `R` is assignable to `U` or both are `None` (M15). Parameters go the opposite way to results: a function that handles any `Animal` can stand in for one that handles a `Dog`, and one that returns a `Dog` for one that returns an `Animal`.
 
 Other generic types are invariant. `list[Dog]` isn't assignable to `list[Animal]`, since code holding it as a `list[Animal]` could append a `Cat`. The same holds for `dict`, tuples and type arguments of user generics. This is C#'s rule and mypy's (except that mypy lets tuples vary), but Python itself never checks it. A literal is checked against its expected type, so `let xs: list[Animal] = [Dog("rex")]` is still valid.
@@ -294,7 +295,7 @@ There are no other implicit conversions. Explicit conversions use the built-ins 
   - `if x is not None:` and `if x is None: … else: …` narrow `x` itself, when `x` is a name that can't change (M15, §3.9).
   - `x ?? default` has type `T` when `default: T`.
   - Narrowing of `x` after an early return (`if x is None: return`) is post-M15.
-- `x == None` is allowed and returns `bool`, but it doesn't narrow.
+- `x == None` is allowed and returns `bool`. Before M40 it didn't narrow; since M40 it narrows as `x is None` does (§3.18).
 - **Using an optional:**
   - A `T?` is `TP0203` wherever a `T` is expected. That includes operands of operators other than `==`/`!=`, the target of member access, indexing or a method call, and the iterable of a `for`.
   - It's `TP0200` where some unrelated type is expected.
@@ -323,7 +324,7 @@ There are no other implicit conversions. Explicit conversions use the built-ins 
   - Type parameter names live in the type namespace of their definition, including a generic class's methods. Methods take no type parameters of their own.
   - A repeated type parameter is `TP0214`. One that shadows an existing type name is `TP0207`.
 - **Instantiation in types:** a generic class or enum must be given exactly as many type arguments as it has parameters (`Box[int]`, `Maybe[list[str]]`). A count mismatch, including a bare `Box` or arguments on a non-generic type, is `TP0209`.
-- **Type parameters are opaque** unless they have a bound (M17, §3.11) or a constraint (M8.1, below). Bodies are checked once, with each type parameter treated as an opaque type `T`:
+- **Type parameters are opaque** unless they have a bound (M17, §3.11; a class bound since M40, §3.18) or a constraint (M8.1, below). Bodies are checked once, with each type parameter treated as an opaque type `T`:
   - A `T` may be assigned, passed, returned, stored in lists and fields, compared with `==`/`!=` against another `T`, tested with `in` on a `list[T]`, and displayed (`print`, `str`, f-strings).
   - Anything else on a `T` is `TP0200` or `TP0210`, as for any type lacking the operation: arithmetic, ordering, member access, method calls, indexing, iteration, `match`, or use as a dict key.
   - So a body that checks is valid for every type argument. Instantiation never reports new errors (apart from `TP0219`).
@@ -360,7 +361,7 @@ There are no other implicit conversions. Explicit conversions use the built-ins 
   - the name of a top-level function that isn't generic, used without calling it (`apply(double, xs)`)
   - a nested `def`
   - a `lambda`
-  - Generic functions, built-in functions, methods, class constructors and enum variants aren't values (`TP0200`, §9.1). Wrap them in a lambda instead: `lambda s: s.total()`.
+  - Methods aren't values (`TP0200`, §9.1). Wrap them in a lambda instead: `lambda s: s.total()`. Generic functions, built-in functions, class constructors and enum variants weren't values either until M40; since M40 they are (§3.18).
 - **Calls:** any expression of function type can be called: `f(x)`, `handlers[0](req)`, or `s.on_done()` for a field. Arguments are positional only (`TP0218`), since a function type has no parameter names or defaults, as in Python's typing. They're checked against the parameter types. A wrong count is `TP0209`. Calling a `T?` is `TP0203`.
 - **Lambdas:** `lambda x, y: x + y`. The body is a single expression, whose value is the result.
   - A lambda parameter can't have a default: `TP0100`, `lambda parameters can't have defaults` (M26). Python's `lambda i=i: i`, which captures a loop variable's current value, isn't needed, since each iteration has its own variable (below), so the help says `each loop iteration has its own variable, so 'lambda: i' already sees this iteration's value`.
@@ -440,7 +441,8 @@ def first_port(config: Config) -> int:
 - **What can be narrowed:**
   - A name: a `let`, a parameter (including `self`), a loop variable, a `match` or `is some` binding, and since M27 a `var` (below).
   - Since M27, a *path* of fields, `p.x` or `self.config.port`, whose root is a name that can't change: a `let`, a parameter, `self`, a loop variable or a binding.
-  - Nothing else, such as an element (`xs[0]`) or a call's result. Copy it to a `let` first.
+  - Since M40, an element with a fixed key (`xs[0]`), and a path rooted at a `var` (§3.18).
+  - Nothing else, such as a call's result. Copy it to a `let` first.
 - **When a condition is true**, these narrowings hold:
   - `isinstance(x, C)` and `x is not None` narrow as above.
   - `a and b` narrows by both `a` and `b`.
@@ -474,7 +476,7 @@ def first_port(config: Config) -> int:
   - `a nested function assigns it, so it isn't narrowed` for a `var` a nested function assigns;
   - `a lambda or nested function runs later, when it may have changed; copy it to a 'let' first` for a narrowed `var` or path used in one;
   - `the call on line <n> could have changed it; copy it to a 'let' first`, or `the assignment to '.<f>' on line <n> could have changed it; copy it to a 'let' first`, for a path;
-  - `copy it to a 'let' first` for anything else that can't be narrowed, such as `xs[0]` or a path rooted at a `var`.
+  - `copy it to a 'let' first` for anything else that can't be narrowed, such as `xs[i]` with a `var` index (M40, §3.18).
 - A narrowed name or path has the narrowed type for every use: member access, calls, arguments and assignments. A name is still the same binding, so it follows the shadowing rules as before.
 - `isinstance(x, C)` where `C` is `x`'s own class or a base of it doesn't narrow `x` further, apart from ruling out `None`.
 
@@ -575,7 +577,7 @@ finally:
 - Running out of stack ends the process, as in .NET; it isn't an exception. Internal compiler errors aren't exceptions either.
 
 ### 3.11 Protocols (M17)
-A protocol is a structural interface, as in Python's `typing.Protocol` (PEP 544): a set of method signatures that a type satisfies by having them, without declaring it. In v0.1 a protocol is used only as the bound of a function's type parameter.
+A protocol is a structural interface, as in Python's `typing.Protocol` (PEP 544): a set of method signatures that a type satisfies by having them, without declaring it. Until M40 a protocol was used only as the bound of a function's type parameter. Since M40 it may also be a type, have fields and take type parameters (§3.18).
 
 ```python
 class Shape(Protocol):
@@ -619,8 +621,8 @@ print(largest([3, 9, 4]), largest(["b", "a"]))  # 9 b
 - Its body holds methods and `pass`. Each method takes `self` first, annotates its other parameters, and has `...` as its body, written after the colon (`def area(self) -> float: ...`) or alone in an indented block. A method's parameters have no defaults.
 - In a protocol method's signature, `Self` stands for the type that satisfies the protocol: `other: Self`, `-> Self`, `list[Self]`, `Self?`.
 - Each `TP0225`:
-  - a field, a method body other than `...`, or a parameter default
-  - type parameters on a protocol (generic protocols are deferred)
+  - a field (until M40; since then a field with a default, §3.18), a method body other than `...`, or a parameter default
+  - type parameters on a protocol (until M40, §3.18)
   - another base besides `Protocol`
   - any special method other than `__lt__` (below), including `__init__`. A protocol's `__lt__` must be `def __lt__(self, other: Self) -> bool`.
 - A decorator on a protocol (`@dataclass`) or on one of its methods (`@override`) is `TP0224`.
@@ -665,13 +667,13 @@ Built-in types have no methods for this purpose except `__lt__`, so `str` doesn'
   - A type parameter of an enclosing generic function satisfies a protocol when its own bound declares compatible methods. An unbounded one satisfies none.
   - A constrained parameter (`[N: (int, float)]`) is replaced by each of its types in turn (§3.6), and each must satisfy the bound.
 - **Each `TP0220`:**
-  - a bound that isn't a protocol, such as a class (class bounds are deferred) or a built-in type
+  - a bound that isn't a protocol, such as a built-in type, or until M40 a class (§3.18)
   - a bound on a class's or enum's type parameter, as for constraints
 - So that every bounded body is valid for every type argument that satisfies its bound, instantiation still never reports new errors (§3.6).
 
-**Protocols aren't types of values.** A protocol can't be the type of a binding, parameter, field, return value or element, or be constructed, given to `isinstance`, matched in a `class` pattern or caught in an `except`. Each is `TP0229`, with help `use a bounded type parameter, e.g. 'def f[T: Shape](x: T)'`. Python allows protocols as types; in Taipan it would need a runtime representation for values of many types, and is deferred.
+**Protocols as types.** Until M40, a protocol couldn't be the type of a binding, parameter, field, return value or element (`TP0229`, with help `use a bounded type parameter, e.g. 'def f[T: Shape](x: T)'`). Since M40 it can, when it uses `Self` only as a whole result (§3.18). It still can't be constructed, given to `isinstance`, matched in a `class` pattern or caught in an `except` (`TP0229`).
 
-There are no run-time checks: satisfaction and bounds are entirely static, and a bounded function is monomorphized like any generic (§8).
+There are no run-time checks: satisfaction and bounds are entirely static, and a bounded function is monomorphized like any generic (§8). A protocol used as a type is a C# interface that each class satisfying it implements (M40, §8).
 
 ### 3.12 Type aliases (M18)
 A type alias gives a type a name, as Python 3.12's `type` statement does (PEP 695):
@@ -689,7 +691,7 @@ def swap[T](p: Pair[T]) -> Pair[T]:
 ```
 
 **Declaring an alias**
-- `type Name = T` and `type Name[A, B] = T` are top-level definitions (§2). Like classes, they're hoisted, so an alias may be used before its definition, and may refer to aliases defined after it.
+- `type Name = T` and `type Name[A, B] = T` are top-level definitions (§2), and since M40 statements in a block and members of a class body (§3.18). Like classes, they're hoisted, so an alias may be used before its definition, and may refer to aliases defined after it.
 - The alias's name lives in the type namespace and is global (§4.6). A clash with a class, enum, protocol, function, constant or another alias, or a name such as `int` or `Self`, is `TP0214`.
 - A generic alias's type parameters follow §3.6: a repeated one is `TP0214`, and one that shadows a type name is `TP0207`. Constraints and bounds on an alias's type parameters are `TP0220`, as on classes. A type parameter the right-hand side doesn't use is allowed, as in Python.
 - The right-hand side is any type, checked where the alias is defined, so `type Bad = list[Nope]` is `TP0201` there.
@@ -701,7 +703,7 @@ def swap[T](p: Pair[T]) -> Pair[T]:
 - **Only in types.** An alias isn't a value, so it can't be called, constructed, given to `isinstance`, named in an `except` clause or a pattern, used for an enum's variants (`Status.Ok`), or used as a base class. Each is `TP0200`, `'Handler' is a type alias, not a value` (or `TP0225`, `'Animal' cannot be a base class`, for a base), with help `use '<N>'` when the alias names a class or enum `N`, generic ones included (`type IntBox = Box[int]` suggests `use 'Box'`). Python's aliases (`TypeAliasType`) aren't classes either, so each of these fails in Python at run time.
 - **Recursion (`TP0230`).** An alias's expansion can't contain itself, directly (`type Tree = list[Tree]`) or through other aliases (`type A = list[B]`, `type B = A?`). Python allows recursive aliases, which a type checker expands lazily; Taipan expands aliases eagerly, so they'd never end. A recursive structure is written with a class instead (`class Tree: children: list[Tree]`), since class names refer to the class rather than expanding. The cycle is reported once, at the name of its first alias in source order: `type alias 'A' refers to itself through 'B'`.
 - **Modules:** a module exports its aliases (§4.7): `from shapes import Pair`, `shapes.Pair[int]`.
-- **Display:** diagnostics show the expanded type, not the alias's name: `expected Callable[[Request], Response], found int`.
+- **Display:** until M40, diagnostics showed the expanded type, not the alias's name: `expected Callable[[Request], Response], found int`. Since M40 they show the alias's name (§3.18).
 
 There's no run-time form: aliases are expanded during type checking, and nothing is emitted for them (§8).
 
@@ -841,6 +843,135 @@ with open(source) as src, open(target, "w") as dst:
 - **`type[C]`** is the type of `__exit__`'s first argument: a class as a value, `C` or one deriving from it. `type[A]` is assignable to `type[B]` when `A` derives from `B`. Only `__exit__` receives one; nothing constructs or calls one, and `type[T]` for a `T` that isn't a class is `TP0200`. Its one attribute is `__name__: str`, and it displays as Python's does: `<class 'ValueError'>` for a built-in class, `<class '__main__.Timer'>` for one in the main file, and `<class 'zoo.Timer'>` for one in module `zoo`.
 - **`TracebackType`** comes from the built-in module `types` (§4.7), as in Python. It's opaque: it displays as `<traceback object>`, and reading its frames is deferred (M41).
 
+### 3.18 Types II (M40)
+```python
+class Drawable(Protocol):
+    name: str
+    def draw(self) -> str: ...
+
+class Circle:
+    name: str
+    r: float
+
+    def __init__(self, r: float):
+        self.name = "circle"
+        self.r = r
+
+    def draw(self) -> str:
+        return f"({self.r})"
+
+class Label:
+    name: str
+
+    def __init__(self, name: str):
+        self.name = name
+
+    def draw(self) -> str:
+        return self.name
+
+let items: list[Drawable] = [Circle(1.0), Label("hi")]
+for d in items:
+    print(d.name, d.draw())
+
+def loudest[A: Animal](xs: list[A]) -> A:
+    return max(xs, key=lambda a: a.volume)
+
+print(list(map(str, [1, 2])), sorted(["bb", "a"], key=len))
+```
+
+**Protocols as types.** A protocol may be the type of a binding, parameter, field, return value, element or type argument, as in Python's typing: `list[Drawable]`, `Drawable?`. Before M40 each was `TP0229`.
+- **Which protocols:** one whose methods use `Self` only as their whole result (`-> Self` or `-> Self?`). On a protocol value, such a result has the protocol's type. A protocol that uses `Self` in any other place, such as a parameter (`other: Self`) or inside another type (`-> list[Self]`), can still be a bound, but using it as a type is `TP0229`, `'<P>' uses 'Self' in '<m>', so it can only be a type parameter bound`. So `Comparable` isn't a type, since `__lt__` takes `other: Self`: a protocol value couldn't check that the other value has the same class.
+- **Assignability (§3.3):** a type is assignable to a protocol type when it satisfies the protocol, by §3.11's rules: a class, another protocol type, or a type parameter bounded by a class that satisfies it. `S?` is assignable to `P?` for such an `S`. Built-in types satisfy no protocol that can be a type, since the only method they have for this purpose is `__lt__` (§3.11). Where a value converts and its type doesn't satisfy the protocol, it's `TP0200`, with the bound's message: `'Point' does not satisfy 'Drawable': it has no method 'draw'`.
+- **Inference doesn't produce protocols.** The elements of a list literal don't join to a protocol. `[Circle(1.0), Label("hi")]` without an expected type is `TP0200`, as for unrelated classes, and with `list[Drawable]` expected, each element is checked against `Drawable`. A type argument inferred from a `Circle` is `Circle`.
+- **Using a protocol value:** its methods and fields are used as on a type parameter bounded by the protocol (§3.11), and dispatch on the runtime class. Besides those:
+  - `==` and `!=` with a value whose type is assignable to the protocol type, or the reverse, compare as the runtime classes do (§4.8). `is` and `is not` compare identity (below). Display is the runtime class's.
+  - `isinstance(p, C)`, `p as C` and class patterns take a class `C` that satisfies the protocol or has a subclass that does. Otherwise it's `TP0200`, `<P> can never be a <C>`. Class patterns never make a `match` on a protocol value exhaustive, so it needs a `_` or binding arm.
+  - A protocol value can't be a dict key or set element (`TP0200`), since a class that satisfies the protocol needn't be hashable.
+  - A protocol still can't be constructed, given to `isinstance` or `as` as the class to test, named in a class pattern or an `except` clause, or be a base other than as a declaration (§3.11). Each is `TP0229`, `'<P>' is a protocol`, with help `construct a class that satisfies it` or `test for a class that satisfies it`.
+- **A protocol value is the object itself.** Converting to a protocol type doesn't copy or wrap the object, so identity, `isinstance` and display stay the object's.
+
+**Protocol fields.** A protocol body may declare fields, such as `name: str`, without a default (`TP0225`, `a protocol field can't have a default`). A field's type can't use `Self` (`TP0201`).
+- A type satisfies the field when it has a field of that name and exactly that type, its own or inherited.
+- Neither a property nor a field of a narrower type satisfies it. The field may be assigned through the protocol, and a property could give a different value at each read, which narrowing (§3.9) relies on.
+- Through a protocol value or a type parameter bounded by the protocol, the field may be read and assigned. It can be narrowed as a path, by §3.9's rules.
+- Messages: `'<T>' does not satisfy '<P>': it has no field '<f>'`, or `'<f>' must be '<f>: <F>'`.
+
+**Generic protocols.** A protocol may take type parameters, as in PEP 695: `class Source[T](Protocol):`, with methods such as `def take(self) -> T?: ...`.
+- `Source[int]` is satisfied as `Source` would be with `T` replaced by `int`. Constraints and bounds on a protocol's own type parameters are `TP0220`, as for classes.
+- **As a bound**, a generic protocol's type arguments can't use type parameters: `TP0220`, `a bound can't use type parameters`, as in Python. `[S: Source[int]]` is valid.
+- **Assignability** between protocol types is satisfaction, so it doesn't compare type arguments. A `Source[Dog]` is assignable to `Source[Animal]`, since its `take` returns a `Dog?`. A parameter or field of type `T` makes them unrelated.
+- **Inference:** an argument for a parameter of a generic protocol type, as in `def drain[T](s: Source[T]) -> list[T]`, infers `T` by matching each of the protocol's members with the argument type's member of the same name. Parameter, result and field types are matched exactly, as for function types (§3.6). Satisfaction is then checked with the inferred arguments.
+
+**Class bounds.** A function's type parameter may be bounded by a class: `def loudest[A: Animal](xs: list[A]) -> A:`.
+- **In the body**, a value of type `A` is assignable to `Animal`, and to whatever `Animal` is assignable to. It has the class's fields, methods and properties, and its operators and special methods, with `Self` results read as `A`. `isinstance`, `as` and class patterns take it as they take an `Animal`.
+- **At a call**, the type argument must be the class or derive from it, or be a type parameter whose bound does. Otherwise it's `TP0200` at the callee: `'<T>' does not derive from '<C>'`.
+- The class may be a generic class with type arguments, such as `[B: Box[int]]`. As for protocols, those arguments can't use type parameters (`TP0220`).
+- Bounds on the type parameters of classes, protocols and enums are still `TP0220`.
+
+**Inheritance with generic classes.** A generic class may have a base class, and a base class may be generic: `class IntBox(Box[int])`, `class Labeled[T](Box[T])`, `class Keyed[K](Entry)`.
+- A generic base needs its type arguments (a bare `Box` is `TP0209`), and they may use the class's own type parameters.
+- Inherited fields, methods and properties have the base's type parameters replaced by those arguments. Overrides are checked after the replacement (§4.3), so in `IntBox`, an override of `def get(self) -> T` returns `int`.
+- `Labeled[int]` is assignable to `Box[int]`, but not to `Box[float]`, since type arguments stay invariant (§3.3). Joins go through bases as before: `IntBox` and `Labeled[int]` join to `Box[int]`.
+- `isinstance`, `as` and class patterns still take only classes that aren't generic (§6). So `isinstance(b, IntBox)` is valid, and `isinstance(b, Labeled)` is `TP0200`.
+- An exception class can't be generic (`TP0225`, `an exception class can't be generic`). §4.3's other rules stay: one base class, and a dataclass derives only from a dataclass.
+
+**Generic functions, built-ins and constructors as values.** Besides §3.7's function values, these are values when used without being called:
+- a generic top-level function, such as `first`
+- a built-in function or built-in type: `len`, `str`, `abs`, `sorted`, `int`, `list`, …. `range`, `super`, `isinstance` and `open` aren't values, since their calls need particular argument forms: each is `TP0200`, `'<f>' cannot be used as a value`, with help `wrap it in a lambda`.
+- a class's constructor (`Dog`, `zoo.Dog`), or an enum variant that has fields (`Circle`, `Shape.Circle`).
+
+How their types are found:
+- **With an expected function type:** a generic function, a built-in, a generic class's constructor and a generic variant need one. Without it, it's `TP0206`, `cannot infer the type of '<f>'`, with help `give it a type, e.g. 'let f: Callable[[…], …] = <f>'`.
+  - The type parameters are inferred as a lambda's are (§3.7). In a call, such an argument is checked after the others, against its parameter's type with the type arguments inferred so far, and its result type may infer the rest. So `apply(first, xs)` works.
+  - The value calls the function with the expected type's parameters, and is valid when that call would be, with its result assignable to the expected result: `sorted(words, key=len)`, `list(map(str, xs))`. Parameters the expected type doesn't pass take their defaults, as in a call.
+- **Without one:** a constructor or variant that isn't generic takes its parameters' types, all of them, defaults included, so `Dog` is `Callable[[str, str], Dog]`.
+- A constructor or function with keyword-only parameters, `*args` or `**kwargs` is `TP0200`, as for top-level functions (§4.2). An abstract class's constructor is `TP0234`.
+- **Equality and display:** each is one value per function and type, as a top-level function is (§3.7), so `len == len` is `True` at the same type. Display is Python's:
+  - `<function first>`
+  - `<built-in function len>`
+  - `<class 'int'>` for a built-in type, and `<class '__main__.Dog'>` or `<class 'zoo.Dog'>` for a class, as `type[C]` displays (§3.17)
+  - `<function Shape.Circle>` for a variant
+- Methods as values (bound methods) are still deferred.
+
+**Type aliases in functions and classes.** `type Name = T` may be a statement in any block, or a member of a class body.
+- **In a block**, the alias is visible in the whole block, from its start, nested functions and lambdas included, as top-level aliases are hoisted (§3.12). It may use the type parameters of the functions and class around it, and other aliases visible there.
+- **In a class body**, it's visible in the whole class: field types, method signatures and method bodies. It may use the class's type parameters. It isn't visible outside the class, where `C.Name` is `TP0201`. Python allows that; it's deferred.
+- **Names:** an alias with the name of a type visible around it is `TP0207`. Two aliases with one name in a block or class, or an alias with the name of a field or method of its class, are `TP0214`.
+- Recursion is `TP0230`, as for top-level aliases. There's no run-time form.
+
+**Aliases in diagnostics.** A type written with an alias displays with the alias's name, with its type arguments: `expected Handler, found int`, `Pair[int]`. This replaces M18's rule, which always showed the expanded type.
+- The name stays with the type as long as it's used unchanged: assigned, passed or returned, and inside other types written with it (`list[Handler]`, or an element of a `Table` whose right-hand side uses `Pair[int]`).
+- A type the checker builds displays expanded: a narrowed or joined type, or a type argument it infers.
+- Hover shows the name the same way (§16.3). An alias is still exactly the type it names (§3.12).
+
+**Narrowing II** (adds to §3.9):
+- **Elements:** `xs[k]` can be narrowed, by `is not None`, `isinstance` and the other conditions, when:
+  - `xs` is a list, dict or tuple, and a name or path that can be narrowed, and
+  - `k` is an `int` or `str` literal (an `int` may have a `-`), or a name that can't change: a `let`, a parameter, a loop variable or a binding.
+  - So `if xs[0] is not None: print(xs[0] + 1)` is valid.
+  - Two elements are the same when their roots are the same, and their keys are the same literal or name.
+- **What ends an element's narrowing:**
+  - whatever ends a path's narrowing (§3.9), or the narrowing of `xs` itself
+  - any change to a list or dict of `xs`'s type, through any name, since another name could refer to the same one:
+    - assigning an element (`ys[j] = …`, `op=` too), `del` of an element, and slice assignment
+    - the methods that change one (§6): a list's `append`, `extend`, `insert`, `pop`, `remove`, `clear`, `sort` and `reverse`, and a dict's `pop`, `setdefault`, `update` and `clear`
+  - The help is `the change to a <T> on line <n> could have changed it; copy it to a 'let' first`.
+  - A tuple can't change, so a tuple element's narrowing ends only when its root's does.
+- **Paths rooted at a `var`:** `v.x`, where `v` is a `var`, can be narrowed as other paths are (§3.9). Assigning `v` ends it, as it ends the narrowing of `v`. A `var` that a nested function assigns can't be a path's root.
+- **`==` with a literal:**
+  - `x == lit` narrows `x: T?` to `T` when it's true, as `x is not None` does, when `x` can be narrowed and `lit` is an `int`, `float`, `str` or `bool` literal (a number may have a `-`). `x != lit` narrows when it's false. The literal may be on either side.
+  - `x == None` narrows as `x is None` does, and `x != None` as `x is not None`. This replaces §3.4's rule that they don't narrow.
+  - A type that isn't optional isn't narrowed further, since there are no literal types.
+- **`isinstance` on `py`:** `isinstance(v, T)` takes `v: py` (M10) and gives a `bool`:
+  - With `int`, `float`, `str` or `bool`, it's `True` when `v as T` would succeed (§10.4). So a Python `bool` isn't an `int`, and a Python `int` is a `float`, unlike Python's `isinstance`. It narrows `v` to `T`, when `v` can be narrowed. Each read of a narrowed `v` converts it as `as T` does.
+  - With `list`, `dict` or `tuple`, without type arguments, or a `py` value such as a Python class (`collections.OrderedDict`), it's Python's `isinstance`, and doesn't narrow.
+  - Anything else, a tuple of types included, is `TP0200`.
+- **`is` between objects:** `a is b` and `a is not b` compare identity, as in Python, and give a `bool`.
+  - Both operands must be of types whose values have an identity: a class, a protocol, a list, dict or set, a function, an iterator, `TextIO`, `py`, or an optional of one of these.
+  - One operand's type must be assignable to the other's, or both must be `py`.
+  - Otherwise it's `TP0200`, `'is' compares identity, which <T> doesn't have` (`int`, `float`, `str`, `bool`, tuples and enums), with help `use '=='`. With unrelated types it's `TP0200`, `cannot compare <S> and <T>`.
+  - It doesn't narrow. `x is None` and `x is not None` stay as before.
+
 ## 4. Declarations
 
 ### 4.1 Bindings
@@ -969,7 +1100,7 @@ class Point:
 - A subclass inherits every field and method of its base. A `Dog` is assignable to `Animal` (§3.3), and to every class above it.
 - **Restrictions in M15**, each `TP0225`:
   - A dataclass's base must be a dataclass, and a plain class's base a plain class.
-  - Generic classes can't derive or be derived from.
+  - Generic classes can't derive or be derived from (until M40, §3.18).
   - A class can't derive from itself, directly or through other classes.
 - A subclass can't declare a field or method with the name of an inherited field (`TP0214`), or a field with the name of an inherited method (`TP0214`).
 - **`super().m(…)`** calls the base class's `m`, found from the base upwards, without dispatching on the runtime class. It's valid in any method of a class with a base. `super` used any other way, or in a class without a base, is `TP0200`.
@@ -1489,7 +1620,7 @@ In `a == b` and `a != b`, `a`'s type is `b`'s expected type (§4.6), so `m == No
 - `iter(xs: Iterable[T]) -> Iterator[T]` (M31) starts an iterator over `xs`; on an iterator it gives the iterator itself.
 - `next(it: Iterator[T]) -> T` (M31) takes the next value, raising `StopIteration` when there's none. `next(it, default)` gives `default` instead, which is checked against `T`; a `None` default makes the result `T?`.
 - `isinstance(x, C) -> bool` (M15) is `True` when `x`'s runtime class is `C` or derives from it, as in Python, and `False` for `None`. Since M26, `isinstance(x, (A, B, …))` is `True` when `x` is any of the listed classes. It narrows `x` to the nearest class all of them derive from (§3.9), as `except (A, B) as e` binds (§3.10), and each listed class follows the rules for one (`TP0200` for a class `x` can never be).
-  - `x` must be a class or an optional class, and `C` the name of a class (qualified for another module: `zoo.Dog`) that isn't generic. Anything else is `TP0200`. A tuple of classes (`isinstance(x, (A, B))`) is deferred.
+  - `x` must be a class or an optional class, and `C` the name of a class (qualified for another module: `zoo.Dog`) that isn't generic. Anything else is `TP0200`. Since M40, `x` may also be a protocol value, a type parameter bounded by a class, or a `py` value (§3.18).
   - `C` must derive from `x`'s class, or be it or one of its bases. An unrelated class is `TP0200`, since the test could never be `True`.
   - It narrows `x` (§3.9).
 - `super()` (M15) is valid only as `super().m(…)` in a method (§4.3).
@@ -1637,6 +1768,11 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 | `class C` (plain, M15) | `public class C : Taipan.Runtime.IObject` (or `: Base`), `sealed` when no class derives from it, with a `{ get; set; }` property per own field and `ToString` giving `<C object>`. C# `Equals` and `GetHashCode` aren't overridden, so `==` and dict keys use reference identity. Construction is `C.@__new__(args)`, a static method that creates the object with a protected parameterless constructor, then calls `__init__`. Each class's `__init__` is an instance method `@__init__` that first evaluates its own fields' defaults (`new` when it hides a base's), so `super().__init__(…)` is `base.@__init__(…)` and can follow the subclass's own field assignments, which a C# constructor's `: base(…)` couldn't. A class without `__init__` gets one that sets its defaults and passes its parameters on to the base's. |
 | methods (M15) | `public virtual` where a method is introduced and `public override` for `@override`, with C#'s covariant return types for a narrower class result. `super().m(…)` is `base.@m(…)`. |
 | protocols (M17) | Nothing: a protocol has no C# form, and a protocol a class declares is left out of its base list. A bounded generic function is monomorphized (below), so in `largest_Version`, `x > b` is `b.@__lt__(x)`, and in `largest_int` it's `x > b`. |
+| protocols as types (M40) | A protocol used as a type is a C# interface, `public interface @Drawable`, with a property per field and a method per method, monomorphized as classes are when it's generic (`Source_int`). Each class, or class instantiation, that satisfies it implements it, with explicit implementations that call the class's own members and convert their results. A protocol value is the object itself, so converting a class to it is C#'s implicit conversion, and converting a protocol value to another protocol is a cast, which can't fail since every class satisfying the first satisfies the second. |
+| generic inheritance (M40) | Each instantiation derives from its base's instantiation: `IntBox : Box_int`, `Labeled_str : Box_str`. |
+| function values (M40) | A generic function, built-in or constructor used as a value is a `Function<D>` over a lambda that calls it, cached in a static field per function and type, so each is one object. |
+| `is` (M40) | `ReferenceEquals(a, b)`, or `Taipan.Runtime.Interop.Is(a, b)` for `py` values, which is Python's `is`. |
+| narrowing II (M40) | A narrowed element is read as the element, with the narrowed read's cast (`((C)xs[0])`, `xs[0]!`). A `py` narrowed by `isinstance` is converted at each read, as `as T` converts. |
 | `__lt__` (M17) | an ordinary method, `@__lt__`. `a < b` on classes is `a.@__lt__(b)`. `a > b` evaluates `a` and `b` into temporaries, then calls `b.@__lt__(a)`. Sorting a list of classes passes the runtime sort a comparison that calls `__lt__`. |
 | special methods (M28) | Ordinary methods: `@__add__`, `@__str__`, …. Every class has virtual `@__str__` and `@__repr__`, with the default forms where it defines neither (`@__str__` calls `@__repr__`), and `ToString` calls `@__str__`. A dataclass overrides `@__repr__` (and its `==` hook) unless it defines its own. |
 | `==`, ordering (M28) | Each `__eq__`, `__lt__`, `__le__`, `__gt__` and `__ge__` also overrides a runtime hook, `TryEq(object other, out bool result)` and so on, which tests the parameter's class with `is` and calls the method, returning `false` when it doesn't apply. `Taipan.Runtime.Equality.Equal` and `Ops.Compare` run §4.8's protocol over the hooks, using `Type.IsSubclassOf` for subclass priority. A hashable class overrides C# `Equals` and `GetHashCode` with `Equality.Equal` and `hash()`, so `OrderedDictionary` finds keys as §4.8 says. |
@@ -1789,6 +1925,7 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0200 | `'<m>' is a method; call it` / `'<f>' is a field, not a method` / `cannot index <T>` / `dict keys must be int, str, bool, tuples of those, or plain class instances, found <T>` (for a dataclass, with help `a dataclass compares by value, so it cannot be a key`; since M28 a class that isn't hashable gets `dict keys must be hashable, found <C>` instead, §4.8) |
 | TP0200 | `isinstance needs a class, found <T>` / `'<C>' is not a class` / `'<C>' is generic` / `<T> can never be a <C>` (`isinstance`, `as` and class patterns on unrelated classes) / `'<C>' is a class; write '<C>()'` (a class pattern without parentheses) (M15) |
 | TP0200 | `no overload of '<T>.<m>' takes (<A1>, <A2>)` / `'<T>' is a static class` (constructing it, or using it as a type) / `'<T>' cannot be constructed` (an interface, abstract class or enum) / `<v> is out of range for <N>` (a literal argument, `<N>` the .NET type's name, such as `Int32`) / `'<T>.<m>' returned null` (`TypeError`, at run time) / `'<C>' is not an exception class` (a .NET class not deriving from `System.Exception`) / `cannot bind both Taipan and .NET exceptions`, with help `write separate clauses` (M21) |
+| TP0200 | `'<T>' does not satisfy '<P>': it has no field '<f>'` / `'<T>' does not satisfy '<P>': '<f>' must be '<f>: <F>'` / `'<T>' does not derive from '<C>'` / `<P> can never be a <C>` / `'<f>' cannot be used as a value`, with help `wrap it in a lambda` / `'is' compares identity, which <T> doesn't have`, with help `use '=='` / `isinstance on py takes int, float, str, bool, list, dict, tuple or a Python class, found <T>` (M40) |
 | TP0200 | `expected Self, found <C>` / `a class attribute can't use '<T>'` / `'<m>' is generic, so it cannot be used as a value` for a generic class's static or class method without type arguments (M39) |
 | TP0200 | `<T> can't be None` / `<T> cannot match a mapping pattern` / `mapping keys must be int, str or bool, found <K>` / `alternatives bind different names: '<x>' is not bound in every one` / `'<x>' is <A> in one alternative and <B> in another` (M38) |
 | TP0200 | `every arm of this 'match' raises`, with help `use a 'match' statement` (M19) / `this arm gives no value`, with help `end it with an expression` / `<T> cannot match a tuple pattern` / `<T> cannot match a list pattern` / `'*<x>' would hold <A> and <B>` (a starred name in a tuple) (M29) |
@@ -1803,9 +1940,11 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0201 | `undefined name '<x>'` (with help `use 'None'` for `none`) / `undefined type '<T>'` / `module '<m>' has no definition '<x>'` / `.NET namespace '<ns>' has no type '<x>'` (M21) |
 | TP0202 | `cannot assign to '<x>': it is a <let binding\|parameter\|loop variable\|constant\|function\|method>`, with help `declare it with 'var'` for a `let` binding / `cannot assign to an element of str` / `cannot assign to an element of a tuple` / `cannot use '<op>' on a slice` / `cannot delete '<x>'`, with help `assign it a new value instead` / `cannot delete a field` / `cannot delete an element of <T>` (M26) / `cannot assign to '<p>': it is a read-only property` / `cannot assign to '<a>' through '<x>'`, with help `assign '<C>.<a>'` (M28) |
 | TP0202 | `cannot assign to '<f>': '<C>' is frozen` (M39) |
+| TP0203 | help `the change to a <T> on line <n> could have changed it; copy it to a 'let' first` (an element, M40) |
 | TP0203 | `<T>? can only be matched by '_' or a binding`, with help `'None' patterns aren't supported yet; bind it and test it with 'is some'` (a pattern, M29) / `expected <T>, found <T>?` / `<T>? must be narrowed before use`, with help `narrow it with 'is some', or give a default with '??'`, or one saying why a name or path isn't narrowed there (§3.9, M27) |
 | TP0204 | `non-exhaustive match (missing: <a>, <b>)`, each a variant, literal or, since M29, a pattern such as `Degraded(0, _)` or `[_, *_]` (§5.1) |
 | TP0205 | `condition must be bool, found <T>` (with help `convert it with 'as bool'` for `py`) |
+| TP0206 | `cannot infer the type of '<f>'`, with help `give it a type, e.g. 'let f: Callable[[…], …] = <f>'` (a generic function, built-in or constructor as a value, M40) |
 | TP0206 | `cannot infer the type of an empty list` / `... empty dict` / `cannot infer the type of None` / `cannot infer '<T>' for '<f>'` / `cannot infer the type of lambda parameter '<x>'`, with help `add a type annotation` |
 | TP0207 | `'<x>' shadows an outer binding` |
 | TP0208 | `not all paths in '<f>' return a value` |
@@ -1831,6 +1970,7 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0223 | `nested functions cannot have type parameters` |
 | TP0224 | `unknown decorator '@<d>'` / `'@<d>' cannot be used here` (with help `'@dataclass' goes on a class, '@override' on a method`) / `duplicate decorator '@<d>'` / `'@<d>' cannot be used here`, with help `'@<d>' goes on a method`, for a method's decorator elsewhere / `'@<a>' cannot be combined with '@<b>'` / `'@abstractmethod' needs a class deriving from 'ABC'` / `'@<x>.setter' needs a property '<x>' just above it` (M28) |
 | TP0225 | `a class can have only one base class` (protocols aside, M17) / `'<T>' cannot be a base class` / `a dataclass can only derive from a dataclass` (with help `exceptions are plain classes; give it an '__init__'` for an exception base, M16) / `a plain class can only derive from a plain class` / `generic classes cannot be derived from` / `generic classes cannot have a base class` / `'<C>' derives from itself` / `special method '<m>' is not supported` / `a dataclass cannot define '__init__'` / `field without a default follows field with a default` / `'<m>' must be 'def <m>(self, …) -> <R>'` (M28, replacing M17's `'__lt__' must take one parameter of type '<C>' (or a base class) and return bool`) / `'<m>' must take 'self' first` (or `'cls'`) / `a static method takes neither 'self' nor 'cls'` / `a property takes no parameters other than 'self'` / `a property must have a return type` / `a setter must follow its property` / `a setter must take one parameter of type <T> and return nothing` / `class attribute '<a>' needs a value` (`generic classes cannot have <static methods\|class methods\|class attributes>` until M39) / `an abstract method's body must be '...'` / `'<C>' would not be hashable, but its base '<B>' is`, with help `define '__hash__'` (M28) / `'<C>' defines '__exit__' but not '__enter__'` (or the reverse) (M37) / `'<P>' is already declared` (or `already declared by '<B>'`) / `a protocol can only declare methods` / `a protocol method's body must be '...'` / `protocol method parameters cannot have defaults` / `protocols cannot be generic` / `a protocol can only derive from 'Protocol'` (M17) |
+| TP0225 | `a protocol field can't have a default` / `an exception class can't be generic` (M40) |
 | TP0225 | `a frozen dataclass can't derive from one that isn't` (or the reverse) / `'order=True' needs fields that can be ordered: '<f>' is <T>` / `'order=True' generates '<m>'; remove it` / `'__post_init__' must be 'def __post_init__(self) -> None'` / `'__post_init__' is only for dataclasses` / `cannot derive from final class '<C>'` / `'@total_ordering' needs '__lt__', '__le__', '__gt__' or '__ge__'` (M39) |
 | TP0226 | `'__init__' does not set '<f>'` / `'<f>' has no default, and '<C>' has no '__init__'` / `'<f>' is read before it is set` / `'self' is used before '<f>' is set` (or `before 'super().__init__' is called`) / `'<f>' is inherited, so it is set by 'super().__init__'` / `'super().__init__' is called before '<f>' is set` / `'<C>.__init__' must call 'super().__init__(…)'` / `'super().__init__' must be called once, directly in '__init__'` / `'super().__init__' can only be called in '__init__'` / `'__init__' returns before '<f>' is set` (or `before 'super().__init__' is called`) (when several fields are unset, the first in declaration order is named) |
 | TP0227 | `'<m>' overrides '<B>.<m>'; mark it '@override'` / `'<m>' does not override a method of <a base class\|'<B>'>` / `'__init__' cannot be marked '@override'` |
@@ -1838,15 +1978,17 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0228 | `'<B>.<m>' is final` / `'<m>' must return Self, as '<B>.<m>' does` (M39) |
 | TP0235 | `this awaitable is never awaited`, with help `write 'await …'` (M33) |
 | TP0234 | `cannot instantiate abstract class '<C>'`, with help `it does not implement '<B>.<m>'` (`'<B>.<m>' and '<B>.<n>'` for more) / `'cls(…)' may construct the abstract class '<C>'` / `'<C>' cannot add abstract method '<m>', since '<B>.<cm>' calls 'cls(…)'` (M28) |
+| TP0220 | `a bound can't use type parameters` (M40) |
 | TP0220 | `a constraint needs at least two types` / `'<T>' is listed twice in the constraint` / `a constraint cannot be optional or generic` / `constraints are only supported on functions` / `'<T>' is not a protocol` (with help `class bounds are not supported`, for a class) / `bounds are only supported on functions` (M17) |
 | TP0229 | `'<P>' is a protocol, so it can only be a type parameter bound`, with help `use a bounded type parameter, e.g. 'def f[T: <P>](x: T)'` (M17) |
+| TP0229 | `'<P>' uses 'Self' in '<m>', so it can only be a type parameter bound`, with M17's help / `'<P>' is a protocol`, with help `construct a class that satisfies it` (a construction) or `test for a class that satisfies it` (`isinstance`, `as`, class patterns, `except`), replacing M17's message for these (M40) |
 | TP0231 | `'<T>.<m>' uses <N>, which Taipan can't use yet` (`<N>` the .NET type, e.g. `Dictionary<string, int>` or `Func<int, bool>`) / `'<N>' can't be imported: generic .NET types aren't supported yet` (M21) |
 | TP0232 | `ambiguous call to '<T>.<m>': it could be '<m>(<P1>)' or '<m>(<P2>)'` (M21) |
 | TP0233 | `a native program can't use Python`, with help `build it without '--native'` / `'<T>.<m>' can't be used in a native program: <message>` (M23) / `a Python extension can't use Python interop itself` (M25) |
 | TP0230 | `type alias '<A>' refers to itself` / `type alias '<A>' refers to itself through '<B>'` (`'<B>' and '<C>'` for longer cycles), with help `use a class for a recursive type` (M18) |
 | TP0300 | `unreachable match arm` / `unreachable except clause`, with help `'<B>' is already caught above` / `unreachable code` (M16) |
 | TP0301 | `this clause catches every exception and discards it`, with help `catch a specific class, re-raise with 'raise', or bind it with 'as e' and use it` (M16) |
-| TP0302 | `'<f>' is not exported: <reason>`, where `<reason>` is `its type parameter '<T>' has a bound` / `'<T>?' has no .NET generic form` / `it uses '<g>', which isn't a .NET generic` / `it uses '<C>', which isn't exported` / `it has its module's name` (M22) / `'<T>' can't be passed to Python` / `it's generic` (M25), with help `rename it '_<f>' to keep it private` |
+| TP0302 | `'<f>' is not exported: <reason>`, where `<reason>` is `its type parameter '<T>' has a bound` / `'<T>?' has no .NET generic form` / `it uses '<g>', which isn't a .NET generic` / `it uses '<C>', which isn't exported` / `it has its module's name` (M22) / `'<T>' can't be passed to Python` / `it's generic` (M25) / `it's used as the protocol '<P>'` (M40), with help `rename it '_<f>' to keep it private` |
 
 Types are written as in source: `int`, `str?`, `list[int]`. The type of `None` is written `None`, and a missing value is written `nothing`.
 
@@ -1914,19 +2056,18 @@ ROADMAP.md plans most of these from M35 on. They were never part of v0.1:
 
 - built-ins beyond M35: `frozenset`, `|=` and the other in-place set operators, `str.format` and `%` formatting, `sorted`'s and `min`'s keys on mixed types, and passing sets to Python and .NET
 - I/O beyond §6.1 (M37): binary files and `bytes`, read-write (`+`) modes, `seek` and `tell`, `open`'s `errors=` and `buffering=`, `newline` values other than `None` and `""`, other encodings, `os.path` and the rest of `os` and `sys`, `contextlib`, parenthesized `with` items and targets other than a name, `yield` inside `with`, and `NotADirectoryError` and Python's other `OSError` classes
-- protocols as types of values, protocol fields, generic protocols, protocols extending other protocols, and a check that a class used with a protocol declares it
-- class bounds (`[T: Animal]`), bounds on classes' and enums' type parameters, and built-in types' ordinary methods satisfying protocols
+- protocols extending other protocols, a check that a class used with a protocol declares it, properties in protocols, and runtime-checkable protocols (`isinstance(x, P)`)
+- bounds on classes', protocols' and enums' type parameters, bounds that use type parameters, and built-in types' ordinary methods satisfying protocols
 - special methods beyond §4.8 (`__bool__`, `__ne__`, `__delitem__`, the bitwise operators, `__enter__`'s async form), and special methods in protocols other than `__lt__`
-- mixing dataclasses and plain classes in one hierarchy, and inheritance involving generic classes
+- mixing dataclasses and plain classes in one hierarchy, generic exception classes, and `isinstance` and class patterns with generic classes
 - an `__init__` written in a dataclass
 - abstract static and class methods, property deleters, instance methods as values (bound methods), `field()` and the other dataclass options (`eq`, `kw_only`, `slots`, …), and slices and `del` on classes (`__getitem__` with a slice, `__delitem__`)
-- `isinstance` on `py` values, and `is` between two expressions (identity)
-- generic functions, built-ins, methods and constructors as values (wrap them in a lambda)
+- methods as values (bound methods; wrap them in a lambda)
 - async generators, `async for`, `async with`, async lambdas and `asyncio`-style helpers (M33), generator `send`, `throw` and `close`, `yield` as an expression, generator return values, `Generator[Y, S, R]`, `yield` inside `try`/`except`, async comprehensions, and `async` iterators
 - patterns beyond §5.1 (M38): value patterns naming constants (`case Color.RED` for a non-enum value), class patterns on .NET types and `py` values, mapping keys that aren't literals, and narrowing a binding at a nested optional position by earlier arms
-- type aliases inside functions and classes, recursive aliases, and showing an alias's name in diagnostics
+- recursive aliases, and a class's aliases reached from outside it (`C.Name`)
 - typed `**kwargs` (`Unpack[TypedDict]`), `*args` and `**kwargs` in function types, and `**e` filling named parameters
-- narrowing elements (`xs[0]`) and paths rooted at a `var`, and narrowing that follows `==` comparisons with literals
+- narrowing elements with keys that can change (`xs[i]` for a `var` `i`), and literal types
 - `raise … from …`, exception chaining, and printing tracebacks (`BaseException` exists since M37)
 - dataclass exceptions (mixing dataclasses and plain classes), and `args` on exceptions
 - nested format specs in f-strings (`{x:{width}}`), and format specs for other types (`__format__`)
@@ -2184,7 +2325,7 @@ catch (shapes.UnknownShape e) { Console.WriteLine(e.message); }
 | exception classes | as plain classes, deriving from the runtime's `Taipan.Runtime.TaipanException` (Taipan's `Exception`), or another exception class |
 | `enum E` | a public abstract record with a nested public sealed record per variant: `new Shape.Circle(2.0)`, `new Shape.Empty()` |
 | generic definitions | real .NET generics, where they can be (below) |
-| protocols, type aliases | nothing, as in a program (§8) |
+| protocols, type aliases | nothing, as in a program (§8), except that a protocol used as a type (M40) is a public interface, which the classes satisfying it implement. A generic protocol's interface is monomorphized, as in a program (`Source_int`). A generic class that's used as a protocol type is monomorphized too, so each instantiation can implement the interfaces it satisfies, and isn't exported (`TP0302`, `it's used as the protocol '<P>'`). |
 
 - **Types in signatures** are §8's: `int` is `long`, `float` is `double`, `bool`, `str`, `T?` (`long?` or `string?`), `list[T]` is `List<T>`, `dict[K, V]` is `OrderedDictionary<K, V>`, `tuple[A, B]` is a value tuple, a function type is `Taipan.Runtime.Function<D>` (constructed from a delegate: `new Function<Func<long, long>>("twice", x => x * 2)`), `py` is pythonnet's `PyObject`, `Iterable[T]` is `IEnumerable<T>`, which a C# caller may pass any sequence as, and `Iterator[T]` is `Taipan.Runtime.IIterator<T>`, an `IEnumerable<T>` it can loop over once (M31), `Awaitable[T]` is `Task<T>`, so an `async def` is a C# async method (M33), and .NET types are themselves. Lists and dicts are shared, not copied, both ways.
 - **Equality and hashing** are .NET's for the C# caller: a class's `Equals` is reference identity (or, since M28, `==` for a class that defines `__hash__`, §8), and an enum's is the record's (field by field, with C#'s `Equals` on each). `Taipan.Runtime.Equality.Equal(a, b)` compares as Taipan's `==` does.

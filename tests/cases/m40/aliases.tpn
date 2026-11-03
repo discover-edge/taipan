@@ -1,0 +1,47 @@
+# Type aliases in blocks and classes (SPEC §3.18).
+def pairs[T](xs: list[T]) -> list[tuple[T, T]]:
+    type Pair = tuple[T, T]
+    var out: list[Pair] = []
+    for i in range(len(xs) - 1):
+        let p: Pair = (xs[i], xs[i + 1])
+        out.append(p)
+    return out
+
+def totals(rows: list[list[int]]) -> list[int]:
+    let result: Totals = [sum(r) for r in rows]
+    type Totals = list[Count]
+    type Count = int
+    return result
+
+class Inventory:
+    type Stock = dict[str, int]
+    stock: Stock
+
+    def __init__(self):
+        self.stock = {}
+
+    def add(self, name: str, n: int) -> Stock:
+        self.stock[name] = self.stock.get(name, 0) + n
+        return self.stock
+
+class Holder[T]:
+    type Items = list[T]
+    items: Items
+
+    def __init__(self, items: Items):
+        self.items = items
+
+    def first(self) -> T:
+        let xs: Items = self.items
+        return xs[0]
+
+print(pairs([1, 2, 3]))
+print(totals([[1, 2], [3]]))
+let inv = Inventory()
+inv.add("apple", 2)
+print(inv.add("apple", 3))
+print(Holder(["a", "b"]).first())
+if True:
+    type Name = str
+    let n: Name = "local"
+    print(n)

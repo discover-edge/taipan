@@ -94,9 +94,6 @@ public sealed class DiagnosticBag
     public void ReportRequiredAfterDefault(TextSpan span) =>
         Add("TP0100", span, "parameter without a default follows parameter with a default");
 
-    public void ReportAliasNotTopLevel(TextSpan span) =>
-        Add("TP0100", span, "a type alias must be at the top level");
-
     public void ReportMisplacedMatch(TextSpan span) =>
         Add("TP0100", span, "'match' can only be the whole value of 'let', 'var', an assignment or 'return'");
 
@@ -117,6 +114,9 @@ public sealed class DiagnosticBag
     public void ReportUnaryOperatorType(TextSpan span, string op, object operand, string? help = null) =>
         Add("TP0200", span, $"operator '{op}' cannot be applied to {operand}", help);
 
+    public void ReportNoIdentity(TextSpan span, object type) =>
+        Add("TP0200", span, $"'is' compares identity, which {type} doesn't have", "use '=='");
+
     public void ReportCannotCompare(TextSpan span, object left, object right) =>
         Add("TP0200", span, $"cannot compare {left} and {right}");
 
@@ -133,7 +133,10 @@ public sealed class DiagnosticBag
         Add("TP0200", span, $"'{function}' is generic, so it cannot be used as a value", "wrap it in a lambda");
 
     public void ReportBuiltinAsValue(TextSpan span, string function) =>
-        Add("TP0200", span, $"built-in '{function}' cannot be used as a value", "wrap it in a lambda");
+        Add("TP0200", span, $"'{function}' cannot be used as a value", "wrap it in a lambda");
+
+    public void ReportCannotInferValue(TextSpan span, string function) =>
+        Add("TP0206", span, $"cannot infer the type of '{function}'", $"give it a type, e.g. 'let f: Callable[[…], …] = {function}'");
 
     public void ReportCannotCall(TextSpan span, object type) =>
         Add("TP0200", span, $"cannot call {type}");
@@ -246,12 +249,22 @@ public sealed class DiagnosticBag
     public void ReportBoundNotOnFunction(TextSpan span) =>
         Add("TP0220", span, "bounds are only supported on functions");
 
-    public void ReportNotProtocol(TextSpan span, object type, bool isClass) =>
-        Add("TP0220", span, $"'{type}' is not a protocol", isClass ? "class bounds are not supported" : null);
+    public void ReportNotProtocol(TextSpan span, object type) =>
+        Add("TP0220", span, $"'{type}' is not a protocol");
 
-    public void ReportProtocolAsType(TextSpan span, string protocol) =>
-        Add("TP0229", span, $"'{protocol}' is a protocol, so it can only be a type parameter bound",
+    public void ReportBoundTypeParameters(TextSpan span) =>
+        Add("TP0220", span, "a bound can't use type parameters");
+
+    public void ReportNotDerived(TextSpan span, object type, object bound) =>
+        Add("TP0200", span, $"'{type}' does not derive from '{bound}'");
+
+    public void ReportProtocolSelf(TextSpan span, string protocol, string method) =>
+        Add("TP0229", span, $"'{protocol}' uses 'Self' in '{method}', so it can only be a type parameter bound",
             $"use a bounded type parameter, e.g. 'def f[T: {protocol}](x: T)'");
+
+    /// <summary>A protocol constructed, or tested for at run time (SPEC §3.18).</summary>
+    public void ReportProtocolAsClass(TextSpan span, string protocol, bool constructing) =>
+        Add("TP0229", span, $"'{protocol}' is a protocol", constructing ? "construct a class that satisfies it" : "test for a class that satisfies it");
 
     /// <summary><paramref name="why"/> is "it has no method 'm'" or "'m' must be 'def …'".</summary>
     public void ReportUnsatisfied(TextSpan span, object type, string protocol, string? declaredBy, string why) =>
@@ -269,17 +282,14 @@ public sealed class DiagnosticBag
     public void ReportProtocolRepeated(TextSpan span, string protocol, string? declaredBy) =>
         Add("TP0225", span, declaredBy is null ? $"'{protocol}' is already declared" : $"'{protocol}' is already declared by '{declaredBy}'");
 
-    public void ReportProtocolMember(TextSpan span) =>
-        Add("TP0225", span, "a protocol can only declare methods");
-
     public void ReportProtocolBody(TextSpan span) =>
         Add("TP0225", span, "a protocol method's body must be '...'");
 
     public void ReportProtocolDefault(TextSpan span) =>
         Add("TP0225", span, "protocol method parameters cannot have defaults");
 
-    public void ReportGenericProtocol(TextSpan span) =>
-        Add("TP0225", span, "protocols cannot be generic");
+    public void ReportProtocolFieldDefault(TextSpan span) =>
+        Add("TP0225", span, "a protocol field can't have a default");
 
     public void ReportProtocolBase(TextSpan span) =>
         Add("TP0225", span, "a protocol can only derive from 'Protocol'");
@@ -552,11 +562,8 @@ public sealed class DiagnosticBag
         Add("TP0225", span, isDataclass ? "a dataclass can only derive from a dataclass" : "a plain class can only derive from a plain class",
             isException ? "exceptions are plain classes; give it an '__init__'" : null);
 
-    public void ReportGenericBase(TextSpan span) =>
-        Add("TP0225", span, "generic classes cannot be derived from");
-
-    public void ReportGenericWithBase(TextSpan span) =>
-        Add("TP0225", span, "generic classes cannot have a base class");
+    public void ReportGenericException(TextSpan span) =>
+        Add("TP0225", span, "an exception class can't be generic");
 
     public void ReportInheritanceCycle(TextSpan span, string name) =>
         Add("TP0225", span, $"'{name}' derives from itself");
@@ -624,6 +631,9 @@ public sealed class DiagnosticBag
     /// <summary><paramref name="type"/> is null when the base method returns nothing.</summary>
     public void ReportOverrideReturn(TextSpan span, string method, object? type, string baseClass) =>
         Add("TP0228", span, $"'{method}' must return {type?.ToString() ?? "nothing"}, as '{baseClass}.{method}' does");
+
+    public void ReportPyIsInstanceTarget(TextSpan span, string found) =>
+        Add("TP0200", span, $"isinstance on py takes int, float, str, bool, list, dict, tuple or a Python class, found {found}");
 
     public void ReportIsInstanceNeedsClass(TextSpan span, object type) =>
         Add("TP0200", span, $"isinstance needs a class, found {type}");

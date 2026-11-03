@@ -1,0 +1,18 @@
+# In a library, a generic class used as a protocol type is compiled per instantiation, so it is not exported (SPEC §14.2).
+class Getter[T](Protocol):
+    def get(self) -> T: ...
+
+class Bag[T]:
+    value: T
+
+    def __init__(self, value: T):
+        self.value = value
+
+    def get(self) -> T:
+        return self.value
+
+def read(g: Getter[int]) -> int:
+    return g.get()
+
+def demo() -> int:
+    return read(Bag(5))

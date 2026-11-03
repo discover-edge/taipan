@@ -1,0 +1,14 @@
+# A local alias can't reuse a visible type's name, or another alias's in its block (SPEC §3.18).
+class Point:
+    x: int = 0
+
+def f[T](x: T):
+    type T = int
+    type Point = str
+    type Same = int
+    type Same = str
+
+class Box:
+    type Inner = int
+    type Inner = str
+    value: int = 0

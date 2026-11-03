@@ -1,0 +1,5 @@
+tests/cases/m40/tp0225_generic_inheritance.tpn:11:12: error TP0209: 'Box' takes 1 type argument, found 0
+tests/cases/m40/tp0225_generic_inheritance.tpn:16:22: error TP0228: 'get' must return int, as 'Box.get' does
+tests/cases/m40/tp0225_generic_inheritance.tpn:19:7: error TP0225: an exception class can't be generic
+tests/cases/m40/tp0225_generic_inheritance.tpn:30:6: error TP0200: expected Box[float], found Sub[int]
+tests/cases/m40/tp0225_generic_inheritance.tpn:31:21: error TP0200: 'Sub' is generic
