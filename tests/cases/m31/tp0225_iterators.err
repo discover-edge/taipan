@@ -1,0 +1,2 @@
+tests/cases/m31/tp0225_iterators.tpn:3:9: error TP0225: '__iter__' must be 'def __iter__(self) -> Iterator[T]'
+tests/cases/m31/tp0225_iterators.tpn:6:9: error TP0225: '__next__' must be 'def __next__(self) -> T'

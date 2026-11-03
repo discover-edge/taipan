@@ -32,6 +32,8 @@ public static class SpecialMethods
         ["__rfloordiv__"] = (1, null),
         ["__rmod__"] = (1, null),
         ["__neg__"] = (0, null),
+        ["__iter__"] = (0, null),
+        ["__next__"] = (0, null),
     };
 
     public static bool IsSupported(string name) => Signatures.ContainsKey(name);
@@ -52,6 +54,9 @@ public static class SpecialMethods
             return true;
         if (result is null ? method.ReturnType is NothingType : method.ReturnType != result)
             return false;
+        // __iter__ gives an iterator (SPEC §3.13).
+        if (method.Name == "__iter__" && method.ReturnType is not IteratorOfType)
+            return false;
         return method.Name != "__eq__" || method.Parameters[0].Type is var other
             && (other.ContainsError || other is ClassType { Symbol: var c } && (other == owner.Type || owner.DerivesFrom(c) && c.TypeParameters.IsEmpty));
     }
@@ -62,7 +67,8 @@ public static class SpecialMethods
         var (arity, result) = Signatures[name];
         var other = name == "__eq__" ? owner.Type.ToString() : "T";
         var parameters = arity == 0 ? "" : $", other: {other}";
-        return $"def {name}(self{parameters}) -> {result?.ToString() ?? "R"}";
+        var shown = name switch { "__iter__" => "Iterator[T]", "__next__" => "T", _ => result?.ToString() ?? "R" };
+        return $"def {name}(self{parameters}) -> {shown}";
     }
 
     /// <summary>How a special method is reached, for the help when it's called directly.</summary>
@@ -73,6 +79,8 @@ public static class SpecialMethods
         "__hash__" => $"hash({target})",
         "__neg__" => "-",
         "__eq__" => "==",
+        "__iter__" => $"iter({target})",
+        "__next__" => $"next({target})",
         _ => Operator(name) ?? name,
     };
 

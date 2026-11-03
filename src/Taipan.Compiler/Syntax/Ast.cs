@@ -121,6 +121,9 @@ public sealed record ReturnStmt(Expr? Value, TextSpan Span) : Stmt(Span);
 /// <summary><c>raise e</c>, or a bare <c>raise</c> when <see cref="Value"/> is null (SPEC §3.10).</summary>
 public sealed record RaiseStmt(Expr? Value, TextSpan Span) : Stmt(Span);
 
+/// <summary><c>yield e</c>, or <c>yield from e</c> when <see cref="From"/> (SPEC §3.13, M31).</summary>
+public sealed record YieldStmt(Expr Value, bool From, TextSpan Span) : Stmt(Span);
+
 /// <summary><c>del a[i], d[k]</c>: its targets, deleted left to right (SPEC §5.5, M26).</summary>
 public sealed record DelStmt(ImmutableArray<Expr> Targets, TextSpan Span) : Stmt(Span);
 

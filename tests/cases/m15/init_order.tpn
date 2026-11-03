@@ -37,12 +37,12 @@ class Node:
     value: int
     next: Node?
 
-    def __init__(self, value: int, next: Node? = None):
+    def __init__(self, value: int, following: Node? = None):
         if value < 0:
             self.value = 0
         else:
             self.value = value
-        self.next = next
+        self.next = following
 
     def total(self) -> int:
         let rest = self.next

@@ -376,6 +376,15 @@ public sealed record BoundTupleLiteral(ImmutableArray<BoundExpr> Elements, Tuple
 /// <summary>An element of a tuple; <see cref="Index"/> counts from 0, already normalized.</summary>
 public sealed record BoundTupleElement(BoundExpr Tuple, int Index, TaipanType Type, TextSpan Span) : BoundExpr(Type, Span);
 
+/// <summary>A list, dict, str or class as an <c>Iterable[T]</c> or <c>Iterator[T]</c> (SPEC §3.13, M31).</summary>
+public sealed record BoundToIterable(BoundExpr Value, TaipanType Type, TextSpan Span) : BoundExpr(Type, Span);
+
+/// <summary><c>list(xs)</c> (M31): every value of an iterable, into a new list.</summary>
+public sealed record BoundToList(BoundExpr Values, ListOfType ListType, TextSpan Span) : BoundExpr(ListType, Span);
+
+/// <summary><c>yield e</c>, or <c>yield from e</c> when <see cref="From"/> (SPEC §3.13, M31).</summary>
+public sealed record BoundYield(BoundExpr Value, bool From, TextSpan Span) : BoundStmt(Span);
+
 /// <summary>An element of a list being unpacked (M29): from the start, or for a negative <see cref="Index"/> from the end.</summary>
 public sealed record BoundListElement(BoundExpr List, int Index, TaipanType Type, TextSpan Span) : BoundExpr(Type, Span);
 

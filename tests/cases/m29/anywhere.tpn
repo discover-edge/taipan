@@ -20,10 +20,10 @@ let total = 1 + match len(shapes):
     n: n * 10
 print(total)
 
-let labels = map(lambda s: match s:
+let labels = list(map(lambda s: match s:
     Circle(_): "c"
     Square(_): "s"
-, shapes)
+, shapes))
 print(labels, [match labels[0]:
     "c": 1
     _: 2

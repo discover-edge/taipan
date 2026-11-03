@@ -11,7 +11,7 @@ public static class TaipanProgram
 #line 33 "tests/cases/m17/emit.tpn"
         global::Taipan.Runtime.Builtins.Print(@largest_int(new global::System.Collections.Generic.List<long> { 1L, 2L }), @largest_str(new global::System.Collections.Generic.List<string> { "a" }), @total_Version(@vs), @largest_Version(@vs) is not null);
 #line 34 "tests/cases/m17/emit.tpn"
-        global::Taipan.Runtime.Builtins.Print(global::Taipan.Runtime.Ops.Map(new global::Taipan.Runtime.Function<global::System.Func<global::@Version, long>>("<lambda>", (global::@Version @v) => @v.@n), global::Taipan.Runtime.Ops.Sorted(@vs, less: static (@a, @b) => @a.@__lt__(@b))), global::Taipan.Runtime.Ops.Index(@vs, 0L).@__lt__(global::Taipan.Runtime.Ops.Index(@vs, 1L)));
+        global::Taipan.Runtime.Builtins.Print(global::Taipan.Runtime.Iterators.ToList(global::Taipan.Runtime.Iterators.Map(new global::Taipan.Runtime.Function<global::System.Func<global::@Version, long>>("<lambda>", (global::@Version @v) => @v.@n), global::Taipan.Runtime.Iter.Over(global::Taipan.Runtime.Ops.Sorted(@vs, less: static (@a, @b) => @a.@__lt__(@b))))), global::Taipan.Runtime.Ops.Index(@vs, 0L).@__lt__(global::Taipan.Runtime.Ops.Index(@vs, 1L)));
 #line hidden
     }
 

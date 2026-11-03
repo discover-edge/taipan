@@ -1,0 +1,51 @@
+# The iterator protocol for classes: __iter__ and __next__ (SPEC §3.13).
+class Countdown:
+    current: int
+
+    def __init__(self, start: int):
+        self.current = start
+
+    def __iter__(self) -> Iterator[int]:
+        return self
+
+    def __next__(self) -> int:
+        if self.current <= 0:
+            raise StopIteration()
+        self.current -= 1
+        return self.current + 1
+
+class Deck:
+    cards: list[str]
+
+    def __init__(self, cards: list[str]):
+        self.cards = cards
+
+    def __iter__(self) -> Iterator[str]:
+        for card in self.cards:
+            yield card.upper()
+
+for n in Countdown(3):
+    print(n)
+let deck = Deck(["a", "b"])
+print(list(deck), list(deck), "B" in deck)
+for i, card in enumerate(deck):
+    print(i, card)
+let c = Countdown(2)
+print(next(c), next(c), next(c, 0))
+
+def total(xs: Iterable[int]) -> int:
+    var sum = 0
+    for x in xs:
+        sum += x
+    return sum
+
+print(total(Countdown(4)), total([1, 2]), total({5: "x", 6: "y"}))
+
+def broken() -> Iterator[int]:
+    yield 1
+    raise StopIteration()
+
+try:
+    print(list(broken()))
+except RuntimeError as e:
+    print("RuntimeError:", e)

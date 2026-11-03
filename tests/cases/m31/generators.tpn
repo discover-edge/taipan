@@ -1,0 +1,54 @@
+# M31 acceptance: an infinite generator consumed by zip with a finite list terminates (SPEC §3.13).
+def naturals(start: int) -> Iterator[int]:
+    var n = start
+    while True:
+        print("yielding", n)
+        yield n
+        n += 1
+
+for i, name in zip(naturals(1), ["a", "b", "c"]):
+    print(i, name)
+
+def evens(xs: Iterable[int]) -> Iterator[int]:
+    for x in xs:
+        if x % 2 == 0:
+            yield x
+
+def chain(a: Iterable[int], b: Iterable[int]) -> Iterator[int]:
+    yield from a
+    yield from b
+
+print(list(evens([1, 2, 3, 4, 6])), list(chain([1, 2], evens(range_list(5)))))
+let gen = naturals(10)
+print(gen)
+print(next(gen), next(gen))
+let squares = map(lambda x: x * x, [1, 2, 3])
+print(squares, list(squares), list(squares))
+let it = iter([7, 8])
+print(it, next(it), next(it), next(it, -1))
+let empty: Iterator[int] = iter([])
+print(next(empty, None))
+try:
+    next(empty)
+except StopIteration:
+    print("StopIteration")
+print(list(enumerate("ab", start=1)), list(filter(lambda s: len(s) > 1, ["a", "bb", "ccc"])))
+print(sorted(evens([8, 2, 6])), 4 in evens([2, 4]), 3 in evens([2, 4]))
+let a, b = zip([1, 2], ["x", "y"])
+print(a, b)
+
+def range_list(n: int) -> list[int]:
+    var out: list[int] = []
+    for i in range(n):
+        out.append(i)
+    return out
+
+def countdown(n: int) -> Iterator[int]:
+    var i = n
+    while i > 0:
+        yield i
+        if i == 2:
+            return
+        i -= 1
+
+print(list(countdown(5)))

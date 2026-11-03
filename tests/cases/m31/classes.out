@@ -1,0 +1,9 @@
+3
+2
+1
+["A", "B"] ["A", "B"] True
+0 A
+1 B
+2 1 0
+10 3 11
+RuntimeError: generator raised StopIteration

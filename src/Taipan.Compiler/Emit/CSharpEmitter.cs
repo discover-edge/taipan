@@ -328,6 +328,8 @@ public sealed partial class CSharpEmitter
     {
         PrimitiveType primitive => primitive.Name,
         ListOfType list => $"list_{Mangle(list.Element)}",
+        IteratorOfType iterator => $"iterator_{Mangle(iterator.Element)}",
+        IterableOfType iterable => $"iterable_{Mangle(iterable.Element)}",
         DictOfType dict => $"dict_{Mangle(dict.Key)}_{Mangle(dict.Value)}",
         OptionalOf optional => $"{Mangle(optional.Inner)}_opt",
         ClassType classType => string.Join("_", [classType.Symbol.Name, .. classType.TypeArguments.Select(Mangle)]),
@@ -415,7 +417,10 @@ public sealed partial class CSharpEmitter
             }
             if (isInit)
                 EmitFieldDefaults(owner!);
-            EmitStatements(function.Body.Statements);
+            if (symbol.IsGenerator)
+                EmitGeneratorBody(symbol, function.Body.Statements);
+            else
+                EmitStatements(function.Body.Statements);
             HiddenDirective();
         });
         _indent--;
@@ -781,7 +786,17 @@ public sealed partial class CSharpEmitter
                 break;
             case BoundReturn ret:
                 LineDirective(ret.Span);
-                Line(ret.Value is null ? "return;" : $"return {Expr(ret.Value)};");
+                // A generator's return ends it (SPEC §3.13).
+                Line(_inGenerator ? "yield break;" : ret.Value is null ? "return;" : $"return {Expr(ret.Value)};");
+                break;
+            case BoundYield yield when yield.From:
+                LineDirective(yield.Span);
+                var yielded = $"@{_locals.Fresh("yielded")}";
+                Line($"foreach (var {yielded} in {Expr(yield.Value)}) yield return {yielded};");
+                break;
+            case BoundYield yield:
+                LineDirective(yield.Span);
+                Line($"yield return {Expr(yield.Value)};");
                 break;
             case BoundBreak brk:
                 LineDirective(brk.Span);
@@ -823,7 +838,13 @@ public sealed partial class CSharpEmitter
                 break;
             case BoundForEach forEach:
                 LineDirective(forEach.Span);
-                var iterate = Concrete(forEach.Iterable.Type) == TaipanType.Py ? $"{Interop}.Iterate" : $"{Runtime}.Iter.Over";
+                var iterate = Concrete(forEach.Iterable.Type) switch
+                {
+                    PrimitiveType { Name: "py" } => $"{Interop}.Iterate",
+                    // An iterator or iterable is a .NET sequence already (SPEC §3.13).
+                    IteratorOfType or IterableOfType => "",
+                    _ => $"{Runtime}.Iter.Over",
+                };
                 Line($"foreach ({TypeName(forEach.Variable.Type)} @{_locals[forEach.Variable]} in {iterate}({Expr(forEach.Iterable)}))");
                 EmitLoopBody(forEach.Body, line: LineOf(forEach.Span));
                 break;
@@ -1041,7 +1062,16 @@ public sealed partial class CSharpEmitter
         _loops = new Stack<LoopContext>();
         Line("{");
         _indent++;
-        EmitTracked(function.Span, () => EmitStatements(function.Body.Statements));
+        var outerGenerator = _inGenerator;
+        _inGenerator = false;
+        EmitTracked(function.Span, () =>
+        {
+            if (function.Function.IsGenerator)
+                EmitGeneratorBody(function.Function, function.Body.Statements);
+            else
+                EmitStatements(function.Body.Statements);
+        });
+        _inGenerator = outerGenerator;
         _indent--;
         Line("});");
         _loops = outerLoops;
@@ -1348,6 +1378,8 @@ public sealed partial class CSharpEmitter
             BoundTupleLiteral tuple => NewTuple(((TupleOfType)Concrete(tuple.Type)).Elements, [.. tuple.Elements.Select(Expr)]),
             BoundTupleElement element => $"{Operand(element.Tuple)}.Item{element.Index + 1}",
             BoundCollectedArguments collected => CollectedArguments(collected),
+            BoundToIterable converted => ToIterable(converted),
+            BoundToList converted => $"{Runtime}.Iterators.ToList({Expr(converted.Values)})",
             BoundCollectedKeywords collected => CollectedKeywords(collected),
             BoundListElement { Index: >= 0 } element => $"{Operand(element.List)}[{element.Index}]",
             BoundListElement element => $"{Operand(element.List)}[{Operand(element.List)}.Count - {-element.Index}]",
@@ -1561,6 +1593,8 @@ public sealed partial class CSharpEmitter
                 $"string.CompareOrdinal({l}, {r}) {TypeChecker.Display(binary.Op)} 0",
             BinaryOp.Less or BinaryOp.LessEqual or BinaryOp.Greater or BinaryOp.GreaterEqual =>
                 $"{left} {TypeChecker.Display(binary.Op)} {right}",
+            BinaryOp.In when Concrete(binary.Right.Type) is IteratorOfType or IterableOfType => $"{Runtime}.Iterators.In({l}, {r})",
+            BinaryOp.NotIn when Concrete(binary.Right.Type) is IteratorOfType or IterableOfType => $"!{Runtime}.Iterators.In({l}, {r})",
             BinaryOp.In => $"{Runtime}.Ops.In({l}, {r})",
             BinaryOp.NotIn => $"!{Runtime}.Ops.In({l}, {r})",
             BinaryOp.And => $"{left} && {right}",
@@ -1593,10 +1627,14 @@ public sealed partial class CSharpEmitter
             BuiltinFunction.Int => arguments,
             BuiltinFunction.Float when argumentType == TaipanType.Int => $"(double){Operand(call.Arguments[0])}",
             BuiltinFunction.Float => arguments,
-            BuiltinFunction.Map => $"{Runtime}.Ops.Map({arguments})",
-            BuiltinFunction.Filter => $"{Runtime}.Ops.Filter({arguments})",
-            BuiltinFunction.Enumerate => $"{Runtime}.Ops.Enumerate({arguments})",
-            BuiltinFunction.Zip when call.Arguments.Length == 2 => $"{Runtime}.Ops.Zip({arguments})",
+            BuiltinFunction.Map => $"{Runtime}.Iterators.Map({arguments})",
+            BuiltinFunction.Iter => $"{Runtime}.Iterators.Iter({arguments}, \"{IteratorName(call.Arguments[0])}\")",
+            // next(it, None) gives T? (SPEC §6).
+            BuiltinFunction.Next when call.Arguments is [var iterator, BoundNone] =>
+                $"{Runtime}.Iterators.{(IsValueType(((IteratorOfType)Concrete(iterator.Type)).Element) ? "NextValueOrNone" : "NextOrNone")}({Expr(iterator)})",
+            BuiltinFunction.Next => $"{Runtime}.Iterators.Next({arguments})",
+            BuiltinFunction.Filter => $"{Runtime}.Iterators.Filter({arguments})",
+            BuiltinFunction.Enumerate => $"{Runtime}.Iterators.Enumerate({arguments})",
             BuiltinFunction.Zip => ZipRows(call, arguments),
             _ => throw new InvalidOperationException($"unexpected builtin {call.Function.Builtin}"),
         };
@@ -1605,10 +1643,10 @@ public sealed partial class CSharpEmitter
     // zip of three or more lists: the runtime's untyped rows, each made into the result's tuple (SPEC §6).
     private string ZipRows(BoundCall call, string arguments)
     {
-        var elements = ((TupleOfType)((ListOfType)Concrete(call.Type)).Element).Elements;
+        var elements = ((TupleOfType)((IteratorOfType)Concrete(call.Type)).Element).Elements;
         var row = $"@{_locals.Fresh("row")}";
         var tuple = NewTuple(elements, [.. elements.Select((e, i) => $"({TypeName(e)}){row}[{i}]!")]);
-        return $"{Runtime}.Ops.Zip({arguments}).ConvertAll(static {row} => {tuple})";
+        return $"{Runtime}.Iterators.Zip(static {row} => {tuple}, {arguments})";
     }
 
     private string BuiltinMethodCall(BoundBuiltinMethodCall call)
@@ -1811,6 +1849,8 @@ public sealed partial class CSharpEmitter
         PrimitiveType { Name: "py" } => PyObject,
         NothingType => "void",
         ListOfType list => $"{Collections}.List<{TypeName(list.Element)}>",
+        IteratorOfType iterator => $"{Runtime}.IIterator<{TypeName(iterator.Element)}>",
+        IterableOfType iterable => $"{Collections}.IEnumerable<{TypeName(iterable.Element)}>",
         DictOfType dict => $"{Collections}.OrderedDictionary<{TypeName(dict.Key)}, {TypeName(dict.Value)}>",
         ClassType { TypeArguments.IsEmpty: true } classType => TypePath(classType.Symbol),
         ClassType classType when IsNetGeneric(classType.Symbol) => $"{TypePath(classType.Symbol)}<{string.Join(", ", classType.TypeArguments.Select(TypeName))}>",
