@@ -1,0 +1,15 @@
+Traceback (most recent call last):
+  File "tests/cases/m41/chained_cause.tpn", line 8, in lookup
+    return services[name]
+KeyError: missing key "db"
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "tests/cases/m41/chained_cause.tpn", line 16, in <module>
+    main()
+  File "tests/cases/m41/chained_cause.tpn", line 14, in main
+    print(lookup({}, "db"))
+  File "tests/cases/m41/chained_cause.tpn", line 10, in lookup
+    raise NotFound(name) from e
+NotFound: db

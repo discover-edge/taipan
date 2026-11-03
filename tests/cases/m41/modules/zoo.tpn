@@ -1,0 +1,12 @@
+# An exception class and a function that raises it, for main.tpn.
+class Unknown(Exception):
+    animal: str
+
+    def __init__(self, animal: str):
+        self.animal = animal
+        super().__init__(f"no {animal} here")
+
+def feed(animal: str):
+    if animal != "lion":
+        raise Unknown(animal)
+    print("fed", animal)

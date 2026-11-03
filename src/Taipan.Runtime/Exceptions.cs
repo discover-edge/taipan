@@ -1,4 +1,4 @@
-using System.Runtime.ExceptionServices;
+using System.Runtime.CompilerServices;
 using Python.Runtime;
 
 namespace Taipan.Runtime;
@@ -14,7 +14,48 @@ public class TaipanBaseException : Exception, IObject
 
     protected TaipanBaseException() { }
 
-    internal TaipanBaseException(string message) => this.message = message;
+    internal TaipanBaseException(string message) => SetMessage(message);
+
+    /// <summary><c>args</c> (SPEC §3.19): <c>(message,)</c>, or <c>()</c> for an empty message, as <c>__init__</c> set it.</summary>
+    public VarTuple<string> @args { get; private set; } = VarTuple<string>.Empty;
+
+    private TaipanBaseException? _cause;
+
+    /// <summary><c>__cause__</c>: assigning it suppresses the context, as in Python (SPEC §3.19).</summary>
+    public TaipanBaseException? @__cause__
+    {
+        get => _cause;
+        set
+        {
+            _cause = value;
+            __suppress_context__ = true;
+        }
+    }
+
+    public TaipanBaseException? @__context__ { get; set; }
+
+    public bool @__suppress_context__ { get; set; }
+
+    public Traceback? @__traceback__ { get; set; }
+
+    /// <summary>Whether its context is still to be set, at the first frame or clause it reaches since it was raised (SPEC §3.19).</summary>
+    internal bool Unchained { get; set; } = true;
+
+    /// <summary>Whether the frame it's in is already its traceback's first entry, after a bare <c>raise</c> or an unmatched clause.</summary>
+    internal bool FrameRecorded { get; set; }
+
+    internal void SetMessage(string text)
+    {
+        message = text;
+        args = text.Length == 0 ? VarTuple<string>.Empty : new([text]);
+    }
+
+    /// <summary>A dataclass exception's message and args, from its constructor's values (SPEC §3.19).</summary>
+    internal void SetArgs(string message, VarTuple<string> values)
+    {
+        this.message = message;
+        args = values;
+    }
 
     public static TaipanBaseException @__new__(string @message)
     {
@@ -23,7 +64,7 @@ public class TaipanBaseException : Exception, IObject
         return self;
     }
 
-    public void @__init__(string @message) => this.message = message;
+    public void @__init__(string @message) => SetMessage(message);
 
     public static string @__init___message_default() => "";
 
@@ -35,7 +76,8 @@ public class TaipanBaseException : Exception, IObject
     // its class defines __str__ or __repr__ (SPEC §4.8).
     string IClass.__str__() => message;
 
-    string IClass.__repr__() => $"{((IObject)this).TypeName}({Display.Repr(message)})";
+    // A dataclass exception's is a dataclass's (SPEC §3.19).
+    string IClass.__repr__() => this is IStruct ? Display.DefaultRepr(this) : $"{((IObject)this).TypeName}({Display.Repr(message)})";
 
     public override string Message => message;
 
@@ -79,7 +121,7 @@ public class SystemExit : TaipanBaseException
     public void @__init__(long @code)
     {
         this.code = code;
-        message = code.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        SetMessage(code.ToString(System.Globalization.CultureInfo.InvariantCulture));
     }
 
     public static long @__init___code_default() => 0;
@@ -286,6 +328,9 @@ public sealed class PythonError : TaipanException
     public string @type { get; set; }
 
     public PyObject @value { get; set; }
+
+    /// <summary>The Python class's name as a traceback prints it, with its module (SPEC §3.19).</summary>
+    internal string? QualifiedType { get; init; }
 }
 
 /// <summary>
@@ -322,37 +367,59 @@ public static class Exceptions
 
     /// <summary>
     /// The Taipan exception a caught one stands for. Checked arithmetic, and .NET code, throw
-    /// .NET's own overflow; any other .NET exception is a <see cref="DotNetError"/>.
+    /// .NET's own overflow; any other .NET exception is a <see cref="DotNetError"/>. The same .NET
+    /// exception always stands for the same Taipan one, so its traceback and context stay with it.
     /// </summary>
     public static TaipanBaseException From(Exception exception) => exception switch
     {
         TaipanBaseException taipan => taipan,
-        OverflowException => new OverflowError("integer overflow"),
         TaipanPanic => throw new ArgumentException("a panic is not catchable", nameof(exception)),
-        _ => new DotNetError(exception),
+        _ => Converted.GetValue(exception, e => e is OverflowException ? new OverflowError("integer overflow") : new DotNetError(e)),
     };
+
+    private static readonly ConditionalWeakTable<Exception, TaipanBaseException> Converted = [];
 
     /// <summary>Throws <paramref name="exception"/>, where C# needs a call rather than a statement: <c>sys.exit</c> as a value (SPEC §6.1).</summary>
     public static void Throw(Exception exception) => throw exception;
 
-    /// <summary><c>raise e</c> in a native program (SPEC §15.3): <c>e</c>, with any location it recorded cleared.</summary>
+    /// <summary><c>raise e</c> (SPEC §3.19): <c>e</c>, raised anew, so its context is set again and its frames are added in front.</summary>
     public static Exception Raise(Exception exception)
     {
-        Panic.Forget(exception);
+        if (exception is TaipanBaseException taipan)
+            (taipan.Unchained, taipan.FrameRecorded) = (true, false);
         return exception;
+    }
+
+    /// <summary><c>raise e from c</c> (SPEC §3.19): sets the cause, which suppresses the context, then raises.</summary>
+    public static Exception Raise(TaipanBaseException exception, TaipanBaseException? cause)
+    {
+        exception.__cause__ = cause;
+        return Raise(exception);
     }
 
     /// <summary>A caught exception as a .NET <c>except</c> clause tests it: a <see cref="DotNetError"/> is its .NET exception.</summary>
     public static Exception DotNet(Exception exception) => exception is DotNetError error ? error.Exception : exception;
 
     /// <summary>
-    /// A bare <c>raise</c>: rethrows <paramref name="exception"/> with its stack trace, so an uncaught
-    /// one still reports the line where it was first raised (SPEC §3.10). It never returns; its
-    /// result type lets the call be written <c>throw Exceptions.Rethrow(e)</c>.
+    /// A bare <c>raise</c> (SPEC §3.19): rethrows <paramref name="exception"/>, keeping its traceback
+    /// and context, without adding the handling frame again. Its result type lets the call be
+    /// written <c>throw Exceptions.Rethrow(e)</c>.
     /// </summary>
     public static Exception Rethrow(Exception exception)
     {
-        ExceptionDispatchInfo.Throw(exception);
+        Tracebacks.Again(exception);
         return exception;
+    }
+
+    /// <summary>A dataclass exception's message and args (SPEC §3.19): from its fields' values, as Python's are when given positionally.</summary>
+    public static void InitData(TaipanBaseException self, params object?[] values)
+    {
+        var message = values.Length switch
+        {
+            0 => "",
+            1 => Display.Format(values[0]),
+            _ => "(" + string.Join(", ", values.Select(Display.Repr)) + ")",
+        };
+        self.SetArgs(message, new(values.Select(Display.Format)));
     }
 }

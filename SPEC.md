@@ -135,7 +135,7 @@ return_stmt   = "return" [ expr_list ] ;
 match_expr    = "match" expr ":" NEWLINE INDENT value_arm { value_arm } DEDENT ;   (* M19, §5.1.1; an atom since M29 *)
 value_arm     = pattern [ guard ] ":" ( ( expr | raise_stmt ) NEWLINE | block ) ;   (* block: M29; guard: M38 *)
 expr_list     = expr { "," expr } ;                                  (* two or more make a tuple: M12 *)
-raise_stmt    = "raise" [ expr ] ;                                   (* M16, §3.10 *)
+raise_stmt    = "raise" [ expr [ "from" expr ] ] ;                   (* M16, §3.10; "from": M41, §3.19 *)
 yield_stmt    = "yield" [ "from" ] expr ;                            (* M31, §3.13 *)
 
 compound_stmt = if_stmt | while_stmt | for_stmt | match_stmt | try_stmt | with_stmt | func_def ;   (* in a block: nested function, M11 *)
@@ -170,7 +170,7 @@ type          = base_type { "?" } ;                               (* more than o
 base_type     = "int" | "float" | "bool" | "str" | "py"           (* py: M10 *)
               | "list" "[" type "]"
               | "dict" "[" type "," type "]"
-              | "tuple" "[" type { "," type } "]"                    (* M12; fewer than two types is TP0209 *)
+              | "tuple" "[" type ( { "," type } | "," "..." ) "]"   (* M12; fewer than two types is TP0209; "...": M41, §3.19 *)
               | "Callable" "[" "[" [ type { "," type } ] "]" "," ( type | "None" ) "]"   (* M11, §3.7 *)
               | NAME [ "." NAME ] [ "[" type { "," type } "]" ] ;  (* module.Type: M9 *)
 
@@ -390,7 +390,7 @@ There are no other implicit conversions. Explicit conversions use the built-ins 
 
 ### 3.8 Tuples (M12)
 - **Types:** `tuple[int, str]` holds an `int` and a `str`, as in Python.
-  - A tuple has a fixed number of elements, at least two. `tuple[int]` is `TP0209`. Variable-length `tuple[int, ...]` isn't supported; use a list.
+  - A tuple has a fixed number of elements, at least two. `tuple[int]` is `TP0209`. Variable-length `tuple[int, ...]` exists since M41 (§3.19); the rules below are for fixed tuples.
   - `tuple` is a built-in type name, like `list`.
   - Elements may have any type that has values, including optionals, lists, functions and other tuples.
   - A tuple type is assignable only to an identical one, as for lists. A literal is checked against its expected type, though, so `let p: tuple[float, float] = (1, 2)` is valid.
@@ -535,13 +535,13 @@ finally:
   | `UnicodeDecodeError` (M37) | `UnicodeError` | reading bytes that aren't valid in the file's encoding |
   | `UnicodeEncodeError` (M37) | `UnicodeError` | writing a character the file's encoding can't represent |
 
-- `Exception` has one field, `message: str`, and an `__init__(self, message: str = "")`, both from `BaseException` since M37. Every built-in class except `PythonError` and `SystemExit` takes the same arguments: `raise ValueError("bad port")`. Python has no `message` field; it keeps the arguments in `args`, and `str(e)` gives the message. In Taipan, `str(e)` gives the message too (§6).
+- `Exception` has one field, `message: str`, and an `__init__(self, message: str = "")`, both from `BaseException` since M37. Every built-in class except `PythonError` and `SystemExit` takes the same arguments: `raise ValueError("bad port")`. Python has no `message` field; it keeps the arguments in `args`, and `str(e)` gives the message. In Taipan, `str(e)` gives the message too (§6), and since M41 `args` holds it (§3.19).
 - `PythonError` has two more fields: `type: str`, the Python exception's class name, and `value: py`, the Python exception object. Its `message` is Python's `str(e)`. Only the runtime creates one: constructing it is `TP0200`, and deriving from it is `TP0225`. The same holds for `DotNetError` (M21), whose one more field is `type: str`, the .NET exception's full class name (§13.6).
 - The built-in exception classes' names are global, like other classes', so a definition with one of their names is `TP0214`.
 - **`BaseException` (M37)** is the root, as in Python, so that `SystemExit` isn't an `Exception`: `except Exception` doesn't catch it, and a program's `sys.exit` passes through handlers meant for errors. `except BaseException` and `except SystemExit` do catch it. Unlike Python, a bare `except:` is still `except Exception:` (below). A user class may derive from `BaseException`, as from `Exception`.
 - **`SystemExit` (M37)** has `__init__(self, code: int = 0)` and one more field, `code: int`; its `message` is `str(code)`, as Python's `str(e)` is. `sys.exit(message)` creates one whose `code` is `1` and whose `message` is `message` (in Python, `code` would be the string).
 - **`OSError` (M37)** has three more fields, as in Python: `errno: int?`, `strerror: str?` and `filename: str?`. Those the runtime raises (§6.1) set all three, and their message is Python's, `[Errno 2] No such file or directory: 'data.txt'`, with the file name quoted as Python's `repr` quotes it. Constructed with `OSError(message)`, as the others are, all three are `None`.
-- **User exceptions** are plain classes deriving, directly or not, from `Exception`. They follow every rule of §4.3: a subclass with its own fields sets them and then calls `super().__init__(message)`, and one without `__init__` takes `Exception`'s `message` argument. Since a dataclass can only derive from a dataclass (§4.3), `@dataclass class NotFound(Exception)` is `TP0225`.
+- **User exceptions** are plain classes deriving, directly or not, from `Exception`. They follow every rule of §4.3: a subclass with its own fields sets them and then calls `super().__init__(message)`, and one without `__init__` takes `Exception`'s `message` argument. Since M41 an exception may also be a dataclass, `@dataclass class NotFound(Exception)` (§3.19); before, that was `TP0225`.
 - Exceptions compare by identity, like other plain classes, and may be stored, passed and returned like any value.
 
 **`raise`**
@@ -567,9 +567,8 @@ finally:
 - A `try` terminates (§4.5) if its `finally` block terminates, or if every `except` block terminates and the `try` block or the `else` block terminates.
 - In `__init__` (§4.3), a `raise` before the object is complete is valid, since the object is never seen. Fields assigned in a `try` block count as assigned only after the whole `try`, and only if the `else` block or the `try` block assigns them, every `except` block assigns them too, or the `finally` block assigns them. `super().__init__(…)` inside a `try` isn't directly in the body (`TP0226`).
 
-**Uncaught exceptions** are panics (§7). They print the line where the exception was raised and exit with 101.
-- A Taipan built-in exception prints its message alone, as before M16: `panic: missing key "a"`. A `PythonError` prints `Python <type>: <message>`, as in §10.5. A user exception prints its class name and message, as Python does: `panic: NotFound: no service named db`. An empty message prints the class name alone.
-- `raise e` reports its own line, even when `e` was caught elsewhere. A bare `raise` keeps the line where the exception was first raised.
+**Uncaught exceptions** are panics (§7), and exit with 101. Since M41 they print a traceback, as Python does (§3.19).
+- Before M41, one printed `panic: <message>` and the line where it was raised: a Taipan built-in exception its message alone (`panic: missing key "a"`), a `PythonError` `Python <type>: <message>`, and a user exception its class name and message (`panic: NotFound: no service named db`). `raise e` reported its own line, and a bare `raise` kept the line where the exception was first raised.
 - **An uncaught `SystemExit` (M37)** isn't a panic. The program ends with its `code` as the exit code, printing nothing, or for `sys.exit(message)` the message and a newline to stderr, as Python does. Output the program printed is flushed first, and open files are flushed and closed (§6.1). As in Python, on Unix only the code's lowest 8 bits reach the parent process.
 
 **What isn't catchable**
@@ -841,7 +840,7 @@ with open(source) as src, open(target, "w") as dst:
 - **Suppression and checking.** An `__exit__` declared `-> bool` may suppress, so for termination, definite assignment and narrowing (§4.5, §3.9) its `with` statement may end after any statement of its block, as a `try` with an `except` clause may: a block that always returns doesn't make the `with` terminate, and a variable first assigned inside isn't assigned after. One declared `-> None` never suppresses, so the `with` is checked as its block alone. A `TextIO`'s `__exit__` never suppresses. (Python's type checkers make the same distinction.)
 - **`yield` inside `with`** is `TP0215`, `'yield' can't be inside a 'with'`, as inside a `try` with `except` (§3.13); both are deferred. `await` may be inside one (§3.14). `async with` is deferred.
 - **`type[C]`** is the type of `__exit__`'s first argument: a class as a value, `C` or one deriving from it. `type[A]` is assignable to `type[B]` when `A` derives from `B`. Only `__exit__` receives one; nothing constructs or calls one, and `type[T]` for a `T` that isn't a class is `TP0200`. Its one attribute is `__name__: str`, and it displays as Python's does: `<class 'ValueError'>` for a built-in class, `<class '__main__.Timer'>` for one in the main file, and `<class 'zoo.Timer'>` for one in module `zoo`.
-- **`TracebackType`** comes from the built-in module `types` (§4.7), as in Python. It's opaque: it displays as `<traceback object>`, and reading its frames is deferred (M41).
+- **`TracebackType`** comes from the built-in module `types` (§4.7), as in Python. It displays as `<traceback object>`. Since M41, `__exit__` receives the exception's `__traceback__`, whose entries can be read (§3.19).
 
 ### 3.18 Types II (M40)
 ```python
@@ -971,6 +970,89 @@ How their types are found:
   - One operand's type must be assignable to the other's, or both must be `py`.
   - Otherwise it's `TP0200`, `'is' compares identity, which <T> doesn't have` (`int`, `float`, `str`, `bool`, tuples and enums), with help `use '=='`. With unrelated types it's `TP0200`, `cannot compare <S> and <T>`.
   - It doesn't narrow. `x is None` and `x is not None` stay as before.
+
+### 3.19 Exceptions II (M41)
+Exceptions chain as in Python: `raise … from …` sets an exception's cause, and an exception raised while another is being handled keeps it as its context. Each exception has Python's `args`, `__cause__`, `__context__`, `__suppress_context__` and `__traceback__`. An uncaught exception prints a traceback as CPython does, chained exceptions first. Exceptions may be dataclasses.
+
+```python
+@dataclass
+class NotFound(Exception):
+    key: str
+
+def lookup(services: dict[str, int], name: str) -> int:
+    try:
+        return services[name]
+    except KeyError as e:
+        raise NotFound(name) from e
+
+def main():
+    print(lookup({}, "db"))
+
+main()
+```
+prints to stderr, and exits with 101:
+```
+Traceback (most recent call last):
+  File "lookup.tpn", line 7, in lookup
+    return services[name]
+KeyError: missing key "db"
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "lookup.tpn", line 14, in <module>
+    main()
+  File "lookup.tpn", line 12, in main
+    print(lookup({}, "db"))
+  File "lookup.tpn", line 9, in lookup
+    raise NotFound(name) from e
+NotFound: db
+```
+
+**`raise … from …`**
+- `raise e from c` evaluates `e`, then `c`, then sets `e.__cause__` to `c` and `e.__suppress_context__` to `True`, and raises `e`, as in Python. `c` must be an exception, an optional of one, or `None`: `raise NotFound(name) from None` hides the context.
+- A `c` of any other type is `TP0200`, `'from' needs an exception or None, found <T>`. A class, as in `from KeyError`, is `TP0200` with help `write 'KeyError(…)'`, as for `raise`.
+- `from` without an exception before it (`raise from e`) is `TP0100`.
+
+**Context**
+- An exception raised while another is being handled gets that one as its `__context__`, as in Python. An exception is being handled during its `except` block, during a `finally` block that runs because it's propagating, and during an `__exit__` called with it (§3.17), including in any function called from there. With several, it's the innermost.
+- `__context__` is set when the exception is raised: by `raise`, or by the runtime error (§7) itself. A bare `raise` doesn't change it, and neither does raising the exception being handled. As in Python, if the exception being handled has the new one somewhere in its own chain of contexts, that link is cut, so contexts never form a cycle.
+- `raise e from c` sets the context too. `__suppress_context__` only stops it from being printed.
+
+**Attributes.** `BaseException`, and so every exception class, has these, as in Python:
+- **`args: tuple[str, ...]`** is `(message,)`, or `()` when the message is empty, set by `__init__`. It's a read-only property (`TP0202`). Python's `args` holds the constructor's arguments, which needn't be strings. Taipan's exceptions take a message, so this is what a Python exception constructed with that message holds. For the runtime's own errors (§7) it holds Taipan's message (`missing key "db"`, where Python's `KeyError` holds `'db'`). `SystemExit`'s is `(str(code),)`.
+- **`__cause__: BaseException?`**, set by `raise … from …`. Assigning it also sets `__suppress_context__` to `True`, as in Python.
+- **`__context__: BaseException?`** (above). It may be assigned.
+- **`__suppress_context__: bool`**. It may be assigned.
+- **`__traceback__: TracebackType?`**, `None` until the exception is raised. It may be assigned another traceback or `None`. Its entries grow as the exception propagates (below).
+- Since these are `BaseException`'s members, a class can't declare a field, method or property with one of their names (`TP0214`), as for `message`.
+
+**Tracebacks**
+- **Entries.** Each exception's traceback is a list of entries, each naming a file, a line and a function, from the outermost frame to the innermost:
+  - When an exception is raised, the frame of the `raise` (or of the runtime error) is added. As it propagates out of each frame and into the one that called it, the calling frame is added in front. A frame where an `except` clause catches it is the first entry of `e.__traceback__` there.
+  - The line is that of the statement each frame is running: the `raise`, or the statement whose call is in progress. Python gives the line of the call or operation itself, which in a statement written across several lines may be a later one.
+  - **A bare `raise`** keeps the traceback and doesn't add its own frame again, so the entry for the handling frame keeps the line where the exception reached it. **`raise e`** of an exception that already has a traceback adds the new entries in front of the old ones, as in Python. So `raise e` in `e`'s own handler shows that frame twice.
+- **Frames** are named as Python names them: a function or method by its name, a property's getter and setter by the property's name, a file's top level `<module>`, a lambda `<lambda>`, a nested `def` by its name, and a generator expression `<genexpr>`. A list, set or dict comprehension runs in the frame it's in, as since Python 3.12. A generator's body is its own frame, added when an exception leaves it. Code the compiler generates, such as a dataclass's `__init__`, `__eq__` and `__repr__`, defaults (evaluated in the frame of the call) and the runtime's built-ins, has no frames.
+- **`TracebackType`** (§3.17) is one entry and the rest: `tb_lineno: int` and `tb_next: TracebackType?`, read-only. `tb_frame` and `tb_lasti` are deferred.
+- **Printing.** An uncaught exception (other than `SystemExit`) prints to stderr, after the program's output is flushed, as CPython 3.12 does with `-X no_debug_ranges` (no `^` markers under the failing part of a line):
+  - First its cause, printed the same way, then `\nThe above exception was the direct cause of the following exception:\n\n`. Without a cause, its context, unless `__suppress_context__` is set, then `\nDuring handling of the above exception, another exception occurred:\n\n`. An exception already printed in this chain isn't printed again.
+  - Then, if its traceback has entries, `Traceback (most recent call last):`, and for each entry `  File "<file>", line <n>, in <name>` followed by the line's text, stripped of leading and trailing whitespace, indented four spaces. `<file>` is the source path as given on the command line (§9). The text is read from the file when the traceback is printed, as Python's is, and left out if the file can't be read.
+  - The same entry (file, line and name) more than three times in a row prints three times, then `  [Previous line repeated <k> more times]` (`time` when `<k>` is 1), as in Python.
+  - Last, the exception: `<class>: <str(e)>`, or `<class>` alone when `str(e)` is empty. `<class>` is the class's name, qualified with its module (`zoo.NotFound`) unless it's a built-in class or in the main file. A `PythonError` (§10.5) prints its Python class as Python would, `json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)`, and a `DotNetError` (§13.6) its .NET class's full name, `System.FormatException: …`. If the class's `__str__` raises, the text is `<exception str() failed>`, as in Python.
+  - The program then exits with 101 (§7, §9). Python exits with 1.
+- A Python exception's own frames, inside Python code, aren't printed.
+
+**Dataclass exceptions**
+- A dataclass (§4.3) may derive from a built-in exception class other than `SystemExit`, `PythonError` and `DotNetError`, or from another dataclass exception. Before M41 that was `TP0225`. It may be frozen and ordered (§4.9), and may define `__post_init__`. It can't be generic (`TP0225`, §3.18). A plain exception class still can't be a dataclass's base, nor a dataclass exception a plain class's (`TP0225`, §4.3).
+- Its generated constructor takes its fields, as any dataclass's does. Its `message` and `args` come from the values the constructor is given, before `__post_init__` runs, as Python's do when every field is given positionally: with no fields the message is empty; with one, it's `str()` of the field's value; with several, the tuple of the values, displayed as a tuple is (§6): `("db", 3)`. `args` holds `str()` of each value. (Python's `args` keeps the values themselves, and holds only the arguments passed positionally, so `NotFound(key="db")` would have an empty message in Python.)
+- It compares, hashes, displays inside containers and matches class patterns as any dataclass does, so one that isn't frozen isn't hashable (`TP0200` as a key). Used as a key through its base, as `dict[Exception, int]` allows, it hashes by identity, as its base does; Python raises `TypeError`. §4.8's rule that a subclass of a hashable class stays hashable (`TP0225`) doesn't apply to it (`NotFound(key="db")`), and `str(e)` and `print(e)` give its message, as Python's `BaseException.__str__` does.
+
+**Variable-length tuples.** `tuple[T, ...]` holds any number of `T`s, as in Python:
+- It's the type of `args`, and of `tuple(xs)` for an `Iterable[T]` `xs`. A tuple literal checked against `tuple[T, ...]` builds one, checking each element against `T`. A fixed tuple type isn't assignable to it, nor it to one.
+- `len(t)`, `t[i]` with any `int` `i` (negative from the end; out of range raises `IndexError`, as for lists, §7), slices (`t[1:]`, giving a `tuple[T, ...]`), `for`, `in` and `not in`, and unpacking, with its length checked at run time as a list's is (§3.8). Assigning an element is `TP0202`, as for tuples.
+- `==` and `!=` compare element by element, ordering compares lexicographically when `T` is ordered, and it's a valid dict key when `T` is, as for tuples (§3.8).
+- It displays as tuples do (§6), with Python's forms for no element and one: `()`, `("a",)`, `(1, 2)`.
+- It converts to and from Python's `tuple` when `T` is convertible (§10.3), as tuples do. A `match` on one is `TP0200`, `cannot match on tuple[T, ...]`; that's deferred.
 
 ## 4. Declarations
 
@@ -1727,8 +1809,9 @@ print("done", file=sys.stderr)
 ---
 
 ## 7. Runtime errors (panics)
-- A panic prints `panic: <message>\n  at <file>.tpn:<line>` to stderr and exits with code **101**. Output the program printed before the panic still appears. `<file>` is the source path as given on the command line (§9). `<line>` is the line of the statement that panicked, in the innermost Taipan function.
-- The emitted C# carries `#line` directives so .NET stack traces map back to `.tpn` lines.
+- A panic prints to stderr and exits with code **101**. Output the program printed before the panic still appears. Since M41 a panic prints the exception's traceback, as §3.19 says, ending with `<class>: <message>`, such as `ZeroDivisionError: division by zero`. Before M41 it printed `panic: <message>\n  at <file>.tpn:<line>`, with `<file>` the source path as given on the command line (§9) and `<line>` the line of the statement that panicked, in the innermost Taipan function.
+- A failure that isn't an exception (loading Python, below and §10.5) still prints `panic: <message>`, then `  at <file>:<line>` for the statement running, and exits with 101.
+- The emitted C# carries `#line` directives, so .NET stack traces and debuggers map back to `.tpn` lines. Tracebacks come from the program's own line tracking (§8, §15.3), not from stack traces.
 - From M16, every runtime error raises an exception (§3.10), which a `try` can catch. A panic is an exception that nothing catches. The class each one raises follows its message below.
 - **Panic sources and messages:**
   - int overflow: `integer overflow`. This includes `-x` and `x // -1` for the most negative int. (`OverflowError`)
@@ -1788,7 +1871,7 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 | `map`, `filter`, `zip`, `enumerate` (M31) | Runtime iterators over `IEnumerable<T>`, which call their function or take from their sources only when asked for a value. |
 | `isinstance(x, C)` / narrowed `x` | `x is C`. A narrowed read is `((C)x)`, or `x!` / `x.Value` for `x is not None` on a reference / value type. |
 | `x as C` / `x as C?` | `Taipan.Runtime.Ops.Cast<C>(x)`, which panics as §7 says / `x as C` |
-| exceptions (M16) | `Exception` is `Taipan.Runtime.Exception`, which derives from `System.Exception` and is emitted against like a plain class's base (`__new__`, `@__init__`, a `message` property); the other built-in exception classes derive from it. A user exception class is a plain class deriving from one of them. Runtime errors throw the matching class, and a Python exception becomes a `PythonError` where the `py` operation calls Python. Checked arithmetic keeps throwing C#'s `OverflowException`, which a `catch` turns into an `OverflowError`. `raise e` is `throw e`. A bare `raise` is `throw Taipan.Runtime.Exceptions.Rethrow(caught)`, which rethrows with `ExceptionDispatchInfo` and so keeps the original stack trace and line. |
+| exceptions (M16) | `Exception` is `Taipan.Runtime.Exception`, which derives from `System.Exception` and is emitted against like a plain class's base (`__new__`, `@__init__`, a `message` property); the other built-in exception classes derive from it. A user exception class is a plain class deriving from one of them. Runtime errors throw the matching class, and a Python exception becomes a `PythonError` where the `py` operation calls Python. Checked arithmetic keeps throwing C#'s `OverflowException`, which a `catch` turns into an `OverflowError`. `raise e` is `throw e` (since M41, `throw Taipan.Runtime.Exceptions.Raise(e)`, which sets its context). A bare `raise` is `throw Taipan.Runtime.Exceptions.Rethrow(caught)`, which before M41 rethrew with `ExceptionDispatchInfo` to keep the original stack trace and line, and since M41 marks the exception so that its frame isn't added again (§3.19). |
 | `try` (M16) | A C# `try` with one `catch (System.Exception)` that converts the exception to its Taipan value (or rethrows one that isn't catchable), then tests the `except` clauses in order with `is` (or Python's `isinstance` for a Python class). If none matches, `throw;` rethrows the original. `else` runs after the `try`/`catch`, behind a flag set at the end of the `try` block. `finally` is C#'s `finally`. `Panic.Run` prints an uncaught exception as §3.10 says. |
 | `with` (M37) | The manager and `__enter__`'s result go into temporaries, then a C# `try` whose `catch (System.Exception)` sets a flag, converts the exception to its Taipan value (rethrowing one that isn't catchable), and calls `__exit__` with its class, the exception and a `Taipan.Runtime.Traceback`, rethrowing with `throw;` unless it returns `true`. Its `finally` calls `__exit__(null, null, null)` unless the flag is set. A `TextIO` is a `Taipan.Runtime.TextFile`, whose methods `@__enter__` and `@__exit__` the statement calls as a class's. |
 | `sys`, `os` (M37) | `Taipan.Runtime.Sys` and `Taipan.Runtime.Os`, static classes whose members the names compile to: `sys.argv` is `Sys.argv`. |
@@ -1801,7 +1884,11 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 | `tuple[A, B]` | a C# value tuple `(A, B)` (M12), with elements read as `Item1`, `Item2`, …. Unpacking stores the value in a temporary first. `==` uses `Taipan.Runtime.Equality.Equal`, and ordering uses a runtime comparison that orders strings by ordinal. In generic instance names, a tuple type is written `tuple_` followed by its element types: `first_tuple_int_str`. |
 | slices | `Taipan.Runtime.Ops.Slice(target, start, stop, step)`, with `null` for an omitted part (M12) |
 | type aliases (M18) | Nothing: each use is its expanded type. |
-| native builds (M23) | `--native` (§15.3): each method declares `int __line`, assigns it before each statement, and wraps its body in `try { … } catch (System.Exception e) when (Taipan.Runtime.Panic.Locate(e, "<file>", __line)) { throw; }`, whose filter records the location and returns false. `raise e` is `throw Taipan.Runtime.Exceptions.Raise(e)`, which clears it. |
+| line tracking (M23, M41) | §15.3: each method that's a Python frame declares `int line` and `string file`, assigns `line` before each statement, and wraps its body in `try { … } catch (System.Exception e) when (Taipan.Runtime.Tracebacks.Leave(e, file, line, "<name>")) { throw; }`, whose filter adds the frame to the exception's traceback and returns false. Before M41 this was only for `--native`, and recorded only the innermost frame. A generator passes a function reading its body's `line` to its `Generator<T>`, which adds the frame the same way. |
+| tracebacks (M41) | Each exception's `__traceback__` is a `Taipan.Runtime.Traceback`, an immutable list of entries that the filters and `except` clauses add to in front. Contexts are set from the exceptions being handled, a stack kept in an `AsyncLocal` by each `except` block, each `finally` block that runs because of an exception (its in-flight exception captured by a filter on the `try`), and each `__exit__` called with one, when an exception first reaches a filter or a `catch`. `Panic.Run` prints the chain. |
+| `raise e from c` (M41) | `throw Taipan.Runtime.Exceptions.Raise(e, c)`, which sets the cause before raising. |
+| `tuple[T, ...]` (M41) | `Taipan.Runtime.VarTuple<T>`, an immutable `IReadOnlyList<T>` with Taipan's equality, ordering, hashing and display. |
+| dataclass exceptions (M41) | A dataclass whose base is an exception class, with the dataclass's constructor and members (§8 above), whose constructor also sets `message` and `args` from its arguments. |
 | libraries (M22) | `--library` (§14): one public static class per module in the library's namespace, with its classes and enums nested inside, instead of `TaipanProgram`, and no `TaipanEntry`. Exported definitions are public and everything else internal. Each module has an internal initializer, called at the start of each exported member, that runs once (§14.3). |
 | .NET types and members (M21) | Used directly, by their full names (`global::System.Text.StringBuilder`). Arguments and results convert as §13.3 says: `checked` casts for narrower integers, copies for arrays and enumerables, and a runtime null check on a result that's not annotated as nullable. |
 | generics | Monomorphized. Each distinct instantiation the program uses becomes its own C# method or type, named after its type arguments: `first_int`, `Box_str`, `Box_list_int`, `Maybe_int_opt` (for `Maybe[int?]`). A clash with another name gets a numeric suffix. Generic definitions that are never instantiated are type-checked but not emitted. |
@@ -1926,6 +2013,7 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0200 | `isinstance needs a class, found <T>` / `'<C>' is not a class` / `'<C>' is generic` / `<T> can never be a <C>` (`isinstance`, `as` and class patterns on unrelated classes) / `'<C>' is a class; write '<C>()'` (a class pattern without parentheses) (M15) |
 | TP0200 | `no overload of '<T>.<m>' takes (<A1>, <A2>)` / `'<T>' is a static class` (constructing it, or using it as a type) / `'<T>' cannot be constructed` (an interface, abstract class or enum) / `<v> is out of range for <N>` (a literal argument, `<N>` the .NET type's name, such as `Int32`) / `'<T>.<m>' returned null` (`TypeError`, at run time) / `'<C>' is not an exception class` (a .NET class not deriving from `System.Exception`) / `cannot bind both Taipan and .NET exceptions`, with help `write separate clauses` (M21) |
 | TP0200 | `'<T>' does not satisfy '<P>': it has no field '<f>'` / `'<T>' does not satisfy '<P>': '<f>' must be '<f>: <F>'` / `'<T>' does not derive from '<C>'` / `<P> can never be a <C>` / `'<f>' cannot be used as a value`, with help `wrap it in a lambda` / `'is' compares identity, which <T> doesn't have`, with help `use '=='` / `isinstance on py takes int, float, str, bool, list, dict, tuple or a Python class, found <T>` (M40) |
+| TP0200 | `'from' needs an exception or None, found <T>` (with help `write '<C>(…)'` for a class name) (M41) |
 | TP0200 | `expected Self, found <C>` / `a class attribute can't use '<T>'` / `'<m>' is generic, so it cannot be used as a value` for a generic class's static or class method without type arguments (M39) |
 | TP0200 | `<T> can't be None` / `<T> cannot match a mapping pattern` / `mapping keys must be int, str or bool, found <K>` / `alternatives bind different names: '<x>' is not bound in every one` / `'<x>' is <A> in one alternative and <B> in another` (M38) |
 | TP0200 | `every arm of this 'match' raises`, with help `use a 'match' statement` (M19) / `this arm gives no value`, with help `end it with an expression` / `<T> cannot match a tuple pattern` / `<T> cannot match a list pattern` / `'*<x>' would hold <A> and <B>` (a starred name in a tuple) (M29) |
@@ -1969,7 +2057,7 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0222 | `only the main file can have top-level statements` / `a library can't have top-level statements` (M22) / `a Python extension can't have top-level statements` (M25) |
 | TP0223 | `nested functions cannot have type parameters` |
 | TP0224 | `unknown decorator '@<d>'` / `'@<d>' cannot be used here` (with help `'@dataclass' goes on a class, '@override' on a method`) / `duplicate decorator '@<d>'` / `'@<d>' cannot be used here`, with help `'@<d>' goes on a method`, for a method's decorator elsewhere / `'@<a>' cannot be combined with '@<b>'` / `'@abstractmethod' needs a class deriving from 'ABC'` / `'@<x>.setter' needs a property '<x>' just above it` (M28) |
-| TP0225 | `a class can have only one base class` (protocols aside, M17) / `'<T>' cannot be a base class` / `a dataclass can only derive from a dataclass` (with help `exceptions are plain classes; give it an '__init__'` for an exception base, M16) / `a plain class can only derive from a plain class` / `generic classes cannot be derived from` / `generic classes cannot have a base class` / `'<C>' derives from itself` / `special method '<m>' is not supported` / `a dataclass cannot define '__init__'` / `field without a default follows field with a default` / `'<m>' must be 'def <m>(self, …) -> <R>'` (M28, replacing M17's `'__lt__' must take one parameter of type '<C>' (or a base class) and return bool`) / `'<m>' must take 'self' first` (or `'cls'`) / `a static method takes neither 'self' nor 'cls'` / `a property takes no parameters other than 'self'` / `a property must have a return type` / `a setter must follow its property` / `a setter must take one parameter of type <T> and return nothing` / `class attribute '<a>' needs a value` (`generic classes cannot have <static methods\|class methods\|class attributes>` until M39) / `an abstract method's body must be '...'` / `'<C>' would not be hashable, but its base '<B>' is`, with help `define '__hash__'` (M28) / `'<C>' defines '__exit__' but not '__enter__'` (or the reverse) (M37) / `'<P>' is already declared` (or `already declared by '<B>'`) / `a protocol can only declare methods` / `a protocol method's body must be '...'` / `protocol method parameters cannot have defaults` / `protocols cannot be generic` / `a protocol can only derive from 'Protocol'` (M17) |
+| TP0225 | `a class can have only one base class` (protocols aside, M17) / `'<T>' cannot be a base class` / `a dataclass can only derive from a dataclass` (with help `exceptions are plain classes; give it an '__init__'` for an exception base, M16; since M41 only for a plain user exception class, `SystemExit`, `PythonError` or `DotNetError`) / `a plain class can only derive from a plain class` / `generic classes cannot be derived from` / `generic classes cannot have a base class` / `'<C>' derives from itself` / `special method '<m>' is not supported` / `a dataclass cannot define '__init__'` / `field without a default follows field with a default` / `'<m>' must be 'def <m>(self, …) -> <R>'` (M28, replacing M17's `'__lt__' must take one parameter of type '<C>' (or a base class) and return bool`) / `'<m>' must take 'self' first` (or `'cls'`) / `a static method takes neither 'self' nor 'cls'` / `a property takes no parameters other than 'self'` / `a property must have a return type` / `a setter must follow its property` / `a setter must take one parameter of type <T> and return nothing` / `class attribute '<a>' needs a value` (`generic classes cannot have <static methods\|class methods\|class attributes>` until M39) / `an abstract method's body must be '...'` / `'<C>' would not be hashable, but its base '<B>' is`, with help `define '__hash__'` (M28) / `'<C>' defines '__exit__' but not '__enter__'` (or the reverse) (M37) / `'<P>' is already declared` (or `already declared by '<B>'`) / `a protocol can only declare methods` / `a protocol method's body must be '...'` / `protocol method parameters cannot have defaults` / `protocols cannot be generic` / `a protocol can only derive from 'Protocol'` (M17) |
 | TP0225 | `a protocol field can't have a default` / `an exception class can't be generic` (M40) |
 | TP0225 | `a frozen dataclass can't derive from one that isn't` (or the reverse) / `'order=True' needs fields that can be ordered: '<f>' is <T>` / `'order=True' generates '<m>'; remove it` / `'__post_init__' must be 'def __post_init__(self) -> None'` / `'__post_init__' is only for dataclasses` / `cannot derive from final class '<C>'` / `'@total_ordering' needs '__lt__', '__le__', '__gt__' or '__ge__'` (M39) |
 | TP0226 | `'__init__' does not set '<f>'` / `'<f>' has no default, and '<C>' has no '__init__'` / `'<f>' is read before it is set` / `'self' is used before '<f>' is set` (or `before 'super().__init__' is called`) / `'<f>' is inherited, so it is set by 'super().__init__'` / `'super().__init__' is called before '<f>' is set` / `'<C>.__init__' must call 'super().__init__(…)'` / `'super().__init__' must be called once, directly in '__init__'` / `'super().__init__' can only be called in '__init__'` / `'__init__' returns before '<f>' is set` (or `before 'super().__init__' is called`) (when several fields are unset, the first in declaration order is named) |
@@ -2039,9 +2127,9 @@ Types are written as in source: `int`, `str?`, `list[int]`. The type of `None` i
 
 ### 10.5 Errors at run time
 - A failed `as T` raises a `TypeError` (M16) with the message `cannot convert Python <type> to <T>`, where `<type>` is the Python type's name (`str`, `NoneType`).
-- A Python exception during any `py` operation raises a `PythonError` (M16, §3.10), with the Python class's name, the message (Python's `str(e)`) and the exception object. `except json.JSONDecodeError` catches one by its Python class. Uncaught, it panics with `Python <ExceptionType>: <message>`.
+- A Python exception during any `py` operation raises a `PythonError` (M16, §3.10), with the Python class's name, the message (Python's `str(e)`) and the exception object. `except json.JSONDecodeError` catches one by its Python class. Uncaught, it prints a traceback ending in the Python class and message, as Python would print them (§3.19); before M41, `Python <ExceptionType>: <message>`.
 - If Python can't be loaded, the first Python import panics with `cannot load Python: <reason>`. A program without Python imports starts Python at its first conversion to `py` (`let p: py = [1, 2]`), which panics the same way.
-- All of these exit with 101 and report the Taipan line, as other panics do (§7).
+- All of these exit with 101, and those that are exceptions print a traceback, as other panics do (§7, §3.19).
 
 ### 10.6 Locating and running Python
 - The runtime embeds CPython through Python.NET (pythonnet). It looks for the CPython shared library in this order:
@@ -2068,8 +2156,7 @@ ROADMAP.md plans most of these from M35 on. They were never part of v0.1:
 - recursive aliases, and a class's aliases reached from outside it (`C.Name`)
 - typed `**kwargs` (`Unpack[TypedDict]`), `*args` and `**kwargs` in function types, and `**e` filling named parameters
 - narrowing elements with keys that can change (`xs[i]` for a `var` `i`), and literal types
-- `raise … from …`, exception chaining, and printing tracebacks (`BaseException` exists since M37)
-- dataclass exceptions (mixing dataclasses and plain classes), and `args` on exceptions
+- exceptions beyond §3.19 (M41): `with_traceback`, notes (`add_note`), the `traceback` module, `tb_frame` and `tb_lasti`, Python's own frames in a traceback, `^` markers under the failing part of a line, and `match` on `tuple[T, ...]`
 - nested format specs in f-strings (`{x:{width}}`), and format specs for other types (`__format__`)
 - language server features beyond §16: formatting, code actions, incremental sync, workspace-wide diagnostics, semantic token deltas and ranges, completion of .NET namespaces and Python modules' names, signature help for built-in functions, references to built-in, Python and .NET names, renaming modules (renaming their files), and editors other than VS Code
 - CPython extension modules beyond §17: classes and enums as Python types, Python functions and objects as arguments, Python interop inside an extension, generic functions, and builds for one exact Python version
@@ -2247,7 +2334,7 @@ So `sb.Append(5)` calls `Append(long)`, `sb.Append("x")` calls `Append(string)` 
 - **Catching as `Exception`:** a .NET exception reaching `except Exception`, a bare `except:` or any other Taipan class's clause is a `DotNetError` (§3.10), with `type` the .NET class's full name and `message` the .NET exception's `Message`. So `except Exception` still catches everything.
 - .NET's `OverflowException` is Taipan's `OverflowError`, as for checked arithmetic (§8), whichever code throws it.
 - Unreachable clauses (`TP0300`) are checked for .NET classes too.
-- **Uncaught**, a .NET exception panics with `.NET <full class name>: <message>`, as a Python exception does (§10.5), and exits with 101.
+- **Uncaught**, a .NET exception prints a traceback ending in `<full class name>: <message>` (§3.19), and exits with 101. Before M41 it printed `.NET <full class name>: <message>`.
 - Raising .NET exceptions is deferred.
 
 ### 13.8 Generic methods (M33)
@@ -2327,7 +2414,7 @@ catch (shapes.UnknownShape e) { Console.WriteLine(e.message); }
 | generic definitions | real .NET generics, where they can be (below) |
 | protocols, type aliases | nothing, as in a program (§8), except that a protocol used as a type (M40) is a public interface, which the classes satisfying it implement. A generic protocol's interface is monomorphized, as in a program (`Source_int`). A generic class that's used as a protocol type is monomorphized too, so each instantiation can implement the interfaces it satisfies, and isn't exported (`TP0302`, `it's used as the protocol '<P>'`). |
 
-- **Types in signatures** are §8's: `int` is `long`, `float` is `double`, `bool`, `str`, `T?` (`long?` or `string?`), `list[T]` is `List<T>`, `dict[K, V]` is `OrderedDictionary<K, V>`, `tuple[A, B]` is a value tuple, a function type is `Taipan.Runtime.Function<D>` (constructed from a delegate: `new Function<Func<long, long>>("twice", x => x * 2)`), `py` is pythonnet's `PyObject`, `Iterable[T]` is `IEnumerable<T>`, which a C# caller may pass any sequence as, and `Iterator[T]` is `Taipan.Runtime.IIterator<T>`, an `IEnumerable<T>` it can loop over once (M31), `Awaitable[T]` is `Task<T>`, so an `async def` is a C# async method (M33), and .NET types are themselves. Lists and dicts are shared, not copied, both ways.
+- **Types in signatures** are §8's: `int` is `long`, `float` is `double`, `bool`, `str`, `T?` (`long?` or `string?`), `list[T]` is `List<T>`, `dict[K, V]` is `OrderedDictionary<K, V>`, `tuple[A, B]` is a value tuple, `tuple[T, ...]` is `Taipan.Runtime.VarTuple<T>` (M41), a function type is `Taipan.Runtime.Function<D>` (constructed from a delegate: `new Function<Func<long, long>>("twice", x => x * 2)`), `py` is pythonnet's `PyObject`, `Iterable[T]` is `IEnumerable<T>`, which a C# caller may pass any sequence as, and `Iterator[T]` is `Taipan.Runtime.IIterator<T>`, an `IEnumerable<T>` it can loop over once (M31), `Awaitable[T]` is `Task<T>`, so an `async def` is a C# async method (M33), and .NET types are themselves. Lists and dicts are shared, not copied, both ways.
 - **Equality and hashing** are .NET's for the C# caller: a class's `Equals` is reference identity (or, since M28, `==` for a class that defines `__hash__`, §8), and an enum's is the record's (field by field, with C#'s `Equals` on each). `Taipan.Runtime.Equality.Equal(a, b)` compares as Taipan's `==` does.
 - `__init__`, `__new__` and the helpers that evaluate defaults are internal, as names starting with `_` are. So are special methods (M28), though `__str__` gives `ToString`, and a class whose body defines `__hash__` overrides `Equals` and `GetHashCode` with `==` and `hash()`. A property is a C# property, a static or class method a public static method (a class method's `cls` is its own class), and a class attribute a public static property. Classes implement the runtime's `IStruct` or `IObject`, which display and equality use; they aren't meant for callers. Deriving from a Taipan class in another .NET language isn't supported.
 - **Generic definitions.** A generic function, class or enum is exported as a .NET generic (`first<T>`, `Box<T>`) when:
@@ -2387,14 +2474,13 @@ A program that can't work natively is rejected at compile time, with `TP0233` wh
 - **.NET members that need run-time code generation or reflection.** A .NET method, constructor, property or field that .NET marks `[RequiresDynamicCode]` or `[RequiresUnreferencedCode]`, on itself or on its type, is `TP0233` where it's used: `'<T>.<m>' can't be used in a native program: <the attribute's message>`. These are the members .NET's own AOT analysis warns about.
 - Everything else in Taipan works natively.
 
-### 15.3 Panic locations
-A native executable has no debug information to map its stack to `.tpn` lines, so for `--native` the compiler records lines itself (§8):
-- Each emitted method (functions, methods, nested `def`s, lambdas, default helpers and the top level) keeps the `.tpn` line of the statement it's running in a local variable.
-- An exception filter around each method's body records that line, and the method's file, on an exception the first time one passes through, so the innermost Taipan frame is the one recorded. The filter never catches the exception.
-- `raise e` clears what `e` recorded, so it reports its own line, and a bare `raise` keeps it (§3.10).
-- A panic prints the recorded location, as `taipan run` prints the one from the stack trace.
+### 15.3 Line tracking
+A native executable has no debug information to map its stack to `.tpn` lines, so the compiler records lines itself (§8). Before M41 this was emitted only for `--native`, to locate a panic. Since M41 every program is emitted this way, native or not, since a traceback (§3.19) needs every frame's line and Python name, which a .NET stack trace doesn't give:
+- Each emitted method that's a Python frame (functions, methods, nested `def`s, lambdas, generator expressions and the top level) keeps the `.tpn` line of the statement it's running, and its file, in locals. A generator's body shares its line with the generator object, which adds its frame when an exception leaves the body.
+- An exception filter around each such method's body adds the frame to the exception's traceback as the exception passes through, innermost first. The filter never catches the exception. An `except` clause adds its own frame when it catches one.
+- Default helpers and the lambdas of list, set and dict comprehensions have no frame of their own, so the frame they run in reports them.
 
-This adds a local store per statement and a filter per method; it's emitted only for `--native`.
+This adds a local store per statement and a filter per method.
 
 ### 15.4 Deferred
 §11 lists what's deferred: building for another architecture (`--runtime <rid>`), Python in native programs, native libraries (`--library --native`), and size options such as invariant globalization.

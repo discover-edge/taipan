@@ -49,7 +49,12 @@ public class Iterator<T>(IEnumerator<T> source, string name) : IIterator<T>
 }
 
 /// <summary>A generator's iterator (SPEC §3.13): a <c>StopIteration</c> escaping its body is a <c>RuntimeError</c>, as in Python 3.7+.</summary>
-public sealed class Generator<T>(IEnumerable<T> body, string function) : Iterator<T>(body.GetEnumerator(), $"generator object {function}")
+/// <summary>
+/// A generator's iterator (SPEC §3.13). Its body is a Python frame of its own (SPEC §3.19): an
+/// exception leaving it adds the frame, at the line the body last set.
+/// </summary>
+public sealed class Generator<T>(IEnumerable<T> body, string function, string file, Func<int> line)
+    : Iterator<T>(body.GetEnumerator(), $"generator object {function}")
 {
     protected override bool Advance(IEnumerator<T> enumerator)
     {
@@ -57,9 +62,13 @@ public sealed class Generator<T>(IEnumerable<T> body, string function) : Iterato
         {
             return enumerator.MoveNext();
         }
-        catch (StopIteration)
+        catch (Exception e) when (Tracebacks.Leave(e, file, line(), function))
         {
-            throw new RuntimeError("generator raised StopIteration");
+            throw;
+        }
+        catch (StopIteration stop)
+        {
+            throw Tracebacks.FromStopIteration(stop);
         }
     }
 }

@@ -1,0 +1,4 @@
+tests/cases/m41/tp0200_raise_from.tpn:3:32: error TP0200: 'from' needs an exception or None, found int
+tests/cases/m41/tp0200_raise_from.tpn:6:32: error TP0200: 'from' needs an exception or None, found KeyError
+  help: write 'KeyError(…)'
+tests/cases/m41/tp0200_raise_from.tpn:9:32: error TP0200: 'from' needs an exception or None, found str

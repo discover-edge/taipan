@@ -56,6 +56,7 @@ public static class TypeChecker
     public static TaipanType? ElementOf(TaipanType type) => type switch
     {
         ListOfType list => list.Element,
+        VarTupleOfType varTuple => varTuple.Element,
         SetOfType set => set.Element,
         DictOfType dict => dict.Key,
         PrimitiveType { Name: "str" } => TaipanType.Str,
@@ -121,6 +122,8 @@ public static class TypeChecker
         // Element by element (SPEC §3.8).
         if (left is TupleOfType l && right is TupleOfType r)
             return l.Elements.Length == r.Elements.Length && l.Elements.Zip(r.Elements).All(pair => AreComparable(pair.First, pair.Second));
+        if (left is VarTupleOfType lv && right is VarTupleOfType rv)
+            return AreComparable(lv.Element, rv.Element);
         if (left is not OptionalOf && right is not OptionalOf)
             return false;
         if (left is NoneType || right is NoneType)
@@ -143,6 +146,7 @@ public static class TypeChecker
             TypeParameterType parameter => map.GetValueOrDefault(parameter.Symbol, parameter),
             OptionalOf optional => Flatten(Substitute(optional.Inner, map)),
             ListOfType list => new ListOfType(Substitute(list.Element, map)),
+            VarTupleOfType varTuple => new VarTupleOfType(Substitute(varTuple.Element, map)),
             IteratorOfType iterator => new IteratorOfType(Substitute(iterator.Element, map)),
             SetOfType set => new SetOfType(Substitute(set.Element, map)),
             AwaitableOfType awaitable => new AwaitableOfType(Substitute(awaitable.Result, map)),
@@ -164,6 +168,7 @@ public static class TypeChecker
         {
             OptionalOf optional => Same(optional.Inner, out var inner) ? plain : new OptionalOf(inner),
             ListOfType list => Same(list.Element, out var element) ? plain : new ListOfType(element),
+            VarTupleOfType varTuple => Same(varTuple.Element, out var element) ? plain : new VarTupleOfType(element),
             IteratorOfType iterator => Same(iterator.Element, out var element) ? plain : new IteratorOfType(element),
             SetOfType set => Same(set.Element, out var element) ? plain : new SetOfType(element),
             AwaitableOfType awaitable => Same(awaitable.Result, out var result) ? plain : new AwaitableOfType(result),
@@ -306,6 +311,7 @@ public static class TypeChecker
         SelfType => receiver,
         OptionalOf optional => Flatten(SubstituteSelf(optional.Inner, receiver)),
         ListOfType list => new ListOfType(SubstituteSelf(list.Element, receiver)),
+        VarTupleOfType varTuple => new VarTupleOfType(SubstituteSelf(varTuple.Element, receiver)),
         SetOfType set => new SetOfType(SubstituteSelf(set.Element, receiver)),
         IteratorOfType iterator => new IteratorOfType(SubstituteSelf(iterator.Element, receiver)),
         IterableOfType iterable => new IterableOfType(SubstituteSelf(iterable.Element, receiver)),

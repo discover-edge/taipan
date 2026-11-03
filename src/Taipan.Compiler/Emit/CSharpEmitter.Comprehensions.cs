@@ -33,9 +33,9 @@ public sealed partial class CSharpEmitter
         var values = Source(loop.Iterable);
         var next = at + 1;
         for (; next < comprehension.Clauses.Length && comprehension.Clauses[next] is BoundComprehensionIf test; next++)
-            values = $"{Linq}.Where({values}, {parameter} => {{ {unpack}return {Expr(test.Condition)}; }})";
+            values = $"{Linq}.Where({values}, {parameter} => {Body(comprehension, test.Condition.Span, $"{unpack}return {Expr(test.Condition)};")})";
         if (next < comprehension.Clauses.Length)
-            return $"{Linq}.SelectMany({values}, {parameter} => {{ {unpack}return {Sequence(comprehension, next)}; }})";
+            return $"{Linq}.SelectMany({values}, {parameter} => {Body(comprehension, ClauseSpan(comprehension.Clauses[next]), $"{unpack}return {Sequence(comprehension, next)};")})";
         var (elementType, valueType) = Concrete(comprehension.Type) switch
         {
             ListOfType list => (list.Element, null),
@@ -47,8 +47,20 @@ public sealed partial class CSharpEmitter
         var element = comprehension.Value is { } value
             ? $"({As(comprehension.Element, elementType)}, {As(value, valueType!)})"
             : As(comprehension.Element, elementType);
-        return $"{Linq}.Select({values}, {parameter} => {{ {unpack}return {element}; }})";
+        return $"{Linq}.Select({values}, {parameter} => {Body(comprehension, comprehension.Element.Span, $"{unpack}return {element};")})";
     }
+
+    private static Text.TextSpan ClauseSpan(BoundComprehensionClause clause) => clause switch
+    {
+        BoundComprehensionFor loop => loop.Iterable.Span,
+        BoundComprehensionIf test => test.Condition.Span,
+        _ => throw new ArgumentOutOfRangeException(nameof(clause)),
+    };
+
+    // A clause's lambda body. A generator expression's are its own frame, <genexpr>; the others run
+    // in the frame they're in, as since Python 3.12 (SPEC §3.19).
+    private string Body(BoundComprehension comprehension, Text.TextSpan span, string statements) =>
+        comprehension.Kind == ComprehensionKind.Generator ? $"{{ {TrackedStatement(span, statements, "<genexpr>")} }}" : $"{{ {statements} }}";
 
     // A value as the comprehension's element type, which an expected type may widen it to (SPEC §3.16).
     private string As(BoundExpr value, TaipanType type) =>

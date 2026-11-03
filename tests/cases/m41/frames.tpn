@@ -1,0 +1,23 @@
+# Frames are named as Python names them: methods, properties, nested defs, lambdas and
+# generator expressions, with comprehensions in the frame they're in (SPEC §3.19).
+class Box:
+    xs: list[int]
+
+    def __init__(self, xs: list[int]):
+        self.xs = xs
+
+    @property
+    def total(self) -> int:
+        return sum(halve(x) for x in self.xs)
+
+def halve(x: int) -> int:
+    def inner(y: int) -> int:
+        let f: Callable[[int], int] = lambda z: 100 // z
+        return f(y)
+    return [inner(v) for v in [x, x - 1]][1]
+
+def main():
+    let box = Box([2, 1])
+    print(box.total)
+
+main()

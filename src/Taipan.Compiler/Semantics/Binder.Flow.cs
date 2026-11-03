@@ -442,6 +442,7 @@ public sealed partial class Binder
         ListOfType list => Holds(list.Element, methods),
         DictOfType dict => Holds(dict.Key, methods) || Holds(dict.Value, methods),
         TupleOfType tuple => tuple.Elements.Any(e => Holds(e, methods)),
+        VarTupleOfType varTuple => Holds(varTuple.Element, methods),
         _ => false,
     };
 }

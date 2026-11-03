@@ -1,2 +1,8 @@
-panic: division by zero
-  at tests/cases/m11/panic_nested.tpn:4
+Traceback (most recent call last):
+  File "tests/cases/m11/panic_nested.tpn", line 8, in <module>
+    print(run(0))
+  File "tests/cases/m11/panic_nested.tpn", line 5, in run
+    return inner(1)
+  File "tests/cases/m11/panic_nested.tpn", line 4, in inner
+    return y // d
+ZeroDivisionError: division by zero

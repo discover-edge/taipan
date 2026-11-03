@@ -6,48 +6,84 @@ public static class TaipanProgram
 {
     public static void TopLevel()
     {
-#line 6 "tests/cases/m12/emit.tpn"
-        (long, long) @_2 = @divide(7L, 2L);
-#line 6 "tests/cases/m12/emit.tpn"
-        long @q = @_2.Item1;
-#line 6 "tests/cases/m12/emit.tpn"
-        long @r = @_2.Item2;
-#line 7 "tests/cases/m12/emit.tpn"
-        long @x = @q;
-#line 8 "tests/cases/m12/emit.tpn"
-        long @y = @r;
-#line 9 "tests/cases/m12/emit.tpn"
-        (long, long) @_3 = global::System.ValueTuple.Create<long, long>(@y, @x);
-#line 9 "tests/cases/m12/emit.tpn"
-        @x = @_3.Item1;
-#line 9 "tests/cases/m12/emit.tpn"
-        @y = @_3.Item2;
-#line 10 "tests/cases/m12/emit.tpn"
-        (long, string) @t = global::System.ValueTuple.Create<long, string>(1L, "a");
-#line 11 "tests/cases/m12/emit.tpn"
-        global::Taipan.Runtime.Builtins.Print(@q, @r, @x, @y, @t.Item2, global::Taipan.Runtime.Equality.Equal(@t, global::System.ValueTuple.Create<long, string>(1L, "a")), global::Taipan.Runtime.Ops.Less(@t, global::System.ValueTuple.Create<long, string>(2L, "")));
-#line 12 "tests/cases/m12/emit.tpn"
-        foreach ((long, string) @_4 in (global::Taipan.Runtime.Iterators.Enumerate(global::Taipan.Runtime.Iter.Over("ab"))))
+        int @line = 1;
+        string @file = "tests/cases/m12/emit.tpn";
+        try
         {
+#line 6 "tests/cases/m12/emit.tpn"
+            @line = 6;
+            (long, long) @_2 = @divide(7L, 2L);
+#line 6 "tests/cases/m12/emit.tpn"
+            @line = 6;
+            long @q = @_2.Item1;
+#line 6 "tests/cases/m12/emit.tpn"
+            @line = 6;
+            long @r = @_2.Item2;
+#line 7 "tests/cases/m12/emit.tpn"
+            @line = 7;
+            long @x = @q;
+#line 8 "tests/cases/m12/emit.tpn"
+            @line = 8;
+            long @y = @r;
+#line 9 "tests/cases/m12/emit.tpn"
+            @line = 9;
+            (long, long) @_3 = global::System.ValueTuple.Create<long, long>(@y, @x);
+#line 9 "tests/cases/m12/emit.tpn"
+            @line = 9;
+            @x = @_3.Item1;
+#line 9 "tests/cases/m12/emit.tpn"
+            @line = 9;
+            @y = @_3.Item2;
+#line 10 "tests/cases/m12/emit.tpn"
+            @line = 10;
+            (long, string) @t = global::System.ValueTuple.Create<long, string>(1L, "a");
+#line 11 "tests/cases/m12/emit.tpn"
+            @line = 11;
+            global::Taipan.Runtime.Builtins.Print(@q, @r, @x, @y, @t.Item2, global::Taipan.Runtime.Equality.Equal(@t, global::System.ValueTuple.Create<long, string>(1L, "a")), global::Taipan.Runtime.Ops.Less(@t, global::System.ValueTuple.Create<long, string>(2L, "")));
 #line 12 "tests/cases/m12/emit.tpn"
-            (long, string) @_5 = @_4;
+            @line = 12;
+            foreach ((long, string) @_4 in (global::Taipan.Runtime.Iterators.Enumerate(global::Taipan.Runtime.Iter.Over("ab"))))
+            {
 #line 12 "tests/cases/m12/emit.tpn"
-            long @i = @_5.Item1;
+                @line = 12;
+                (long, string) @_5 = @_4;
 #line 12 "tests/cases/m12/emit.tpn"
-            string @c = @_5.Item2;
+                @line = 12;
+                long @i = @_5.Item1;
+#line 12 "tests/cases/m12/emit.tpn"
+                @line = 12;
+                string @c = @_5.Item2;
 #line 13 "tests/cases/m12/emit.tpn"
-            global::Taipan.Runtime.Builtins.Print(@i, @c);
-        }
+                @line = 13;
+                global::Taipan.Runtime.Builtins.Print(@i, @c);
+                @line = 12;
+            }
 #line 14 "tests/cases/m12/emit.tpn"
-        global::Taipan.Runtime.Builtins.Print(global::Taipan.Runtime.Ops.Slice(new global::System.Collections.Generic.List<long> { 1L, 2L, 3L }, null, null, -1L));
+            @line = 14;
+            global::Taipan.Runtime.Builtins.Print(global::Taipan.Runtime.Ops.Slice(new global::System.Collections.Generic.List<long> { 1L, 2L, 3L }, null, null, -1L));
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "<module>"))
+        {
+            throw;
+        }
     }
 
     public static (long, long) @divide(long @a, long @b)
     {
+        int @line = 3;
+        string @file = "tests/cases/m12/emit.tpn";
+        try
+        {
 #line 4 "tests/cases/m12/emit.tpn"
-        return global::System.ValueTuple.Create<long, long>(global::Taipan.Runtime.Ops.FloorDiv(@a, @b), global::Taipan.Runtime.Ops.Mod(@a, @b));
+            @line = 4;
+            return global::System.ValueTuple.Create<long, long>(global::Taipan.Runtime.Ops.FloorDiv(@a, @b), global::Taipan.Runtime.Ops.Mod(@a, @b));
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "divide"))
+        {
+            throw;
+        }
     }
 }
 

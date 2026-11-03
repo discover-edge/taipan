@@ -32,6 +32,8 @@ public static class AstPrinter
         PatternBinding { Field: { } field, Pattern: VariantPattern { Module: null, Enum: null, Bindings: null } bare } => $"PatternBinding({field.Text}, {bare.Variant.Text})",
         PatternBinding { Field: null } binding => Print(binding.Pattern),
         UnpackedName { Starred: false } name => name.Name.Text,
+        // A raise without 'from' prints as before M41.
+        RaiseStmt { Cause: null } raise => $"RaiseStmt({Print(raise.Value)})",
         UnpackedTarget { Starred: false } target => Print(target.Target),
         bool b => b ? "True" : "False",
         BigInteger i => i.ToString(CultureInfo.InvariantCulture),

@@ -1,2 +1,4 @@
-panic: integer overflow
-  at tests/cases/m4/panic_const.tpn:2
+Traceback (most recent call last):
+  File "tests/cases/m4/panic_const.tpn", line 2, in <module>
+    const BAD = 9223372036854775807 + 1
+OverflowError: integer overflow

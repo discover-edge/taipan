@@ -6,208 +6,385 @@ public static class TaipanProgram
 {
     public static void TopLevel()
     {
+        int @line = 1;
+        string @file = "tests/cases/m8_1/constraints.tpn";
+        try
+        {
 #line 24 "tests/cases/m8_1/constraints.tpn"
-        global::Taipan.Runtime.Builtins.Print(@total_int(new global::System.Collections.Generic.List<long> { 1L, 2L, 3L }), @total_float(new global::System.Collections.Generic.List<double> { 1.5, 2.5 }), @total_float(new global::System.Collections.Generic.List<double> { 1L, 2.5 }));
+            @line = 24;
+            global::Taipan.Runtime.Builtins.Print(@total_int(new global::System.Collections.Generic.List<long> { 1L, 2L, 3L }), @total_float(new global::System.Collections.Generic.List<double> { 1.5, 2.5 }), @total_float(new global::System.Collections.Generic.List<double> { 1L, 2.5 }));
 #line 25 "tests/cases/m8_1/constraints.tpn"
-        global::System.Collections.Generic.List<long> @no_ints = new global::System.Collections.Generic.List<long>();
+            @line = 25;
+            global::System.Collections.Generic.List<long> @no_ints = new global::System.Collections.Generic.List<long>();
 #line 26 "tests/cases/m8_1/constraints.tpn"
-        global::Taipan.Runtime.Builtins.Print(@total_int(@no_ints));
+            @line = 26;
+            global::Taipan.Runtime.Builtins.Print(@total_int(@no_ints));
 #line 27 "tests/cases/m8_1/constraints.tpn"
-        global::Taipan.Runtime.Builtins.Print(@largest_int(new global::System.Collections.Generic.List<long> { 3L, 9L, 2L }), @largest_float(new global::System.Collections.Generic.List<double> { 0.5, -1.0 }), @largest_str(new global::System.Collections.Generic.List<string> { "pear", "apple", "zoo" }), @largest_int(@no_ints));
+            @line = 27;
+            global::Taipan.Runtime.Builtins.Print(@largest_int(new global::System.Collections.Generic.List<long> { 3L, 9L, 2L }), @largest_float(new global::System.Collections.Generic.List<double> { 0.5, -1.0 }), @largest_str(new global::System.Collections.Generic.List<string> { "pear", "apple", "zoo" }), @largest_int(@no_ints));
 #line 28 "tests/cases/m8_1/constraints.tpn"
-        global::Taipan.Runtime.Builtins.Print(@count_str(new global::System.Collections.Generic.List<string> { "a", "b", "a" }), @count_int(new global::System.Collections.Generic.List<long> { 1L, 1L, 2L }), @count_bool(new global::System.Collections.Generic.List<bool> { true, false, true }));
+            @line = 28;
+            global::Taipan.Runtime.Builtins.Print(@count_str(new global::System.Collections.Generic.List<string> { "a", "b", "a" }), @count_int(new global::System.Collections.Generic.List<long> { 1L, 1L, 2L }), @count_bool(new global::System.Collections.Generic.List<bool> { true, false, true }));
 #line 34 "tests/cases/m8_1/constraints.tpn"
-        global::Taipan.Runtime.Builtins.Print(@half_float(3L), @half_str("s"));
+            @line = 34;
+            global::Taipan.Runtime.Builtins.Print(@half_float(3L), @half_str("s"));
 #line 40 "tests/cases/m8_1/constraints.tpn"
-        global::Taipan.Runtime.Builtins.Print(@tag_int_str(2L, "two"), @tag_float_list_int(1.5, new global::System.Collections.Generic.List<long> { 1L }));
+            @line = 40;
+            global::Taipan.Runtime.Builtins.Print(@tag_int_str(2L, "two"), @tag_float_list_int(1.5, new global::System.Collections.Generic.List<long> { 1L }));
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "<module>"))
+        {
+            throw;
+        }
     }
 
     public static long @total_int(global::System.Collections.Generic.List<long> @xs)
     {
-#line 3 "tests/cases/m8_1/constraints.tpn"
-        long @sum = 0L;
-#line 4 "tests/cases/m8_1/constraints.tpn"
-        foreach (long @x in global::Taipan.Runtime.Iter.Over(@xs))
+        int @line = 2;
+        string @file = "tests/cases/m8_1/constraints.tpn";
+        try
         {
+#line 3 "tests/cases/m8_1/constraints.tpn"
+            @line = 3;
+            long @sum = 0L;
+#line 4 "tests/cases/m8_1/constraints.tpn"
+            @line = 4;
+            foreach (long @x in global::Taipan.Runtime.Iter.Over(@xs))
+            {
 #line 5 "tests/cases/m8_1/constraints.tpn"
-            @sum = @sum + @x;
-        }
+                @line = 5;
+                @sum = @sum + @x;
+                @line = 4;
+            }
 #line 6 "tests/cases/m8_1/constraints.tpn"
-        return @sum;
+            @line = 6;
+            return @sum;
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "total"))
+        {
+            throw;
+        }
     }
 
     public static double @total_float(global::System.Collections.Generic.List<double> @xs)
     {
-#line 3 "tests/cases/m8_1/constraints.tpn"
-        double @sum = 0L;
-#line 4 "tests/cases/m8_1/constraints.tpn"
-        foreach (double @x in global::Taipan.Runtime.Iter.Over(@xs))
+        int @line = 2;
+        string @file = "tests/cases/m8_1/constraints.tpn";
+        try
         {
+#line 3 "tests/cases/m8_1/constraints.tpn"
+            @line = 3;
+            double @sum = 0L;
+#line 4 "tests/cases/m8_1/constraints.tpn"
+            @line = 4;
+            foreach (double @x in global::Taipan.Runtime.Iter.Over(@xs))
+            {
 #line 5 "tests/cases/m8_1/constraints.tpn"
-            @sum = @sum + @x;
-        }
+                @line = 5;
+                @sum = @sum + @x;
+                @line = 4;
+            }
 #line 6 "tests/cases/m8_1/constraints.tpn"
-        return @sum;
+            @line = 6;
+            return @sum;
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "total"))
+        {
+            throw;
+        }
     }
 
     public static long? @largest_int(global::System.Collections.Generic.List<long> @xs)
     {
-#line 9 "tests/cases/m8_1/constraints.tpn"
-        long? @best = null;
-#line 10 "tests/cases/m8_1/constraints.tpn"
-        foreach (long @x in global::Taipan.Runtime.Iter.Over(@xs))
+        int @line = 8;
+        string @file = "tests/cases/m8_1/constraints.tpn";
+        try
         {
-#line 11 "tests/cases/m8_1/constraints.tpn"
-            if (@best is {} @b)
+#line 9 "tests/cases/m8_1/constraints.tpn"
+            @line = 9;
+            long? @best = null;
+#line 10 "tests/cases/m8_1/constraints.tpn"
+            @line = 10;
+            foreach (long @x in global::Taipan.Runtime.Iter.Over(@xs))
             {
-#line 12 "tests/cases/m8_1/constraints.tpn"
-                if (@x > @b)
+#line 11 "tests/cases/m8_1/constraints.tpn"
+                @line = 11;
+                if (@best is {} @b)
                 {
+#line 12 "tests/cases/m8_1/constraints.tpn"
+                    @line = 12;
+                    if (@x > @b)
+                    {
 #line 13 "tests/cases/m8_1/constraints.tpn"
+                        @line = 13;
+                        @best = @x;
+                    }
+                }
+                else
+                {
+#line 15 "tests/cases/m8_1/constraints.tpn"
+                    @line = 15;
                     @best = @x;
                 }
+                @line = 10;
             }
-            else
-            {
-#line 15 "tests/cases/m8_1/constraints.tpn"
-                @best = @x;
-            }
-        }
 #line 16 "tests/cases/m8_1/constraints.tpn"
-        return @best;
+            @line = 16;
+            return @best;
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "largest"))
+        {
+            throw;
+        }
     }
 
     public static double? @largest_float(global::System.Collections.Generic.List<double> @xs)
     {
-#line 9 "tests/cases/m8_1/constraints.tpn"
-        double? @best = null;
-#line 10 "tests/cases/m8_1/constraints.tpn"
-        foreach (double @x in global::Taipan.Runtime.Iter.Over(@xs))
+        int @line = 8;
+        string @file = "tests/cases/m8_1/constraints.tpn";
+        try
         {
-#line 11 "tests/cases/m8_1/constraints.tpn"
-            if (@best is {} @b)
+#line 9 "tests/cases/m8_1/constraints.tpn"
+            @line = 9;
+            double? @best = null;
+#line 10 "tests/cases/m8_1/constraints.tpn"
+            @line = 10;
+            foreach (double @x in global::Taipan.Runtime.Iter.Over(@xs))
             {
-#line 12 "tests/cases/m8_1/constraints.tpn"
-                if (@x > @b)
+#line 11 "tests/cases/m8_1/constraints.tpn"
+                @line = 11;
+                if (@best is {} @b)
                 {
+#line 12 "tests/cases/m8_1/constraints.tpn"
+                    @line = 12;
+                    if (@x > @b)
+                    {
 #line 13 "tests/cases/m8_1/constraints.tpn"
+                        @line = 13;
+                        @best = @x;
+                    }
+                }
+                else
+                {
+#line 15 "tests/cases/m8_1/constraints.tpn"
+                    @line = 15;
                     @best = @x;
                 }
+                @line = 10;
             }
-            else
-            {
-#line 15 "tests/cases/m8_1/constraints.tpn"
-                @best = @x;
-            }
-        }
 #line 16 "tests/cases/m8_1/constraints.tpn"
-        return @best;
+            @line = 16;
+            return @best;
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "largest"))
+        {
+            throw;
+        }
     }
 
     public static string? @largest_str(global::System.Collections.Generic.List<string> @xs)
     {
-#line 9 "tests/cases/m8_1/constraints.tpn"
-        string? @best = null;
-#line 10 "tests/cases/m8_1/constraints.tpn"
-        foreach (string @x in global::Taipan.Runtime.Iter.Over(@xs))
+        int @line = 8;
+        string @file = "tests/cases/m8_1/constraints.tpn";
+        try
         {
-#line 11 "tests/cases/m8_1/constraints.tpn"
-            if (@best is {} @b)
+#line 9 "tests/cases/m8_1/constraints.tpn"
+            @line = 9;
+            string? @best = null;
+#line 10 "tests/cases/m8_1/constraints.tpn"
+            @line = 10;
+            foreach (string @x in global::Taipan.Runtime.Iter.Over(@xs))
             {
-#line 12 "tests/cases/m8_1/constraints.tpn"
-                if (string.CompareOrdinal(@x, @b) > 0)
+#line 11 "tests/cases/m8_1/constraints.tpn"
+                @line = 11;
+                if (@best is {} @b)
                 {
+#line 12 "tests/cases/m8_1/constraints.tpn"
+                    @line = 12;
+                    if (string.CompareOrdinal(@x, @b) > 0)
+                    {
 #line 13 "tests/cases/m8_1/constraints.tpn"
+                        @line = 13;
+                        @best = @x;
+                    }
+                }
+                else
+                {
+#line 15 "tests/cases/m8_1/constraints.tpn"
+                    @line = 15;
                     @best = @x;
                 }
+                @line = 10;
             }
-            else
-            {
-#line 15 "tests/cases/m8_1/constraints.tpn"
-                @best = @x;
-            }
-        }
 #line 16 "tests/cases/m8_1/constraints.tpn"
-        return @best;
+            @line = 16;
+            return @best;
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "largest"))
+        {
+            throw;
+        }
     }
 
     public static global::System.Collections.Generic.OrderedDictionary<string, long> @count_str(global::System.Collections.Generic.List<string> @xs)
     {
-#line 19 "tests/cases/m8_1/constraints.tpn"
-        global::System.Collections.Generic.OrderedDictionary<string, long> @counts = new global::System.Collections.Generic.OrderedDictionary<string, long>();
-#line 20 "tests/cases/m8_1/constraints.tpn"
-        foreach (string @x in global::Taipan.Runtime.Iter.Over(@xs))
+        int @line = 18;
+        string @file = "tests/cases/m8_1/constraints.tpn";
+        try
         {
+#line 19 "tests/cases/m8_1/constraints.tpn"
+            @line = 19;
+            global::System.Collections.Generic.OrderedDictionary<string, long> @counts = new global::System.Collections.Generic.OrderedDictionary<string, long>();
+#line 20 "tests/cases/m8_1/constraints.tpn"
+            @line = 20;
+            foreach (string @x in global::Taipan.Runtime.Iter.Over(@xs))
+            {
 #line 21 "tests/cases/m8_1/constraints.tpn"
-            global::Taipan.Runtime.Ops.SetIndex(@counts, @x, (global::Taipan.Runtime.Ops.Get(@counts, @x) ?? 0L) + 1L);
-        }
+                @line = 21;
+                global::Taipan.Runtime.Ops.SetIndex(@counts, @x, (global::Taipan.Runtime.Ops.Get(@counts, @x) ?? 0L) + 1L);
+                @line = 20;
+            }
 #line 22 "tests/cases/m8_1/constraints.tpn"
-        return @counts;
+            @line = 22;
+            return @counts;
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "count"))
+        {
+            throw;
+        }
     }
 
     public static global::System.Collections.Generic.OrderedDictionary<long, long> @count_int(global::System.Collections.Generic.List<long> @xs)
     {
-#line 19 "tests/cases/m8_1/constraints.tpn"
-        global::System.Collections.Generic.OrderedDictionary<long, long> @counts = new global::System.Collections.Generic.OrderedDictionary<long, long>();
-#line 20 "tests/cases/m8_1/constraints.tpn"
-        foreach (long @x in global::Taipan.Runtime.Iter.Over(@xs))
+        int @line = 18;
+        string @file = "tests/cases/m8_1/constraints.tpn";
+        try
         {
+#line 19 "tests/cases/m8_1/constraints.tpn"
+            @line = 19;
+            global::System.Collections.Generic.OrderedDictionary<long, long> @counts = new global::System.Collections.Generic.OrderedDictionary<long, long>();
+#line 20 "tests/cases/m8_1/constraints.tpn"
+            @line = 20;
+            foreach (long @x in global::Taipan.Runtime.Iter.Over(@xs))
+            {
 #line 21 "tests/cases/m8_1/constraints.tpn"
-            global::Taipan.Runtime.Ops.SetIndex(@counts, @x, (global::Taipan.Runtime.Ops.Get(@counts, @x) ?? 0L) + 1L);
-        }
+                @line = 21;
+                global::Taipan.Runtime.Ops.SetIndex(@counts, @x, (global::Taipan.Runtime.Ops.Get(@counts, @x) ?? 0L) + 1L);
+                @line = 20;
+            }
 #line 22 "tests/cases/m8_1/constraints.tpn"
-        return @counts;
+            @line = 22;
+            return @counts;
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "count"))
+        {
+            throw;
+        }
     }
 
     public static global::System.Collections.Generic.OrderedDictionary<bool, long> @count_bool(global::System.Collections.Generic.List<bool> @xs)
     {
-#line 19 "tests/cases/m8_1/constraints.tpn"
-        global::System.Collections.Generic.OrderedDictionary<bool, long> @counts = new global::System.Collections.Generic.OrderedDictionary<bool, long>();
-#line 20 "tests/cases/m8_1/constraints.tpn"
-        foreach (bool @x in global::Taipan.Runtime.Iter.Over(@xs))
+        int @line = 18;
+        string @file = "tests/cases/m8_1/constraints.tpn";
+        try
         {
+#line 19 "tests/cases/m8_1/constraints.tpn"
+            @line = 19;
+            global::System.Collections.Generic.OrderedDictionary<bool, long> @counts = new global::System.Collections.Generic.OrderedDictionary<bool, long>();
+#line 20 "tests/cases/m8_1/constraints.tpn"
+            @line = 20;
+            foreach (bool @x in global::Taipan.Runtime.Iter.Over(@xs))
+            {
 #line 21 "tests/cases/m8_1/constraints.tpn"
-            global::Taipan.Runtime.Ops.SetIndex(@counts, @x, (global::Taipan.Runtime.Ops.Get(@counts, @x) ?? 0L) + 1L);
-        }
+                @line = 21;
+                global::Taipan.Runtime.Ops.SetIndex(@counts, @x, (global::Taipan.Runtime.Ops.Get(@counts, @x) ?? 0L) + 1L);
+                @line = 20;
+            }
 #line 22 "tests/cases/m8_1/constraints.tpn"
-        return @counts;
+            @line = 22;
+            return @counts;
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "count"))
+        {
+            throw;
+        }
     }
 
     public static double @half_float(double @x)
     {
+        int @line = 31;
+        string @file = "tests/cases/m8_1/constraints.tpn";
+        try
+        {
 #line 32 "tests/cases/m8_1/constraints.tpn"
-        return @x;
+            @line = 32;
+            return @x;
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "half"))
+        {
+            throw;
+        }
     }
 
     public static string @half_str(string @x)
     {
+        int @line = 31;
+        string @file = "tests/cases/m8_1/constraints.tpn";
+        try
+        {
 #line 32 "tests/cases/m8_1/constraints.tpn"
-        return @x;
+            @line = 32;
+            return @x;
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "half"))
+        {
+            throw;
+        }
     }
 
     public static string @tag_int_str(long @n, string @label)
     {
+        int @line = 37;
+        string @file = "tests/cases/m8_1/constraints.tpn";
+        try
+        {
 #line 38 "tests/cases/m8_1/constraints.tpn"
-        return $"{(global::Taipan.Runtime.Display.Format(@label))}={(global::Taipan.Runtime.Display.Format(@n + @n))}";
+            @line = 38;
+            return $"{(global::Taipan.Runtime.Display.Format(@label))}={(global::Taipan.Runtime.Display.Format(@n + @n))}";
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "tag"))
+        {
+            throw;
+        }
     }
 
     public static string @tag_float_list_int(double @n, global::System.Collections.Generic.List<long> @label)
     {
+        int @line = 37;
+        string @file = "tests/cases/m8_1/constraints.tpn";
+        try
+        {
 #line 38 "tests/cases/m8_1/constraints.tpn"
-        return $"{(global::Taipan.Runtime.Display.Format(@label))}={(global::Taipan.Runtime.Display.Format(@n + @n))}";
+            @line = 38;
+            return $"{(global::Taipan.Runtime.Display.Format(@label))}={(global::Taipan.Runtime.Display.Format(@n + @n))}";
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "tag"))
+        {
+            throw;
+        }
     }
 }
 

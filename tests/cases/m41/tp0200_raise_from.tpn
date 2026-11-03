@@ -1,0 +1,9 @@
+# 'from' needs an exception or None (SPEC §3.19).
+def number():
+    raise ValueError("a") from 3
+
+def named():
+    raise ValueError("b") from KeyError
+
+def text():
+    raise ValueError("c") from "text"

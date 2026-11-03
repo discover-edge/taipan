@@ -6,36 +6,63 @@ public static class TaipanProgram
 {
     public static void TopLevel()
     {
+        int @line = 1;
+        string @file = "tests/cases/m5/compound_targets.tpn";
+        try
+        {
 #line 6 "tests/cases/m5/compound_targets.tpn"
-        long @calls = 0L;
+            @line = 6;
+            long @calls = 0L;
 #line 7 "tests/cases/m5/compound_targets.tpn"
-        global::System.Collections.Generic.List<global::@Counter> @counters = new global::System.Collections.Generic.List<global::@Counter> { new global::@Counter(0L), new global::@Counter(10L) };
+            @line = 7;
+            global::System.Collections.Generic.List<global::@Counter> @counters = new global::System.Collections.Generic.List<global::@Counter> { new global::@Counter(0L), new global::@Counter(10L) };
 #line 13 "tests/cases/m5/compound_targets.tpn"
-        global::System.Collections.Generic.List<long> @log = new global::System.Collections.Generic.List<long>();
+            @line = 13;
+            global::System.Collections.Generic.List<long> @log = new global::System.Collections.Generic.List<long>();
 #line 14 "tests/cases/m5/compound_targets.tpn"
-        global::System.Collections.Generic.List<long> @xs = new global::System.Collections.Generic.List<long> { 1L, 2L, 3L };
+            @line = 14;
+            global::System.Collections.Generic.List<long> @xs = new global::System.Collections.Generic.List<long> { 1L, 2L, 3L };
 #line 15 "tests/cases/m5/compound_targets.tpn"
-        {
-            var @tmp = @pick(1L, @log);
-            global::Taipan.Runtime.Ops.SetIndex(@xs, @tmp, global::Taipan.Runtime.Ops.Index(@xs, @tmp) + 100L);
-        }
+            @line = 15;
+            {
+                var @tmp = @pick(1L, @log);
+                global::Taipan.Runtime.Ops.SetIndex(@xs, @tmp, global::Taipan.Runtime.Ops.Index(@xs, @tmp) + 100L);
+            }
 #line 16 "tests/cases/m5/compound_targets.tpn"
-        {
-            var @tmp2 = global::Taipan.Runtime.Ops.Index(@counters, @pick(0L, @log));
-            @tmp2.@n = @tmp2.@n + 5L;
-        }
+            @line = 16;
+            {
+                var @tmp2 = global::Taipan.Runtime.Ops.Index(@counters, @pick(0L, @log));
+                @tmp2.@n = @tmp2.@n + 5L;
+            }
 #line 17 "tests/cases/m5/compound_targets.tpn"
-        global::Taipan.Runtime.Builtins.Print(@xs, @counters, @log);
+            @line = 17;
+            global::Taipan.Runtime.Builtins.Print(@xs, @counters, @log);
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "<module>"))
+        {
+            throw;
+        }
     }
 
     public static long @pick(long @i, global::System.Collections.Generic.List<long> @log)
     {
+        int @line = 9;
+        string @file = "tests/cases/m5/compound_targets.tpn";
+        try
+        {
 #line 10 "tests/cases/m5/compound_targets.tpn"
-        @log.Add(@i);
+            @line = 10;
+            @log.Add(@i);
 #line 11 "tests/cases/m5/compound_targets.tpn"
-        return @i;
+            @line = 11;
+            return @i;
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "pick"))
+        {
+            throw;
+        }
     }
 }
 

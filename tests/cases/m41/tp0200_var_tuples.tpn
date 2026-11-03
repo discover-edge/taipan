@@ -1,0 +1,11 @@
+# tuple[T, ...] rules: no tuple patterns, no fixed tuples either way (SPEC §3.19).
+let xs = tuple([1, 2])
+match xs:
+    (a, b):
+        print(a, b)
+    _:
+        pass
+let pair = (1, 2)
+let ys: tuple[int, ...] = pair
+let zs: tuple[int, int] = xs
+let wrong: tuple[str, ...] = (1, 2)

@@ -1,2 +1,4 @@
-panic: cannot convert Python list to tuple[int, int]
-  at tests/cases/m12/python_tuples.tpn:10
+Traceback (most recent call last):
+  File "tests/cases/m12/python_tuples.tpn", line 10, in <module>
+    let wrong = json.loads("[1, 2, 3]") as tuple[int, int]
+TypeError: cannot convert Python list to tuple[int, int]

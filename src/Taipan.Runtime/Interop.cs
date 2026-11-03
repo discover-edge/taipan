@@ -401,6 +401,23 @@ public static class Interop
 
     // Every Python operation starts Python first, so a program that converts to py without
     // importing a Python module gets §10.5's panic if Python can't be loaded.
+
+    // A Python class as a traceback names it (SPEC §3.19): qualified with its module, unless that's
+    // builtins or __main__. Taken while the GIL is held, so a native build's traceback printing
+    // never reaches Python.
+    private static string QualifiedName(PyType type)
+    {
+        try
+        {
+            var name = type.GetAttr("__qualname__").ToString() ?? type.Name;
+            var module = type.GetAttr("__module__").ToString();
+            return module is null or "builtins" or "__main__" ? name : $"{module}.{name}";
+        }
+        catch (PythonException)
+        {
+            return type.Name;
+        }
+    }
     private static T Run<T>(Func<T> operation)
     {
         EnsureStarted();
@@ -412,7 +429,7 @@ public static class Interop
             }
             catch (PythonException e)
             {
-                throw new PythonError(e.Type.Name, e.Message, e.Value ?? PyObject.None);
+                throw new PythonError(e.Type.Name, e.Message, e.Value ?? PyObject.None) { QualifiedType = QualifiedName(e.Type) };
             }
         }
     }

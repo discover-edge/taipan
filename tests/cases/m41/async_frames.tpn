@@ -1,0 +1,11 @@
+# An async function is a frame, as in Python (SPEC §3.19).
+async def fetch(n: int) -> int:
+    if n == 0:
+        raise ValueError("empty")
+    return n
+
+async def main():
+    print(await fetch(1))
+    print(await fetch(0))
+
+await main()

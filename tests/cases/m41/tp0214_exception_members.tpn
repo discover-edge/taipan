@@ -1,0 +1,11 @@
+# BaseException's members can't be redeclared (SPEC §3.19).
+class Bad(Exception):
+    args: str
+
+    def __init__(self):
+        self.args = ""
+        super().__init__("bad")
+
+@dataclass
+class AlsoBad(Exception):
+    __cause__: int

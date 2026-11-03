@@ -6,16 +6,36 @@ public static class TaipanProgram
 {
     public static void TopLevel()
     {
+        int @line = 1;
+        string @file = "tests/cases/m18/emit.tpn";
+        try
+        {
 #line 8 "tests/cases/m18/emit.tpn"
-        global::Taipan.Runtime.Builtins.Print(@apply(new global::Taipan.Runtime.Function<global::System.Func<long, long>>("<lambda>", (long @x) => @x * 10L), global::System.ValueTuple.Create<long, long>(1L, 2L)));
+            @line = 8;
+            global::Taipan.Runtime.Builtins.Print(@apply(new global::Taipan.Runtime.Function<global::System.Func<long, long>>("<lambda>", (long @x) => { try { return @x * 10L; } catch (global::System.Exception @e2) when (global::Taipan.Runtime.Tracebacks.Leave(@e2, "tests/cases/m18/emit.tpn", 8, "<lambda>")) { throw; } }), global::System.ValueTuple.Create<long, long>(1L, 2L)));
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "<module>"))
+        {
+            throw;
+        }
     }
 
     public static (long, long) @apply(global::Taipan.Runtime.Function<global::System.Func<long, long>> @f, (long, long) @p)
     {
+        int @line = 5;
+        string @file = "tests/cases/m18/emit.tpn";
+        try
+        {
 #line 6 "tests/cases/m18/emit.tpn"
-        return global::System.ValueTuple.Create<long, long>(@f.Invoke(@p.Item1), @f.Invoke(@p.Item2));
+            @line = 6;
+            return global::System.ValueTuple.Create<long, long>(@f.Invoke(@p.Item1), @f.Invoke(@p.Item2));
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "apply"))
+        {
+            throw;
+        }
     }
 }
 

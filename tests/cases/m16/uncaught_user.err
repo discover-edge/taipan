@@ -1,2 +1,6 @@
-panic: NotFound: no service named db
-  at tests/cases/m16/uncaught_user.tpn:7
+Traceback (most recent call last):
+  File "tests/cases/m16/uncaught_user.tpn", line 12, in <module>
+    find("db")
+  File "tests/cases/m16/uncaught_user.tpn", line 7, in find
+    raise NotFound(f"no service named {name}")
+NotFound: no service named db

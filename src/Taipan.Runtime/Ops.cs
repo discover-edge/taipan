@@ -155,6 +155,12 @@ public static class Ops
 
     public static T Index<T>(List<T> list, long index) => list[(int)Normalize(index, list.Count)];
 
+    public static T Index<T>(VarTuple<T> tuple, long index) => tuple.At(index);
+
+    public static VarTuple<T> Slice<T>(VarTuple<T> tuple, long? start, long? stop, long? step) => tuple.Slice(start, stop, step);
+
+    public static bool In<T>(T item, VarTuple<T> tuple) => tuple.Contains(item);
+
     public static TValue Index<TKey, TValue>(OrderedDictionary<TKey, TValue> dict, TKey key) where TKey : notnull =>
         dict.TryGetValue(key, out var value) ? value : throw new KeyError($"missing key {Display.Repr(key)}");
 
@@ -253,14 +259,15 @@ public static class Ops
         // A class element compares by its methods (SPEC §4.8).
         if (left is IClass)
             return Compare(left, right, (int)ordering);
+        // Element by element, then a shorter tuple first, for tuple[T, ...] (SPEC §3.19).
         if (left is ITuple l && right is ITuple r)
         {
-            for (var i = 0; i < l.Length; i++)
+            for (var i = 0; i < Math.Min(l.Length, r.Length); i++)
             {
                 if (!Equality.Equal(l[i], r[i]))
                     return Compare(l[i]!, r[i]!, ordering);
             }
-            return ordering is Ordering.LessEqual or Ordering.GreaterEqual;
+            return Apply(l.Length, r.Length, ordering);
         }
         if (left is string ls && right is string rs)
             return Apply(string.CompareOrdinal(ls, rs), 0, ordering);
@@ -280,7 +287,8 @@ public static class Ops
     /// <summary>The total order <c>sorted</c> uses: strings by ordinal, NaN first, tuples element by element.</summary>
     private static int SortCompare(object? left, object? right) => (left, right) switch
     {
-        (ITuple l, ITuple r) => Enumerable.Range(0, l.Length).Select(i => SortCompare(l[i], r[i])).FirstOrDefault(c => c != 0),
+        (ITuple l, ITuple r) => Enumerable.Range(0, Math.Min(l.Length, r.Length)).Select(i => SortCompare(l[i], r[i])).FirstOrDefault(c => c != 0) is var c and not 0
+            ? c : l.Length.CompareTo(r.Length),
         (string l, string r) => string.CompareOrdinal(l, r),
         (long l, long r) => l.CompareTo(r),
         _ => System.Convert.ToDouble(left).CompareTo(System.Convert.ToDouble(right)),

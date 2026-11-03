@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "tests/cases/m41/generator_frames.tpn", line 17, in <module>
+    print(total(["1", "two"]))
+  File "tests/cases/m41/generator_frames.tpn", line 12, in total
+    for n in Parser.numbers(words):
+  File "tests/cases/m41/generator_frames.tpn", line 7, in numbers
+    raise ValueError(f"not a number: {w}")
+ValueError: not a number: two

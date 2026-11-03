@@ -6,181 +6,379 @@ public static class TaipanProgram
 {
     public static void TopLevel()
     {
+        int @line = 1;
+        string @file = "tests/cases/m8/functions.tpn";
+        try
+        {
 #line 25 "tests/cases/m8/functions.tpn"
-        global::Taipan.Runtime.Builtins.Print(@first_int(new global::System.Collections.Generic.List<long> { 3L, 1L, 2L }), @first_str(new global::System.Collections.Generic.List<string> { "a" }), @first_list_int(new global::System.Collections.Generic.List<global::System.Collections.Generic.List<long>> { new global::System.Collections.Generic.List<long> { 1L }, new global::System.Collections.Generic.List<long> { 2L } }));
+            @line = 25;
+            global::Taipan.Runtime.Builtins.Print(@first_int(new global::System.Collections.Generic.List<long> { 3L, 1L, 2L }), @first_str(new global::System.Collections.Generic.List<string> { "a" }), @first_list_int(new global::System.Collections.Generic.List<global::System.Collections.Generic.List<long>> { new global::System.Collections.Generic.List<long> { 1L }, new global::System.Collections.Generic.List<long> { 2L } }));
 #line 26 "tests/cases/m8/functions.tpn"
-        global::System.Collections.Generic.List<string> @none_yet = new global::System.Collections.Generic.List<string>();
+            @line = 26;
+            global::System.Collections.Generic.List<string> @none_yet = new global::System.Collections.Generic.List<string>();
 #line 27 "tests/cases/m8/functions.tpn"
-        global::Taipan.Runtime.Builtins.Print(@first_str(@none_yet), @first_int_opt(new global::System.Collections.Generic.List<long?> { null, 1L }));
+            @line = 27;
+            global::Taipan.Runtime.Builtins.Print(@first_str(@none_yet), @first_int_opt(new global::System.Collections.Generic.List<long?> { null, 1L }));
 #line 28 "tests/cases/m8/functions.tpn"
-        global::Taipan.Runtime.Builtins.Print(@pair_int_str(1L, "a"), @pair_bool_list_float(true, new global::System.Collections.Generic.List<double> { 1.5 }));
+            @line = 28;
+            global::Taipan.Runtime.Builtins.Print(@pair_int_str(1L, "a"), @pair_bool_list_float(true, new global::System.Collections.Generic.List<double> { 1.5 }));
 #line 29 "tests/cases/m8/functions.tpn"
-        global::Taipan.Runtime.Builtins.Print(@same_int(1L, 1L), @same_str("a", "b"), @same_float(1L, 2.5), @same_list_int(new global::System.Collections.Generic.List<long> { 1L }, new global::System.Collections.Generic.List<long> { 1L }));
+            @line = 29;
+            global::Taipan.Runtime.Builtins.Print(@same_int(1L, 1L), @same_str("a", "b"), @same_float(1L, 2.5), @same_list_int(new global::System.Collections.Generic.List<long> { 1L }, new global::System.Collections.Generic.List<long> { 1L }));
 #line 30 "tests/cases/m8/functions.tpn"
-        global::Taipan.Runtime.Builtins.Print(@repeat_str("ab", 3L), @repeat_float(0.5, 2L));
+            @line = 30;
+            global::Taipan.Runtime.Builtins.Print(@repeat_str("ab", 3L), @repeat_float(0.5, 2L));
 #line 31 "tests/cases/m8/functions.tpn"
-        global::System.Collections.Generic.List<long> @ints = @empty_int();
+            @line = 31;
+            global::System.Collections.Generic.List<long> @ints = @empty_int();
 #line 32 "tests/cases/m8/functions.tpn"
-        global::System.Collections.Generic.List<string> @names = @empty_str();
+            @line = 32;
+            global::System.Collections.Generic.List<string> @names = @empty_str();
 #line 33 "tests/cases/m8/functions.tpn"
-        global::Taipan.Runtime.Builtins.Print(@ints, @names, @contains_int(new global::System.Collections.Generic.List<long> { 1L, 2L }, 2L), @contains_str(new global::System.Collections.Generic.List<string> { "x" }, "y"));
+            @line = 33;
+            global::Taipan.Runtime.Builtins.Print(@ints, @names, @contains_int(new global::System.Collections.Generic.List<long> { 1L, 2L }, 2L), @contains_str(new global::System.Collections.Generic.List<string> { "x" }, "y"));
 #line 34 "tests/cases/m8/functions.tpn"
-        double @widened = @first_int(new global::System.Collections.Generic.List<long> { 1L, 2L }) ?? 0L;
+            @line = 34;
+            double @widened = @first_int(new global::System.Collections.Generic.List<long> { 1L, 2L }) ?? 0L;
 #line 35 "tests/cases/m8/functions.tpn"
-        global::Taipan.Runtime.Builtins.Print(@widened);
+            @line = 35;
+            global::Taipan.Runtime.Builtins.Print(@widened);
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "<module>"))
+        {
+            throw;
+        }
     }
 
     public static long? @first_int(global::System.Collections.Generic.List<long> @xs)
     {
-#line 3 "tests/cases/m8/functions.tpn"
-        foreach (long @x in global::Taipan.Runtime.Iter.Over(@xs))
+        int @line = 2;
+        string @file = "tests/cases/m8/functions.tpn";
+        try
         {
+#line 3 "tests/cases/m8/functions.tpn"
+            @line = 3;
+            foreach (long @x in global::Taipan.Runtime.Iter.Over(@xs))
+            {
 #line 4 "tests/cases/m8/functions.tpn"
-            return @x;
-        }
+                @line = 4;
+                return @x;
+                @line = 3;
+            }
 #line 5 "tests/cases/m8/functions.tpn"
-        return null;
+            @line = 5;
+            return null;
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "first"))
+        {
+            throw;
+        }
     }
 
     public static string? @first_str(global::System.Collections.Generic.List<string> @xs)
     {
-#line 3 "tests/cases/m8/functions.tpn"
-        foreach (string @x in global::Taipan.Runtime.Iter.Over(@xs))
+        int @line = 2;
+        string @file = "tests/cases/m8/functions.tpn";
+        try
         {
+#line 3 "tests/cases/m8/functions.tpn"
+            @line = 3;
+            foreach (string @x in global::Taipan.Runtime.Iter.Over(@xs))
+            {
 #line 4 "tests/cases/m8/functions.tpn"
-            return @x;
-        }
+                @line = 4;
+                return @x;
+                @line = 3;
+            }
 #line 5 "tests/cases/m8/functions.tpn"
-        return null;
+            @line = 5;
+            return null;
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "first"))
+        {
+            throw;
+        }
     }
 
     public static global::System.Collections.Generic.List<long>? @first_list_int(global::System.Collections.Generic.List<global::System.Collections.Generic.List<long>> @xs)
     {
-#line 3 "tests/cases/m8/functions.tpn"
-        foreach (global::System.Collections.Generic.List<long> @x in global::Taipan.Runtime.Iter.Over(@xs))
+        int @line = 2;
+        string @file = "tests/cases/m8/functions.tpn";
+        try
         {
+#line 3 "tests/cases/m8/functions.tpn"
+            @line = 3;
+            foreach (global::System.Collections.Generic.List<long> @x in global::Taipan.Runtime.Iter.Over(@xs))
+            {
 #line 4 "tests/cases/m8/functions.tpn"
-            return @x;
-        }
+                @line = 4;
+                return @x;
+                @line = 3;
+            }
 #line 5 "tests/cases/m8/functions.tpn"
-        return null;
+            @line = 5;
+            return null;
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "first"))
+        {
+            throw;
+        }
     }
 
     public static long? @first_int_opt(global::System.Collections.Generic.List<long?> @xs)
     {
-#line 3 "tests/cases/m8/functions.tpn"
-        foreach (long? @x in global::Taipan.Runtime.Iter.Over(@xs))
+        int @line = 2;
+        string @file = "tests/cases/m8/functions.tpn";
+        try
         {
+#line 3 "tests/cases/m8/functions.tpn"
+            @line = 3;
+            foreach (long? @x in global::Taipan.Runtime.Iter.Over(@xs))
+            {
 #line 4 "tests/cases/m8/functions.tpn"
-            return @x;
-        }
+                @line = 4;
+                return @x;
+                @line = 3;
+            }
 #line 5 "tests/cases/m8/functions.tpn"
-        return null;
+            @line = 5;
+            return null;
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "first"))
+        {
+            throw;
+        }
     }
 
     public static global::System.Collections.Generic.List<string> @pair_int_str(long @a, string @b)
     {
+        int @line = 7;
+        string @file = "tests/cases/m8/functions.tpn";
+        try
+        {
 #line 8 "tests/cases/m8/functions.tpn"
-        return new global::System.Collections.Generic.List<string> { global::Taipan.Runtime.Display.Format(@a), global::Taipan.Runtime.Display.Format(@b) };
+            @line = 8;
+            return new global::System.Collections.Generic.List<string> { global::Taipan.Runtime.Display.Format(@a), global::Taipan.Runtime.Display.Format(@b) };
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "pair"))
+        {
+            throw;
+        }
     }
 
     public static global::System.Collections.Generic.List<string> @pair_bool_list_float(bool @a, global::System.Collections.Generic.List<double> @b)
     {
+        int @line = 7;
+        string @file = "tests/cases/m8/functions.tpn";
+        try
+        {
 #line 8 "tests/cases/m8/functions.tpn"
-        return new global::System.Collections.Generic.List<string> { global::Taipan.Runtime.Display.Format(@a), global::Taipan.Runtime.Display.Format(@b) };
+            @line = 8;
+            return new global::System.Collections.Generic.List<string> { global::Taipan.Runtime.Display.Format(@a), global::Taipan.Runtime.Display.Format(@b) };
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "pair"))
+        {
+            throw;
+        }
     }
 
     public static bool @same_int(long @a, long @b)
     {
+        int @line = 10;
+        string @file = "tests/cases/m8/functions.tpn";
+        try
+        {
 #line 11 "tests/cases/m8/functions.tpn"
-        return @a == @b;
+            @line = 11;
+            return @a == @b;
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "same"))
+        {
+            throw;
+        }
     }
 
     public static bool @same_str(string @a, string @b)
     {
+        int @line = 10;
+        string @file = "tests/cases/m8/functions.tpn";
+        try
+        {
 #line 11 "tests/cases/m8/functions.tpn"
-        return @a == @b;
+            @line = 11;
+            return @a == @b;
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "same"))
+        {
+            throw;
+        }
     }
 
     public static bool @same_float(double @a, double @b)
     {
+        int @line = 10;
+        string @file = "tests/cases/m8/functions.tpn";
+        try
+        {
 #line 11 "tests/cases/m8/functions.tpn"
-        return @a == @b;
+            @line = 11;
+            return @a == @b;
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "same"))
+        {
+            throw;
+        }
     }
 
     public static bool @same_list_int(global::System.Collections.Generic.List<long> @a, global::System.Collections.Generic.List<long> @b)
     {
+        int @line = 10;
+        string @file = "tests/cases/m8/functions.tpn";
+        try
+        {
 #line 11 "tests/cases/m8/functions.tpn"
-        return global::Taipan.Runtime.Equality.Equal(@a, @b);
+            @line = 11;
+            return global::Taipan.Runtime.Equality.Equal(@a, @b);
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "same"))
+        {
+            throw;
+        }
     }
 
     public static global::System.Collections.Generic.List<string> @repeat_str(string @x, long @n)
     {
-#line 14 "tests/cases/m8/functions.tpn"
-        global::System.Collections.Generic.List<string> @out = new global::System.Collections.Generic.List<string>();
-#line 15 "tests/cases/m8/functions.tpn"
-        for (long @i = 0L, @end = @n; @i < @end; @i++)
+        int @line = 13;
+        string @file = "tests/cases/m8/functions.tpn";
+        try
         {
+#line 14 "tests/cases/m8/functions.tpn"
+            @line = 14;
+            global::System.Collections.Generic.List<string> @out = new global::System.Collections.Generic.List<string>();
+#line 15 "tests/cases/m8/functions.tpn"
+            @line = 15;
+            for (long @i = 0L, @end = @n; @i < @end; @i++)
+            {
 #line 16 "tests/cases/m8/functions.tpn"
-            @out.Add(@x);
-        }
+                @line = 16;
+                @out.Add(@x);
+            }
 #line 17 "tests/cases/m8/functions.tpn"
-        return @out;
+            @line = 17;
+            return @out;
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "repeat"))
+        {
+            throw;
+        }
     }
 
     public static global::System.Collections.Generic.List<double> @repeat_float(double @x, long @n)
     {
-#line 14 "tests/cases/m8/functions.tpn"
-        global::System.Collections.Generic.List<double> @out = new global::System.Collections.Generic.List<double>();
-#line 15 "tests/cases/m8/functions.tpn"
-        for (long @i = 0L, @end = @n; @i < @end; @i++)
+        int @line = 13;
+        string @file = "tests/cases/m8/functions.tpn";
+        try
         {
+#line 14 "tests/cases/m8/functions.tpn"
+            @line = 14;
+            global::System.Collections.Generic.List<double> @out = new global::System.Collections.Generic.List<double>();
+#line 15 "tests/cases/m8/functions.tpn"
+            @line = 15;
+            for (long @i = 0L, @end = @n; @i < @end; @i++)
+            {
 #line 16 "tests/cases/m8/functions.tpn"
-            @out.Add(@x);
-        }
+                @line = 16;
+                @out.Add(@x);
+            }
 #line 17 "tests/cases/m8/functions.tpn"
-        return @out;
+            @line = 17;
+            return @out;
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "repeat"))
+        {
+            throw;
+        }
     }
 
     public static global::System.Collections.Generic.List<long> @empty_int()
     {
+        int @line = 19;
+        string @file = "tests/cases/m8/functions.tpn";
+        try
+        {
 #line 20 "tests/cases/m8/functions.tpn"
-        return new global::System.Collections.Generic.List<long>();
+            @line = 20;
+            return new global::System.Collections.Generic.List<long>();
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "empty"))
+        {
+            throw;
+        }
     }
 
     public static global::System.Collections.Generic.List<string> @empty_str()
     {
+        int @line = 19;
+        string @file = "tests/cases/m8/functions.tpn";
+        try
+        {
 #line 20 "tests/cases/m8/functions.tpn"
-        return new global::System.Collections.Generic.List<string>();
+            @line = 20;
+            return new global::System.Collections.Generic.List<string>();
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "empty"))
+        {
+            throw;
+        }
     }
 
     public static bool @contains_int(global::System.Collections.Generic.List<long> @xs, long @x)
     {
+        int @line = 22;
+        string @file = "tests/cases/m8/functions.tpn";
+        try
+        {
 #line 23 "tests/cases/m8/functions.tpn"
-        return global::Taipan.Runtime.Ops.In(@x, @xs);
+            @line = 23;
+            return global::Taipan.Runtime.Ops.In(@x, @xs);
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "contains"))
+        {
+            throw;
+        }
     }
 
     public static bool @contains_str(global::System.Collections.Generic.List<string> @xs, string @x)
     {
+        int @line = 22;
+        string @file = "tests/cases/m8/functions.tpn";
+        try
+        {
 #line 23 "tests/cases/m8/functions.tpn"
-        return global::Taipan.Runtime.Ops.In(@x, @xs);
+            @line = 23;
+            return global::Taipan.Runtime.Ops.In(@x, @xs);
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "contains"))
+        {
+            throw;
+        }
     }
 }
 

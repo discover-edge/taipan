@@ -1,2 +1,4 @@
-panic: list mutated during iteration
-  at tests/cases/m11/panic_sort.tpn:7
+Traceback (most recent call last):
+  File "tests/cases/m11/panic_sort.tpn", line 7, in <module>
+    print(sorted(xs, key=lambda x: bump(xs, x)))
+RuntimeError: list mutated during iteration

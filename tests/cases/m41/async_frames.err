@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "tests/cases/m41/async_frames.tpn", line 11, in <module>
+    await main()
+  File "tests/cases/m41/async_frames.tpn", line 9, in main
+    print(await fetch(0))
+  File "tests/cases/m41/async_frames.tpn", line 4, in fetch
+    raise ValueError("empty")
+ValueError: empty

@@ -1,2 +1,4 @@
-panic: not enough values to unpack (expected 2, got 1)
-  at tests/cases/m29/unpack.tpn:49
+Traceback (most recent call last):
+  File "tests/cases/m29/unpack.tpn", line 49, in <module>
+    let r, s = [1]
+ValueError: not enough values to unpack (expected 2, got 1)

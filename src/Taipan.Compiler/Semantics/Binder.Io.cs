@@ -170,12 +170,15 @@ public sealed partial class Binder
         return value;
     }
 
-    /// <summary>The attributes of a file and of a class value (SPEC §6.1, §3.17), or null if the type has none.</summary>
+    /// <summary>The attributes of a file, a class value and a traceback (SPEC §6.1, §3.17, §3.19), or null if the type has none.</summary>
     private static TaipanType? IoAttribute(TaipanType type, string name) => (type, name) switch
     {
         (OpaqueType { Name: "TextIO" }, "name" or "mode" or "encoding") => TaipanType.Str,
         (OpaqueType { Name: "TextIO" }, "closed") => TaipanType.Bool,
         (ClassOfType, "__name__") => TaipanType.Str,
+        // A traceback's entry (SPEC §3.19, M41).
+        (OpaqueType { Name: "TracebackType" }, "tb_lineno") => TaipanType.Int,
+        (OpaqueType { Name: "TracebackType" }, "tb_next") => new OptionalOf(TaipanType.Traceback),
         _ => null,
     };
 

@@ -1,0 +1,58 @@
+# Dataclass exceptions: fields, message and args, equality, display and patterns (SPEC §3.19).
+@dataclass
+class NotFound(Exception):
+    key: str
+    code: int
+
+@dataclass
+class Missing(LookupError):
+    key: str
+
+@dataclass
+class Empty(Exception):
+    pass
+
+@dataclass(frozen=True)
+class Frozen(ValueError):
+    value: int
+
+@dataclass
+class Checked(Exception):
+    level: int
+
+    def __post_init__(self):
+        if self.level < 0:
+            self.level = 0
+
+@dataclass
+class Deeper(Missing):
+    depth: int = 1
+
+let e = NotFound("db", 3)
+print(e)
+print(repr(e), e.args, e.message)
+print(e == NotFound("db", 3), e == NotFound("db", 4))
+print([e])
+print(str(Missing("k")), Missing("k").args, repr(Empty()), str(Empty()) == "", Empty().args)
+print(Frozen(1) == Frozen(1), hash(Frozen(2)) == hash(Frozen(2)))
+let c = Checked(-5)
+print(c.level, c.args)
+print(repr(Deeper("x")), Deeper("x", 2).args)
+
+try:
+    raise Missing("port")
+except LookupError as err:
+    print("caught", repr(err))
+
+try:
+    raise Deeper("y", 3)
+except Missing as err:
+    match err:
+        Deeper(key, depth):
+            print("deeper", key, depth)
+        _:
+            print("missing")
+
+let frozen_keys = {Frozen(1): "one"}
+print(frozen_keys[Frozen(1)])
+raise NotFound("cache", 7)

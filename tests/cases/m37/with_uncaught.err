@@ -1,2 +1,4 @@
-panic: index 7 out of range for length 2
-  at tests/cases/m37/with_uncaught.tpn:15
+Traceback (most recent call last):
+  File "tests/cases/m37/with_uncaught.tpn", line 15, in <module>
+    print(xs[n])
+IndexError: index 7 out of range for length 2

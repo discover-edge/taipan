@@ -1,0 +1,3 @@
+# args is read-only (SPEC §3.19).
+let e = ValueError("x")
+e.args = e.args

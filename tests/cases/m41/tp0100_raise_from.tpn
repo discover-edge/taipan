@@ -1,0 +1,5 @@
+# 'from' needs an exception before it (SPEC §3.19).
+try:
+    print(1)
+except ValueError as e:
+    raise from e

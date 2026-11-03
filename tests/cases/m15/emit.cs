@@ -6,46 +6,77 @@ public static class TaipanProgram
 {
     public static void TopLevel()
     {
-#line 41 "tests/cases/m15/emit.tpn"
-        global::System.Collections.Generic.List<global::@Animal> @pets = new global::System.Collections.Generic.List<global::@Animal> { global::@Dog.@__new__("rex"), global::@Puppy.@__new__("bit"), global::@Animal.@__new__("cat", true) };
-#line 42 "tests/cases/m15/emit.tpn"
-        foreach (global::@Animal @p in global::Taipan.Runtime.Iter.Over(@pets))
+        int @line = 1;
+        string @file = "tests/cases/m15/emit.tpn";
+        try
         {
+#line 41 "tests/cases/m15/emit.tpn"
+            @line = 41;
+            global::System.Collections.Generic.List<global::@Animal> @pets = new global::System.Collections.Generic.List<global::@Animal> { global::@Dog.@__new__("rex"), global::@Puppy.@__new__("bit"), global::@Animal.@__new__("cat", true) };
+#line 42 "tests/cases/m15/emit.tpn"
+            @line = 42;
+            foreach (global::@Animal @p in global::Taipan.Runtime.Iter.Over(@pets))
+            {
 #line 43 "tests/cases/m15/emit.tpn"
-            global::Taipan.Runtime.Builtins.Print(@p.@speak(@p.@speak_times_default()), @pick(@p));
-        }
+                @line = 43;
+                global::Taipan.Runtime.Builtins.Print(@p.@speak(@p.@speak_times_default()), @pick(@p));
+                @line = 42;
+            }
 #line 44 "tests/cases/m15/emit.tpn"
-        global::Taipan.Runtime.Function<global::System.Func<global::@Dog, string>> @f = global::Taipan.Runtime.Function<global::System.Func<global::@Dog, string>>.Convert(global::TaipanProgram.@pick_value, @d => (@a) => @d(@a));
+            @line = 44;
+            global::Taipan.Runtime.Function<global::System.Func<global::@Dog, string>> @f = global::Taipan.Runtime.Function<global::System.Func<global::@Dog, string>>.Convert(global::TaipanProgram.@pick_value, @d => (@a) => @d(@a));
 #line 45 "tests/cases/m15/emit.tpn"
-        global::Taipan.Runtime.Builtins.Print(@f.Invoke(global::@Dog.@__new__("x")), new global::@Point(1L, global::@Point.@y_default()), new global::@Point(@y: 2L, @x: 1L));
+            @line = 45;
+            global::Taipan.Runtime.Builtins.Print(@f.Invoke(global::@Dog.@__new__("x")), new global::@Point(1L, global::@Point.@y_default()), new global::@Point(@y: 2L, @x: 1L));
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "<module>"))
+        {
+            throw;
+        }
     }
 
     public static string @pick(global::@Animal? @a)
     {
+        int @line = 31;
+        string @file = "tests/cases/m15/emit.tpn";
+        try
+        {
 #line 32 "tests/cases/m15/emit.tpn"
-        if ((@a is global::@Dog) && (((global::@Dog)@a).@legs > 2L))
-        {
-#line 33 "tests/cases/m15/emit.tpn"
-            return ((global::@Dog)@a).@speak(((global::@Dog)@a).@speak_times_default());
-        }
-#line 34 "tests/cases/m15/emit.tpn"
-        else if (@a is not null)
-        {
-#line 35 "tests/cases/m15/emit.tpn"
-            global::@Dog? @d = (@a! as global::@Dog);
-#line 36 "tests/cases/m15/emit.tpn"
-            if (@d is not null)
+            @line = 32;
+            if ((@a is global::@Dog) && (((global::@Dog)@a).@legs > 2L))
             {
-#line 37 "tests/cases/m15/emit.tpn"
-                return "dog " + @d!.@name;
+#line 33 "tests/cases/m15/emit.tpn"
+                @line = 33;
+                return ((global::@Dog)@a).@speak(((global::@Dog)@a).@speak_times_default());
             }
+#line 34 "tests/cases/m15/emit.tpn"
+            else if (global::Taipan.Runtime.Panic.At(ref @line, 34) && (@a is not null))
+            {
+#line 35 "tests/cases/m15/emit.tpn"
+                @line = 35;
+                global::@Dog? @d = (@a! as global::@Dog);
+#line 36 "tests/cases/m15/emit.tpn"
+                @line = 36;
+                if (@d is not null)
+                {
+#line 37 "tests/cases/m15/emit.tpn"
+                    @line = 37;
+                    return "dog " + @d!.@name;
+                }
 #line 38 "tests/cases/m15/emit.tpn"
-            return @a!.@name;
-        }
+                @line = 38;
+                return @a!.@name;
+            }
 #line 39 "tests/cases/m15/emit.tpn"
-        return "none";
+            @line = 39;
+            return "none";
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "pick"))
+        {
+            throw;
+        }
     }
 
     public static readonly global::Taipan.Runtime.Function<global::System.Func<global::@Animal?, string>> @pick_value = new("pick", @pick);
@@ -77,19 +108,31 @@ public class @Animal : global::Taipan.Runtime.IObject
 
     public void @__init__(string @name, bool @loud)
     {
-        this.@legs = @legs_default();
+        int @line = 6;
+        string @file = "tests/cases/m15/emit.tpn";
+        try
+        {
+            this.@legs = @legs_default();
 #line 7 "tests/cases/m15/emit.tpn"
-        if (@loud)
-        {
+            @line = 7;
+            if (@loud)
+            {
 #line 8 "tests/cases/m15/emit.tpn"
-            this.@name = @name.ToUpperInvariant();
-        }
-        else
-        {
+                @line = 8;
+                this.@name = @name.ToUpperInvariant();
+            }
+            else
+            {
 #line 10 "tests/cases/m15/emit.tpn"
-            this.@name = @name;
-        }
+                @line = 10;
+                this.@name = @name;
+            }
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "__init__"))
+        {
+            throw;
+        }
     }
 
     public static bool @__init___loud_default()
@@ -101,9 +144,19 @@ public class @Animal : global::Taipan.Runtime.IObject
 
     public virtual string @speak(long @times)
     {
+        int @line = 12;
+        string @file = "tests/cases/m15/emit.tpn";
+        try
+        {
 #line 13 "tests/cases/m15/emit.tpn"
-        return "...";
+            @line = 13;
+            return "...";
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "speak"))
+        {
+            throw;
+        }
     }
 
     public virtual long @speak_times_default()
@@ -130,16 +183,36 @@ public class @Dog : global::@Animal, global::Taipan.Runtime.IObject
 
     public new void @__init__(string @name)
     {
+        int @line = 16;
+        string @file = "tests/cases/m15/emit.tpn";
+        try
+        {
 #line 17 "tests/cases/m15/emit.tpn"
-        base.@__init__(@name, global::@Animal.@__init___loud_default());
+            @line = 17;
+            base.@__init__(@name, global::@Animal.@__init___loud_default());
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "__init__"))
+        {
+            throw;
+        }
     }
 
     public override string @speak(long @times)
     {
+        int @line = 19;
+        string @file = "tests/cases/m15/emit.tpn";
+        try
+        {
 #line 21 "tests/cases/m15/emit.tpn"
-        return base.@speak(base.@speak_times_default()) + "woof";
+            @line = 21;
+            return base.@speak(base.@speak_times_default()) + "woof";
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "speak"))
+        {
+            throw;
+        }
     }
 
     public override long @speak_times_default()

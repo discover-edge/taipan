@@ -6,94 +6,126 @@ public static class TaipanProgram
 {
     public static void TopLevel()
     {
+        int @line = 1;
+        string @file = "tests/cases/m7/match_loops.tpn";
+        try
+        {
 #line 7 "tests/cases/m7/match_loops.tpn"
-        global::System.Collections.Generic.List<global::@Cmd> @script = new global::System.Collections.Generic.List<global::@Cmd> { new global::@Cmd.@Say("a"), new global::@Cmd.@Skip(), new global::@Cmd.@Say("b"), new global::@Cmd.@Stop(), new global::@Cmd.@Say("never") };
+            @line = 7;
+            global::System.Collections.Generic.List<global::@Cmd> @script = new global::System.Collections.Generic.List<global::@Cmd> { new global::@Cmd.@Say("a"), new global::@Cmd.@Skip(), new global::@Cmd.@Say("b"), new global::@Cmd.@Stop(), new global::@Cmd.@Say("never") };
 #line 8 "tests/cases/m7/match_loops.tpn"
-        foreach (global::@Cmd @cmd in global::Taipan.Runtime.Iter.Over(@script))
-        {
+            @line = 8;
+            foreach (global::@Cmd @cmd in global::Taipan.Runtime.Iter.Over(@script))
+            {
 #line 9 "tests/cases/m7/match_loops.tpn"
-            switch (@cmd)
-            {
-                case global::@Cmd.@Skip:
+                @line = 9;
+                switch (@cmd)
                 {
+                    case global::@Cmd.@Skip:
+                    {
 #line 10 "tests/cases/m7/match_loops.tpn"
-                    continue;
-                }
-                case global::@Cmd.@Stop:
-                {
-#line 11 "tests/cases/m7/match_loops.tpn"
-                    goto break_loop;
-                }
-                case global::@Cmd.@Say(var @text):
-                {
-#line 12 "tests/cases/m7/match_loops.tpn"
-                    global::Taipan.Runtime.Builtins.Print(@text);
-                    break;
-                }
-                default:
-                    throw new global::System.Diagnostics.UnreachableException();
-            }
-        }
-        break_loop: ;
-#line 13 "tests/cases/m7/match_loops.tpn"
-        global::Taipan.Runtime.Builtins.Print("after for");
-#line 15 "tests/cases/m7/match_loops.tpn"
-        long @i = 0L;
-#line 16 "tests/cases/m7/match_loops.tpn"
-        while (true)
-        {
-#line 17 "tests/cases/m7/match_loops.tpn"
-            @i = @i + 1L;
-#line 18 "tests/cases/m7/match_loops.tpn"
-            switch (global::Taipan.Runtime.Ops.Mod(@i, 3L))
-            {
-                case 0L:
-                {
-#line 20 "tests/cases/m7/match_loops.tpn"
-                    if (@i > 5L)
-                    {
-#line 21 "tests/cases/m7/match_loops.tpn"
-                        goto break_loop2;
+                        @line = 10;
+                        @line = 8;
+                        continue;
                     }
-#line 22 "tests/cases/m7/match_loops.tpn"
-                    global::Taipan.Runtime.Builtins.Print("fizz", @i);
-                    break;
-                }
-                default:
-                {
-#line 23 "tests/cases/m7/match_loops.tpn"
-                    continue;
-                }
-            }
-        }
-        break_loop2: ;
-#line 24 "tests/cases/m7/match_loops.tpn"
-        global::Taipan.Runtime.Builtins.Print("after while", @i);
-#line 26 "tests/cases/m7/match_loops.tpn"
-        for (long @outer = 0L, @end = 2L; @outer < @end; @outer++)
-        {
-#line 27 "tests/cases/m7/match_loops.tpn"
-            for (long @inner = 0L, @end2 = 3L; @inner < @end2; @inner++)
-            {
-#line 28 "tests/cases/m7/match_loops.tpn"
-                switch (@inner)
-                {
-                    case 1L:
+                    case global::@Cmd.@Stop:
                     {
-#line 29 "tests/cases/m7/match_loops.tpn"
-                        goto break_loop3;
+#line 11 "tests/cases/m7/match_loops.tpn"
+                        @line = 11;
+                        goto break_loop;
+                    }
+                    case global::@Cmd.@Say(var @text):
+                    {
+#line 12 "tests/cases/m7/match_loops.tpn"
+                        @line = 12;
+                        global::Taipan.Runtime.Builtins.Print(@text);
+                        break;
+                    }
+                    default:
+                        throw new global::System.Diagnostics.UnreachableException();
+                }
+                @line = 8;
+            }
+            break_loop: ;
+#line 13 "tests/cases/m7/match_loops.tpn"
+            @line = 13;
+            global::Taipan.Runtime.Builtins.Print("after for");
+#line 15 "tests/cases/m7/match_loops.tpn"
+            @line = 15;
+            long @i = 0L;
+#line 16 "tests/cases/m7/match_loops.tpn"
+            @line = 16;
+            while (global::Taipan.Runtime.Panic.At(ref @line, 16) && (true))
+            {
+#line 17 "tests/cases/m7/match_loops.tpn"
+                @line = 17;
+                @i = @i + 1L;
+#line 18 "tests/cases/m7/match_loops.tpn"
+                @line = 18;
+                switch (global::Taipan.Runtime.Ops.Mod(@i, 3L))
+                {
+                    case 0L:
+                    {
+#line 20 "tests/cases/m7/match_loops.tpn"
+                        @line = 20;
+                        if (@i > 5L)
+                        {
+#line 21 "tests/cases/m7/match_loops.tpn"
+                            @line = 21;
+                            goto break_loop2;
+                        }
+#line 22 "tests/cases/m7/match_loops.tpn"
+                        @line = 22;
+                        global::Taipan.Runtime.Builtins.Print("fizz", @i);
+                        break;
                     }
                     default:
                     {
-#line 30 "tests/cases/m7/match_loops.tpn"
-                        global::Taipan.Runtime.Builtins.Print(@outer, @inner);
-                        break;
+#line 23 "tests/cases/m7/match_loops.tpn"
+                        @line = 23;
+                        continue;
                     }
                 }
             }
-            break_loop3: ;
-        }
+            break_loop2: ;
+#line 24 "tests/cases/m7/match_loops.tpn"
+            @line = 24;
+            global::Taipan.Runtime.Builtins.Print("after while", @i);
+#line 26 "tests/cases/m7/match_loops.tpn"
+            @line = 26;
+            for (long @outer = 0L, @end = 2L; @outer < @end; @outer++)
+            {
+#line 27 "tests/cases/m7/match_loops.tpn"
+                @line = 27;
+                for (long @inner = 0L, @end2 = 3L; @inner < @end2; @inner++)
+                {
+#line 28 "tests/cases/m7/match_loops.tpn"
+                    @line = 28;
+                    switch (@inner)
+                    {
+                        case 1L:
+                        {
+#line 29 "tests/cases/m7/match_loops.tpn"
+                            @line = 29;
+                            goto break_loop3;
+                        }
+                        default:
+                        {
+#line 30 "tests/cases/m7/match_loops.tpn"
+                            @line = 30;
+                            global::Taipan.Runtime.Builtins.Print(@outer, @inner);
+                            break;
+                        }
+                    }
+                }
+                break_loop3: ;
+            }
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "<module>"))
+        {
+            throw;
+        }
     }
 }
 

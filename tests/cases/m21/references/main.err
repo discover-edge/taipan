@@ -1,2 +1,4 @@
-panic: .NET Acme.Geometry.GeometryException: negative size 2 x -1
-  at tests/cases/m21/references/main.tpn:17
+Traceback (most recent call last):
+  File "tests/cases/m21/references/main.tpn", line 17, in <module>
+    Shapes.Area(2, -1)
+Acme.Geometry.GeometryException: negative size 2 x -1

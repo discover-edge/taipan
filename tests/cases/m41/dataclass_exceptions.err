@@ -1,0 +1,4 @@
+Traceback (most recent call last):
+  File "tests/cases/m41/dataclass_exceptions.tpn", line 58, in <module>
+    raise NotFound("cache", 7)
+NotFound: ("cache", 7)

@@ -6,67 +6,138 @@ public static class TaipanProgram
 {
     public static void TopLevel()
     {
+        int @line = 1;
+        string @file = "tests/cases/m11/emit.tpn";
+        try
+        {
 #line 16 "tests/cases/m11/emit.tpn"
-        global::Taipan.Runtime.Function<global::System.Func<long>> @c = @counter();
+            @line = 16;
+            global::Taipan.Runtime.Function<global::System.Func<long>> @c = @counter();
 #line 17 "tests/cases/m11/emit.tpn"
-        @c.Invoke();
+            @line = 17;
+            @c.Invoke();
 #line 18 "tests/cases/m11/emit.tpn"
-        global::Taipan.Runtime.Builtins.Print(@apply_int_int(global::TaipanProgram.@double_value, 4L), @apply_str_str(new global::Taipan.Runtime.Function<global::System.Func<string, string>>("<lambda>", (string @s) => @s + "!"), "hi"), @c.Invoke());
+            @line = 18;
+            global::Taipan.Runtime.Builtins.Print(@apply_int_int(global::TaipanProgram.@double_value, 4L), @apply_str_str(new global::Taipan.Runtime.Function<global::System.Func<string, string>>("<lambda>", (string @s) => { try { return @s + "!"; } catch (global::System.Exception @e2) when (global::Taipan.Runtime.Tracebacks.Leave(@e2, "tests/cases/m11/emit.tpn", 18, "<lambda>")) { throw; } }), "hi"), @c.Invoke());
 #line 19 "tests/cases/m11/emit.tpn"
-        global::System.Collections.Generic.List<global::Taipan.Runtime.Function<global::System.Action>> @fs = new global::System.Collections.Generic.List<global::Taipan.Runtime.Function<global::System.Action>>();
+            @line = 19;
+            global::System.Collections.Generic.List<global::Taipan.Runtime.Function<global::System.Action>> @fs = new global::System.Collections.Generic.List<global::Taipan.Runtime.Function<global::System.Action>>();
 #line 20 "tests/cases/m11/emit.tpn"
-        for (long @i2 = 0L, @end = 2L; @i2 < @end; @i2++)
-        {
-            long @i = @i2;
+            @line = 20;
+            for (long @i2 = 0L, @end = 2L; @i2 < @end; @i2++)
+            {
+                long @i = @i2;
 #line 21 "tests/cases/m11/emit.tpn"
-            @fs.Add(new global::Taipan.Runtime.Function<global::System.Action>("<lambda>", () => { global::Taipan.Runtime.Builtins.Print(@i); }));
-        }
+                @line = 21;
+                @fs.Add(new global::Taipan.Runtime.Function<global::System.Action>("<lambda>", () => { try { global::Taipan.Runtime.Builtins.Print(@i); } catch (global::System.Exception @e3) when (global::Taipan.Runtime.Tracebacks.Leave(@e3, "tests/cases/m11/emit.tpn", 21, "<lambda>")) { throw; } }));
+            }
 #line 22 "tests/cases/m11/emit.tpn"
-        foreach (global::Taipan.Runtime.Function<global::System.Action> @f in global::Taipan.Runtime.Iter.Over(@fs))
-        {
+            @line = 22;
+            foreach (global::Taipan.Runtime.Function<global::System.Action> @f in global::Taipan.Runtime.Iter.Over(@fs))
+            {
 #line 23 "tests/cases/m11/emit.tpn"
-            @f.Invoke();
-        }
+                @line = 23;
+                @f.Invoke();
+                @line = 22;
+            }
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "<module>"))
+        {
+            throw;
+        }
     }
 
     public static long @double(long @x)
     {
+        int @line = 6;
+        string @file = "tests/cases/m11/emit.tpn";
+        try
+        {
 #line 7 "tests/cases/m11/emit.tpn"
-        return @x * 2L;
+            @line = 7;
+            return @x * 2L;
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "double"))
+        {
+            throw;
+        }
     }
 
     public static global::Taipan.Runtime.Function<global::System.Func<long>> @counter()
     {
-#line 10 "tests/cases/m11/emit.tpn"
-        long @n = 0L;
-#line 11 "tests/cases/m11/emit.tpn"
-        global::Taipan.Runtime.Function<global::System.Func<long>> @bump = null!;
-        @bump = new global::Taipan.Runtime.Function<global::System.Func<long>>("bump", () =>
+        int @line = 9;
+        string @file = "tests/cases/m11/emit.tpn";
+        try
         {
+#line 10 "tests/cases/m11/emit.tpn"
+            @line = 10;
+            long @n = 0L;
+#line 11 "tests/cases/m11/emit.tpn"
+            @line = 11;
+            global::Taipan.Runtime.Function<global::System.Func<long>> @bump = null!;
+            @bump = new global::Taipan.Runtime.Function<global::System.Func<long>>("bump", () =>
+            {
+                int @line2 = 11;
+                string @file2 = "tests/cases/m11/emit.tpn";
+                try
+                {
 #line 12 "tests/cases/m11/emit.tpn"
-            @n = @n + 1L;
+                    @line2 = 12;
+                    @n = @n + 1L;
 #line 13 "tests/cases/m11/emit.tpn"
-            return @n;
-        });
+                    @line2 = 13;
+                    return @n;
+                }
+                catch (global::System.Exception @e2) when (global::Taipan.Runtime.Tracebacks.Leave(@e2, @file2, @line2, "bump"))
+                {
+                    throw;
+                }
+            });
 #line 14 "tests/cases/m11/emit.tpn"
-        return @bump;
+            @line = 14;
+            return @bump;
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "counter"))
+        {
+            throw;
+        }
     }
 
     public static long @apply_int_int(global::Taipan.Runtime.Function<global::System.Func<long, long>> @f, long @x)
     {
+        int @line = 3;
+        string @file = "tests/cases/m11/emit.tpn";
+        try
+        {
 #line 4 "tests/cases/m11/emit.tpn"
-        return @f.Invoke(@x);
+            @line = 4;
+            return @f.Invoke(@x);
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "apply"))
+        {
+            throw;
+        }
     }
 
     public static string @apply_str_str(global::Taipan.Runtime.Function<global::System.Func<string, string>> @f, string @x)
     {
+        int @line = 3;
+        string @file = "tests/cases/m11/emit.tpn";
+        try
+        {
 #line 4 "tests/cases/m11/emit.tpn"
-        return @f.Invoke(@x);
+            @line = 4;
+            return @f.Invoke(@x);
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "apply"))
+        {
+            throw;
+        }
     }
 
     public static readonly global::Taipan.Runtime.Function<global::System.Func<long, long>> @double_value = new("double", @double);

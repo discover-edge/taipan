@@ -25,6 +25,8 @@ public static class Builtins
 
     public static long Len<T>(List<T> list) => list.Count;
 
+    public static long Len<T>(VarTuple<T> tuple) => tuple.Count;
+
     public static long Len<TKey, TValue>(OrderedDictionary<TKey, TValue> dict) where TKey : notnull => dict.Count;
 
     public static long Len<T>(OrderedSet<T> set) where T : notnull => set.Count;

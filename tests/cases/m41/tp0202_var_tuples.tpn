@@ -1,0 +1,3 @@
+# A tuple[T, ...] is immutable (SPEC §3.19).
+let xs = tuple([1, 2])
+xs[0] = 3

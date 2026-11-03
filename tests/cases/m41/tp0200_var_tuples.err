@@ -1,0 +1,5 @@
+tests/cases/m41/tp0200_var_tuples.tpn:3:7: error TP0200: cannot match on tuple[int, ...]
+tests/cases/m41/tp0200_var_tuples.tpn:9:27: error TP0200: expected tuple[int, ...], found tuple[int, int]
+tests/cases/m41/tp0200_var_tuples.tpn:10:27: error TP0200: expected tuple[int, int], found tuple[int, ...]
+tests/cases/m41/tp0200_var_tuples.tpn:11:31: error TP0200: expected str, found int
+tests/cases/m41/tp0200_var_tuples.tpn:11:34: error TP0200: expected str, found int

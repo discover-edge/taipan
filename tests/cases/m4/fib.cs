@@ -6,28 +6,52 @@ public static class TaipanProgram
 {
     public static void TopLevel()
     {
-#line 6 "tests/cases/m4/fib.tpn"
-        for (long @i = 0L, @end = 15L; @i < @end; @i++)
+        int @line = 1;
+        string @file = "tests/cases/m4/fib.tpn";
+        try
         {
+#line 6 "tests/cases/m4/fib.tpn"
+            @line = 6;
+            for (long @i = 0L, @end = 15L; @i < @end; @i++)
+            {
 #line 7 "tests/cases/m4/fib.tpn"
-            global::Taipan.Runtime.Builtins.Print(@i, @fib(@i));
-        }
+                @line = 7;
+                global::Taipan.Runtime.Builtins.Print(@i, @fib(@i));
+            }
 #line 8 "tests/cases/m4/fib.tpn"
-        global::Taipan.Runtime.Builtins.Print(@fib(25L));
+            @line = 8;
+            global::Taipan.Runtime.Builtins.Print(@fib(25L));
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "<module>"))
+        {
+            throw;
+        }
     }
 
     public static long @fib(long @n)
     {
-#line 2 "tests/cases/m4/fib.tpn"
-        if (@n < 2L)
+        int @line = 1;
+        string @file = "tests/cases/m4/fib.tpn";
+        try
         {
+#line 2 "tests/cases/m4/fib.tpn"
+            @line = 2;
+            if (@n < 2L)
+            {
 #line 3 "tests/cases/m4/fib.tpn"
-            return @n;
-        }
+                @line = 3;
+                return @n;
+            }
 #line 4 "tests/cases/m4/fib.tpn"
-        return @fib(@n - 1L) + @fib(@n - 2L);
+            @line = 4;
+            return @fib(@n - 1L) + @fib(@n - 2L);
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "fib"))
+        {
+            throw;
+        }
     }
 }
 

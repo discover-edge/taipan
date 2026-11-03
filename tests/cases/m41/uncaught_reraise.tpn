@@ -1,0 +1,12 @@
+# A bare raise keeps the traceback, and its frame isn't added again (SPEC §3.19).
+def load(d: dict[str, int]) -> int:
+    return d["port"]
+
+def start() -> int:
+    try:
+        return load({})
+    except KeyError:
+        print("retrying")
+        raise
+
+start()

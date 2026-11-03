@@ -1,2 +1,4 @@
-panic: cannot convert 1e+300 to int
-  at tests/cases/m4/panic_int_conversion.tpn:2
+Traceback (most recent call last):
+  File "tests/cases/m4/panic_int_conversion.tpn", line 2, in <module>
+    print(int(1e300))
+OverflowError: cannot convert 1e+300 to int

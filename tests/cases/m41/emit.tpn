@@ -1,0 +1,15 @@
+# The emitted C# for M41: line tracking for tracebacks, 'raise … from …', chaining through
+# except and finally blocks, and tuple[T, ...] (SPEC §8).
+def parse(text: str) -> int:
+    try:
+        if int(text) is some n:
+            return n
+        raise ValueError(f"not a number: {text}")
+    except ValueError as e:
+        raise KeyError(text) from e
+    finally:
+        print("parsed", text)
+
+let words: tuple[str, ...] = ("1", "2")
+for w in words:
+    print(parse(w))

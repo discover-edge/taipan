@@ -1,2 +1,4 @@
-panic: empty separator
-  at tests/cases/m5/panic_split.tpn:2
+Traceback (most recent call last):
+  File "tests/cases/m5/panic_split.tpn", line 2, in <module>
+    print("a b".split(""))
+ValueError: empty separator

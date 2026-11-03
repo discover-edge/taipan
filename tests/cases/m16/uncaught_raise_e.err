@@ -1,2 +1,6 @@
-panic: ValueError
-  at tests/cases/m16/uncaught_raise_e.tpn:10
+Traceback (most recent call last):
+  File "tests/cases/m16/uncaught_raise_e.tpn", line 10, in <module>
+    raise e
+  File "tests/cases/m16/uncaught_raise_e.tpn", line 4, in <module>
+    raise ValueError()
+ValueError

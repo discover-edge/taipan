@@ -1,0 +1,110 @@
+# args, __cause__, __context__, __suppress_context__ and __traceback__ give Python's values (SPEC §3.19).
+from types import TracebackType
+def fail(n: int):
+    if n == 0:
+        raise ValueError("bottom")
+    fail(n - 1)
+
+try:
+    fail(2)
+except ValueError as e:
+    print(e.args, len(e.args), e.args[0])
+    print(e.__cause__, e.__context__, e.__suppress_context__)
+    var tb = e.__traceback__
+    while tb is some t:
+        print("line", t.tb_lineno)
+        tb = t.tb_next
+
+print(ValueError().args, Exception("a").args, KeyError("k").args)
+let fresh = ValueError("never raised")
+print(fresh.__traceback__)
+
+# A cause is set by 'from', and assigning one suppresses the context.
+try:
+    try:
+        raise KeyError("inner")
+    except KeyError as inner:
+        raise ValueError("outer") from inner
+except ValueError as e:
+    print(repr(e.__cause__), repr(e.__context__), e.__suppress_context__)
+
+let manual = ValueError("manual")
+manual.__cause__ = KeyError("why")
+print(repr(manual.__cause__), manual.__suppress_context__)
+manual.__suppress_context__ = False
+manual.__context__ = TypeError("ctx")
+print(repr(manual.__context__), manual.__suppress_context__)
+
+# Context comes from the innermost exception being handled, through calls too.
+def helper():
+    raise RuntimeError("in helper")
+
+try:
+    try:
+        raise KeyError("a")
+    except KeyError:
+        try:
+            raise IndexError("b")
+        except IndexError:
+            helper()
+except RuntimeError as e:
+    if e.__context__ is some c:
+        print(repr(c), repr(c.__context__))
+
+# An exception caught inside a handler gets the handled one as its context.
+try:
+    raise KeyError("outer")
+except KeyError:
+    try:
+        raise ValueError("inner")
+    except ValueError as v:
+        print("inner context:", repr(v.__context__))
+
+# A bare raise keeps the context; raising the handled exception doesn't change it.
+try:
+    try:
+        raise KeyError("k")
+    except KeyError as k:
+        raise
+except KeyError as k:
+    print("bare:", k.__context__)
+
+# Runtime errors get a context too.
+try:
+    try:
+        raise KeyError("first")
+    except KeyError:
+        let d: dict[str, int] = {}
+        print(d["missing"])
+except KeyError as e:
+    print(e.args, repr(e.__context__))
+
+# A cycle of contexts is cut, as in Python.
+let a = ValueError("a")
+let b = ValueError("b")
+try:
+    try:
+        raise a
+    except ValueError:
+        try:
+            raise b
+        except ValueError:
+            raise a
+except ValueError as e:
+    print(e is a, repr(e.__context__), repr(b.__context__))
+
+# An exception raised in __exit__ gets the block's as its context.
+class Guard:
+    def __enter__(self) -> Guard:
+        return self
+
+    def __exit__(self, exc_type: type[BaseException]?, exc: BaseException?, tb: TracebackType?) -> None:
+        if tb is some t:
+            print("exit sees line", t.tb_lineno)
+        raise RuntimeError("exit failed")
+
+try:
+    with Guard():
+        raise ValueError("in block")
+except RuntimeError as e:
+    print(repr(e.__context__))

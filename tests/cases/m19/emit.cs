@@ -6,20 +6,42 @@ public static class TaipanProgram
 {
     public static void TopLevel()
     {
+        int @line = 1;
+        string @file = "tests/cases/m19/emit.tpn";
+        try
+        {
 #line 13 "tests/cases/m19/emit.tpn"
-        long @n = 2L;
+            @line = 13;
+            long @n = 2L;
 #line 14 "tests/cases/m19/emit.tpn"
-        long? @found = @n switch { 2L => (long?)(@n), _ => (long?)(null) };
+            @line = 14;
+            long? @found = @n switch { 2L => (long?)(@n), _ => (long?)(null) };
 #line 17 "tests/cases/m19/emit.tpn"
-        global::Taipan.Runtime.Builtins.Print(@weight(new global::@Status.@Degraded(0.5)), @found);
+            @line = 17;
+            global::Taipan.Runtime.Builtins.Print(@weight(new global::@Status.@Degraded(0.5)), @found);
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "<module>"))
+        {
+            throw;
+        }
     }
 
     public static double @weight(global::@Status @s)
     {
+        int @line = 7;
+        string @file = "tests/cases/m19/emit.tpn";
+        try
+        {
 #line 8 "tests/cases/m19/emit.tpn"
-        return @s switch { global::@Status.@Ok => (double)(0L), global::@Status.@Degraded(var @load) => @load, global::@Status.@Down => throw global::@Taipan.Runtime.ValueError.@__new__("down"), _ => throw new global::System.Diagnostics.UnreachableException() };
+            @line = 8;
+            return @s switch { global::@Status.@Ok => (double)(0L), global::@Status.@Degraded(var @load) => @load, global::@Status.@Down => throw global::Taipan.Runtime.Exceptions.Raise(global::@Taipan.Runtime.ValueError.@__new__("down")), _ => throw new global::System.Diagnostics.UnreachableException() };
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "weight"))
+        {
+            throw;
+        }
     }
 }
 

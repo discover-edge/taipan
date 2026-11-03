@@ -1,0 +1,1 @@
+tests/cases/m41/tp0100_raise_from.tpn:5:11: error TP0100: expected newline, found 'from'

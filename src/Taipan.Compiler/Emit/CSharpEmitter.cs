@@ -142,13 +142,10 @@ public sealed partial class CSharpEmitter
             SetUpLibrary(_library);
     }
 
-    /// <summary>
-    /// Emits a program, or with <paramref name="native"/> one for a native build, which records its
-    /// own panic locations (SPEC §15.3).
-    /// </summary>
-    public static EmittedProgram Emit(SourceText source, BoundProgram program, bool native = false)
+    /// <summary>Emits a program, which tracks its own lines for tracebacks, native or not (SPEC §15.3).</summary>
+    public static EmittedProgram Emit(SourceText source, BoundProgram program)
     {
-        var emitter = new CSharpEmitter(source, program) { _native = native };
+        var emitter = new CSharpEmitter(source, program);
         var code = program.Library is null ? emitter.EmitProgram() : emitter.EmitLibrary();
         // A library and an extension module have no entry point (SPEC §14.4, §17.1).
         var entry = program.Library is null && program.Extension is null ? emitter._entryClass : null;
@@ -351,6 +348,7 @@ public sealed partial class CSharpEmitter
         PrimitiveType primitive => primitive.Name,
         ListOfType list => $"list_{Mangle(list.Element)}",
         SetOfType set => $"set_{Mangle(set.Element)}",
+        VarTupleOfType varTuple => $"tuple_{Mangle(varTuple.Element)}_etc",
         IteratorOfType iterator => $"iterator_{Mangle(iterator.Element)}",
         AwaitableOfType awaitable => $"awaitable_{Mangle(awaitable.Result)}",
         IterableOfType iterable => $"iterable_{Mangle(iterable.Element)}",
@@ -373,7 +371,7 @@ public sealed partial class CSharpEmitter
         Line($"public static {(_program.IsAsync ? $"async {Tasks}" : "void")} {_topLevelMethod}()");
         Line("{");
         _indent++;
-        EmitTracked(_program.TopLevel.Span, () =>
+        EmitTracked(_program.TopLevel.Span, "<module>", () =>
         {
             // Python modules are imported first, then constants are initialized (SPEC §10.1).
             foreach (var import in _program.PythonImports)
@@ -433,7 +431,8 @@ public sealed partial class CSharpEmitter
         Line(signature);
         Line("{");
         _indent++;
-        EmitTracked(function.Span, () =>
+        // A property's getter and setter are frames named for the property (SPEC §3.19).
+        EmitTracked(function.Span, symbol.SetterOf?.Name ?? symbol.Name, () =>
         {
             if (library)
             {
@@ -511,12 +510,10 @@ public sealed partial class CSharpEmitter
         // A library's helpers can run first in a module, in a constructor's arguments (SPEC §14.3).
         if (_library is not null)
             Line($"{InitCall(_currentModule!)};");
-        EmitTracked(value.Span, () =>
-        {
-            LineDirective(value.Span);
-            Line($"return {Expr(value)};");
-            HiddenDirective();
-        });
+        // A default has no frame of its own; the call's frame reports it (SPEC §3.19).
+        LineDirective(value.Span);
+        Line($"return {Expr(value)};");
+        HiddenDirective();
         _indent--;
         Line("}");
     }
@@ -583,7 +580,7 @@ public sealed partial class CSharpEmitter
 
         var all = symbol.AllFields;
         var parameters = string.Join(", ", all.Select(f => $"{TypeName(TypeChecker.Substitute(f.Type, TypeChecker.MapOf(symbol.Type)))} @{Member(f, symbol.Type)}"));
-        var inherited = symbol.Base?.AllFields ?? [];
+        var inherited = symbol.Base is { IsDataclass: true } dataclassBase ? dataclassBase.AllFields : [];
         var baseCall = inherited.IsEmpty ? "" : $" : base({string.Join(", ", inherited.Select(f => $"@{Member(f, symbol.Type)}"))})";
         Line($"public @{className}({parameters}){baseCall}");
         Line("{");
@@ -591,6 +588,9 @@ public sealed partial class CSharpEmitter
             Line($"    {InitCall(_currentModule!)};");
         foreach (var field in symbol.Fields)
             Line($"    this.@{FieldName(className, field)} = @{FieldName(className, field)};");
+        // A dataclass exception's message and args come from its fields' values (SPEC §3.19).
+        if (BuiltinClasses.IsException(symbol))
+            Line($"    if (GetType() == typeof(@{className})) {Runtime}.Exceptions.InitData(this{string.Concat(all.Select(f => $", @{Member(f, symbol.Type)}"))});");
         // Only the most derived constructor runs __post_init__, once every field is set (SPEC §4.9).
         if (symbol.FindMethod("__post_init__") is not null)
             Line($"    if (GetType() == typeof(@{className})) this.@__post_init__();");
@@ -999,9 +999,11 @@ public sealed partial class CSharpEmitter
     // copies the counter into its own variable, which C# captures per iteration (SPEC §3.7).
     /// <summary>
     /// SPEC §8: a C# try whose one catch turns the exception into its Taipan value and tests the
-    /// except clauses in order, rethrowing it unchanged if none matches. The else block follows
-    /// the try/catch, so its exceptions aren't caught there; it needs a flag only when an except
-    /// block can finish normally. A finally block wraps the lot.
+    /// except clauses in order, rethrowing it unchanged if none matches. Its filter adds the frame
+    /// to the exception's traceback, and each except block handles the exception, for the context
+    /// of any raised in it (SPEC §3.19). The else block follows the try/catch, so its exceptions
+    /// aren't caught there; it needs a flag only when an except block can finish normally. A
+    /// finally block wraps the lot, handling the exception in flight, which a filter captures.
     /// </summary>
     private void EmitTry(BoundTry tryStmt)
     {
@@ -1011,6 +1013,13 @@ public sealed partial class CSharpEmitter
         {
             completed = $"@{_locals.Fresh("completed")}";
             Line($"var {completed} = false;");
+        }
+        // A generator's try can't have a catch around a yield, so its finally doesn't chain.
+        string? inFlight = null;
+        if (tryStmt.Finally is not null && !_inGenerator)
+        {
+            inFlight = $"@{_locals.Fresh("inFlight")}";
+            Line($"{Runtime}.TaipanBaseException? {inFlight} = null;");
         }
         if (tryStmt.Finally is not null)
         {
@@ -1037,7 +1046,7 @@ public sealed partial class CSharpEmitter
             var caught = $"@{_locals.Fresh("caught")}";
             var exception = $"@{_locals.Fresh("exception")}";
             LineDirective(tryStmt.Span, statement: false);
-            Line($"catch (global::System.Exception {caught}) when ({Runtime}.Exceptions.IsCatchable({caught}))");
+            Line($"catch (global::System.Exception {caught}) when ({Runtime}.Tracebacks.Catch({caught}, {FrameArguments()}))");
             Line("{");
             _indent++;
             Line($"var {exception} = {Runtime}.Exceptions.From({caught});");
@@ -1046,14 +1055,26 @@ public sealed partial class CSharpEmitter
             {
                 var handler = handlers[i];
                 Line($"{(i == 0 ? "" : "else ")}if ({HandlerTest(handler, exception, caught)})");
-                var binding = handler.Binding is { } symbol
-                    ? $"{TypeName(symbol.Type)} @{_locals[symbol]} = ({TypeName(symbol.Type)}){(symbol.Type is DotNetType ? DotNetException(caught) : exception)};"
-                    : null;
-                EmitBody(handler.Body, binding);
+                Line("{");
+                _indent++;
+                if (handler.Binding is { } symbol)
+                    Line($"{TypeName(symbol.Type)} @{_locals[symbol]} = ({TypeName(symbol.Type)}){(symbol.Type is DotNetType ? DotNetException(caught) : exception)};");
+                Line($"{Runtime}.Tracebacks.Handle({exception});");
+                Line("try");
+                EmitBody(handler.Body);
+                Line("finally");
+                Line("{");
+                Line($"    {Runtime}.Tracebacks.Unhandle();");
+                Line("}");
+                _indent--;
+                Line("}");
             }
             _caught.Pop();
             Line("else");
+            Line("{");
+            Line($"    {Runtime}.Tracebacks.Again({caught});");
             Line("    throw;");
+            Line("}");
             HiddenDirective();
             _indent--;
             Line("}");
@@ -1069,8 +1090,29 @@ public sealed partial class CSharpEmitter
         {
             _indent--;
             Line("}");
+            if (inFlight is null)
+            {
+                Line("finally");
+                EmitBody(finallyBlock);
+                return;
+            }
+            var propagating = $"@{_locals.Fresh("propagating")}";
+            Line($"catch (global::System.Exception {propagating}) when ({Runtime}.Tracebacks.InFlight({propagating}, ref {inFlight}))");
+            Line("{");
+            Line("    throw;");
+            Line("}");
             Line("finally");
+            Line("{");
+            _indent++;
+            Line($"{Runtime}.Tracebacks.Handle({inFlight});");
+            Line("try");
             EmitBody(finallyBlock);
+            Line("finally");
+            Line("{");
+            Line($"    {Runtime}.Tracebacks.Unhandle();");
+            Line("}");
+            _indent--;
+            Line("}");
         }
     }
 
@@ -1134,7 +1176,7 @@ public sealed partial class CSharpEmitter
         _indent++;
         var outerGenerator = _inGenerator;
         _inGenerator = false;
-        EmitTracked(function.Span, () =>
+        EmitTracked(function.Span, function.Function.Name, () =>
         {
             if (function.Function.IsGenerator)
                 EmitGeneratorBody(function.Function, function.Body.Statements);
@@ -1160,7 +1202,7 @@ public sealed partial class CSharpEmitter
         var statement = returns ? $"return {Expr(lambda.Body)};"
             : lambda.Body is BoundCall or BoundMethodCall or BoundBuiltinMethodCall or BoundPyCall or BoundInvoke or BoundSort or BoundSuperCall or BoundRuntimeMethodCall or BoundDotNetCall { Method.ReturnsVoid: true } ? $"{Expr(lambda.Body)};"
             : $"_ = {Expr(lambda.Body)};";
-        var body = _native ? $"{{ {TrackedStatement(lambda.Span, statement)} }}"
+        var body = _tracking ? $"{{ {TrackedStatement(lambda.Span, statement, "<lambda>")} }}"
             : returns ? Expr(lambda.Body)
             : $"{{ {statement} }}";
         return $"new {type}(\"<lambda>\", ({LambdaParameters(lambda.Parameters)}) => {body})";
@@ -1178,7 +1220,7 @@ public sealed partial class CSharpEmitter
         {
             var (name, display) = shown switch
             {
-                FunctionSymbol { Builtin: BuiltinFunction.Str or BuiltinFunction.Int or BuiltinFunction.Float or BuiltinFunction.List or BuiltinFunction.Set } builtin
+                FunctionSymbol { Builtin: BuiltinFunction.Str or BuiltinFunction.Int or BuiltinFunction.Float or BuiltinFunction.List or BuiltinFunction.Set or BuiltinFunction.Tuple } builtin
                     => (builtin.Name, $"<class '{builtin.Name}'>"),
                 FunctionSymbol { Builtin: not null } builtin => (builtin.Name, $"<built-in function {builtin.Name}>"),
                 FunctionSymbol function => (function.Name, $"<function {function.Name}>"),
@@ -1186,11 +1228,11 @@ public sealed partial class CSharpEmitter
                 VariantSymbol variant => ($"{variant.Enum.Name}.{variant.Name}", $"<function {variant.Enum.Name}.{variant.Name}>"),
                 _ => (shown.Name, $"<function {shown.Name}>"),
             };
-            // A field initializer has no statement lines to track; a panic inside reports its caller's (SPEC §15.3).
-            var native = _native;
-            _native = false;
+            // A function value is no frame of its own; its caller's reports it (SPEC §3.19).
+            var tracking = _tracking;
+            _tracking = false;
             var body = Lambda(lambda with { Shown = null });
-            _native = native;
+            _tracking = tracking;
             var prefix = $"new {type}(\"<lambda>\", ";
             field = UniqueGlobal($"{name.Replace('.', '_')}_value");
             _globalNames.Add(field);
@@ -1448,8 +1490,8 @@ public sealed partial class CSharpEmitter
 
     private string Throw(BoundRaise raise) =>
         raise.Value is null ? $"throw {Runtime}.Exceptions.Rethrow({_caught.Peek()})"
-        : _native ? $"throw {Runtime}.Exceptions.Raise({Expr(raise.Value)})"
-        : $"throw {Expr(raise.Value)}";
+        : raise.Cause is { } cause ? $"throw {Runtime}.Exceptions.Raise({Expr(raise.Value)}, {Expr(cause)})"
+        : $"throw {Runtime}.Exceptions.Raise({Expr(raise.Value)})";
 
     /// <summary>A variant's nested record, inside its enum's class (or the enum instance's, if generic).</summary>
     private string VariantTypeName(VariantSymbol variant, TaipanType enumType) => $"{TypeName(enumType)}.@{variant.Name}";
@@ -1537,6 +1579,7 @@ public sealed partial class CSharpEmitter
                 p => $"arg{p + 1}", p => Expr(invoke.Function!.Defaults[p]!))})",
             BoundSort sort => Sort(sort),
             BoundTupleLiteral tuple => NewTuple(((TupleOfType)Concrete(tuple.Type)).Elements, [.. tuple.Elements.Select(Expr)]),
+            BoundVarTupleLiteral tuple => $"new {TypeName(Concrete(tuple.Type))}([{string.Join(", ", tuple.Elements.Select(Expr))}])",
             BoundTupleElement element => $"{Operand(element.Tuple)}.Item{element.Index + 1}",
             BoundCollectedArguments collected => CollectedArguments(collected),
             BoundToIterable converted => ToIterable(converted),
@@ -1734,8 +1777,8 @@ public sealed partial class CSharpEmitter
         var right = Operand(binary.Right);
         var compared = TypeChecker.Unwrap(leftType) is NoneType ? TypeChecker.Unwrap(Concrete(binary.Right.Type)) : TypeChecker.Unwrap(leftType);
         // A .NET generic's type parameter could be any of these (SPEC §14.2).
-        var structural = compared is ListOfType or SetOfType or DictOfType or ClassType or EnumType or TupleOfType or FunctionType or TypeParameterType;
-        var tuple = leftType is TupleOfType;
+        var structural = compared is ListOfType or SetOfType or DictOfType or ClassType or EnumType or TupleOfType or VarTupleOfType or FunctionType or TypeParameterType;
+        var tuple = leftType is TupleOfType or VarTupleOfType;
         // A class's special methods (SPEC §3.11, §4.8): 'a > b' evaluates a, then b, and may call b.__lt__(a).
         if (SpecialMethods.Forward(binary.Op) is not null && SpecialBinary(binary) is { } special)
             return special;
@@ -1814,6 +1857,7 @@ public sealed partial class CSharpEmitter
             BuiltinFunction.DivMod when call.Arguments.All(a => Concrete(a.Type) == TaipanType.Int) => $"{Runtime}.Numbers.DivMod({arguments})",
             BuiltinFunction.DivMod => $"{Runtime}.Numbers.DivMod({AsFloatIf(true, call.Arguments[0])}, {AsFloatIf(true, call.Arguments[1])})",
             BuiltinFunction.Set => $"new {TypeName(Concrete(call.Type))}({arguments})",
+            BuiltinFunction.Tuple => call.Arguments.IsEmpty ? $"{TypeName(Concrete(call.Type))}.Empty" : $"new {TypeName(Concrete(call.Type))}({arguments})",
             BuiltinFunction.Len when argumentType == TaipanType.Py => $"{Interop}.Len({arguments})",
             BuiltinFunction.Len when argumentType is ClassType => $"{Runtime}.Ops.CheckLength({Operand(call.Arguments[0])}.@__len__())",
             BuiltinFunction.Len => $"{Runtime}.Builtins.Len({arguments})",
@@ -1930,6 +1974,11 @@ public sealed partial class CSharpEmitter
             {
                 var e = $"@{_locals.Fresh("e")}";
                 return $"{Interop}.ToList({value}, {e} => {Converter(list.Element, e)})";
+            }
+            case VarTupleOfType varTuple:
+            {
+                var e = $"@{_locals.Fresh("e")}";
+                return $"new {TypeName(varTuple)}({Interop}.ToList({value}, {e} => {Converter(varTuple.Element, e)}))";
             }
             case DictOfType dict:
             {
@@ -2089,6 +2138,7 @@ public sealed partial class CSharpEmitter
         PrimitiveType { Name: "py" } => PyObject,
         NothingType => "void",
         ListOfType list => $"{Collections}.List<{TypeName(list.Element)}>",
+        VarTupleOfType varTuple => $"{Runtime}.VarTuple<{TypeName(varTuple.Element)}>",
         SetOfType set => $"{Runtime}.OrderedSet<{TypeName(set.Element)}>",
         IteratorOfType iterator => $"{Runtime}.IIterator<{TypeName(iterator.Element)}>",
         AwaitableOfType { Result: NothingType } => Tasks,

@@ -1,0 +1,17 @@
+# A generator's body is its own frame, and a static method is named as a method (SPEC §3.19).
+class Parser:
+    @staticmethod
+    def numbers(words: list[str]) -> Iterator[int]:
+        for w in words:
+            if not w.isdigit():
+                raise ValueError(f"not a number: {w}")
+            yield len(w)
+
+def total(words: list[str]) -> int:
+    var sum = 0
+    for n in Parser.numbers(words):
+        sum += n
+    return sum
+
+print(total(["1", "22"]))
+print(total(["1", "two"]))

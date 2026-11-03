@@ -1,0 +1,2 @@
+# '...' must follow exactly one type (SPEC §2).
+let a: tuple[int, str, ...] = tuple([1])

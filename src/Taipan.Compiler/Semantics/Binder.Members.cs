@@ -248,7 +248,8 @@ public sealed partial class Binder
     /// </summary>
     private void CheckSpecialInheritance(ClassDef classDef, ClassSymbol symbol, IEnumerable<(MethodDef Syntax, FunctionSymbol Symbol)> methods)
     {
-        if (symbol.Base is { } baseClass && baseClass.IsHashable && !symbol.IsHashable)
+        // A dataclass exception keeps the identity hashing of its built-in base through it (SPEC §3.19).
+        if (symbol.Base is { } baseClass && baseClass.IsHashable && !symbol.IsHashable && !(symbol.IsDataclass && BuiltinClasses.IsDataclassBase(baseClass)))
             _diagnostics.ReportUnhashableSubclass(classDef.Name.Span, symbol.Name, baseClass.Name);
         // A context manager has both methods (SPEC §4.8, M37); one with a wrong signature was reported already.
         var hasEnter = symbol.FindMethod("__enter__") is not null || methods.Any(m => m.Symbol.Name == "__enter__");

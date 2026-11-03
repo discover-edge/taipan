@@ -63,7 +63,7 @@ public static class Checker
         if (bound.Diagnostics.Any(d => !d.IsWarning))
             return new(diagnostics, null, null, null, bound.Index);
 
-        var emitted = CSharpEmitter.Emit(loaded.Modules[0].Source, bound.Program, native: target == Target.Native);
+        var emitted = CSharpEmitter.Emit(loaded.Modules[0].Source, bound.Program);
         diagnostics = [.. diagnostics, .. emitted.Diagnostics];
         if (emitted.Diagnostics.Any(d => !d.IsWarning))
             return new(diagnostics, null, null, null, bound.Index);
