@@ -24,6 +24,8 @@ public static class Equality
         (ITuple l, ITuple r) => l.Length == r.Length && Enumerable.Range(0, l.Length).All(i => Equal(l[i], r[i])),
         (IStruct l, IStruct r) => l.GetType() == r.GetType() && FieldsEqual(l, r),
         (IDictionary l, IDictionary r) => DictsEqual(l, r),
+        // Set equality ignores order (SPEC §3.15).
+        (ISet l, ISet r) => l.Count == r.Count && l.Values.All(r.ContainsValue),
         (IList l, IList r) => ListsEqual(l, r),
         // A .NET value, which a library's generic code can be given (SPEC §13.3, §14.2).
         _ => left.Equals(right),

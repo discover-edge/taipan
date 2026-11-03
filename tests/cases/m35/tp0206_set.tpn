@@ -1,0 +1,2 @@
+# An empty set needs an expected type, as [] does (SPEC §3.15).
+let s = set()

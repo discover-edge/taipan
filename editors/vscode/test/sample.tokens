@@ -286,3 +286,39 @@
 56:5 "return" keyword.control.flow.taipan
 56:12 "await" keyword.control.flow.taipan
 56:17 " load(url)" -
+58:1 "def" storage.type.function.taipan
+58:5 "stats" entity.name.function.taipan
+58:10 "(xs: " -
+58:15 "list" support.type.builtin.taipan
+58:19 "[" -
+58:20 "int" support.type.builtin.taipan
+58:23 "]) " -
+58:26 "->" punctuation.separator.annotation.result.taipan
+58:29 "set" support.type.builtin.taipan
+58:32 "[" -
+58:33 "int" support.type.builtin.taipan
+58:36 "]:" -
+59:5 "var" storage.modifier.declaration.taipan
+59:8 " n " -
+59:11 "=" keyword.operator.assignment.taipan
+59:13 "2" constant.numeric.integer.taipan
+59:15 "**" keyword.operator.arithmetic.taipan
+59:18 "3" constant.numeric.integer.taipan
+60:1 "    n " -
+60:7 "**=" keyword.operator.assignment.taipan
+60:11 "2" constant.numeric.integer.taipan
+61:5 "return" keyword.control.flow.taipan
+61:12 "set" support.function.builtin.taipan
+61:15 "(xs) " -
+61:20 "|" keyword.operator.arithmetic.taipan
+61:21 " {" -
+61:23 "max" support.function.builtin.taipan
+61:26 "(xs), " -
+61:32 "abs" support.function.builtin.taipan
+61:35 "(" -
+61:36 "min" support.function.builtin.taipan
+61:39 "(xs)), " -
+61:46 "sum" support.function.builtin.taipan
+61:49 "(xs)} " -
+61:55 "&" keyword.operator.arithmetic.taipan
+61:56 " {n}" -

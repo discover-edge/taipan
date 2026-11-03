@@ -332,6 +332,7 @@ public sealed partial class CSharpEmitter
     {
         PrimitiveType primitive => primitive.Name,
         ListOfType list => $"list_{Mangle(list.Element)}",
+        SetOfType set => $"set_{Mangle(set.Element)}",
         IteratorOfType iterator => $"iterator_{Mangle(iterator.Element)}",
         AwaitableOfType awaitable => $"awaitable_{Mangle(awaitable.Result)}",
         IterableOfType iterable => $"iterable_{Mangle(iterable.Element)}",
@@ -827,7 +828,7 @@ public sealed partial class CSharpEmitter
                     Line($"@{_lineVariable} = {loopLine};");
                 Line("continue;");
                 break;
-            case BoundExprStmt { Expr: BoundCall or BoundMethodCall or BoundBuiltinMethodCall or BoundPyCall or BoundInvoke or BoundSort or BoundSuperCall or BoundClassMethodCall or BoundDotNetCall { Method.ReturnsVoid: true } } exprStmt:
+            case BoundExprStmt { Expr: BoundCall or BoundMethodCall or BoundBuiltinMethodCall or BoundPyCall or BoundInvoke or BoundSort or BoundSuperCall or BoundClassMethodCall or BoundRuntimeMethodCall or BoundDotNetCall { Method.ReturnsVoid: true } } exprStmt:
                 LineDirective(exprStmt.Span);
                 Line($"{Expr(exprStmt.Expr)};");
                 break;
@@ -1049,7 +1050,16 @@ public sealed partial class CSharpEmitter
         var end = $"@{_locals.Fresh("end")}";
         var start = forStmt.Start is null ? "0L" : Expr(forStmt.Start);
         LineDirective(forStmt.Span);
-        Line($"for (long {counter} = {start}, {end} = {Expr(forStmt.Stop)}; {counter} < {end}; {counter}++)");
+        if (forStmt.Step is { } step)
+        {
+            // A step counts down when it's negative, and may not be 0 (SPEC §6).
+            var by = $"@{_locals.Fresh("step")}";
+            Line($"for (long {counter} = {start}, {end} = {Expr(forStmt.Stop)}, {by} = {Runtime}.Ops.RangeStep({Expr(step)}); {by} > 0 ? {counter} < {end} : {counter} > {end}; {counter} += {by})");
+        }
+        else
+        {
+            Line($"for (long {counter} = {start}, {end} = {Expr(forStmt.Stop)}; {counter} < {end}; {counter}++)");
+        }
         EmitLoopBody(forStmt.Body, counter == variable ? null : $"long {variable} = {counter};");
     }
 
@@ -1100,7 +1110,7 @@ public sealed partial class CSharpEmitter
         var type = TypeName(lambda.Type);
         var returns = lambda.FunctionType.Result is not NothingType;
         var statement = returns ? $"return {Expr(lambda.Body)};"
-            : lambda.Body is BoundCall or BoundMethodCall or BoundBuiltinMethodCall or BoundPyCall or BoundInvoke or BoundSort or BoundSuperCall or BoundDotNetCall { Method.ReturnsVoid: true } ? $"{Expr(lambda.Body)};"
+            : lambda.Body is BoundCall or BoundMethodCall or BoundBuiltinMethodCall or BoundPyCall or BoundInvoke or BoundSort or BoundSuperCall or BoundRuntimeMethodCall or BoundDotNetCall { Method.ReturnsVoid: true } ? $"{Expr(lambda.Body)};"
             : $"_ = {Expr(lambda.Body)};";
         var body = _native ? $"{{ {TrackedStatement(lambda.Span, statement)} }}"
             : returns ? Expr(lambda.Body)
@@ -1156,13 +1166,9 @@ public sealed partial class CSharpEmitter
         var method = (sort.InPlace ? "Sort" : "Sorted") + (key is not null ? "By" : "");
         var arguments = sort.Keywords.Select(k => $"{k.Name}: {Expr(k.Value)}").Prepend(Expr(sort.List));
         var sorted = key is not null ? ((FunctionType)TypeChecker.Unwrap(Concrete(key.Type))).Result : ((ListOfType)Concrete(sort.List.Type)).Element;
-        if (sorted is ClassType sortedClass)
-        {
-            // Python's sort uses '<', so with subclasses it follows the comparison protocol (SPEC §4.8).
-            var (a, b) = (_locals.Fresh("a"), _locals.Fresh("b"));
-            var less = sortedClass.Symbol.HasSubclasses ? $"{Runtime}.Ops.Compare(@{a}, @{b}, {ClassInterface}.Lt)" : $"@{a}.@__lt__(@{b})";
-            arguments = arguments.Append($"less: static (@{a}, @{b}) => {less}");
-        }
+        // Python's sort uses '<', so with subclasses it follows the comparison protocol (SPEC §4.8).
+        if (LessThan(sorted) is { } less)
+            arguments = arguments.Append($"less: {less}");
         return $"{Runtime}.Ops.{method}({string.Join(", ", arguments)})";
     }
 
@@ -1360,6 +1366,9 @@ public sealed partial class CSharpEmitter
             BoundFString fstring => FString(fstring),
             BoundFormat format => Format(format),
             BoundListLiteral list => ListLiteral(list),
+            BoundSetLiteral set => SetLiteral(set),
+            BoundMinMax minMax => MinMax(minMax),
+            BoundRuntimeMethodCall call => $"{Runtime}.{call.Kind}Methods.@{call.Name}({string.Join(", ", [Expr(call.Target), .. call.Arguments.Select(Expr)])})",
             BoundDictLiteral dict => DictLiteral(dict),
             BoundConstruct construct => Construct(construct),
             BoundConstructVariant construct => ConstructVariant(construct),
@@ -1584,7 +1593,7 @@ public sealed partial class CSharpEmitter
         var right = Operand(binary.Right);
         var compared = TypeChecker.Unwrap(leftType) is NoneType ? TypeChecker.Unwrap(Concrete(binary.Right.Type)) : TypeChecker.Unwrap(leftType);
         // A .NET generic's type parameter could be any of these (SPEC §14.2).
-        var structural = compared is ListOfType or DictOfType or ClassType or EnumType or TupleOfType or FunctionType or TypeParameterType;
+        var structural = compared is ListOfType or SetOfType or DictOfType or ClassType or EnumType or TupleOfType or FunctionType or TypeParameterType;
         var tuple = leftType is TupleOfType;
         // A class's special methods (SPEC §3.11, §4.8): 'a > b' evaluates a, then b, and may call b.__lt__(a).
         if (SpecialMethods.Forward(binary.Op) is not null && SpecialBinary(binary) is { } special)
@@ -1592,6 +1601,18 @@ public sealed partial class CSharpEmitter
         return binary.Op switch
         {
             BinaryOp.Add when leftType is ListOfType => $"{Runtime}.Ops.Concat({l}, {r})",
+            // Sets (SPEC §3.15): new sets, and subset tests.
+            BinaryOp.Union when leftType is SetOfType => $"{l}.Union({r})",
+            BinaryOp.Intersection when leftType is SetOfType => $"{l}.Intersection({r})",
+            BinaryOp.SymmetricDifference when leftType is SetOfType => $"{l}.SymmetricDifference({r})",
+            BinaryOp.Subtract when leftType is SetOfType => $"{l}.Difference({r})",
+            BinaryOp.LessEqual when leftType is SetOfType => $"{l}.IsSubset({r})",
+            BinaryOp.Less when leftType is SetOfType => $"{l}.IsProperSubset({r})",
+            BinaryOp.GreaterEqual when leftType is SetOfType => $"{r}.IsSubset({l})",
+            BinaryOp.Greater when leftType is SetOfType => $"{r}.IsProperSubset({l})",
+            BinaryOp.In when Concrete(binary.Right.Type) is SetOfType => $"{r}.Contains({l})",
+            BinaryOp.NotIn when Concrete(binary.Right.Type) is SetOfType => $"!{r}.Contains({l})",
+            BinaryOp.Power => $"{Runtime}.Ops.Pow({l}, {r})",
             BinaryOp.Add => $"{left} + {right}",
             BinaryOp.Subtract => $"{left} - {right}",
             BinaryOp.Multiply => $"{left} * {right}",
@@ -1633,6 +1654,17 @@ public sealed partial class CSharpEmitter
                 p => $"@{call.Function.Parameters[p].Name}", p => $"{Global(DefaultName(FunctionName(call), call.Function, p))}{TypeArgumentList(call)}()")})",
             null => $"{FunctionReference(call)}({arguments})",
             BuiltinFunction.Print => $"{Runtime}.Builtins.Print({arguments})",
+            // M35 (SPEC §6).
+            BuiltinFunction.Abs when argumentType == TaipanType.Int => $"{Runtime}.Numbers.Abs({arguments})",
+            BuiltinFunction.Abs => $"global::System.Math.Abs({arguments})",
+            BuiltinFunction.Sum => $"{Runtime}.Numbers.Sum({Expr(call.Arguments[0])}, {AsFloatIf(call.Type == TaipanType.Float, call.Arguments[1])})",
+            BuiltinFunction.Any => $"{Runtime}.Numbers.Any({arguments})",
+            BuiltinFunction.All => $"{Runtime}.Numbers.All({arguments})",
+            BuiltinFunction.Round when call.Arguments.Length == 1 && argumentType == TaipanType.Int => arguments,
+            BuiltinFunction.Round => $"{Runtime}.Numbers.Round({arguments})",
+            BuiltinFunction.DivMod when call.Arguments.All(a => Concrete(a.Type) == TaipanType.Int) => $"{Runtime}.Numbers.DivMod({arguments})",
+            BuiltinFunction.DivMod => $"{Runtime}.Numbers.DivMod({AsFloatIf(true, call.Arguments[0])}, {AsFloatIf(true, call.Arguments[1])})",
+            BuiltinFunction.Set => $"new {TypeName(Concrete(call.Type))}({arguments})",
             BuiltinFunction.Len when argumentType == TaipanType.Py => $"{Interop}.Len({arguments})",
             BuiltinFunction.Len => $"{Runtime}.Builtins.Len({arguments})",
             BuiltinFunction.Str => $"{Runtime}.Display.Format({arguments})",
@@ -1768,6 +1800,38 @@ public sealed partial class CSharpEmitter
         return list.Elements.IsEmpty ? $"new {type}()" : $"new {type} {{ {Arguments(list.Elements)} }}";
     }
 
+    // An int widened to a float, where a float overload is wanted.
+    private string AsFloatIf(bool widen, BoundExpr value) =>
+        widen && Concrete(value.Type) == TaipanType.Int ? $"(double){Operand(value)}" : Expr(value);
+
+    /// <summary><c>min</c> and <c>max</c> (SPEC §6): ordered as <c>sorted</c> orders, with a key and a default.</summary>
+    private string MinMax(BoundMinMax minMax)
+    {
+        var element = Concrete(minMax.Element);
+        var key = minMax.Key is null ? "static x => x" : $"{Operand(minMax.Key)}.Invoke";
+        var ordered = minMax.Key is null ? element : ((FunctionType)TypeChecker.Unwrap(Concrete(minMax.Key.Type))).Result;
+        var less = LessThan(ordered) ?? "null";
+        var arguments = $"{Expr(minMax.Values)}, {key}, {less}, {(minMax.IsMax ? "true" : "false")}";
+        return minMax.Default switch
+        {
+            null => $"{Runtime}.Numbers.Extreme({arguments}, \"{(minMax.IsMax ? "max" : "min")}\")",
+            BoundNone => $"{Runtime}.Numbers.{(IsValueType(element) ? "ExtremeValueOrNone" : "ExtremeOrNone")}({arguments})",
+            var fallback => $"{Runtime}.Numbers.ExtremeOr({arguments}, {Expr(fallback)})",
+        };
+    }
+
+    /// <summary>A class's <c>__lt__</c> as a comparison, which ordering by Python's rules needs (SPEC §4.8); null for built-in types.</summary>
+    private string? LessThan(TaipanType ordered)
+    {
+        if (ordered is not ClassType orderedClass)
+            return null;
+        var (a, b) = (_locals.Fresh("a"), _locals.Fresh("b"));
+        var less = orderedClass.Symbol.HasSubclasses ? $"{Runtime}.Ops.Compare(@{a}, @{b}, {ClassInterface}.Lt)" : $"@{a}.@__lt__(@{b})";
+        return $"static (@{a}, @{b}) => {less}";
+    }
+
+    private string SetLiteral(BoundSetLiteral set) => $"new {TypeName(set.SetType)} {{ {Arguments(set.Elements)} }}";
+
     private string DictLiteral(BoundDictLiteral dict)
     {
         var type = TypeName(dict.DictType);
@@ -1866,6 +1930,7 @@ public sealed partial class CSharpEmitter
         PrimitiveType { Name: "py" } => PyObject,
         NothingType => "void",
         ListOfType list => $"{Collections}.List<{TypeName(list.Element)}>",
+        SetOfType set => $"{Runtime}.OrderedSet<{TypeName(set.Element)}>",
         IteratorOfType iterator => $"{Runtime}.IIterator<{TypeName(iterator.Element)}>",
         AwaitableOfType { Result: NothingType } => Tasks,
         AwaitableOfType awaitable => $"{Tasks}<{TypeName(awaitable.Result)}>",

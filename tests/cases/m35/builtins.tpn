@@ -1,0 +1,35 @@
+# Everyday built-in functions (SPEC §6, M35).
+print(abs(-3), abs(2.5), abs(-0.0))
+print(min(3, 1, 2), max(3, 1, 2), min([4, 2, 8]), max("pear", "apple"))
+print(max([1, 5, 3], key=lambda x: -x), min(["bb", "a", "ccc"], key=lambda s: len(s)))
+let empty: list[int] = []
+print(max(empty, default=0), min([2.5, 1.5], default=0.0))
+# Mixing int and float gives a float, so min(2, 7.5) is 2.0 where Python keeps the int 2.
+print(max(0, 2.5), min(2, 7.5))
+print(sum([1, 2, 3]), sum([0.5, 0.25]), sum([1, 2], 10), sum({1, 2, 3}))
+let none: list[bool] = []
+print(any([False, True]), all([True, False]), any(none), all(none))
+print(round(2.5), round(3.5), round(-0.5), round(2.675, 2), round(1234, -2), round(7, 1))
+print(round(1.23456, 3), round(0.125, 2), round(-1.5))
+print(divmod(7, 2), divmod(-7, 2), divmod(7.5, 2.0))
+print(2 ** 10, -2 ** 2, 2 ** 3 ** 2, 2.0 ** -1, 9 ** 0.5, 0 ** 0)
+var n = 3
+n **= 2
+n //= 4
+n %= 2
+print(n)
+for i in range(10, 0, -3):
+    print("down", i)
+for i in range(0, 10, 4):
+    print("up", i)
+for i in range(5, 5, 1):
+    print("never", i)
+try:
+    print(max(empty))
+except ValueError as e:
+    print("ValueError:", e)
+try:
+    for i in range(0, 5, 0):
+        print(i)
+except ValueError as e:
+    print("ValueError:", e)

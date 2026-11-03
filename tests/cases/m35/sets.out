@@ -1,0 +1,11 @@
+{1, 2, 3, 4} {3} {1, 2} {1, 2, 4}
+True True True True True False True
+{5} 1 {1, 2} [1, 2, 3]
+5 {7, 8} {7, 8}
+{1, 2, 3, 4} {2, 3} {2, 3} {1, 2, 4}
+True True True
+set() 6 3 1
+element 3
+element 4
+KeyError: 42
+{"x"} True

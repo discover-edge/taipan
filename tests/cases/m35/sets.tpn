@@ -1,0 +1,27 @@
+# Sets (SPEC §3.15, M35). Small ints, which CPython also shows in insertion order here.
+let a = {1, 2, 3}
+let b = {3, 4}
+print(a | b, a & b, a - b, a ^ b)
+print(2 in a, 5 not in a, {1, 2} <= a, {1, 2} < a, a >= {3}, a > a, a == {3, 2, 1})
+var s: set[int] = set()
+s.add(5)
+s.add(6)
+s.add(5)
+s.discard(9)
+s.remove(6)
+print(s, len(s), set([1, 1, 2]), sorted({3, 1, 2}))
+s.update([7, 8])
+# pop() takes the first value in insertion order; CPython's is arbitrary.
+print(s.pop(), s, s.copy())
+print(a.union([4]), a.intersection([2, 3, 9]), a.difference([1]), a.symmetric_difference([3, 4]))
+print(a.issubset([1, 2, 3, 4]), a.issuperset([1]), a.isdisjoint([7]))
+let empty: set[int] = set()
+print(empty, sum(a), max(a), min(a))
+for x in b:
+    print("element", x)
+try:
+    s.remove(42)
+except KeyError as e:
+    print("KeyError:", e)
+let words = {"x"}
+print(words, "x" in words)

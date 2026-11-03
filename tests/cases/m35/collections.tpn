@@ -1,0 +1,29 @@
+# List, dict and str methods (SPEC §6, M35).
+let xs = [3, 1, 4, 1, 5]
+xs.extend([9, 2])
+xs.remove(1)
+print(xs, xs.index(4), xs.count(1))
+xs.reverse()
+let ys = xs.copy()
+print(xs.pop(0), xs.pop(-1), xs, ys)
+ys.clear()
+print(ys, len(ys))
+
+let d = {"a": 1, "b": 2}
+print(d.pop("a"), d.pop("z", 0), d.setdefault("c", 3), d.setdefault("b", 9), d)
+d.update({"b": 20, "e": 5})
+let e = d.copy()
+d.clear()
+print(d, e, e.get("z", -1), e.get("b", -1))
+
+let s = "  Hello, World  "
+print(s.strip(), s.lstrip(), s.rstrip(), "xxhixx".strip("x"))
+print(", ".join(["a", "b", "c"]), "-".join("abc"))
+print("banana".find("an"), "banana".rfind("an"), "banana".find("x"), "banana".index("na"), "banana".count("a"))
+print("a b  c\tdone".split(), "a,b,c".split(",", 1), "a,b,c".rsplit(",", 1), "one\ntwo\n".splitlines())
+print("key=value=x".partition("="), "key=value=x".rpartition("="), "abc".partition("z"))
+print("prefix_name".removeprefix("prefix_"), "file.txt".removesuffix(".txt"))
+print("hello world".title(), "hELLO".capitalize(), "Hello".swapcase())
+print("42".zfill(5), "-7".zfill(4), "ab".ljust(4, "."), "ab".rjust(4), "ab".center(6, "*"))
+print("123".isdigit(), "abc".isalpha(), "a1".isalnum(), " \t".isspace(), "ABC".isupper(), "abc".islower(), "".isdigit())
+print("a b c".split(None, 1), "x".split(maxsplit=0))

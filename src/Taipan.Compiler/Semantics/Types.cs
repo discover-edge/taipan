@@ -29,6 +29,7 @@ public abstract record TaipanType
     {
         ErrorType => true,
         ListOfType list => list.Element.ContainsError,
+        SetOfType set => set.Element.ContainsError,
         IteratorOfType iterator => iterator.Element.ContainsError,
         IterableOfType iterable => iterable.Element.ContainsError,
         AwaitableOfType awaitable => awaitable.Result.ContainsError,
@@ -121,6 +122,12 @@ public sealed record IterableOfType(TaipanType Element) : TaipanType
 public sealed record ListOfType(TaipanType Element) : TaipanType
 {
     public override string ToString() => $"list[{Element}]";
+}
+
+/// <summary><c>set[T]</c>: distinct values in insertion order (SPEC §3.15, M35).</summary>
+public sealed record SetOfType(TaipanType Element) : TaipanType
+{
+    public override string ToString() => $"set[{Element}]";
 }
 
 public sealed record DictOfType(TaipanType Key, TaipanType Value) : TaipanType

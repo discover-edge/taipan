@@ -78,7 +78,7 @@ public sealed partial class CSharpEmitter
             Line("public override int GetHashCode() => this.@__hash__().GetHashCode();");
         }
 
-        string[] reflected = ["__radd__", "__rsub__", "__rmul__", "__rtruediv__", "__rfloordiv__", "__rmod__"];
+        string[] reflected = ["__radd__", "__rsub__", "__rmul__", "__rtruediv__", "__rfloordiv__", "__rmod__", "__rpow__"];
         if (reflected.Any(own.ContainsKey))
         {
             var found = reflected.Select((name, op) => (name, (int?)op)).Where(r => symbol.FindMethod(r.name) is not null).ToList();
@@ -278,7 +278,7 @@ public sealed partial class CSharpEmitter
             return $"{Runtime}.Ops.Reversed({l}, {r}, static (@{second}, @{first}) => @{second}.@{method.Name}(@{first}))";
         if (!SpecialMethods.IsComparison(binary.Op) && MayPrefer(binary.Op, leftType, rightType))
         {
-            var code = Array.IndexOf(["__radd__", "__rsub__", "__rmul__", "__rtruediv__", "__rfloordiv__", "__rmod__"], SpecialMethods.Reflected(binary.Op));
+            var code = Array.IndexOf(["__radd__", "__rsub__", "__rmul__", "__rtruediv__", "__rfloordiv__", "__rmod__", "__rpow__"], SpecialMethods.Reflected(binary.Op));
             return $"{Runtime}.Ops.Arithmetic<{TypeName(leftType)}, {TypeName(rightType)}, {TypeName(result)}>({l}, {r}, {code}, " +
                 $"static (@{first}, @{second}) => @{first}.@{method.Name}(@{second}))";
         }

@@ -12,5 +12,5 @@ def f(x: int) -> int:
         pass
     return 0
 
-let len = 3
-let print = 4
+let str = 3
+let set = 4

@@ -11,6 +11,8 @@ public static class Builtins
 
     public static long Len<TKey, TValue>(OrderedDictionary<TKey, TValue> dict) where TKey : notnull => dict.Count;
 
+    public static long Len<T>(OrderedSet<T> set) where T : notnull => set.Count;
+
     /// <summary><c>len(s)</c>: the number of Unicode code points.</summary>
     public static long Len(string value)
     {

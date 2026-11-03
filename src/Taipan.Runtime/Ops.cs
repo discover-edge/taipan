@@ -36,6 +36,39 @@ public static class Ops
         return left / right;
     }
 
+    /// <summary><c>range</c>'s step, which can't be 0 (SPEC §6, M35).</summary>
+    public static long RangeStep(long step) => step != 0 ? step : throw new ValueError("range() arg 3 must not be zero");
+
+    /// <summary><c>a ** b</c> on ints (SPEC §5.3, M35): checked, and a negative exponent raises, since Python's result would be a float.</summary>
+    public static long Pow(long value, long exponent)
+    {
+        if (exponent < 0)
+            throw new ValueError("negative exponent; use a float base, as in 2.0 ** -1");
+        long result = 1;
+        while (exponent > 0)
+        {
+            if ((exponent & 1) == 1)
+                result = checked(result * value);
+            exponent >>= 1;
+            if (exponent > 0)
+                value = checked(value * value);
+        }
+        return result;
+    }
+
+    /// <summary><c>a ** b</c> with a float, as Python's (SPEC §5.3, M35).</summary>
+    public static double Pow(double value, double exponent)
+    {
+        if (value == 0.0 && exponent < 0)
+            throw new ZeroDivisionError("0.0 cannot be raised to a negative power");
+        if (value < 0 && double.IsFinite(exponent) && Math.Floor(exponent) != exponent)
+            throw new ValueError("a negative number can't be raised to a fractional power");
+        var result = Math.Pow(value, exponent);
+        if (double.IsInfinity(result) && double.IsFinite(value) && double.IsFinite(exponent))
+            throw new OverflowError("(34, 'Numerical result out of range')");
+        return result;
+    }
+
     /// <summary><c>//</c>: floor division, as in Python.</summary>
     public static long FloorDiv(long left, long right)
     {
@@ -380,13 +413,17 @@ public static class Ops
         var items = new List<(T Item, TKey Key)>();
         foreach (var item in Iter.Over(list))
             items.Add((item, key(item)));
-        var comparer = less is not null ? Comparer<TKey>.Create((l, r) => less(l, r) ? -1 : less(r, l) ? 1 : 0)
-            : typeof(TKey) == typeof(string) ? (IComparer<TKey>)StringComparer.Ordinal
-            : typeof(ITuple).IsAssignableFrom(typeof(TKey)) ? Comparer<TKey>.Create((l, r) => SortCompare(l, r))
-            : Comparer<TKey>.Default;
+        var comparer = ComparerFor(less);
         var ordered = reverse ? items.OrderByDescending(p => p.Key, comparer) : items.OrderBy(p => p.Key, comparer);
         return [.. ordered.Select(p => p.Item)];
     }
+
+    /// <summary>How sort keys compare: by a class's <c>__lt__</c>, strings by ordinal, tuples element by element.</summary>
+    internal static IComparer<TKey> ComparerFor<TKey>(Func<TKey, TKey, bool>? less) =>
+        less is not null ? Comparer<TKey>.Create((l, r) => less(l, r) ? -1 : less(r, l) ? 1 : 0)
+            : typeof(TKey) == typeof(string) ? (IComparer<TKey>)StringComparer.Ordinal
+            : typeof(ITuple).IsAssignableFrom(typeof(TKey)) ? Comparer<TKey>.Create((l, r) => SortCompare(l, r))
+            : Comparer<TKey>.Default;
 
     private static void Replace<T>(List<T> list, List<T> items)
     {

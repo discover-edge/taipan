@@ -26,13 +26,13 @@ public sealed record BindResult(BoundProgram Program, ImmutableArray<Diagnostic>
 public sealed partial class Binder
 {
     private static readonly BigInteger MaxInt = long.MaxValue;
-    private static readonly HashSet<string> BuiltinTypeNames = ["int", "float", "bool", "str", "list", "dict", "py", "Callable", "tuple", "Protocol", "Self", "ABC", "ClassVar", "Iterator", "Iterable", "Awaitable"];
+    private static readonly HashSet<string> BuiltinTypeNames = ["int", "float", "bool", "str", "list", "dict", "py", "Callable", "tuple", "Protocol", "Self", "ABC", "ClassVar", "Iterator", "Iterable", "Awaitable", "set"];
 
     // Every class the program defines, for checks across a hierarchy (SPEC §4.8).
     private readonly List<ClassSymbol> _allClasses = [];
 
     // Dict key types that name classes, checked once every class's members are declared (SPEC §4.8).
-    private readonly List<(Module Module, TextSpan Span, TaipanType Key)> _pendingKeys = [];
+    private readonly List<(Module Module, TextSpan Span, TaipanType Key, bool IsSet)> _pendingKeys = [];
     private bool _membersDeclared;
 
     private DiagnosticBag _diagnostics = new();
@@ -215,11 +215,11 @@ public sealed partial class Binder
             BindDeclarations(module);
         }
         _membersDeclared = true;
-        foreach (var (module, span, key) in _pendingKeys)
+        foreach (var (module, span, key, isSet) in _pendingKeys)
         {
             Enter(module);
             if (!DictOfType.IsValidKey(key))
-                ReportInvalidKey(span, key);
+                ReportInvalidKey(span, key, isSet);
         }
 
         // Every class's members are known now, so overrides can be checked against bases (SPEC §4.3).
@@ -528,6 +528,7 @@ public sealed partial class Binder
         TypeParameterType => true,
         OptionalOf o => MentionsTypeParameter(o.Inner),
         ListOfType l => MentionsTypeParameter(l.Element),
+        SetOfType s => MentionsTypeParameter(s.Element),
         DictOfType d => MentionsTypeParameter(d.Key) || MentionsTypeParameter(d.Value),
         ClassType s => s.TypeArguments.Any(MentionsTypeParameter),
         EnumType e => e.TypeArguments.Any(MentionsTypeParameter),
@@ -936,7 +937,7 @@ public sealed partial class Binder
         BinaryExpr
         {
             Op: BinaryOp.Add or BinaryOp.Subtract or BinaryOp.Multiply or BinaryOp.Divide
-                or BinaryOp.FloorDivide or BinaryOp.Modulo,
+                or BinaryOp.FloorDivide or BinaryOp.Modulo or BinaryOp.Power,
         } binary => IsConstantExpression(binary.Left) && IsConstantExpression(binary.Right),
         _ => false,
     };
@@ -1514,13 +1515,20 @@ public sealed partial class Binder
     {
         if (_scope.LookupLocal(name.Text) is not null)
             _diagnostics.ReportDuplicateDefinition(name.Span, name.Text);
-        else if (_scope.Parent?.Lookup(name.Text) is not null)
+        else if (_scope.Parent?.Lookup(name.Text) is { } outer && !IsShadowableBuiltin(outer))
             _diagnostics.ReportShadowing(name.Span, name.Text);
         _scope.Declare(symbol);
         if (symbol is VariableSymbol variable)
             _declaredIn[variable] = _function;
         Index(name.Span, symbol, isDefinition: true);
     }
+
+    /// <summary>
+    /// A built-in function a local may reuse the name of, as in Python (SPEC §4.5, M35): not one
+    /// that's also a type's name (<c>int</c>, <c>str</c>, <c>set</c>), nor a built-in class.
+    /// </summary>
+    private bool IsShadowableBuiltin(Symbol symbol) =>
+        symbol is FunctionSymbol { Builtin: not null } && _builtins.LookupLocal(symbol.Name) == symbol && !BuiltinTypeNames.Contains(symbol.Name);
 
     /// <summary>Looks up a value name, reporting TP0201 or TP0211 if it isn't visible.</summary>
     private Symbol? LookupName(string name, TextSpan span)
@@ -1589,6 +1597,17 @@ public sealed partial class Binder
             case NamedType named when ResolveTypeName(named.Name.Text) is { } typeSymbol:
                 Index(named.Name.Span, typeSymbol);
                 return BindGenericType(named.Name, [], named.Span, typeSymbol);
+            // set[T] (SPEC §3.15, M35).
+            case GenericType { Name.Text: "set" } setType when ResolveTypeName("set") is null:
+                if (setType.Arguments is not [var elementSyntax])
+                {
+                    _diagnostics.ReportWrongTypeArgumentCount(setType.Span, "set", 1, setType.Arguments.Length);
+                    return TaipanType.Error;
+                }
+                Index(setType.Name.Span, new SemanticIndex.BuiltinType("set"));
+                var setElement = BindType(elementSyntax);
+                CheckSetElement(elementSyntax.Span, setElement);
+                return new SetOfType(setElement);
             // ClassVar only declares a class attribute (SPEC §4.8).
             case GenericType { Name.Text: "ClassVar", Arguments: [var held] } classVar:
                 _diagnostics.ReportClassVarMisplaced(classVar.Span);
@@ -1721,17 +1740,22 @@ public sealed partial class Binder
     /// A dict key type must be hashable (SPEC §3.1, §4.8). A class's hashability depends on its
     /// methods, so until every class's members are declared the check waits.
     /// </summary>
-    private void CheckDictKey(TextSpan span, TaipanType key)
+    private void CheckDictKey(TextSpan span, TaipanType key, bool isSet = false)
     {
         if (!_membersDeclared && Mentions(key, t => t is ClassType))
-            _pendingKeys.Add((_module!, span, key));
+            _pendingKeys.Add((_module!, span, key, isSet));
         else if (!DictOfType.IsValidKey(key))
-            ReportInvalidKey(span, key);
+            ReportInvalidKey(span, key, isSet);
     }
 
-    private void ReportInvalidKey(TextSpan span, TaipanType key)
+    /// <summary>A set's elements are what can be dict keys (SPEC §3.15).</summary>
+    private void CheckSetElement(TextSpan span, TaipanType element) => CheckDictKey(span, element, isSet: true);
+
+    private void ReportInvalidKey(TextSpan span, TaipanType key, bool isSet = false)
     {
-        if (Unhashable(key) is { } unhashable)
+        if (isSet)
+            _diagnostics.ReportInvalidSetElement(span, key);
+        else if (Unhashable(key) is { } unhashable)
             _diagnostics.ReportUnhashableKey(span, unhashable, unhashable.Symbol.IsDataclass ? null : EqualityDefiner(unhashable.Symbol));
         else
             _diagnostics.ReportInvalidDictKey(span, key, isDataclass: false);
@@ -2419,14 +2443,14 @@ public sealed partial class Binder
 
     private BoundStmt BindFor(ForStmt forStmt)
     {
-        BoundExpr? start = null;
+        BoundExpr? start = null, step = null;
         BoundExpr iterable;
         TaipanType variableType;
         var isRange = forStmt.Iterable is CallExpr { Callee: NameExpr { Name: "range" } }
             && _scope.Lookup("range") is FunctionSymbol { Builtin: BuiltinFunction.Range };
         if (isRange)
         {
-            (start, iterable) = BindRangeArguments((CallExpr)forStmt.Iterable);
+            (start, iterable, step) = BindRangeArguments((CallExpr)forStmt.Iterable);
             variableType = TaipanType.Int;
         }
         else
@@ -2438,6 +2462,7 @@ public sealed partial class Binder
             variableType = iterable.Type switch
             {
                 ListOfType list => list.Element,
+                SetOfType set => set.Element,
                 DictOfType dict => dict.Key,
                 PrimitiveType { Name: "str" } => TaipanType.Str,
                 PrimitiveType { Name: "py" } => TaipanType.Py,
@@ -2476,7 +2501,7 @@ public sealed partial class Binder
 
         var body = new BoundBlock([.. unpacked, .. statements], forStmt.Body.Span);
         return isRange
-            ? new BoundForRange(variable, start, iterable, body, forStmt.Span)
+            ? new BoundForRange(variable, start, iterable, body, forStmt.Span) { Step = step }
             : new BoundForEach(variable, iterable, body, forStmt.Span);
     }
 
@@ -2486,19 +2511,22 @@ public sealed partial class Binder
         return TaipanType.Error;
     }
 
-    private (BoundExpr? Start, BoundExpr Stop) BindRangeArguments(CallExpr call)
+    private (BoundExpr? Start, BoundExpr Stop, BoundExpr? Step) BindRangeArguments(CallExpr call)
     {
         ReportKeywordArguments(call, "range");
         var arguments = call.Arguments.Select(a => BindExpected(a.Value, TaipanType.Int)).ToImmutableArray();
         switch (arguments.Length)
         {
             case 1:
-                return (null, arguments[0]);
+                return (null, arguments[0], null);
             case 2:
-                return (arguments[0], arguments[1]);
+                return (arguments[0], arguments[1], null);
+            // A step since M35 (SPEC §6).
+            case 3:
+                return (arguments[0], arguments[1], arguments[2]);
             default:
-                _diagnostics.ReportWrongArgumentCount(call.Callee.Span, "range", "1 or 2 arguments", arguments.Length);
-                return (null, new BoundErrorExpr(call.Span));
+                _diagnostics.ReportWrongArgumentCount(call.Callee.Span, "range", "1 to 3 arguments", arguments.Length);
+                return (null, new BoundErrorExpr(call.Span), null);
         }
     }
 
@@ -2812,6 +2840,7 @@ public sealed partial class Binder
         BinaryExpr binary => BindBinaryOperation(BindValue(binary.Left), binary.Op, BindValue(binary.Right), binary.Span),
         CallExpr call => BindCall(call, expected),
         ListExpr list => BindList(list, expected),
+        SetExpr set => BindSet(set, expected),
         DictExpr dict => BindDict(dict, expected),
         MemberExpr member => BindMember(member, expected),
         IndexExpr index => BindIndexOf(BindValue(index.Target), index),
@@ -3035,6 +3064,7 @@ public sealed partial class Binder
             BinaryOp.Less or BinaryOp.LessEqual or BinaryOp.Greater or BinaryOp.GreaterEqual =>
                 CheckOrdered(left, op, right, span),
             BinaryOp.In or BinaryOp.NotIn => CheckOperands(left, op, right, span, MembershipResult(left.Type, right.Type)),
+            BinaryOp.Power => CheckPower(left, right, span),
             _ => CheckOperands(left, op, right, span, TypeChecker.Arithmetic(op, left.Type, right.Type)),
         };
         return new BoundBinary(left, op, right, type, span);
@@ -3172,6 +3202,7 @@ public sealed partial class Binder
     {
         PrimitiveType { Name: "str" } when item == TaipanType.Str => TaipanType.Bool,
         ListOfType list when TypeChecker.AreComparable(item, list.Element) => TaipanType.Bool,
+        SetOfType set when TypeChecker.AreComparable(item, set.Element) => TaipanType.Bool,
         DictOfType dict when TypeChecker.AreComparable(item, dict.Key) => TaipanType.Bool,
         IteratorOfType or IterableOfType when TypeChecker.ElementOf(container) is { } element && TypeChecker.AreComparable(item, element) => TaipanType.Bool,
         _ => null,
@@ -3214,8 +3245,18 @@ public sealed partial class Binder
             _diagnostics.ReportCannotCompare(span, left.Type, right.Type);
             return TaipanType.Error;
         }
-        var ordered = left.Type.IsOrdered && right.Type.IsOrdered;
+        // On sets, the comparisons are subset and superset tests (SPEC §3.15).
+        var ordered = left.Type.IsOrdered && right.Type.IsOrdered || left.Type is SetOfType && left.Type == right.Type;
         return CheckOperands(left, op, right, span, ordered ? TaipanType.Bool : null);
+    }
+
+    /// <summary><c>a ** b</c> (SPEC §5.3): an int power can't have a negative literal exponent, whose result Python makes a float.</summary>
+    private TaipanType CheckPower(BoundExpr left, BoundExpr right, TextSpan span)
+    {
+        var result = CheckOperands(left, BinaryOp.Power, right, span, TypeChecker.Arithmetic(BinaryOp.Power, left.Type, right.Type));
+        if (result == TaipanType.Int && right is BoundUnary { Op: UnaryOp.Negate, Operand: BoundLiteral { Value: long n } } && n > 0)
+            _diagnostics.ReportNegativeIntExponent(right.Span);
+        return result;
     }
 
     private TaipanType CheckOperands(BoundExpr left, BinaryOp op, BoundExpr right, TextSpan span, TaipanType? result)
@@ -3227,6 +3268,17 @@ public sealed partial class Binder
     }
 
     // ---- Lists, dicts, members and indexing ----
+
+    /// <summary><c>{a, b}</c>: a set, typed as a list's elements are (SPEC §3.15).</summary>
+    private BoundExpr BindSet(SetExpr set, TaipanType? expected)
+    {
+        if (TypeChecker.Unwrap(expected ?? TaipanType.Error) is SetOfType expectedSet)
+            return new BoundSetLiteral([.. set.Elements.Select(e => BindExpected(e, expectedSet.Element))], expectedSet, set.Span);
+        var elements = set.Elements.Select(e => BindValue(e)).ToImmutableArray();
+        var elementType = InferElementType(elements);
+        CheckSetElement(set.Elements[0].Span, elementType);
+        return new BoundSetLiteral(elements, new SetOfType(elementType), set.Span);
+    }
 
     private BoundExpr BindList(ListExpr list, TaipanType? expected)
     {
@@ -3466,6 +3518,9 @@ public sealed partial class Binder
             return BindEnumerate(call, enumerate, nameSpan);
         if (symbol is FunctionSymbol { Builtin: BuiltinFunction.IsInstance })
             return BindIsInstance(call, nameSpan);
+        if (symbol is FunctionSymbol { Builtin: BuiltinFunction.Abs or BuiltinFunction.Min or BuiltinFunction.Max or BuiltinFunction.Sum
+            or BuiltinFunction.Any or BuiltinFunction.All or BuiltinFunction.Round or BuiltinFunction.DivMod or BuiltinFunction.Set } everyday)
+            return BindEverydayBuiltin(call, everyday, everyday.Builtin!.Value, expected);
         switch (symbol)
         {
             case VariableSymbol variable when variable == _outerFunction?.Cls:
@@ -3654,6 +3709,7 @@ public sealed partial class Binder
             TypeParameterType p => !parameters.Contains(p.Symbol) || map.ContainsKey(p.Symbol),
             OptionalOf o => IsKnown(o.Inner),
             ListOfType l => IsKnown(l.Element),
+            SetOfType s => IsKnown(s.Element),
             DictOfType d => IsKnown(d.Key) && IsKnown(d.Value),
             ClassType s => s.TypeArguments.All(IsKnown),
             EnumType e => e.TypeArguments.All(IsKnown),
@@ -3678,6 +3734,9 @@ public sealed partial class Binder
                     break;
                 case ListOfType l:
                     GiveUp(l.Element);
+                    break;
+                case SetOfType s:
+                    GiveUp(s.Element);
                     break;
                 case DictOfType d:
                     GiveUp(d.Key);
@@ -3722,6 +3781,9 @@ public sealed partial class Binder
                     Unify(p.Inner, actual, fromArgument);
                     break;
                 case (ListOfType p, ListOfType a):
+                    Unify(p.Element, a.Element, fromArgument);
+                    break;
+                case (SetOfType p, SetOfType a):
                     Unify(p.Element, a.Element, fromArgument);
                     break;
                 // An Iterable or Iterator takes its element type from what's passed (SPEC §3.13).
@@ -4256,6 +4318,10 @@ public sealed partial class Binder
             return new BoundErrorExpr(call.Span);
         }
 
+        // The methods M35 adds come first; one with an older overload of that arity is bound as before (SPEC §6).
+        var older = BuiltinMethodOf(target.Type, name) is { } existing && existing.Parameters.Length == call.Arguments.Length && name != "split";
+        if (!older && BindRuntimeMethod(call, target, member.Member, hasOlder: BuiltinMethodOf(target.Type, name) is not null && name != "split") is { } added)
+            return added;
         if (BuiltinMethodOf(target.Type, name) is not { } builtin)
         {
             BindArguments(call);
@@ -4489,8 +4555,8 @@ public sealed partial class Binder
             case BuiltinFunction.Len when argument.Type is IteratorOfType or IterableOfType:
                 _diagnostics.ReportNotIterableFromList(argumentSpan, $"'len' takes a list, dict or str, found {argument.Type}");
                 break;
-            case BuiltinFunction.Len when argument.Type is not (ListOfType or DictOfType) && argument.Type != TaipanType.Py && !argument.Type.ContainsError:
-                CheckAssignable(argument, TaipanType.Str, argumentSpan, "str, list or dict");
+            case BuiltinFunction.Len when argument.Type is not (ListOfType or DictOfType or SetOfType) && argument.Type != TaipanType.Py && !argument.Type.ContainsError:
+                CheckAssignable(argument, TaipanType.Str, argumentSpan, "str, list, dict or set");
                 break;
             case BuiltinFunction.Int or BuiltinFunction.Float when argument.Type == TaipanType.Str:
                 // Parsing returns none on failure (SPEC §6).

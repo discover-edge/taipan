@@ -175,7 +175,11 @@ public sealed record BoundWhile(BoundExpr Condition, BoundBlock Body, TextSpan S
 
 /// <summary><c>for v in range(start, stop)</c>; <see cref="Start"/> is null for <c>range(stop)</c>.</summary>
 public sealed record BoundForRange(VariableSymbol Variable, BoundExpr? Start, BoundExpr Stop, BoundBlock Body, TextSpan Span)
-    : BoundStmt(Span);
+    : BoundStmt(Span)
+{
+    /// <summary><c>range</c>'s step, since M35 (SPEC §6); null for 1.</summary>
+    public BoundExpr? Step { get; init; }
+}
 
 /// <summary><c>for v in e</c> over a list (elements), dict (keys) or str (characters).</summary>
 public sealed record BoundForEach(VariableSymbol Variable, BoundExpr Iterable, BoundBlock Body, TextSpan Span) : BoundStmt(Span);
@@ -317,6 +321,17 @@ public sealed record BoundCall(FunctionSymbol Function, ImmutableArray<BoundExpr
 
     public ArgumentShape? Shape { get; init; }
 }
+
+/// <summary>A method M35 adds, called in its runtime class: <c>Taipan.Runtime.&lt;Kind&gt;Methods.&lt;Name&gt;</c> (SPEC §6).</summary>
+public sealed record BoundRuntimeMethodCall(string Kind, string Name, BoundExpr Target, ImmutableArray<BoundExpr> Arguments, TaipanType Type, TextSpan Span)
+    : BoundExpr(Type, Span);
+
+/// <summary><c>min(…)</c> or <c>max(…)</c> over an iterable of <see cref="Element"/>, with an optional key and default (SPEC §6, M35).</summary>
+public sealed record BoundMinMax(bool IsMax, BoundExpr Values, BoundExpr? Key, BoundExpr? Default, TaipanType Element, TaipanType Type, TextSpan Span)
+    : BoundExpr(Type, Span);
+
+/// <summary><c>{a, b}</c> (SPEC §3.15, M35).</summary>
+public sealed record BoundSetLiteral(ImmutableArray<BoundExpr> Elements, SetOfType SetType, TextSpan Span) : BoundExpr(SetType, Span);
 
 public sealed record BoundListLiteral(ImmutableArray<BoundExpr> Elements, ListOfType ListType, TextSpan Span)
     : BoundExpr(ListType, Span);

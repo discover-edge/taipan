@@ -43,6 +43,7 @@ public static class TypeChecker
     public static TaipanType? ElementOf(TaipanType type) => type switch
     {
         ListOfType list => list.Element,
+        SetOfType set => set.Element,
         DictOfType dict => dict.Key,
         PrimitiveType { Name: "str" } => TaipanType.Str,
         IteratorOfType iterator => iterator.Element,
@@ -110,6 +111,7 @@ public static class TypeChecker
             OptionalOf optional => Flatten(Substitute(optional.Inner, map)),
             ListOfType list => new ListOfType(Substitute(list.Element, map)),
             IteratorOfType iterator => new IteratorOfType(Substitute(iterator.Element, map)),
+            SetOfType set => new SetOfType(Substitute(set.Element, map)),
             AwaitableOfType awaitable => new AwaitableOfType(Substitute(awaitable.Result, map)),
             IterableOfType iterable => new IterableOfType(Substitute(iterable.Element, map)),
             DictOfType dict => new DictOfType(Substitute(dict.Key, map), Substitute(dict.Value, map)),
@@ -147,6 +149,12 @@ public static class TypeChecker
             BinaryOp.Add or BinaryOp.Subtract or BinaryOp.Multiply when numeric => TaipanType.Float,
             BinaryOp.Divide when numeric => TaipanType.Float,
             BinaryOp.FloorDivide or BinaryOp.Modulo when ints => TaipanType.Int,
+            // `**` (SPEC §5.3, M35): an int for ints, a float with a float.
+            BinaryOp.Power when ints => TaipanType.Int,
+            BinaryOp.Power when numeric => TaipanType.Float,
+            // Set operators give a set (SPEC §3.15, M35).
+            BinaryOp.Union or BinaryOp.Intersection or BinaryOp.SymmetricDifference or BinaryOp.Subtract
+                when left is SetOfType && left == right => left,
             _ => null,
         };
     }
@@ -159,6 +167,10 @@ public static class TypeChecker
         BinaryOp.Divide => "/",
         BinaryOp.FloorDivide => "//",
         BinaryOp.Modulo => "%",
+        BinaryOp.Power => "**",
+        BinaryOp.Union => "|",
+        BinaryOp.Intersection => "&",
+        BinaryOp.SymmetricDifference => "^",
         BinaryOp.Equal => "==",
         BinaryOp.NotEqual => "!=",
         BinaryOp.Less => "<",
@@ -179,6 +191,9 @@ public static class TypeChecker
         AssignOp.Subtract => BinaryOp.Subtract,
         AssignOp.Multiply => BinaryOp.Multiply,
         AssignOp.Divide => BinaryOp.Divide,
+        AssignOp.FloorDivide => BinaryOp.FloorDivide,
+        AssignOp.Modulo => BinaryOp.Modulo,
+        AssignOp.Power => BinaryOp.Power,
         _ => throw new ArgumentOutOfRangeException(nameof(op), op, null),
     };
 

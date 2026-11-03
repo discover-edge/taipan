@@ -857,6 +857,9 @@ public sealed class Parser
             TokenKind.MinusEquals => AssignOp.Subtract,
             TokenKind.StarEquals => AssignOp.Multiply,
             TokenKind.SlashEquals => AssignOp.Divide,
+            TokenKind.SlashSlashEquals => AssignOp.FloorDivide,
+            TokenKind.PercentEquals => AssignOp.Modulo,
+            TokenKind.StarStarEquals => AssignOp.Power,
             _ => null,
         };
         if (op is null)
@@ -1503,7 +1506,7 @@ public sealed class Parser
     // comparison = additive [ comp_op additive | "is" [ "not" ] "None" ]   — a second comp_op is TP0212 (SPEC §2.1)
     private Expr ParseComparison()
     {
-        var left = ParseAdditive();
+        var left = ParseBitOr();
         if (At(TokenKind.IsKeyword) && Peek(1).Kind != TokenKind.SomeKeyword)
         {
             Next();
@@ -1515,7 +1518,7 @@ public sealed class Parser
         }
         else if (TryParseCompOp(out var op, out _))
         {
-            left = Binary(left, op, ParseAdditive());
+            left = Binary(left, op, ParseBitOr());
         }
         else
         {
@@ -1562,6 +1565,25 @@ public sealed class Parser
             return false;
         Next();
         return true;
+    }
+
+    // bit_or = bit_xor { "|" bit_xor }; bit_xor = bit_and { "^" bit_and }; bit_and = additive { "&" additive }
+    // At Python's precedence, between comparisons and arithmetic; sets use them (SPEC §3.15, M35).
+    private Expr ParseBitOr() => ParseLeftAssociative(TokenKind.Pipe, BinaryOp.Union, ParseBitXor);
+
+    private Expr ParseBitXor() => ParseLeftAssociative(TokenKind.Caret, BinaryOp.SymmetricDifference, ParseBitAnd);
+
+    private Expr ParseBitAnd() => ParseLeftAssociative(TokenKind.Ampersand, BinaryOp.Intersection, ParseAdditive);
+
+    private Expr ParseLeftAssociative(TokenKind token, BinaryOp op, Func<Expr> operand)
+    {
+        var left = operand();
+        while (At(token))
+        {
+            Next();
+            left = Binary(left, op, operand());
+        }
+        return left;
     }
 
     // additive = term { ( "+" | "-" ) term }
@@ -1620,10 +1642,22 @@ public sealed class Parser
             return new StarredExpr(starred, SpanFrom(starStart));
         }
         if (!At(TokenKind.Minus))
-            return ParseCast();
+            return ParsePower();
         var start = Next().Span.Start;
         var operand = ParseUnary();
         return new UnaryExpr(UnaryOp.Negate, operand, SpanFrom(start));
+    }
+
+    // power = cast [ "**" unary ]: right-associative, and tighter than a unary minus on its left (M35).
+    // `**` is two adjacent '*' tokens, as in `**kwargs`.
+    private Expr ParsePower()
+    {
+        var left = ParseCast();
+        if (!At(TokenKind.Star) || Peek(1).Kind != TokenKind.Star || Peek(1).Span.Start != Current.Span.End)
+            return left;
+        Next();
+        Next();
+        return Binary(left, BinaryOp.Power, ParseUnary());
     }
 
     // cast = postfix [ "as" type ]
@@ -1812,9 +1846,37 @@ public sealed class Parser
             case TokenKind.OpenBrace:
             {
                 Next();
-                var entries = ParseCommaList(TokenKind.CloseBrace, ParseDictEntry);
-                Expect(TokenKind.CloseBrace);
-                return new DictExpr(entries, SpanFrom(token.Span.Start));
+                // `{a, b}` is a set, and `{}` or `{k: v}` a dict (SPEC §3.15, M35).
+                if (!At(TokenKind.CloseBrace))
+                {
+                    var first = ParseExpr();
+                    if (!At(TokenKind.Colon))
+                    {
+                        var elements = ImmutableArray.CreateBuilder<Expr>();
+                        elements.Add(first);
+                        while (At(TokenKind.Comma))
+                        {
+                            Next();
+                            if (At(TokenKind.CloseBrace))
+                                break;
+                            elements.Add(ParseExpr());
+                        }
+                        Expect(TokenKind.CloseBrace);
+                        return new SetExpr(elements.ToImmutable(), SpanFrom(token.Span.Start));
+                    }
+                    Next();
+                    var firstEntry = new DictEntry(first, ParseExpr(), SpanFrom(first.Span.Start));
+                    var rest = ImmutableArray<DictEntry>.Empty;
+                    if (At(TokenKind.Comma))
+                    {
+                        Next();
+                        rest = ParseCommaList(TokenKind.CloseBrace, ParseDictEntry);
+                    }
+                    Expect(TokenKind.CloseBrace);
+                    return new DictExpr([firstEntry, .. rest], SpanFrom(token.Span.Start));
+                }
+                Next();
+                return new DictExpr([], SpanFrom(token.Span.Start));
             }
             case TokenKind.MatchKeyword:
                 return ParseMatchExpr();
