@@ -1,0 +1,22 @@
+# A dataclass exception derives from a built-in exception class or another dataclass exception (SPEC §3.19).
+class Plain(Exception):
+    pass
+
+@dataclass
+class FromPlain(Plain):
+    key: str
+
+@dataclass
+class Exit(SystemExit):
+    key: str
+
+@dataclass
+class Generic[T](Exception):
+    value: T
+
+@dataclass
+class Fine(KeyError):
+    key: str
+
+class PlainFromData(Fine):
+    pass

@@ -1,0 +1,8 @@
+# A class from another module prints qualified, and that module's frames show its file (SPEC §3.19).
+import zoo
+
+def visit(animal: str):
+    zoo.feed(animal)
+
+visit("lion")
+visit("dragon")

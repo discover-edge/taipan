@@ -1,0 +1,16 @@
+# M41 acceptance: an uncaught chained exception prints both tracebacks, as CPython does (SPEC §3.19).
+@dataclass
+class NotFound(Exception):
+    key: str
+
+def lookup(services: dict[str, int], name: str) -> int:
+    try:
+        return services[name]
+    except KeyError as e:
+        raise NotFound(name) from e
+
+def main():
+    print(lookup({"web": 80}, "web"))
+    print(lookup({}, "db"))
+
+main()

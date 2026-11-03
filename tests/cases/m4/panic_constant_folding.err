@@ -1,2 +1,4 @@
-panic: integer overflow
-  at tests/cases/m4/panic_constant_folding.tpn:3
+Traceback (most recent call last):
+  File "tests/cases/m4/panic_constant_folding.tpn", line 3, in <module>
+    print(-(-9223372036854775807 - 1))
+OverflowError: integer overflow

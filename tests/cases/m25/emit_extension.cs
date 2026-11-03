@@ -8,26 +8,50 @@ public static class TaipanProgram
 
     public static void TopLevel()
     {
+        int @line = 1;
+        string @file = "tests/cases/m25/emit_extension.tpn";
+        try
+        {
 #line 3 "tests/cases/m25/emit_extension.tpn"
-        @LIMIT = 10L;
+            @line = 3;
+            @LIMIT = 10L;
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "<module>"))
+        {
+            throw;
+        }
     }
 
     public static (long, string?) @clamp(global::System.Collections.Generic.List<long> @xs, long @high)
     {
-#line 9 "tests/cases/m25/emit_extension.tpn"
-        foreach (long @x in global::Taipan.Runtime.Iter.Over(@xs))
+        int @line = 8;
+        string @file = "tests/cases/m25/emit_extension.tpn";
+        try
         {
-#line 10 "tests/cases/m25/emit_extension.tpn"
-            if (@x > @high)
+#line 9 "tests/cases/m25/emit_extension.tpn"
+            @line = 9;
+            foreach (long @x in global::Taipan.Runtime.Iter.Over(@xs))
             {
+#line 10 "tests/cases/m25/emit_extension.tpn"
+                @line = 10;
+                if (@x > @high)
+                {
 #line 11 "tests/cases/m25/emit_extension.tpn"
-                throw global::@TooBig.@__new__($"{(global::Taipan.Runtime.Display.Format(@x))} is over {(global::Taipan.Runtime.Display.Format(@high))}");
+                    @line = 11;
+                    throw global::Taipan.Runtime.Exceptions.Raise(global::@TooBig.@__new__($"{(global::Taipan.Runtime.Display.Format(@x))} is over {(global::Taipan.Runtime.Display.Format(@high))}"));
+                }
+                @line = 9;
             }
-        }
 #line 12 "tests/cases/m25/emit_extension.tpn"
-        return global::System.ValueTuple.Create<long, string?>(global::Taipan.Runtime.Builtins.Len(@xs), null);
+            @line = 12;
+            return global::System.ValueTuple.Create<long, string?>(global::Taipan.Runtime.Builtins.Len(@xs), null);
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "clamp"))
+        {
+            throw;
+        }
     }
 
     public static long @clamp_high()

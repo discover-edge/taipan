@@ -53,6 +53,7 @@ public abstract record TaipanType
     {
         ErrorType => true,
         ListOfType list => list.Element.ContainsError,
+        VarTupleOfType varTuple => varTuple.Element.ContainsError,
         SetOfType set => set.Element.ContainsError,
         IteratorOfType iterator => iterator.Element.ContainsError,
         IterableOfType iterable => iterable.Element.ContainsError,
@@ -77,6 +78,7 @@ public abstract record TaipanType
         ErrorType or NoneType => true,
         PrimitiveType => true,
         ListOfType list => list.Element.IsConvertibleToPython,
+        VarTupleOfType varTuple => varTuple.Element.IsConvertibleToPython,
         DictOfType dict => dict.Key.IsConvertibleToPython && dict.Value.IsConvertibleToPython,
         OptionalOf optional => optional.Inner.IsConvertibleToPython,
         TupleOfType tuple => tuple.Elements.All(e => e.IsConvertibleToPython),
@@ -88,6 +90,7 @@ public abstract record TaipanType
     {
         ErrorType or PrimitiveType => true,
         ListOfType list => list.Element.IsCastTarget,
+        VarTupleOfType varTuple => varTuple.Element.IsCastTarget,
         DictOfType dict => dict.Key.IsCastTarget && dict.Value.IsCastTarget,
         OptionalOf optional => optional.Inner.IsCastTarget,
         TupleOfType tuple => tuple.Elements.All(e => e.IsCastTarget),
@@ -107,7 +110,8 @@ public abstract record TaipanType
     };
 
     /// <summary>Whether <c>&lt;</c> orders values of this type: int, float, str, and tuples of those (SPEC §5.3).</summary>
-    public bool IsOrdered => this == Int || this == Float || this == Str || this is TupleOfType { Elements: var elements } && elements.All(e => e.IsOrdered);
+    public bool IsOrdered => this == Int || this == Float || this == Str || this is TupleOfType { Elements: var elements } && elements.All(e => e.IsOrdered)
+        || this is VarTupleOfType { Element.IsOrdered: true };
 }
 
 public sealed record PrimitiveType(string Name) : TaipanType
@@ -181,6 +185,7 @@ public sealed record DictOfType(TaipanType Key, TaipanType Value) : TaipanType
         type.IsError || type == Int || type == Str || type == Bool
         || type is ClassType { Symbol.IsHashable: true }
         || type is TupleOfType tuple && tuple.Elements.All(IsValidKey)
+        || type is VarTupleOfType varTuple && IsValidKey(varTuple.Element)
         || type is TypeParameterType { Symbol.Constraints: [_, ..] constraints } && constraints.All(IsValidKey);
 }
 
@@ -248,6 +253,12 @@ public sealed record TupleOfType(ImmutableArray<TaipanType> Elements) : TaipanTy
     public override int GetHashCode() => Elements.Length;
 
     protected override string Describe() => $"tuple[{string.Join(", ", Elements)}]";
+}
+
+/// <summary><c>tuple[T, ...]</c>: any number of <c>T</c>s, immutable (SPEC §3.19, M41).</summary>
+public sealed record VarTupleOfType(TaipanType Element) : TaipanType
+{
+    protected override string Describe() => $"tuple[{Element}, ...]";
 }
 
 /// <summary>A type parameter inside a generic definition: an opaque type (SPEC §3.6).</summary>

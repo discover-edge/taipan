@@ -27,7 +27,9 @@ public sealed partial class CSharpEmitter
         _indent--;
         Line("}");
         _inGenerator = outer;
-        Line($"return new {Runtime}.Generator<{element}>({body}(), \"{generator.Name}\");");
+        // The body is its own frame, at the line it last set (SPEC §3.19).
+        var frame = _lineVariable is null ? $"\"{Escape(_lineSource.Path)}\", () => 0" : $"@{_fileVariable}, () => @{_lineVariable}";
+        Line($"return new {Runtime}.Generator<{element}>({body}(), \"{generator.Name}\", {frame});");
     }
 
     /// <summary>

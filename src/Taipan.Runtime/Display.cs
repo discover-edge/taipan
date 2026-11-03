@@ -34,6 +34,8 @@ public static class Display
         IFunction f => f.Display,
         // An async function's result, or a .NET task (SPEC §3.14).
         System.Threading.Tasks.Task => "<awaitable>",
+        // A tuple[T, ...] of one element has Python's trailing comma (SPEC §3.19).
+        ITuple { Length: 1 } t => $"({Repr(t[0])},)",
         ITuple t => "(" + string.Join(", ", Enumerable.Range(0, t.Length).Select(i => Repr(t[i]))) + ")",
         IVariant { Fields.Count: 0 } v => v.TypeName,
         // A class's __str__ (SPEC §4.8).

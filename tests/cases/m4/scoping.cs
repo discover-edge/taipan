@@ -6,50 +6,84 @@ public static class TaipanProgram
 {
     public static void TopLevel()
     {
+        int @line = 1;
+        string @file = "tests/cases/m4/scoping.tpn";
+        try
+        {
 #line 2 "tests/cases/m4/scoping.tpn"
-        if (true)
-        {
+            @line = 2;
+            if (true)
+            {
 #line 3 "tests/cases/m4/scoping.tpn"
-            string @label2 = "inner";
+                @line = 3;
+                string @label2 = "inner";
 #line 4 "tests/cases/m4/scoping.tpn"
-            global::Taipan.Runtime.Builtins.Print(@label2);
-        }
+                @line = 4;
+                global::Taipan.Runtime.Builtins.Print(@label2);
+            }
 #line 5 "tests/cases/m4/scoping.tpn"
-        string @label = "outer";
+            @line = 5;
+            string @label = "outer";
 #line 6 "tests/cases/m4/scoping.tpn"
-        global::Taipan.Runtime.Builtins.Print(@label);
+            @line = 6;
+            global::Taipan.Runtime.Builtins.Print(@label);
 #line 8 "tests/cases/m4/scoping.tpn"
-        for (long @i2 = 0L, @end2 = 2L; @i2 < @end2; @i2++)
-        {
+            @line = 8;
+            for (long @i2 = 0L, @end2 = 2L; @i2 < @end2; @i2++)
+            {
 #line 9 "tests/cases/m4/scoping.tpn"
-            long @sq2 = @i2 * @i2;
+                @line = 9;
+                long @sq2 = @i2 * @i2;
 #line 10 "tests/cases/m4/scoping.tpn"
-            global::Taipan.Runtime.Builtins.Print(@sq2);
-        }
+                @line = 10;
+                global::Taipan.Runtime.Builtins.Print(@sq2);
+            }
 #line 11 "tests/cases/m4/scoping.tpn"
-        long @i = 100L;
+            @line = 11;
+            long @i = 100L;
 #line 12 "tests/cases/m4/scoping.tpn"
-        long @sq = -1L;
+            @line = 12;
+            long @sq = -1L;
 #line 13 "tests/cases/m4/scoping.tpn"
-        global::Taipan.Runtime.Builtins.Print(@i, @sq);
+            @line = 13;
+            global::Taipan.Runtime.Builtins.Print(@i, @sq);
 #line 20 "tests/cases/m4/scoping.tpn"
-        global::Taipan.Runtime.Builtins.Print(@end(4L));
+            @line = 20;
+            global::Taipan.Runtime.Builtins.Print(@end(4L));
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "<module>"))
+        {
+            throw;
+        }
     }
 
     public static long @end(long @n)
     {
-#line 16 "tests/cases/m4/scoping.tpn"
-        long @total = 0L;
-#line 17 "tests/cases/m4/scoping.tpn"
-        for (long @end2 = 0L, @end3 = @n; @end2 < @end3; @end2++)
+        int @line = 15;
+        string @file = "tests/cases/m4/scoping.tpn";
+        try
         {
+#line 16 "tests/cases/m4/scoping.tpn"
+            @line = 16;
+            long @total = 0L;
+#line 17 "tests/cases/m4/scoping.tpn"
+            @line = 17;
+            for (long @end2 = 0L, @end3 = @n; @end2 < @end3; @end2++)
+            {
 #line 18 "tests/cases/m4/scoping.tpn"
-            @total = @total + @end2;
-        }
+                @line = 18;
+                @total = @total + @end2;
+            }
 #line 19 "tests/cases/m4/scoping.tpn"
-        return @total;
+            @line = 19;
+            return @total;
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "end"))
+        {
+            throw;
+        }
     }
 }
 

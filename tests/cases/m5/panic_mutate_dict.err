@@ -1,2 +1,4 @@
-panic: dict mutated during iteration
-  at tests/cases/m5/panic_mutate_dict.tpn:4
+Traceback (most recent call last):
+  File "tests/cases/m5/panic_mutate_dict.tpn", line 4, in <module>
+    d[k] = 0
+RuntimeError: dict mutated during iteration

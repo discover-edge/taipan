@@ -1,0 +1,6 @@
+tests/cases/m41/tp0225_dataclass_exceptions.tpn:6:17: error TP0225: a dataclass can only derive from a dataclass
+  help: exceptions are plain classes; give it an '__init__'
+tests/cases/m41/tp0225_dataclass_exceptions.tpn:10:12: error TP0225: a dataclass can only derive from a dataclass
+  help: exceptions are plain classes; give it an '__init__'
+tests/cases/m41/tp0225_dataclass_exceptions.tpn:14:7: error TP0225: an exception class can't be generic
+tests/cases/m41/tp0225_dataclass_exceptions.tpn:21:21: error TP0225: a plain class can only derive from a plain class

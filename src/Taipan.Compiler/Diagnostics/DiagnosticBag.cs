@@ -674,6 +674,10 @@ public sealed class DiagnosticBag
     public void ReportCannotRaise(TextSpan span, object type, string? className = null) =>
         Add("TP0200", span, $"cannot raise {type}", className is null ? null : $"write '{className}(…)'");
 
+    /// <summary><c>raise … from c</c> with a <c>c</c> that's no exception (SPEC §3.19, M41).</summary>
+    public void ReportBadCause(TextSpan span, object type, string? className = null) =>
+        Add("TP0200", span, $"'from' needs an exception or None, found {type}", className is null ? null : $"write '{className}(…)'");
+
     public void ReportNotExceptionClass(TextSpan span, string name) =>
         Add("TP0200", span, $"'{name}' is not an exception class");
 

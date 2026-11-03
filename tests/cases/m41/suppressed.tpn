@@ -1,0 +1,20 @@
+# 'from None' hides the context, and a finally block's exception chains to the one in flight (SPEC §3.19).
+def cleanup():
+    raise RuntimeError("cleanup failed")
+
+def work():
+    try:
+        try:
+            raise ValueError("first")
+        finally:
+            cleanup()
+    except RuntimeError as e:
+        raise KeyError("hidden") from None
+
+try:
+    work()
+except KeyError as k:
+    print(repr(k), k.__cause__, k.__suppress_context__)
+    if k.__context__ is some c:
+        print("context:", repr(c), "inner context:", repr(c.__context__))
+    raise LookupError("lookup") from k.__context__

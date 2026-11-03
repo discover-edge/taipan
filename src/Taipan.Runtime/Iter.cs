@@ -8,6 +8,9 @@ public static class Iter
 {
     public static IEnumerable<T> Over<T>(List<T> list) => Guard(list, "list");
 
+    /// <summary>A tuple[T, ...] can't change, so it needs no guard (SPEC §3.19).</summary>
+    public static IEnumerable<T> Over<T>(VarTuple<T> tuple) => tuple;
+
     /// <summary>A set iterates over its values, in insertion order (SPEC §3.15).</summary>
     public static IEnumerable<T> Over<T>(OrderedSet<T> set) where T : notnull => Guard(set, "set");
 

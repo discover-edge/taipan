@@ -44,24 +44,31 @@ public sealed partial class CSharpEmitter
         Line("try");
         EmitBody(with.Body);
         LineDirective(with.Span, statement: false);
-        Line($"catch (global::System.Exception {caught})");
+        Line($"catch (global::System.Exception {caught}) when ({Runtime}.Tracebacks.Catch({caught}, {FrameArguments()}))");
         Line("{");
         _indent++;
         Line($"{raised} = true;");
-        Line($"if (!{Runtime}.Exceptions.IsCatchable({caught}))");
-        Line("    throw;");
         Line($"var {exception} = {Runtime}.Exceptions.From({caught});");
-        var exit = $"{manager}.@__exit__({Runtime}.ClassValue.Of({exception}), {exception}, {Runtime}.Traceback.Instance)";
-        if (with.Suppresses)
-        {
-            Line($"if (!{exit})");
-            Line("    throw;");
-        }
-        else
-        {
-            Line($"{exit};");
-            Line("throw;");
-        }
+        // __exit__ handles the exception, for the context of one it raises (SPEC §3.19).
+        var exit = $"{manager}.@__exit__({Runtime}.ClassValue.Of({exception}), {exception}, {exception}.@__traceback__)";
+        var suppressed = with.Suppresses ? $"@{_locals.Fresh("suppressed")}" : null;
+        if (suppressed is not null)
+            Line($"bool {suppressed};");
+        Line($"{Runtime}.Tracebacks.Handle({exception});");
+        Line("try");
+        Line("{");
+        Line(suppressed is null ? $"    {exit};" : $"    {suppressed} = {exit};");
+        Line("}");
+        Line("finally");
+        Line("{");
+        Line($"    {Runtime}.Tracebacks.Unhandle();");
+        Line("}");
+        if (suppressed is not null)
+            Line($"if (!{suppressed})");
+        Line("{");
+        Line($"    {Runtime}.Tracebacks.Again({caught});");
+        Line("    throw;");
+        Line("}");
         _indent--;
         Line("}");
         Line("finally");

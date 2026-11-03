@@ -1,0 +1,5 @@
+# tuple[T, ...] converts to and from Python's tuple (SPEC §3.19).
+from python import json
+let none: tuple[int, ...] = tuple()
+let p: py = tuple([1, 2])
+print(none, json.dumps(p), json.loads("[3, 4]") as tuple[int, ...])

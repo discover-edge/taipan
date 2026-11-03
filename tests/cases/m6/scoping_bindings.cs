@@ -6,39 +6,59 @@ public static class TaipanProgram
 {
     public static void TopLevel()
     {
+        int @line = 1;
+        string @file = "tests/cases/m6/scoping_bindings.tpn";
+        try
+        {
 #line 2 "tests/cases/m6/scoping_bindings.tpn"
-        long? @a = 1L;
+            @line = 2;
+            long? @a = 1L;
 #line 3 "tests/cases/m6/scoping_bindings.tpn"
-        long? @b = null;
+            @line = 3;
+            long? @b = null;
 #line 4 "tests/cases/m6/scoping_bindings.tpn"
-        if (@a is {} @v2)
-        {
+            @line = 4;
+            if (@a is {} @v2)
+            {
 #line 5 "tests/cases/m6/scoping_bindings.tpn"
-            global::Taipan.Runtime.Builtins.Print("a", @v2);
-        }
+                @line = 5;
+                global::Taipan.Runtime.Builtins.Print("a", @v2);
+            }
 #line 6 "tests/cases/m6/scoping_bindings.tpn"
-        if (@b is {} @v3)
-        {
+            @line = 6;
+            if (@b is {} @v3)
+            {
 #line 7 "tests/cases/m6/scoping_bindings.tpn"
-            global::Taipan.Runtime.Builtins.Print("b", @v3);
-        }
+                @line = 7;
+                global::Taipan.Runtime.Builtins.Print("b", @v3);
+            }
 #line 8 "tests/cases/m6/scoping_bindings.tpn"
-        else if (@a is {} @v4)
-        {
+            else if (global::Taipan.Runtime.Panic.At(ref @line, 8) && (@a is {} @v4))
+            {
 #line 9 "tests/cases/m6/scoping_bindings.tpn"
-            global::Taipan.Runtime.Builtins.Print("a again", @v4);
-        }
+                @line = 9;
+                global::Taipan.Runtime.Builtins.Print("a again", @v4);
+            }
 #line 10 "tests/cases/m6/scoping_bindings.tpn"
-        while (@b is {} @v5)
-        {
+            @line = 10;
+            while (global::Taipan.Runtime.Panic.At(ref @line, 10) && (@b is {} @v5))
+            {
 #line 11 "tests/cases/m6/scoping_bindings.tpn"
-            global::Taipan.Runtime.Builtins.Print(@v5);
-        }
+                @line = 11;
+                global::Taipan.Runtime.Builtins.Print(@v5);
+            }
 #line 12 "tests/cases/m6/scoping_bindings.tpn"
-        long @v = 99L;
+            @line = 12;
+            long @v = 99L;
 #line 13 "tests/cases/m6/scoping_bindings.tpn"
-        global::Taipan.Runtime.Builtins.Print(@v);
+            @line = 13;
+            global::Taipan.Runtime.Builtins.Print(@v);
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "<module>"))
+        {
+            throw;
+        }
     }
 }
 

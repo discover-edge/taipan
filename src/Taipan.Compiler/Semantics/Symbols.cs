@@ -25,7 +25,7 @@ public sealed class VariableSymbol(string name, TaipanType type, VariableKind ki
     public string? RuntimePath { get; init; }
 }
 
-public enum BuiltinFunction { Print, Len, Str, Int, Float, Range, Sorted, Map, Filter, Enumerate, Zip, IsInstance, Super, Repr, Hash, List, Iter, Next, Abs, Min, Max, Sum, Any, All, Round, DivMod, Set, Input, Open, Exit, GetEnv }
+public enum BuiltinFunction { Print, Len, Str, Int, Float, Range, Sorted, Map, Filter, Enumerate, Zip, IsInstance, Super, Repr, Hash, List, Iter, Next, Abs, Min, Max, Sum, Any, All, Round, DivMod, Set, Tuple, Input, Open, Exit, GetEnv }
 
 /// <summary>What kind of method a function is (SPEC §4.8, M28); <see cref="Instance"/> for a function.</summary>
 public enum MemberKind { Instance, Property, Static, Class }
@@ -171,6 +171,7 @@ public sealed class FunctionSymbol(
         new("round", [], TaipanType.Error, BuiltinFunction.Round),
         new("divmod", [], TaipanType.Error, BuiltinFunction.DivMod),
         new("set", [], TaipanType.Error, BuiltinFunction.Set),
+        new("tuple", [], TaipanType.Error, BuiltinFunction.Tuple),
         new("input", [], TaipanType.Str, BuiltinFunction.Input),
         new("open", [], TaipanType.TextIO, BuiltinFunction.Open),
     ];
@@ -188,6 +189,9 @@ public sealed class FieldSymbol(string name, TaipanType type) : Symbol(name)
     public bool HasDefault { get; init; }
 
     public BoundExpr? Default { get; set; }
+
+    /// <summary>Whether only the runtime sets it: <c>BaseException.args</c> (SPEC §3.19, M41).</summary>
+    public bool IsReadOnly { get; init; }
 }
 
 /// <summary>A class attribute, <c>count: ClassVar[int] = 0</c> (SPEC §4.8, M28): one value, shared by the class and its subclasses.</summary>
@@ -247,8 +251,11 @@ public sealed class ClassSymbol(string name, ImmutableArray<TypeParameterSymbol>
     /// <summary>The fields the class itself declares. Their types are written in terms of <see cref="TypeParameters"/>.</summary>
     public ImmutableArray<FieldSymbol> Fields { get; set; } = [];
 
-    /// <summary>Every field, inherited ones first: a dataclass's constructor parameters (SPEC §4.3).</summary>
-    public ImmutableArray<FieldSymbol> AllFields => [.. Base?.AllFields ?? [], .. Fields];
+    /// <summary>
+    /// Every field, inherited ones first: a dataclass's constructor parameters (SPEC §4.3). A
+    /// dataclass exception's don't include its built-in exception base's (SPEC §3.19).
+    /// </summary>
+    public ImmutableArray<FieldSymbol> AllFields => [.. (IsDataclass && Base is { IsDataclass: false } ? [] : Base?.AllFields ?? []), .. Fields];
 
     /// <summary>The methods the class itself declares, apart from <c>__init__</c>; properties and static and class methods too.</summary>
     public Dictionary<string, FunctionSymbol> Methods { get; } = [];
@@ -403,7 +410,17 @@ public static class BuiltinClasses
     {
         var exception = Builtin("BaseException", "TaipanBaseException", null);
         var message = new FieldSymbol("message", TaipanType.Str) { Owner = exception };
-        exception.Fields = [message];
+        // Python's attributes (SPEC §3.19, M41).
+        var optional = new OptionalOf(exception.Type);
+        exception.Fields =
+        [
+            message,
+            new FieldSymbol("args", new VarTupleOfType(TaipanType.Str)) { Owner = exception, IsReadOnly = true },
+            new FieldSymbol("__cause__", optional) { Owner = exception },
+            new FieldSymbol("__context__", optional) { Owner = exception },
+            new FieldSymbol("__suppress_context__", TaipanType.Bool) { Owner = exception },
+            new FieldSymbol("__traceback__", new OptionalOf(TaipanType.Traceback)) { Owner = exception },
+        ];
         var self = new VariableSymbol("self", exception.Type, VariableKind.Parameter);
         exception.Init = new FunctionSymbol("__init__", [new VariableSymbol("message", TaipanType.Str, VariableKind.Parameter)], TaipanType.Nothing, self: self)
         {
@@ -496,6 +513,9 @@ public static class BuiltinClasses
 
     private static ClassSymbol Builtin(string name, string runtimeName, ClassSymbol? baseClass) =>
         new(name, [], isDataclass: false) { RuntimeName = $"Taipan.Runtime.{runtimeName}", BaseType = baseClass?.Type, HasSubclasses = true };
+
+    /// <summary>Whether a dataclass may derive from <paramref name="symbol"/>: a built-in exception class but SystemExit, PythonError and DotNetError (SPEC §3.19).</summary>
+    public static bool IsDataclassBase(ClassSymbol symbol) => All.Contains(symbol) && symbol != SystemExit && !IsRuntimeOnly(symbol);
 
     /// <summary>Whether <paramref name="symbol"/> can be raised and caught: <c>BaseException</c> or a class deriving from it (SPEC §3.10).</summary>
     public static bool IsException(ClassSymbol symbol) => symbol.DerivesFrom(BaseException);

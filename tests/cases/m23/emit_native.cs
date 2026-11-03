@@ -12,7 +12,7 @@ public static class TaipanProgram
         {
 #line 13 "tests/cases/m23/emit_native.tpn"
             @line = 13;
-            global::Taipan.Runtime.Function<global::System.Func<long, long>> @pick = new global::Taipan.Runtime.Function<global::System.Func<long, long>>("<lambda>", (long @x) => { try { return @ratio(@x, 2L); } catch (global::System.Exception @e3) when (global::Taipan.Runtime.Panic.Locate(@e3, "tests/cases/m23/emit_native.tpn", 13)) { throw; } });
+            global::Taipan.Runtime.Function<global::System.Func<long, long>> @pick = new global::Taipan.Runtime.Function<global::System.Func<long, long>>("<lambda>", (long @x) => { try { return @ratio(@x, 2L); } catch (global::System.Exception @e3) when (global::Taipan.Runtime.Tracebacks.Leave(@e3, "tests/cases/m23/emit_native.tpn", 13, "<lambda>")) { throw; } });
 #line 14 "tests/cases/m23/emit_native.tpn"
             @line = 14;
             foreach (long @i in global::Taipan.Runtime.Iter.Over(new global::System.Collections.Generic.List<long> { 1L, 2L, 3L }))
@@ -38,23 +38,34 @@ public static class TaipanProgram
                 global::Taipan.Runtime.Builtins.Print(@ratio(1L, 0L));
             }
 #line 18 "tests/cases/m23/emit_native.tpn"
-            catch (global::System.Exception @caught) when (global::Taipan.Runtime.Exceptions.IsCatchable(@caught))
+            catch (global::System.Exception @caught) when (global::Taipan.Runtime.Tracebacks.Catch(@caught, @file, @line, "<module>"))
             {
                 var @exception = global::Taipan.Runtime.Exceptions.From(@caught);
                 if (@exception is global::@Taipan.Runtime.ZeroDivisionError)
                 {
                     global::@Taipan.Runtime.ZeroDivisionError @e = (global::@Taipan.Runtime.ZeroDivisionError)@exception;
+                    global::Taipan.Runtime.Tracebacks.Handle(@exception);
+                    try
+                    {
 #line 21 "tests/cases/m23/emit_native.tpn"
-                    @line = 21;
-                    throw global::Taipan.Runtime.Exceptions.Raise(@e);
+                        @line = 21;
+                        throw global::Taipan.Runtime.Exceptions.Raise(@e);
+                    }
+                    finally
+                    {
+                        global::Taipan.Runtime.Tracebacks.Unhandle();
+                    }
                 }
                 else
+                {
+                    global::Taipan.Runtime.Tracebacks.Again(@caught);
                     throw;
+                }
 #line hidden
             }
 #line hidden
         }
-        catch (global::System.Exception @e2) when (global::Taipan.Runtime.Panic.Locate(@e2, @file, @line))
+        catch (global::System.Exception @e2) when (global::Taipan.Runtime.Tracebacks.Leave(@e2, @file, @line, "<module>"))
         {
             throw;
         }
@@ -97,7 +108,7 @@ public static class TaipanProgram
             return 0L;
 #line hidden
         }
-        catch (global::System.Exception @e) when (global::Taipan.Runtime.Panic.Locate(@e, @file, @line))
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "ratio"))
         {
             throw;
         }

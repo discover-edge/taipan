@@ -1,0 +1,11 @@
+("db", 3)
+NotFound(key="db", code=3) ("db", "3") ("db", 3)
+True False
+[NotFound(key="db", code=3)]
+k ("k",) Empty() True ()
+True True
+0 ("-5",)
+Deeper(key="x", depth=1) ("x", "2")
+caught Missing(key="port")
+deeper y 3
+one

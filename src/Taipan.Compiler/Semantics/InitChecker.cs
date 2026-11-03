@@ -115,6 +115,8 @@ public sealed class InitChecker
                 // The object is never seen, so it needn't be complete (SPEC §3.10).
                 if (raise.Value is not null)
                     Expression(raise.Value, state);
+                if (raise.Cause is not null)
+                    Expression(raise.Cause, state);
                 return state with { Terminated = true };
             case BoundTry tryStmt:
                 return Try(tryStmt, state);

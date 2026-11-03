@@ -6,112 +6,189 @@ public static class TaipanProgram
 {
     public static void TopLevel()
     {
+        int @line = 1;
+        string @file = "tests/cases/m17/emit.tpn";
+        try
+        {
 #line 32 "tests/cases/m17/emit.tpn"
-        global::System.Collections.Generic.List<global::@Version> @vs = new global::System.Collections.Generic.List<global::@Version> { global::@Version.@__new__(2L), global::@Version.@__new__(1L) };
+            @line = 32;
+            global::System.Collections.Generic.List<global::@Version> @vs = new global::System.Collections.Generic.List<global::@Version> { global::@Version.@__new__(2L), global::@Version.@__new__(1L) };
 #line 33 "tests/cases/m17/emit.tpn"
-        global::Taipan.Runtime.Builtins.Print(@largest_int(new global::System.Collections.Generic.List<long> { 1L, 2L }), @largest_str(new global::System.Collections.Generic.List<string> { "a" }), @total_Version(@vs), @largest_Version(@vs) is not null);
+            @line = 33;
+            global::Taipan.Runtime.Builtins.Print(@largest_int(new global::System.Collections.Generic.List<long> { 1L, 2L }), @largest_str(new global::System.Collections.Generic.List<string> { "a" }), @total_Version(@vs), @largest_Version(@vs) is not null);
 #line 34 "tests/cases/m17/emit.tpn"
-        global::Taipan.Runtime.Builtins.Print(global::Taipan.Runtime.Iterators.ToList(global::Taipan.Runtime.Iterators.Map(new global::Taipan.Runtime.Function<global::System.Func<global::@Version, long>>("<lambda>", (global::@Version @v) => @v.@n), global::Taipan.Runtime.Iter.Over(global::Taipan.Runtime.Ops.Sorted(@vs, less: static (@a, @b) => @a.@__lt__(@b))))), global::Taipan.Runtime.Ops.Index(@vs, 0L).@__lt__(global::Taipan.Runtime.Ops.Index(@vs, 1L)));
+            @line = 34;
+            global::Taipan.Runtime.Builtins.Print(global::Taipan.Runtime.Iterators.ToList(global::Taipan.Runtime.Iterators.Map(new global::Taipan.Runtime.Function<global::System.Func<global::@Version, long>>("<lambda>", (global::@Version @v) => { try { return @v.@n; } catch (global::System.Exception @e2) when (global::Taipan.Runtime.Tracebacks.Leave(@e2, "tests/cases/m17/emit.tpn", 34, "<lambda>")) { throw; } }), global::Taipan.Runtime.Iter.Over(global::Taipan.Runtime.Ops.Sorted(@vs, less: static (@a, @b) => @a.@__lt__(@b))))), global::Taipan.Runtime.Ops.Index(@vs, 0L).@__lt__(global::Taipan.Runtime.Ops.Index(@vs, 1L)));
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "<module>"))
+        {
+            throw;
+        }
     }
 
     public static long? @largest_int(global::System.Collections.Generic.List<long> @xs)
     {
-#line 17 "tests/cases/m17/emit.tpn"
-        long? @best = null;
-#line 18 "tests/cases/m17/emit.tpn"
-        foreach (long @x in global::Taipan.Runtime.Iter.Over(@xs))
+        int @line = 16;
+        string @file = "tests/cases/m17/emit.tpn";
+        try
         {
-#line 19 "tests/cases/m17/emit.tpn"
-            if (@best is {} @b)
+#line 17 "tests/cases/m17/emit.tpn"
+            @line = 17;
+            long? @best = null;
+#line 18 "tests/cases/m17/emit.tpn"
+            @line = 18;
+            foreach (long @x in global::Taipan.Runtime.Iter.Over(@xs))
             {
-#line 20 "tests/cases/m17/emit.tpn"
-                if (@x > @b)
+#line 19 "tests/cases/m17/emit.tpn"
+                @line = 19;
+                if (@best is {} @b)
                 {
+#line 20 "tests/cases/m17/emit.tpn"
+                    @line = 20;
+                    if (@x > @b)
+                    {
 #line 21 "tests/cases/m17/emit.tpn"
+                        @line = 21;
+                        @best = @x;
+                    }
+                }
+                else
+                {
+#line 23 "tests/cases/m17/emit.tpn"
+                    @line = 23;
                     @best = @x;
                 }
+                @line = 18;
             }
-            else
-            {
-#line 23 "tests/cases/m17/emit.tpn"
-                @best = @x;
-            }
-        }
 #line 24 "tests/cases/m17/emit.tpn"
-        return @best;
+            @line = 24;
+            return @best;
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "largest"))
+        {
+            throw;
+        }
     }
 
     public static string? @largest_str(global::System.Collections.Generic.List<string> @xs)
     {
-#line 17 "tests/cases/m17/emit.tpn"
-        string? @best = null;
-#line 18 "tests/cases/m17/emit.tpn"
-        foreach (string @x in global::Taipan.Runtime.Iter.Over(@xs))
+        int @line = 16;
+        string @file = "tests/cases/m17/emit.tpn";
+        try
         {
-#line 19 "tests/cases/m17/emit.tpn"
-            if (@best is {} @b)
+#line 17 "tests/cases/m17/emit.tpn"
+            @line = 17;
+            string? @best = null;
+#line 18 "tests/cases/m17/emit.tpn"
+            @line = 18;
+            foreach (string @x in global::Taipan.Runtime.Iter.Over(@xs))
             {
-#line 20 "tests/cases/m17/emit.tpn"
-                if (string.CompareOrdinal(@x, @b) > 0)
+#line 19 "tests/cases/m17/emit.tpn"
+                @line = 19;
+                if (@best is {} @b)
                 {
+#line 20 "tests/cases/m17/emit.tpn"
+                    @line = 20;
+                    if (string.CompareOrdinal(@x, @b) > 0)
+                    {
 #line 21 "tests/cases/m17/emit.tpn"
+                        @line = 21;
+                        @best = @x;
+                    }
+                }
+                else
+                {
+#line 23 "tests/cases/m17/emit.tpn"
+                    @line = 23;
                     @best = @x;
                 }
+                @line = 18;
             }
-            else
-            {
-#line 23 "tests/cases/m17/emit.tpn"
-                @best = @x;
-            }
-        }
 #line 24 "tests/cases/m17/emit.tpn"
-        return @best;
+            @line = 24;
+            return @best;
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "largest"))
+        {
+            throw;
+        }
     }
 
     public static double @total_Version(global::System.Collections.Generic.List<global::@Version> @xs)
     {
-#line 27 "tests/cases/m17/emit.tpn"
-        double @sum = 0.0;
-#line 28 "tests/cases/m17/emit.tpn"
-        foreach (global::@Version @x in global::Taipan.Runtime.Iter.Over(@xs))
+        int @line = 26;
+        string @file = "tests/cases/m17/emit.tpn";
+        try
         {
+#line 27 "tests/cases/m17/emit.tpn"
+            @line = 27;
+            double @sum = 0.0;
+#line 28 "tests/cases/m17/emit.tpn"
+            @line = 28;
+            foreach (global::@Version @x in global::Taipan.Runtime.Iter.Over(@xs))
+            {
 #line 29 "tests/cases/m17/emit.tpn"
-            @sum = @sum + @x.@area();
-        }
+                @line = 29;
+                @sum = @sum + @x.@area();
+                @line = 28;
+            }
 #line 30 "tests/cases/m17/emit.tpn"
-        return @sum;
+            @line = 30;
+            return @sum;
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "total"))
+        {
+            throw;
+        }
     }
 
     public static global::@Version? @largest_Version(global::System.Collections.Generic.List<global::@Version> @xs)
     {
-#line 17 "tests/cases/m17/emit.tpn"
-        global::@Version? @best = null;
-#line 18 "tests/cases/m17/emit.tpn"
-        foreach (global::@Version @x in global::Taipan.Runtime.Iter.Over(@xs))
+        int @line = 16;
+        string @file = "tests/cases/m17/emit.tpn";
+        try
         {
-#line 19 "tests/cases/m17/emit.tpn"
-            if (@best is {} @b)
+#line 17 "tests/cases/m17/emit.tpn"
+            @line = 17;
+            global::@Version? @best = null;
+#line 18 "tests/cases/m17/emit.tpn"
+            @line = 18;
+            foreach (global::@Version @x in global::Taipan.Runtime.Iter.Over(@xs))
             {
-#line 20 "tests/cases/m17/emit.tpn"
-                if (global::Taipan.Runtime.Ops.Reversed(@x, @b, static (@right, @left) => @right.@__lt__(@left)))
+#line 19 "tests/cases/m17/emit.tpn"
+                @line = 19;
+                if (@best is {} @b)
                 {
+#line 20 "tests/cases/m17/emit.tpn"
+                    @line = 20;
+                    if (global::Taipan.Runtime.Ops.Reversed(@x, @b, static (@right, @left) => @right.@__lt__(@left)))
+                    {
 #line 21 "tests/cases/m17/emit.tpn"
+                        @line = 21;
+                        @best = @x;
+                    }
+                }
+                else
+                {
+#line 23 "tests/cases/m17/emit.tpn"
+                    @line = 23;
                     @best = @x;
                 }
+                @line = 18;
             }
-            else
-            {
-#line 23 "tests/cases/m17/emit.tpn"
-                @best = @x;
-            }
-        }
 #line 24 "tests/cases/m17/emit.tpn"
-        return @best;
+            @line = 24;
+            return @best;
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "largest"))
+        {
+            throw;
+        }
     }
 }
 
@@ -143,23 +220,53 @@ public sealed class @Version : global::Taipan.Runtime.IObject
 
     public void @__init__(long @n)
     {
+        int @line = 7;
+        string @file = "tests/cases/m17/emit.tpn";
+        try
+        {
 #line 8 "tests/cases/m17/emit.tpn"
-        this.@n = @n;
+            @line = 8;
+            this.@n = @n;
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "__init__"))
+        {
+            throw;
+        }
     }
 
     public bool @__lt__(global::@Version @other)
     {
+        int @line = 10;
+        string @file = "tests/cases/m17/emit.tpn";
+        try
+        {
 #line 11 "tests/cases/m17/emit.tpn"
-        return this.@n < @other.@n;
+            @line = 11;
+            return this.@n < @other.@n;
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "__lt__"))
+        {
+            throw;
+        }
     }
 
     public double @area()
     {
+        int @line = 13;
+        string @file = "tests/cases/m17/emit.tpn";
+        try
+        {
 #line 14 "tests/cases/m17/emit.tpn"
-        return 1.0;
+            @line = 14;
+            return 1.0;
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "area"))
+        {
+            throw;
+        }
     }
 }
 

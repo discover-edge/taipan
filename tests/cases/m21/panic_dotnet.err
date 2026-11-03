@@ -1,2 +1,6 @@
-panic: .NET System.FormatException: The input string 'abc' was not in a correct format.
-  at tests/cases/m21/panic_dotnet.tpn:4
+Traceback (most recent call last):
+  File "tests/cases/m21/panic_dotnet.tpn", line 7, in <module>
+    print(parse("abc"))
+  File "tests/cases/m21/panic_dotnet.tpn", line 4, in parse
+    return Convert.ToInt32(text)
+System.FormatException: The input string 'abc' was not in a correct format.

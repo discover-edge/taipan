@@ -1,2 +1,6 @@
-panic: division by zero
-  at tests/cases/m11/panic_lambda.tpn:3
+Traceback (most recent call last):
+  File "tests/cases/m11/panic_lambda.tpn", line 3, in <module>
+    let inverses = list(map(lambda x: 10 // x, xs))
+  File "tests/cases/m11/panic_lambda.tpn", line 3, in <lambda>
+    let inverses = list(map(lambda x: 10 // x, xs))
+ZeroDivisionError: division by zero

@@ -6,47 +6,78 @@ public static class TaipanProgram
 {
     public static void TopLevel()
     {
+        int @line = 1;
+        string @file = "tests/cases/m6/find.tpn";
+        try
+        {
 #line 14 "tests/cases/m6/find.tpn"
-        global::System.Collections.Generic.List<global::@Service> @services = new global::System.Collections.Generic.List<global::@Service> { new global::@Service("api", 3L, 3L), new global::@Service("worker", 4L, 3L) };
+            @line = 14;
+            global::System.Collections.Generic.List<global::@Service> @services = new global::System.Collections.Generic.List<global::@Service> { new global::@Service("api", 3L, 3L), new global::@Service("worker", 4L, 3L) };
 #line 15 "tests/cases/m6/find.tpn"
-        global::@Service? @svc = @find(@services, "worker");
+            @line = 15;
+            global::@Service? @svc = @find(@services, "worker");
 #line 17 "tests/cases/m6/find.tpn"
-        if (@svc is {} @s)
-        {
+            @line = 17;
+            if (@svc is {} @s)
+            {
 #line 18 "tests/cases/m6/find.tpn"
-            global::Taipan.Runtime.Builtins.Print(@s.@name, @s.@healthy, "/", @s.@replicas);
-        }
-        else
-        {
+                @line = 18;
+                global::Taipan.Runtime.Builtins.Print(@s.@name, @s.@healthy, "/", @s.@replicas);
+            }
+            else
+            {
 #line 20 "tests/cases/m6/find.tpn"
-            global::Taipan.Runtime.Builtins.Print("no such service");
-        }
+                @line = 20;
+                global::Taipan.Runtime.Builtins.Print("no such service");
+            }
 #line 22 "tests/cases/m6/find.tpn"
-        if (@find(@services, "db") is null)
-        {
+            @line = 22;
+            if (@find(@services, "db") is null)
+            {
 #line 23 "tests/cases/m6/find.tpn"
-            global::Taipan.Runtime.Builtins.Print("no db");
-        }
+                @line = 23;
+                global::Taipan.Runtime.Builtins.Print("no db");
+            }
 #line 24 "tests/cases/m6/find.tpn"
-        global::Taipan.Runtime.Builtins.Print(@find(@services, "api"), @find(@services, "db"));
+            @line = 24;
+            global::Taipan.Runtime.Builtins.Print(@find(@services, "api"), @find(@services, "db"));
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "<module>"))
+        {
+            throw;
+        }
     }
 
     public static global::@Service? @find(global::System.Collections.Generic.List<global::@Service> @services, string @name)
     {
-#line 9 "tests/cases/m6/find.tpn"
-        foreach (global::@Service @s in global::Taipan.Runtime.Iter.Over(@services))
+        int @line = 8;
+        string @file = "tests/cases/m6/find.tpn";
+        try
         {
-#line 10 "tests/cases/m6/find.tpn"
-            if (@s.@name == @name)
+#line 9 "tests/cases/m6/find.tpn"
+            @line = 9;
+            foreach (global::@Service @s in global::Taipan.Runtime.Iter.Over(@services))
             {
+#line 10 "tests/cases/m6/find.tpn"
+                @line = 10;
+                if (@s.@name == @name)
+                {
 #line 11 "tests/cases/m6/find.tpn"
-                return @s;
+                    @line = 11;
+                    return @s;
+                }
+                @line = 9;
             }
-        }
 #line 12 "tests/cases/m6/find.tpn"
-        return null;
+            @line = 12;
+            return null;
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "find"))
+        {
+            throw;
+        }
     }
 }
 

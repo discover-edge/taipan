@@ -8,25 +8,42 @@ public static class TaipanProgram
 
     public static void TopLevel()
     {
-#line 2 "tests/cases/m10/json.tpn"
-        @json = global::Taipan.Runtime.Interop.Import("json");
-#line 4 "tests/cases/m10/json.tpn"
-        global::Python.Runtime.PyObject @data = global::Taipan.Runtime.Interop.Call(global::Taipan.Runtime.Interop.GetAttr(@json, "loads"), ["{\"replicas\": 3, \"name\": \"api\", \"healthy\": true}"], []);
-#line 5 "tests/cases/m10/json.tpn"
-        long? @replicas = global::Taipan.Runtime.Interop.AsOptionalValue(global::Taipan.Runtime.Interop.GetItem(@data, "replicas"), @v => global::Taipan.Runtime.Interop.ToInt(@v));
-#line 6 "tests/cases/m10/json.tpn"
-        long? @missing = global::Taipan.Runtime.Interop.AsOptionalValue(global::Taipan.Runtime.Interop.GetItem(@data, "name"), @v2 => global::Taipan.Runtime.Interop.ToInt(@v2));
-#line 7 "tests/cases/m10/json.tpn"
-        global::Taipan.Runtime.Builtins.Print(@replicas, @missing, @replicas ?? 0L);
-#line 8 "tests/cases/m10/json.tpn"
-        if (global::Taipan.Runtime.Interop.AsOptionalValue(global::Taipan.Runtime.Interop.GetItem(@data, "replicas"), @v3 => global::Taipan.Runtime.Interop.ToInt(@v3)) is {} @n)
+        int @line = 1;
+        string @file = "tests/cases/m10/json.tpn";
+        try
         {
+#line 2 "tests/cases/m10/json.tpn"
+            @line = 2;
+            @json = global::Taipan.Runtime.Interop.Import("json");
+#line 4 "tests/cases/m10/json.tpn"
+            @line = 4;
+            global::Python.Runtime.PyObject @data = global::Taipan.Runtime.Interop.Call(global::Taipan.Runtime.Interop.GetAttr(@json, "loads"), ["{\"replicas\": 3, \"name\": \"api\", \"healthy\": true}"], []);
+#line 5 "tests/cases/m10/json.tpn"
+            @line = 5;
+            long? @replicas = global::Taipan.Runtime.Interop.AsOptionalValue(global::Taipan.Runtime.Interop.GetItem(@data, "replicas"), @v => global::Taipan.Runtime.Interop.ToInt(@v));
+#line 6 "tests/cases/m10/json.tpn"
+            @line = 6;
+            long? @missing = global::Taipan.Runtime.Interop.AsOptionalValue(global::Taipan.Runtime.Interop.GetItem(@data, "name"), @v2 => global::Taipan.Runtime.Interop.ToInt(@v2));
+#line 7 "tests/cases/m10/json.tpn"
+            @line = 7;
+            global::Taipan.Runtime.Builtins.Print(@replicas, @missing, @replicas ?? 0L);
+#line 8 "tests/cases/m10/json.tpn"
+            @line = 8;
+            if (global::Taipan.Runtime.Interop.AsOptionalValue(global::Taipan.Runtime.Interop.GetItem(@data, "replicas"), @v3 => global::Taipan.Runtime.Interop.ToInt(@v3)) is {} @n)
+            {
 #line 9 "tests/cases/m10/json.tpn"
-            global::Taipan.Runtime.Builtins.Print("replicas:", @n * 2L);
-        }
+                @line = 9;
+                global::Taipan.Runtime.Builtins.Print("replicas:", @n * 2L);
+            }
 #line 10 "tests/cases/m10/json.tpn"
-        global::Taipan.Runtime.Builtins.Print(global::Taipan.Runtime.Interop.As(global::Taipan.Runtime.Interop.GetItem(@data, "name"), @v4 => global::Taipan.Runtime.Interop.ToStr(@v4), "str"), global::Taipan.Runtime.Interop.As(global::Taipan.Runtime.Interop.GetItem(@data, "healthy"), @v5 => global::Taipan.Runtime.Interop.ToBool(@v5), "bool"), global::Taipan.Runtime.Interop.AsOptionalValue(global::Taipan.Runtime.Interop.GetItem(@data, "healthy"), @v6 => global::Taipan.Runtime.Interop.ToInt(@v6)));
+            @line = 10;
+            global::Taipan.Runtime.Builtins.Print(global::Taipan.Runtime.Interop.As(global::Taipan.Runtime.Interop.GetItem(@data, "name"), @v4 => global::Taipan.Runtime.Interop.ToStr(@v4), "str"), global::Taipan.Runtime.Interop.As(global::Taipan.Runtime.Interop.GetItem(@data, "healthy"), @v5 => global::Taipan.Runtime.Interop.ToBool(@v5), "bool"), global::Taipan.Runtime.Interop.AsOptionalValue(global::Taipan.Runtime.Interop.GetItem(@data, "healthy"), @v6 => global::Taipan.Runtime.Interop.ToInt(@v6)));
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "<module>"))
+        {
+            throw;
+        }
     }
 }
 

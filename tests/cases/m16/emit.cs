@@ -6,70 +6,140 @@ public static class TaipanProgram
 {
     public static void TopLevel()
     {
+        int @line = 1;
+        string @file = "tests/cases/m16/emit.tpn";
+        try
+        {
 #line 26 "tests/cases/m16/emit.tpn"
-        @run(new global::System.Collections.Generic.OrderedDictionary<string, long> { ["a"] = 1L });
+            @line = 26;
+            @run(new global::System.Collections.Generic.OrderedDictionary<string, long> { ["a"] = 1L });
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "<module>"))
+        {
+            throw;
+        }
     }
 
     public static long @find(global::System.Collections.Generic.OrderedDictionary<string, long> @d, string @name)
     {
-        try
-        {
-#line 11 "tests/cases/m16/emit.tpn"
-            return global::Taipan.Runtime.Ops.Index(@d, @name);
-        }
-#line 10 "tests/cases/m16/emit.tpn"
-        catch (global::System.Exception @caught) when (global::Taipan.Runtime.Exceptions.IsCatchable(@caught))
-        {
-            var @exception = global::Taipan.Runtime.Exceptions.From(@caught);
-            if (@exception is global::@Taipan.Runtime.KeyError)
-            {
-#line 13 "tests/cases/m16/emit.tpn"
-                throw global::@Missing.@__new__(@name);
-            }
-            else
-                throw;
-#line hidden
-        }
-#line hidden
-    }
-
-    public static void @run(global::System.Collections.Generic.OrderedDictionary<string, long> @d)
-    {
+        int @line = 9;
+        string @file = "tests/cases/m16/emit.tpn";
         try
         {
             try
             {
-#line 17 "tests/cases/m16/emit.tpn"
-                global::Taipan.Runtime.Builtins.Print(@find(@d, "a"));
+#line 11 "tests/cases/m16/emit.tpn"
+                @line = 11;
+                return global::Taipan.Runtime.Ops.Index(@d, @name);
             }
-#line 16 "tests/cases/m16/emit.tpn"
-            catch (global::System.Exception @caught) when (global::Taipan.Runtime.Exceptions.IsCatchable(@caught))
+#line 10 "tests/cases/m16/emit.tpn"
+            catch (global::System.Exception @caught) when (global::Taipan.Runtime.Tracebacks.Catch(@caught, @file, @line, "find"))
             {
                 var @exception = global::Taipan.Runtime.Exceptions.From(@caught);
-                if (@exception is global::@Missing or global::@Taipan.Runtime.IndexError)
+                if (@exception is global::@Taipan.Runtime.KeyError)
                 {
-                    global::@Taipan.Runtime.LookupError @e = (global::@Taipan.Runtime.LookupError)@exception;
-#line 19 "tests/cases/m16/emit.tpn"
-                    global::Taipan.Runtime.Builtins.Print("missing", @e);
-#line 20 "tests/cases/m16/emit.tpn"
-                    throw global::Taipan.Runtime.Exceptions.Rethrow(@caught);
+                    global::Taipan.Runtime.Tracebacks.Handle(@exception);
+                    try
+                    {
+#line 13 "tests/cases/m16/emit.tpn"
+                        @line = 13;
+                        throw global::Taipan.Runtime.Exceptions.Raise(global::@Missing.@__new__(@name));
+                    }
+                    finally
+                    {
+                        global::Taipan.Runtime.Tracebacks.Unhandle();
+                    }
                 }
                 else
+                {
+                    global::Taipan.Runtime.Tracebacks.Again(@caught);
                     throw;
+                }
 #line hidden
             }
-            {
-#line 22 "tests/cases/m16/emit.tpn"
-                global::Taipan.Runtime.Builtins.Print("found");
-            }
+#line hidden
         }
-        finally
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "find"))
         {
-#line 24 "tests/cases/m16/emit.tpn"
-            global::Taipan.Runtime.Builtins.Print("done");
+            throw;
         }
+    }
+
+    public static void @run(global::System.Collections.Generic.OrderedDictionary<string, long> @d)
+    {
+        int @line = 15;
+        string @file = "tests/cases/m16/emit.tpn";
+        try
+        {
+            global::Taipan.Runtime.TaipanBaseException? @inFlight = null;
+            try
+            {
+                try
+                {
+#line 17 "tests/cases/m16/emit.tpn"
+                    @line = 17;
+                    global::Taipan.Runtime.Builtins.Print(@find(@d, "a"));
+                }
+#line 16 "tests/cases/m16/emit.tpn"
+                catch (global::System.Exception @caught) when (global::Taipan.Runtime.Tracebacks.Catch(@caught, @file, @line, "run"))
+                {
+                    var @exception = global::Taipan.Runtime.Exceptions.From(@caught);
+                    if (@exception is global::@Missing or global::@Taipan.Runtime.IndexError)
+                    {
+                        global::@Taipan.Runtime.LookupError @e = (global::@Taipan.Runtime.LookupError)@exception;
+                        global::Taipan.Runtime.Tracebacks.Handle(@exception);
+                        try
+                        {
+#line 19 "tests/cases/m16/emit.tpn"
+                            @line = 19;
+                            global::Taipan.Runtime.Builtins.Print("missing", @e);
+#line 20 "tests/cases/m16/emit.tpn"
+                            @line = 20;
+                            throw global::Taipan.Runtime.Exceptions.Rethrow(@caught);
+                        }
+                        finally
+                        {
+                            global::Taipan.Runtime.Tracebacks.Unhandle();
+                        }
+                    }
+                    else
+                    {
+                        global::Taipan.Runtime.Tracebacks.Again(@caught);
+                        throw;
+                    }
 #line hidden
+                }
+                {
+#line 22 "tests/cases/m16/emit.tpn"
+                    @line = 22;
+                    global::Taipan.Runtime.Builtins.Print("found");
+                }
+            }
+            catch (global::System.Exception @propagating) when (global::Taipan.Runtime.Tracebacks.InFlight(@propagating, ref @inFlight))
+            {
+                throw;
+            }
+            finally
+            {
+                global::Taipan.Runtime.Tracebacks.Handle(@inFlight);
+                try
+                {
+#line 24 "tests/cases/m16/emit.tpn"
+                    @line = 24;
+                    global::Taipan.Runtime.Builtins.Print("done");
+                }
+                finally
+                {
+                    global::Taipan.Runtime.Tracebacks.Unhandle();
+                }
+            }
+#line hidden
+        }
+        catch (global::System.Exception @e2) when (global::Taipan.Runtime.Tracebacks.Leave(@e2, @file, @line, "run"))
+        {
+            throw;
+        }
     }
 }
 
@@ -91,11 +161,22 @@ public sealed class @Missing : global::@Taipan.Runtime.KeyError, global::Taipan.
 
     public new void @__init__(string @name)
     {
+        int @line = 5;
+        string @file = "tests/cases/m16/emit.tpn";
+        try
+        {
 #line 6 "tests/cases/m16/emit.tpn"
-        this.@name = @name;
+            @line = 6;
+            this.@name = @name;
 #line 7 "tests/cases/m16/emit.tpn"
-        base.@__init__(@name);
+            @line = 7;
+            base.@__init__(@name);
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "__init__"))
+        {
+            throw;
+        }
     }
 }
 

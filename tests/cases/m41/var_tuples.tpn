@@ -1,0 +1,33 @@
+# tuple[T, ...]: any number of one type, as in Python (SPEC §3.19).
+let none: list[int] = []
+let empty = tuple(none)
+let one = tuple(["a"])
+let many: tuple[int, ...] = (3, 1, 2)
+print(empty, one, many, len(many), len(empty))
+print(many[0], many[-1], many[1:], many[::-1], many[5:])
+for x in many:
+    print("x", x)
+print(2 in many, 7 not in many, one == tuple(["a"]))
+print(many == (3, 1, 2), many != tuple([3, 1]), tuple([1, 2]) < tuple([1, 2, 0]), tuple(["b"]) > tuple(["a", "z"]))
+let first, *rest = many
+print(first, rest)
+let counts = {tuple(["a", "b"]): 1, tuple(["c"]): 2}
+print(counts[tuple(["c"])], counts)
+print([one, tuple(["x", "y"])], sorted([many, tuple([1]), empty]))
+print(tuple(x * 2 for x in many), tuple({"k": 1}), tuple("hi"))
+
+def total(xs: tuple[int, ...]) -> int:
+    var sum = 0
+    for x in xs:
+        sum += x
+    return sum
+
+print(total(many), total((1, 2, 3, 4)))
+try:
+    print(many[3])
+except IndexError as e:
+    print("IndexError:", e)
+try:
+    let a, b = many
+except ValueError as e:
+    print("ValueError:", e)

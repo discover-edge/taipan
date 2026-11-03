@@ -1,2 +1,6 @@
-panic: division by zero
-  at tests/cases/m9/panics/mathx.tpn:7
+Traceback (most recent call last):
+  File "tests/cases/m9/panics/main.tpn", line 4, in <module>
+    print(mathx.unsafe(1, 0))
+  File "tests/cases/m9/panics/mathx.tpn", line 7, in unsafe
+    return a // b
+ZeroDivisionError: division by zero

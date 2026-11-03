@@ -41,22 +41,44 @@ internal static class TaipanLibrary
 
     public static @T @identity<@T>(@T @value)
     {
+        int @line = 26;
+        string @file = "tests/cases/m22/emit_library.tpn";
+        try
+        {
 #line 27 "tests/cases/m22/emit_library.tpn"
-        return @value;
+            @line = 27;
+            return @value;
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "identity"))
+        {
+            throw;
+        }
     }
 
     public static long @clamp(long @n, long @high)
     {
-#line 30 "tests/cases/m22/emit_library.tpn"
-        if (@n < @high)
+        int @line = 29;
+        string @file = "tests/cases/m22/emit_library.tpn";
+        try
         {
+#line 30 "tests/cases/m22/emit_library.tpn"
+            @line = 30;
+            if (@n < @high)
+            {
 #line 31 "tests/cases/m22/emit_library.tpn"
-            return @n;
-        }
+                @line = 31;
+                return @n;
+            }
 #line 32 "tests/cases/m22/emit_library.tpn"
-        return @high;
+            @line = 32;
+            return @high;
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "clamp"))
+        {
+            throw;
+        }
     }
 
     internal static long @clamp_high()
@@ -69,16 +91,36 @@ internal static class TaipanLibrary
 
     public static string @encode(long @n)
     {
+        int @line = 34;
+        string @file = "tests/cases/m22/emit_library.tpn";
+        try
+        {
 #line 35 "tests/cases/m22/emit_library.tpn"
-        return global::Taipan.Runtime.Interop.As(global::Taipan.Runtime.Interop.Call(global::Taipan.Runtime.Interop.GetAttr(@json, "dumps"), [@n], []), @v => global::Taipan.Runtime.Interop.ToStr(@v), "str");
+            @line = 35;
+            return global::Taipan.Runtime.Interop.As(global::Taipan.Runtime.Interop.Call(global::Taipan.Runtime.Interop.GetAttr(@json, "dumps"), [@n], []), @v => global::Taipan.Runtime.Interop.ToStr(@v), "str");
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "encode"))
+        {
+            throw;
+        }
     }
 
     internal static long @_helper()
     {
+        int @line = 37;
+        string @file = "tests/cases/m22/emit_library.tpn";
+        try
+        {
 #line 38 "tests/cases/m22/emit_library.tpn"
-        return 1L;
+            @line = 38;
+            return 1L;
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "_helper"))
+        {
+            throw;
+        }
     }
 }
 
@@ -163,9 +205,19 @@ public static class @emit_library
 
         internal void @__init__(long @start)
         {
+            int @line = 19;
+            string @file = "tests/cases/m22/emit_library.tpn";
+            try
+            {
 #line 20 "tests/cases/m22/emit_library.tpn"
-            this.@count = @start;
+                @line = 20;
+                this.@count = @start;
 #line hidden
+            }
+            catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "__init__"))
+            {
+                throw;
+            }
         }
 
         internal static long @__init___start_default()
@@ -178,11 +230,22 @@ public static class @emit_library
 
         public long @bump(long @by)
         {
+            int @line = 22;
+            string @file = "tests/cases/m22/emit_library.tpn";
+            try
+            {
 #line 23 "tests/cases/m22/emit_library.tpn"
-            this.@count = this.@count + @by;
+                @line = 23;
+                this.@count = this.@count + @by;
 #line 24 "tests/cases/m22/emit_library.tpn"
-            return this.@count;
+                @line = 24;
+                return this.@count;
 #line hidden
+            }
+            catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "bump"))
+            {
+                throw;
+            }
         }
 
         internal long @bump_by_default()

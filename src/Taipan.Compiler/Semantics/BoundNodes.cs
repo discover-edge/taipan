@@ -131,7 +131,11 @@ public sealed record BoundReturn(BoundExpr? Value, TextSpan Span) : BoundStmt(Sp
 public sealed record BoundBreak(TextSpan Span) : BoundStmt(Span);
 
 /// <summary><c>raise e</c>, or a bare <c>raise</c> of the exception being handled when <see cref="Value"/> is null (SPEC §3.10).</summary>
-public sealed record BoundRaise(BoundExpr? Value, TextSpan Span) : BoundStmt(Span);
+/// <summary><c>raise</c>, with <c>from</c>'s cause since M41 (SPEC §3.19).</summary>
+public sealed record BoundRaise(BoundExpr? Value, TextSpan Span) : BoundStmt(Span)
+{
+    public BoundExpr? Cause { get; init; }
+}
 
 /// <summary>A <c>try</c> statement (SPEC §3.10). Handlers marked unreachable (TP0300) are checked but not emitted.</summary>
 public sealed record BoundTry(BoundBlock Body, ImmutableArray<BoundHandler> Handlers, BoundBlock? Else, BoundBlock? Finally, TextSpan Span)
@@ -463,6 +467,9 @@ public sealed record BoundErrorExpr(TextSpan Span) : BoundExpr(TaipanType.Error,
 // ---- Tuples and slices (SPEC §3.8, §5.4) ----
 
 public sealed record BoundTupleLiteral(ImmutableArray<BoundExpr> Elements, TupleOfType TupleType, TextSpan Span) : BoundExpr(TupleType, Span);
+
+/// <summary>A tuple literal checked against <c>tuple[T, ...]</c> (SPEC §3.19, M41).</summary>
+public sealed record BoundVarTupleLiteral(ImmutableArray<BoundExpr> Elements, VarTupleOfType TupleType, TextSpan Span) : BoundExpr(TupleType, Span);
 
 /// <summary>An element of a tuple; <see cref="Index"/> counts from 0, already normalized.</summary>
 public sealed record BoundTupleElement(BoundExpr Tuple, int Index, TaipanType Type, TextSpan Span) : BoundExpr(Type, Span);

@@ -6,105 +6,166 @@ public static class TaipanProgram
 {
     public static void TopLevel()
     {
-#line 13 "tests/cases/m7/enums.tpn"
-        global::System.Collections.Generic.List<global::@Shape> @shapes = new global::System.Collections.Generic.List<global::@Shape> { new global::@Shape.@Circle(1.0), new global::@Shape.@Rect(@width: 2L, @height: 3L), new global::@Shape.@Dot(), new global::@Shape.@Dot() };
-#line 14 "tests/cases/m7/enums.tpn"
-        foreach (global::@Shape @s in global::Taipan.Runtime.Iter.Over(@shapes))
+        int @line = 1;
+        string @file = "tests/cases/m7/enums.tpn";
+        try
         {
+#line 13 "tests/cases/m7/enums.tpn"
+            @line = 13;
+            global::System.Collections.Generic.List<global::@Shape> @shapes = new global::System.Collections.Generic.List<global::@Shape> { new global::@Shape.@Circle(1.0), new global::@Shape.@Rect(@width: 2L, @height: 3L), new global::@Shape.@Dot(), new global::@Shape.@Dot() };
+#line 14 "tests/cases/m7/enums.tpn"
+            @line = 14;
+            foreach (global::@Shape @s in global::Taipan.Runtime.Iter.Over(@shapes))
+            {
 #line 15 "tests/cases/m7/enums.tpn"
-            global::Taipan.Runtime.Builtins.Print(@s, @area(@s));
-        }
+                @line = 15;
+                global::Taipan.Runtime.Builtins.Print(@s, @area(@s));
+                @line = 14;
+            }
 #line 16 "tests/cases/m7/enums.tpn"
-        global::Taipan.Runtime.Builtins.Print(global::Taipan.Runtime.Equality.Equal(new global::@Shape.@Circle(1.0), new global::@Shape.@Circle(1.0)), global::Taipan.Runtime.Equality.Equal(new global::@Shape.@Circle(1.0), new global::@Shape.@Circle(2.0)), global::Taipan.Runtime.Equality.Equal(new global::@Shape.@Dot(), new global::@Shape.@Dot()), !global::Taipan.Runtime.Equality.Equal(new global::@Shape.@Dot(), new global::@Shape.@Circle(0.0)));
+            @line = 16;
+            global::Taipan.Runtime.Builtins.Print(global::Taipan.Runtime.Equality.Equal(new global::@Shape.@Circle(1.0), new global::@Shape.@Circle(1.0)), global::Taipan.Runtime.Equality.Equal(new global::@Shape.@Circle(1.0), new global::@Shape.@Circle(2.0)), global::Taipan.Runtime.Equality.Equal(new global::@Shape.@Dot(), new global::@Shape.@Dot()), !global::Taipan.Runtime.Equality.Equal(new global::@Shape.@Dot(), new global::@Shape.@Circle(0.0)));
 #line 17 "tests/cases/m7/enums.tpn"
-        global::Taipan.Runtime.Builtins.Print(@shapes);
+            @line = 17;
+            global::Taipan.Runtime.Builtins.Print(@shapes);
 #line 38 "tests/cases/m7/enums.tpn"
-        global::@Tree @tree = new global::@Tree.@Node(new global::@Tree.@Node(new global::@Tree.@Leaf(), 1L, new global::@Tree.@Leaf()), 2L, new global::@Tree.@Node(new global::@Tree.@Leaf(), 3L, new global::@Tree.@Node(new global::@Tree.@Leaf(), 4L, new global::@Tree.@Leaf())));
+            @line = 38;
+            global::@Tree @tree = new global::@Tree.@Node(new global::@Tree.@Node(new global::@Tree.@Leaf(), 1L, new global::@Tree.@Leaf()), 2L, new global::@Tree.@Node(new global::@Tree.@Leaf(), 3L, new global::@Tree.@Node(new global::@Tree.@Leaf(), 4L, new global::@Tree.@Leaf())));
 #line 39 "tests/cases/m7/enums.tpn"
-        global::Taipan.Runtime.Builtins.Print(@total(@tree), @depth(@tree));
+            @line = 39;
+            global::Taipan.Runtime.Builtins.Print(@total(@tree), @depth(@tree));
 #line 40 "tests/cases/m7/enums.tpn"
-        global::Taipan.Runtime.Builtins.Print(new global::@Tree.@Node(new global::@Tree.@Leaf(), 1L, new global::@Tree.@Leaf()));
+            @line = 40;
+            global::Taipan.Runtime.Builtins.Print(new global::@Tree.@Node(new global::@Tree.@Leaf(), 1L, new global::@Tree.@Leaf()));
 #line 41 "tests/cases/m7/enums.tpn"
-        global::@Shape? @maybe = null;
+            @line = 41;
+            global::@Shape? @maybe = null;
 #line 42 "tests/cases/m7/enums.tpn"
-        global::Taipan.Runtime.Builtins.Print(@maybe ?? new global::@Shape.@Dot(), global::Taipan.Runtime.Equality.Equal(@maybe, null));
+            @line = 42;
+            global::Taipan.Runtime.Builtins.Print(@maybe ?? new global::@Shape.@Dot(), global::Taipan.Runtime.Equality.Equal(@maybe, null));
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "<module>"))
+        {
+            throw;
+        }
     }
 
     public static double @area(global::@Shape @s)
     {
-#line 7 "tests/cases/m7/enums.tpn"
-        switch (@s)
+        int @line = 6;
+        string @file = "tests/cases/m7/enums.tpn";
+        try
         {
-            case global::@Shape.@Circle(var @r):
+#line 7 "tests/cases/m7/enums.tpn"
+            @line = 7;
+            switch (@s)
             {
+                case global::@Shape.@Circle(var @r):
+                {
 #line 9 "tests/cases/m7/enums.tpn"
-                return (3.0 * @r) * @r;
-            }
-            case global::@Shape.@Rect(var @w, var @h):
-            {
+                    @line = 9;
+                    return (3.0 * @r) * @r;
+                }
+                case global::@Shape.@Rect(var @w, var @h):
+                {
 #line 10 "tests/cases/m7/enums.tpn"
-                return @w * @h;
-            }
-            case global::@Shape.@Dot:
-            {
+                    @line = 10;
+                    return @w * @h;
+                }
+                case global::@Shape.@Dot:
+                {
 #line 11 "tests/cases/m7/enums.tpn"
-                return 0.0;
+                    @line = 11;
+                    return 0.0;
+                }
+                default:
+                    throw new global::System.Diagnostics.UnreachableException();
             }
-            default:
-                throw new global::System.Diagnostics.UnreachableException();
-        }
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "area"))
+        {
+            throw;
+        }
     }
 
     public static long @total(global::@Tree @t)
     {
-#line 24 "tests/cases/m7/enums.tpn"
-        switch (@t)
+        int @line = 23;
+        string @file = "tests/cases/m7/enums.tpn";
+        try
         {
-            case global::@Tree.@Leaf:
+#line 24 "tests/cases/m7/enums.tpn"
+            @line = 24;
+            switch (@t)
             {
+                case global::@Tree.@Leaf:
+                {
 #line 25 "tests/cases/m7/enums.tpn"
-                return 0L;
-            }
-            case global::@Tree.@Node(var @l, var @v, var @r):
-            {
+                    @line = 25;
+                    return 0L;
+                }
+                case global::@Tree.@Node(var @l, var @v, var @r):
+                {
 #line 26 "tests/cases/m7/enums.tpn"
-                return (@total(@l) + @v) + @total(@r);
+                    @line = 26;
+                    return (@total(@l) + @v) + @total(@r);
+                }
+                default:
+                    throw new global::System.Diagnostics.UnreachableException();
             }
-            default:
-                throw new global::System.Diagnostics.UnreachableException();
-        }
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "total"))
+        {
+            throw;
+        }
     }
 
     public static long @depth(global::@Tree @t)
     {
-#line 29 "tests/cases/m7/enums.tpn"
-        switch (@t)
+        int @line = 28;
+        string @file = "tests/cases/m7/enums.tpn";
+        try
         {
-            case global::@Tree.@Node(var @l, _, var @r):
+#line 29 "tests/cases/m7/enums.tpn"
+            @line = 29;
+            switch (@t)
             {
-#line 31 "tests/cases/m7/enums.tpn"
-                long @a = @depth(@l);
-#line 32 "tests/cases/m7/enums.tpn"
-                long @b = @depth(@r);
-#line 33 "tests/cases/m7/enums.tpn"
-                if (@a > @b)
+                case global::@Tree.@Node(var @l, _, var @r):
                 {
+#line 31 "tests/cases/m7/enums.tpn"
+                    @line = 31;
+                    long @a = @depth(@l);
+#line 32 "tests/cases/m7/enums.tpn"
+                    @line = 32;
+                    long @b = @depth(@r);
+#line 33 "tests/cases/m7/enums.tpn"
+                    @line = 33;
+                    if (@a > @b)
+                    {
 #line 34 "tests/cases/m7/enums.tpn"
-                    return @a + 1L;
-                }
+                        @line = 34;
+                        return @a + 1L;
+                    }
 #line 35 "tests/cases/m7/enums.tpn"
-                return @b + 1L;
-            }
-            default:
-            {
+                    @line = 35;
+                    return @b + 1L;
+                }
+                default:
+                {
 #line 36 "tests/cases/m7/enums.tpn"
-                return 0L;
+                    @line = 36;
+                    return 0L;
+                }
             }
-        }
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "depth"))
+        {
+            throw;
+        }
     }
 }
 

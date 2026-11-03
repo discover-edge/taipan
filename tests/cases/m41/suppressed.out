@@ -1,0 +1,2 @@
+KeyError("hidden") None True
+context: RuntimeError("cleanup failed") inner context: ValueError("first")

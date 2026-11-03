@@ -6,16 +6,36 @@ public static class TaipanProgram
 {
     public static void TopLevel()
     {
+        int @line = 1;
+        string @file = "tests/cases/m14/emit.tpn";
+        try
+        {
 #line 14 "tests/cases/m14/emit.tpn"
-        @main();
+            @line = 14;
+            @main();
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "<module>"))
+        {
+            throw;
+        }
     }
 
     public static string @connect(string @host, long @port, long @retries)
     {
+        int @line = 1;
+        string @file = "tests/cases/m14/emit.tpn";
+        try
+        {
 #line 2 "tests/cases/m14/emit.tpn"
-        return $"{(global::Taipan.Runtime.Display.Format(@host))}:{(global::Taipan.Runtime.Display.Format(@port))}/{(global::Taipan.Runtime.Display.Format(@retries))}";
+            @line = 2;
+            return $"{(global::Taipan.Runtime.Display.Format(@host))}:{(global::Taipan.Runtime.Display.Format(@port))}/{(global::Taipan.Runtime.Display.Format(@retries))}";
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "connect"))
+        {
+            throw;
+        }
     }
 
     public static long @connect_port()
@@ -34,27 +54,60 @@ public static class TaipanProgram
 
     public static void @main()
     {
-#line 9 "tests/cases/m14/emit.tpn"
-        global::Taipan.Runtime.Function<global::System.Func<long, long, long>> @pair = null!;
-        @pair = new global::Taipan.Runtime.Function<global::System.Func<long, long, long>>("pair", (long @a, long @b) =>
+        int @line = 8;
+        string @file = "tests/cases/m14/emit.tpn";
+        try
         {
+#line 9 "tests/cases/m14/emit.tpn"
+            @line = 9;
+            global::Taipan.Runtime.Function<global::System.Func<long, long, long>> @pair = null!;
+            @pair = new global::Taipan.Runtime.Function<global::System.Func<long, long, long>>("pair", (long @a, long @b) =>
+            {
+                int @line2 = 9;
+                string @file2 = "tests/cases/m14/emit.tpn";
+                try
+                {
 #line 10 "tests/cases/m14/emit.tpn"
-            return (@a * 10L) + @b;
-        });
+                    @line2 = 10;
+                    return (@a * 10L) + @b;
+                }
+                catch (global::System.Exception @e2) when (global::Taipan.Runtime.Tracebacks.Leave(@e2, @file2, @line2, "pair"))
+                {
+                    throw;
+                }
+            });
 #line 11 "tests/cases/m14/emit.tpn"
-        global::Taipan.Runtime.Builtins.Print(@connect("db", @connect_port(), @connect_retries()), @connect(@retries: 1L, @host: "x", @port: @connect_port()), @connect("y", 1L, @connect_retries()));
+            @line = 11;
+            global::Taipan.Runtime.Builtins.Print(@connect("db", @connect_port(), @connect_retries()), @connect(@retries: 1L, @host: "x", @port: @connect_port()), @connect("y", 1L, @connect_retries()));
 #line 12 "tests/cases/m14/emit.tpn"
-        global::Taipan.Runtime.Builtins.Print(@pair.Invoke(1L, 2L), @pair.Invoke(arg2: 3L, arg1: 4L), @wrap_int(1L, @wrap_int_into()), @wrap_str("s", @wrap_str_into()));
+            @line = 12;
+            global::Taipan.Runtime.Builtins.Print(@pair.Invoke(1L, 2L), @pair.Invoke(arg2: 3L, arg1: 4L), @wrap_int(1L, @wrap_int_into()), @wrap_str("s", @wrap_str_into()));
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "main"))
+        {
+            throw;
+        }
     }
 
     public static global::System.Collections.Generic.List<long> @wrap_int(long @x, global::System.Collections.Generic.List<long> @into)
     {
+        int @line = 4;
+        string @file = "tests/cases/m14/emit.tpn";
+        try
+        {
 #line 5 "tests/cases/m14/emit.tpn"
-        @into.Add(@x);
+            @line = 5;
+            @into.Add(@x);
 #line 6 "tests/cases/m14/emit.tpn"
-        return @into;
+            @line = 6;
+            return @into;
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "wrap"))
+        {
+            throw;
+        }
     }
 
     public static global::System.Collections.Generic.List<long> @wrap_int_into()
@@ -66,11 +119,22 @@ public static class TaipanProgram
 
     public static global::System.Collections.Generic.List<string> @wrap_str(string @x, global::System.Collections.Generic.List<string> @into)
     {
+        int @line = 4;
+        string @file = "tests/cases/m14/emit.tpn";
+        try
+        {
 #line 5 "tests/cases/m14/emit.tpn"
-        @into.Add(@x);
+            @line = 5;
+            @into.Add(@x);
 #line 6 "tests/cases/m14/emit.tpn"
-        return @into;
+            @line = 6;
+            return @into;
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "wrap"))
+        {
+            throw;
+        }
     }
 
     public static global::System.Collections.Generic.List<string> @wrap_str_into()

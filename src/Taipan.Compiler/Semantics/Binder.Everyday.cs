@@ -32,7 +32,7 @@ public sealed partial class Binder
             BuiltinFunction.Abs or BuiltinFunction.Any or BuiltinFunction.All => (1, 1),
             BuiltinFunction.Sum or BuiltinFunction.Round => (1, 2),
             BuiltinFunction.DivMod => (2, 2),
-            BuiltinFunction.Set => (0, 1),
+            BuiltinFunction.Set or BuiltinFunction.Tuple => (0, 1),
             _ => (1, int.MaxValue),
         };
         if (positional.Count < fewest || positional.Count > most)
@@ -83,6 +83,20 @@ public sealed partial class Binder
                 var number = left.Type.ContainsError || right.Type.ContainsError ? TaipanType.Error
                     : left.Type == TaipanType.Int && right.Type == TaipanType.Int ? TaipanType.Int : TaipanType.Float;
                 return new BoundCall(function, [left, right], number.ContainsError ? number : new TupleOfType([number, number]), call.Span);
+            }
+            case BuiltinFunction.Tuple:
+            {
+                // tuple() needs an expected type, as [] does; tuple(xs) takes an iterable's values (SPEC §3.19).
+                if (positional.Count == 0)
+                {
+                    if (TypeChecker.Unwrap(expected ?? TaipanType.Error) is VarTupleOfType expectedTuple)
+                        return new BoundCall(function, [], expectedTuple, call.Span);
+                    if (expected is not { IsError: true })
+                        _diagnostics.ReportCannotInferEmpty(call.Span, "tuple");
+                    return new BoundErrorExpr(call.Span);
+                }
+                var (values, element) = BindIterable(BindValue(positional[0]), positional[0].Span);
+                return element.ContainsError ? new BoundErrorExpr(call.Span) : new BoundCall(function, [values], new VarTupleOfType(element), call.Span);
             }
             default:
             {

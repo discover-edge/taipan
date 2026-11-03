@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "tests/cases/m41/modules/main.tpn", line 8, in <module>
+    visit("dragon")
+  File "tests/cases/m41/modules/main.tpn", line 5, in visit
+    zoo.feed(animal)
+  File "tests/cases/m41/modules/zoo.tpn", line 11, in feed
+    raise Unknown(animal)
+zoo.Unknown: no dragon here

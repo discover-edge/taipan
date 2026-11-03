@@ -1,2 +1,6 @@
-panic: integer overflow
-  at tests/cases/m4/panic_overflow.tpn:5
+Traceback (most recent call last):
+  File "tests/cases/m4/panic_overflow.tpn", line 9, in <module>
+    grow(9)
+  File "tests/cases/m4/panic_overflow.tpn", line 5, in grow
+    x = x * 1000000
+OverflowError: integer overflow

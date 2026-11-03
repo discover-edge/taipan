@@ -1,0 +1,15 @@
+# Repeated frames print three times, then a count, as in Python (SPEC §3.19).
+class Bottom(Exception):
+    pass
+
+def countdown(n: int) -> int:
+    if n == 0:
+        raise Bottom()
+    return countdown(n - 1)
+
+def twice(n: int) -> int:
+    if n == 0:
+        return countdown(4)
+    return twice(n - 1)
+
+twice(1)

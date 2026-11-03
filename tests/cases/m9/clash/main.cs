@@ -9,29 +9,65 @@ public static class TaipanProgram
 
     public static void TopLevel()
     {
+        int @line = 1;
+        string @file = "tests/cases/m9/clash/main.tpn";
+        try
+        {
 #line 1 "tests/cases/m9/clash/metric.tpn"
-        @UNIT = "m";
+            @file = "tests/cases/m9/clash/metric.tpn";
+            @line = 1;
+            @UNIT = "m";
 #line 1 "tests/cases/m9/clash/imperial.tpn"
-        @UNIT2 = "ft";
+            @file = "tests/cases/m9/clash/imperial.tpn";
+            @line = 1;
+            @UNIT2 = "ft";
 #line 5 "tests/cases/m9/clash/main.tpn"
-        global::Taipan.Runtime.Builtins.Print(@area(2.0), @area2(2.0), @UNIT, @UNIT2);
+            @file = "tests/cases/m9/clash/main.tpn";
+            @line = 5;
+            global::Taipan.Runtime.Builtins.Print(@area(2.0), @area2(2.0), @UNIT, @UNIT2);
 #line 6 "tests/cases/m9/clash/main.tpn"
-        global::Taipan.Runtime.Builtins.Print(new global::@Size(1L), new global::@Size2(1L));
+            @line = 6;
+            global::Taipan.Runtime.Builtins.Print(new global::@Size(1L), new global::@Size2(1L));
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "<module>"))
+        {
+            throw;
+        }
     }
 
     public static double @area(double @side)
     {
+        int @line = 7;
+        string @file = "tests/cases/m9/clash/metric.tpn";
+        try
+        {
 #line 8 "tests/cases/m9/clash/metric.tpn"
-        return @side * @side;
+            @line = 8;
+            return @side * @side;
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "area"))
+        {
+            throw;
+        }
     }
 
     public static double @area2(double @side)
     {
+        int @line = 7;
+        string @file = "tests/cases/m9/clash/imperial.tpn";
+        try
+        {
 #line 8 "tests/cases/m9/clash/imperial.tpn"
-        return (@side * @side) * 10.7639;
+            @line = 8;
+            return (@side * @side) * 10.7639;
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "area"))
+        {
+            throw;
+        }
     }
 }
 

@@ -1,0 +1,18 @@
+# 'raise e' adds the new frames in front of the ones e already has (SPEC §3.19).
+def check(n: int):
+    if n < 0:
+        raise ValueError(f"negative: {n}")
+
+def remember() -> ValueError?:
+    try:
+        check(-1)
+    except ValueError as e:
+        return e
+    return None
+
+def again(e: ValueError):
+    raise e
+
+if remember() is some e:
+    print("saved")
+    again(e)

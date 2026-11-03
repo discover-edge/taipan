@@ -971,12 +971,18 @@ public sealed class Parser
         return new YieldStmt(value, from, SpanFrom(keyword.Span.Start));
     }
 
-    // raise_stmt = "raise" [ expr ]
+    // raise_stmt = "raise" [ expr [ "from" expr ] ]
     private RaiseStmt ParseRaiseStmt()
     {
         var start = Next().Span.Start;
         var value = !_recovering && CanStartExpression(Current.Kind) ? ParseExpr() : null;
-        return new RaiseStmt(value, SpanFrom(start));
+        Expr? cause = null;
+        if (value is not null && At(TokenKind.FromKeyword))
+        {
+            Next();
+            cause = ParseExpr();
+        }
+        return new RaiseStmt(value, cause, SpanFrom(start));
     }
 
     // with_stmt = "with" with_item { "," with_item } ":" block
@@ -1525,6 +1531,14 @@ public sealed class Parser
                 Expect(TokenKind.OpenBracket);
                 var elements = ImmutableArray.CreateBuilder<TypeSyntax>();
                 elements.Add(ParseType());
+                // tuple[T, ...] (M41): '...' only after exactly one type.
+                if (At(TokenKind.Comma) && Peek(1).Kind == TokenKind.Ellipsis && elements.Count == 1)
+                {
+                    Next();
+                    Next();
+                    Expect(TokenKind.CloseBracket);
+                    return new VarTupleType(elements[0], SpanFrom(start));
+                }
                 while (At(TokenKind.Comma))
                 {
                     Next();

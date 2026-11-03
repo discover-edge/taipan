@@ -78,12 +78,20 @@ public sealed class ClassValue
     public override string ToString() => _module is null ? $"<class '{__name__}'>" : $"<class '{_module}.{__name__}'>";
 }
 
-/// <summary><c>types.TracebackType</c> (SPEC §3.17, M37): opaque until tracebacks are printed (M41).</summary>
-public sealed class Traceback
+/// <summary>
+/// <c>types.TracebackType</c> (SPEC §3.17, §3.19): one entry of an exception's traceback, a frame's
+/// file, line and Python name, and the entries for the frames it called. Entries are added in
+/// front as the exception propagates outward, so the first is the outermost.
+/// </summary>
+public sealed class Traceback(string file, long line, string name, Traceback? next)
 {
-    public static Traceback Instance { get; } = new();
+    internal string File { get; } = file;
 
-    private Traceback() { }
+    internal string Name { get; } = name;
+
+    public long @tb_lineno { get; } = line;
+
+    public Traceback? @tb_next { get; } = next;
 
     public override string ToString() => "<traceback object>";
 }

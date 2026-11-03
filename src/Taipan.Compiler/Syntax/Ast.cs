@@ -138,7 +138,7 @@ public sealed record AssignStmt(Expr Target, AssignOp Op, Expr Value, TextSpan S
 public sealed record ReturnStmt(Expr? Value, TextSpan Span) : Stmt(Span);
 
 /// <summary><c>raise e</c>, or a bare <c>raise</c> when <see cref="Value"/> is null (SPEC §3.10).</summary>
-public sealed record RaiseStmt(Expr? Value, TextSpan Span) : Stmt(Span);
+public sealed record RaiseStmt(Expr? Value, Expr? Cause, TextSpan Span) : Stmt(Span);
 
 /// <summary><c>yield e</c>, or <c>yield from e</c> when <see cref="From"/> (SPEC §3.13, M31).</summary>
 public sealed record YieldStmt(Expr Value, bool From, TextSpan Span) : Stmt(Span);
@@ -273,6 +273,9 @@ public sealed record OptionalType(TypeSyntax Inner, TextSpan Span) : TypeSyntax(
 
 /// <summary><c>tuple[A, B]</c> (SPEC §3.8).</summary>
 public sealed record TupleType(ImmutableArray<TypeSyntax> Elements, TextSpan Span) : TypeSyntax(Span);
+
+/// <summary><c>tuple[T, ...]</c> (M41, SPEC §3.19).</summary>
+public sealed record VarTupleType(TypeSyntax Element, TextSpan Span) : TypeSyntax(Span);
 
 /// <summary><c>Callable[[A, B], R]</c>; <see cref="Result"/> is null for a result of <c>None</c> (SPEC §3.7).</summary>
 public sealed record CallableType(ImmutableArray<TypeSyntax> Parameters, TypeSyntax? Result, TextSpan Span) : TypeSyntax(Span);

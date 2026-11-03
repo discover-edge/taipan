@@ -991,6 +991,8 @@ public class ParserTests
     [Theory]
     [InlineData("raise\n", "RaiseStmt(null)")]
     [InlineData("raise ValueError(\"x\")\n", "RaiseStmt(CallExpr(NameExpr(ValueError), [Argument(null, StringLiteral(\"x\"))]))")]
+    [InlineData("raise e from c\n", "RaiseStmt(NameExpr(e), NameExpr(c))")]
+    [InlineData("raise e from None\n", "RaiseStmt(NameExpr(e), NoneLiteral)")]
     public void Raise(string text, string expected) =>
         Assert.Equal(expected, Snapshot(text));
 

@@ -6,48 +6,83 @@ public static class TaipanProgram
 {
     public static void TopLevel()
     {
-#line 22 "tests/cases/m8/structs.tpn"
-        global::@Box_int @b = new global::@Box_int(5L);
-#line 23 "tests/cases/m8/structs.tpn"
-        @b.@set(@b.@get() + 1L);
-#line 24 "tests/cases/m8/structs.tpn"
-        global::Taipan.Runtime.Builtins.Print(@b, @b.@get(), @b.@map_str(), @b.@map_str().@get() + "!");
-#line 25 "tests/cases/m8/structs.tpn"
-        global::@Box_str @named = new global::@Box_str("x");
-#line 26 "tests/cases/m8/structs.tpn"
-        global::@Box_float @wide = new global::@Box_float(1L);
-#line 27 "tests/cases/m8/structs.tpn"
-        global::Taipan.Runtime.Builtins.Print(@named, @wide, new global::@Box_list_int(new global::System.Collections.Generic.List<long> { 1L, 2L }), new global::@Box_Box_int_opt(new global::@Box_int_opt(@none_or(3L))));
-#line 28 "tests/cases/m8/structs.tpn"
-        global::@Pair_int_str @p = new global::@Pair_int_str(1L, "one");
-#line 29 "tests/cases/m8/structs.tpn"
-        global::Taipan.Runtime.Builtins.Print(@p, @p.@swap(), global::Taipan.Runtime.Equality.Equal(@p.@swap().@swap(), @p));
-#line 30 "tests/cases/m8/structs.tpn"
-        global::System.Collections.Generic.List<global::@Box_int> @boxes = new global::System.Collections.Generic.List<global::@Box_int> { new global::@Box_int(1L), new global::@Box_int(2L) };
-#line 31 "tests/cases/m8/structs.tpn"
-        long @total = 0L;
-#line 32 "tests/cases/m8/structs.tpn"
-        foreach (global::@Box_int @bx in global::Taipan.Runtime.Iter.Over(@boxes))
+        int @line = 1;
+        string @file = "tests/cases/m8/structs.tpn";
+        try
         {
+#line 22 "tests/cases/m8/structs.tpn"
+            @line = 22;
+            global::@Box_int @b = new global::@Box_int(5L);
+#line 23 "tests/cases/m8/structs.tpn"
+            @line = 23;
+            @b.@set(@b.@get() + 1L);
+#line 24 "tests/cases/m8/structs.tpn"
+            @line = 24;
+            global::Taipan.Runtime.Builtins.Print(@b, @b.@get(), @b.@map_str(), @b.@map_str().@get() + "!");
+#line 25 "tests/cases/m8/structs.tpn"
+            @line = 25;
+            global::@Box_str @named = new global::@Box_str("x");
+#line 26 "tests/cases/m8/structs.tpn"
+            @line = 26;
+            global::@Box_float @wide = new global::@Box_float(1L);
+#line 27 "tests/cases/m8/structs.tpn"
+            @line = 27;
+            global::Taipan.Runtime.Builtins.Print(@named, @wide, new global::@Box_list_int(new global::System.Collections.Generic.List<long> { 1L, 2L }), new global::@Box_Box_int_opt(new global::@Box_int_opt(@none_or(3L))));
+#line 28 "tests/cases/m8/structs.tpn"
+            @line = 28;
+            global::@Pair_int_str @p = new global::@Pair_int_str(1L, "one");
+#line 29 "tests/cases/m8/structs.tpn"
+            @line = 29;
+            global::Taipan.Runtime.Builtins.Print(@p, @p.@swap(), global::Taipan.Runtime.Equality.Equal(@p.@swap().@swap(), @p));
+#line 30 "tests/cases/m8/structs.tpn"
+            @line = 30;
+            global::System.Collections.Generic.List<global::@Box_int> @boxes = new global::System.Collections.Generic.List<global::@Box_int> { new global::@Box_int(1L), new global::@Box_int(2L) };
+#line 31 "tests/cases/m8/structs.tpn"
+            @line = 31;
+            long @total = 0L;
+#line 32 "tests/cases/m8/structs.tpn"
+            @line = 32;
+            foreach (global::@Box_int @bx in global::Taipan.Runtime.Iter.Over(@boxes))
+            {
 #line 33 "tests/cases/m8/structs.tpn"
-            @total = @total + @bx.@value;
-        }
+                @line = 33;
+                @total = @total + @bx.@value;
+                @line = 32;
+            }
 #line 34 "tests/cases/m8/structs.tpn"
-        global::Taipan.Runtime.Builtins.Print(@total);
+            @line = 34;
+            global::Taipan.Runtime.Builtins.Print(@total);
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "<module>"))
+        {
+            throw;
+        }
     }
 
     public static long? @none_or(long @n)
     {
-#line 37 "tests/cases/m8/structs.tpn"
-        if (@n > 0L)
+        int @line = 36;
+        string @file = "tests/cases/m8/structs.tpn";
+        try
         {
+#line 37 "tests/cases/m8/structs.tpn"
+            @line = 37;
+            if (@n > 0L)
+            {
 #line 38 "tests/cases/m8/structs.tpn"
-            return @n;
-        }
+                @line = 38;
+                return @n;
+            }
 #line 39 "tests/cases/m8/structs.tpn"
-        return null;
+            @line = 39;
+            return null;
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "none_or"))
+        {
+            throw;
+        }
     }
 }
 
@@ -66,23 +101,53 @@ public sealed class @Box_int : global::Taipan.Runtime.IDataclass
 
     public long @get()
     {
+        int @line = 5;
+        string @file = "tests/cases/m8/structs.tpn";
+        try
+        {
 #line 6 "tests/cases/m8/structs.tpn"
-        return this.@value;
+            @line = 6;
+            return this.@value;
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "get"))
+        {
+            throw;
+        }
     }
 
     public void @set(long @value)
     {
+        int @line = 8;
+        string @file = "tests/cases/m8/structs.tpn";
+        try
+        {
 #line 9 "tests/cases/m8/structs.tpn"
-        this.@value = @value;
+            @line = 9;
+            this.@value = @value;
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "set"))
+        {
+            throw;
+        }
     }
 
     public global::@Box_str @map_str()
     {
+        int @line = 11;
+        string @file = "tests/cases/m8/structs.tpn";
+        try
+        {
 #line 12 "tests/cases/m8/structs.tpn"
-        return new global::@Box_str(global::Taipan.Runtime.Display.Format(this.@value));
+            @line = 12;
+            return new global::@Box_str(global::Taipan.Runtime.Display.Format(this.@value));
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "map_str"))
+        {
+            throw;
+        }
     }
 }
 
@@ -101,23 +166,53 @@ public sealed class @Box_str : global::Taipan.Runtime.IDataclass
 
     public string @get()
     {
+        int @line = 5;
+        string @file = "tests/cases/m8/structs.tpn";
+        try
+        {
 #line 6 "tests/cases/m8/structs.tpn"
-        return this.@value;
+            @line = 6;
+            return this.@value;
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "get"))
+        {
+            throw;
+        }
     }
 
     public void @set(string @value)
     {
+        int @line = 8;
+        string @file = "tests/cases/m8/structs.tpn";
+        try
+        {
 #line 9 "tests/cases/m8/structs.tpn"
-        this.@value = @value;
+            @line = 9;
+            this.@value = @value;
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "set"))
+        {
+            throw;
+        }
     }
 
     public global::@Box_str @map_str()
     {
+        int @line = 11;
+        string @file = "tests/cases/m8/structs.tpn";
+        try
+        {
 #line 12 "tests/cases/m8/structs.tpn"
-        return new global::@Box_str(global::Taipan.Runtime.Display.Format(this.@value));
+            @line = 12;
+            return new global::@Box_str(global::Taipan.Runtime.Display.Format(this.@value));
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "map_str"))
+        {
+            throw;
+        }
     }
 }
 
@@ -136,23 +231,53 @@ public sealed class @Box_float : global::Taipan.Runtime.IDataclass
 
     public double @get()
     {
+        int @line = 5;
+        string @file = "tests/cases/m8/structs.tpn";
+        try
+        {
 #line 6 "tests/cases/m8/structs.tpn"
-        return this.@value;
+            @line = 6;
+            return this.@value;
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "get"))
+        {
+            throw;
+        }
     }
 
     public void @set(double @value)
     {
+        int @line = 8;
+        string @file = "tests/cases/m8/structs.tpn";
+        try
+        {
 #line 9 "tests/cases/m8/structs.tpn"
-        this.@value = @value;
+            @line = 9;
+            this.@value = @value;
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "set"))
+        {
+            throw;
+        }
     }
 
     public global::@Box_str @map_str()
     {
+        int @line = 11;
+        string @file = "tests/cases/m8/structs.tpn";
+        try
+        {
 #line 12 "tests/cases/m8/structs.tpn"
-        return new global::@Box_str(global::Taipan.Runtime.Display.Format(this.@value));
+            @line = 12;
+            return new global::@Box_str(global::Taipan.Runtime.Display.Format(this.@value));
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "map_str"))
+        {
+            throw;
+        }
     }
 }
 
@@ -171,23 +296,53 @@ public sealed class @Box_list_int : global::Taipan.Runtime.IDataclass
 
     public global::System.Collections.Generic.List<long> @get()
     {
+        int @line = 5;
+        string @file = "tests/cases/m8/structs.tpn";
+        try
+        {
 #line 6 "tests/cases/m8/structs.tpn"
-        return this.@value;
+            @line = 6;
+            return this.@value;
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "get"))
+        {
+            throw;
+        }
     }
 
     public void @set(global::System.Collections.Generic.List<long> @value)
     {
+        int @line = 8;
+        string @file = "tests/cases/m8/structs.tpn";
+        try
+        {
 #line 9 "tests/cases/m8/structs.tpn"
-        this.@value = @value;
+            @line = 9;
+            this.@value = @value;
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "set"))
+        {
+            throw;
+        }
     }
 
     public global::@Box_str @map_str()
     {
+        int @line = 11;
+        string @file = "tests/cases/m8/structs.tpn";
+        try
+        {
 #line 12 "tests/cases/m8/structs.tpn"
-        return new global::@Box_str(global::Taipan.Runtime.Display.Format(this.@value));
+            @line = 12;
+            return new global::@Box_str(global::Taipan.Runtime.Display.Format(this.@value));
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "map_str"))
+        {
+            throw;
+        }
     }
 }
 
@@ -206,23 +361,53 @@ public sealed class @Box_int_opt : global::Taipan.Runtime.IDataclass
 
     public long? @get()
     {
+        int @line = 5;
+        string @file = "tests/cases/m8/structs.tpn";
+        try
+        {
 #line 6 "tests/cases/m8/structs.tpn"
-        return this.@value;
+            @line = 6;
+            return this.@value;
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "get"))
+        {
+            throw;
+        }
     }
 
     public void @set(long? @value)
     {
+        int @line = 8;
+        string @file = "tests/cases/m8/structs.tpn";
+        try
+        {
 #line 9 "tests/cases/m8/structs.tpn"
-        this.@value = @value;
+            @line = 9;
+            this.@value = @value;
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "set"))
+        {
+            throw;
+        }
     }
 
     public global::@Box_str @map_str()
     {
+        int @line = 11;
+        string @file = "tests/cases/m8/structs.tpn";
+        try
+        {
 #line 12 "tests/cases/m8/structs.tpn"
-        return new global::@Box_str(global::Taipan.Runtime.Display.Format(this.@value));
+            @line = 12;
+            return new global::@Box_str(global::Taipan.Runtime.Display.Format(this.@value));
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "map_str"))
+        {
+            throw;
+        }
     }
 }
 
@@ -241,23 +426,53 @@ public sealed class @Box_Box_int_opt : global::Taipan.Runtime.IDataclass
 
     public global::@Box_int_opt @get()
     {
+        int @line = 5;
+        string @file = "tests/cases/m8/structs.tpn";
+        try
+        {
 #line 6 "tests/cases/m8/structs.tpn"
-        return this.@value;
+            @line = 6;
+            return this.@value;
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "get"))
+        {
+            throw;
+        }
     }
 
     public void @set(global::@Box_int_opt @value)
     {
+        int @line = 8;
+        string @file = "tests/cases/m8/structs.tpn";
+        try
+        {
 #line 9 "tests/cases/m8/structs.tpn"
-        this.@value = @value;
+            @line = 9;
+            this.@value = @value;
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "set"))
+        {
+            throw;
+        }
     }
 
     public global::@Box_str @map_str()
     {
+        int @line = 11;
+        string @file = "tests/cases/m8/structs.tpn";
+        try
+        {
 #line 12 "tests/cases/m8/structs.tpn"
-        return new global::@Box_str(global::Taipan.Runtime.Display.Format(this.@value));
+            @line = 12;
+            return new global::@Box_str(global::Taipan.Runtime.Display.Format(this.@value));
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "map_str"))
+        {
+            throw;
+        }
     }
 }
 
@@ -278,9 +493,19 @@ public sealed class @Pair_int_str : global::Taipan.Runtime.IDataclass
 
     public global::@Pair_str_int @swap()
     {
+        int @line = 19;
+        string @file = "tests/cases/m8/structs.tpn";
+        try
+        {
 #line 20 "tests/cases/m8/structs.tpn"
-        return new global::@Pair_str_int(this.@second, this.@first);
+            @line = 20;
+            return new global::@Pair_str_int(this.@second, this.@first);
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "swap"))
+        {
+            throw;
+        }
     }
 }
 
@@ -301,9 +526,19 @@ public sealed class @Pair_str_int : global::Taipan.Runtime.IDataclass
 
     public global::@Pair_int_str @swap()
     {
+        int @line = 19;
+        string @file = "tests/cases/m8/structs.tpn";
+        try
+        {
 #line 20 "tests/cases/m8/structs.tpn"
-        return new global::@Pair_int_str(this.@second, this.@first);
+            @line = 20;
+            return new global::@Pair_int_str(this.@second, this.@first);
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "swap"))
+        {
+            throw;
+        }
     }
 }
 

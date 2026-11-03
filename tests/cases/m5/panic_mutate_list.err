@@ -1,2 +1,4 @@
-panic: list mutated during iteration
-  at tests/cases/m5/panic_mutate_list.tpn:2
+Traceback (most recent call last):
+  File "tests/cases/m5/panic_mutate_list.tpn", line 2, in <module>
+    for x in xs:
+RuntimeError: list mutated during iteration

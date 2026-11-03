@@ -1,0 +1,10 @@
+Traceback (most recent call last):
+  File "tests/cases/m41/uncaught_raise_saved.tpn", line 18, in <module>
+    again(e)
+  File "tests/cases/m41/uncaught_raise_saved.tpn", line 14, in again
+    raise e
+  File "tests/cases/m41/uncaught_raise_saved.tpn", line 8, in remember
+    check(-1)
+  File "tests/cases/m41/uncaught_raise_saved.tpn", line 4, in check
+    raise ValueError(f"negative: {n}")
+ValueError: negative: -1

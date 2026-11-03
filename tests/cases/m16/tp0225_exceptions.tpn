@@ -1,11 +1,10 @@
-# Exception classes are plain classes, and PythonError comes only from Python (SPEC §3.10).
-@dataclass
-class NotFound(Exception):
-    key: str
+# PythonError comes only from Python; since M41 a dataclass may derive from other exception classes (SPEC §3.10, §3.19).
+class Plain(Exception):
+    pass
 
 @dataclass
-class Missing(KeyError):
-    pass
+class FromPlain(Plain):
+    key: str
 
 class Wrapped(PythonError):
     pass

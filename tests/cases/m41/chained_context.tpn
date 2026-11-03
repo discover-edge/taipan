@@ -1,0 +1,13 @@
+# An exception raised while handling another prints the other first (SPEC §3.19).
+class ConfigError(Exception):
+    pass
+
+def port(services: dict[str, int], name: str) -> int:
+    try:
+        return services[name]
+    except KeyError:
+        raise ConfigError(f"no port for {name}")
+
+let services = {"http": 80}
+print(port(services, "http"))
+print(port(services, "ftp"))

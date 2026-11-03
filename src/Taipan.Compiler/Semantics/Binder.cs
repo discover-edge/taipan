@@ -608,6 +608,7 @@ public sealed partial class Binder
         TypeParameterType => true,
         OptionalOf o => MentionsTypeParameter(o.Inner),
         ListOfType l => MentionsTypeParameter(l.Element),
+        VarTupleOfType v => MentionsTypeParameter(v.Element),
         SetOfType s => MentionsTypeParameter(s.Element),
         DictOfType d => MentionsTypeParameter(d.Key) || MentionsTypeParameter(d.Value),
         ClassType s => s.TypeArguments.Any(MentionsTypeParameter),
@@ -978,8 +979,15 @@ public sealed partial class Binder
             case ClassType { Symbol: var baseClass } when BuiltinClasses.IsRuntimeOnly(baseClass):
                 _diagnostics.ReportInvalidBase(syntax.Span, type);
                 return;
+            case ClassType { Symbol: var baseClass } when !symbol.TypeParameters.IsEmpty && BuiltinClasses.IsException(baseClass):
+                _diagnostics.ReportGenericException(nameSpan);
+                return;
+            // A dataclass exception's base may be a built-in exception class (SPEC §3.19, M41).
+            case ClassType { Symbol: var baseClass } when symbol.IsDataclass && BuiltinClasses.IsDataclassBase(baseClass):
+                symbol.BaseType = (ClassType)type;
+                return;
             case ClassType { Symbol: var baseClass } when baseClass.IsDataclass != symbol.IsDataclass:
-                _diagnostics.ReportMixedBase(syntax.Span, symbol.IsDataclass, BuiltinClasses.IsException(baseClass));
+                _diagnostics.ReportMixedBase(syntax.Span, symbol.IsDataclass, symbol.IsDataclass && BuiltinClasses.IsException(baseClass));
                 return;
             // M39 (SPEC §4.9): a final class has no subclasses, and frozen dataclasses derive only from frozen ones.
             case ClassType { Symbol.IsFinal: true } finalBase:
@@ -987,9 +995,6 @@ public sealed partial class Binder
                 return;
             case ClassType { Symbol: var baseClass } when baseClass.IsFrozen != symbol.IsFrozen:
                 _diagnostics.ReportFrozenBase(syntax.Span, symbol.IsFrozen);
-                return;
-            case ClassType { Symbol: var baseClass } when !symbol.TypeParameters.IsEmpty && BuiltinClasses.IsException(baseClass):
-                _diagnostics.ReportGenericException(nameSpan);
                 return;
             case ClassType baseType:
                 symbol.BaseType = baseType;
@@ -1779,6 +1784,10 @@ public sealed partial class Binder
                     return new TupleOfType(elements);
                 _diagnostics.ReportTupleTooShort(tuple.Span);
                 return TaipanType.Error;
+            case VarTupleType varTuple:
+                IndexBuiltinType(varTuple.Span, "tuple");
+                var varElement = BindType(varTuple.Element);
+                return varElement.IsError ? TaipanType.Error : new VarTupleOfType(varElement);
             case AwaitableType awaitable:
                 IndexBuiltinType(awaitable.Span, "Awaitable");
                 return new AwaitableOfType(awaitable.Result is null ? TaipanType.Nothing : BindType(awaitable.Result));
@@ -1987,6 +1996,7 @@ public sealed partial class Binder
     {
         ClassType { Symbol.IsHashable: false } classType => classType,
         TupleOfType tuple => tuple.Elements.Select(Unhashable).FirstOrDefault(c => c is not null),
+        VarTupleOfType varTuple => Unhashable(varTuple.Element),
         _ => null,
     };
 
@@ -2218,8 +2228,10 @@ public sealed partial class Binder
             if (classSymbol.FindField(member.Member.Text) is { } field)
             {
                 Index(member.Member.Span, field);
+                if (field.IsReadOnly)
+                    _diagnostics.ReportCannotAssign(member.Member.Span, field.Name, "read-only property", null);
                 // A frozen dataclass's fields are set only by its constructor (SPEC §4.9, M39).
-                if (classSymbol.IsFrozen)
+                else if (classSymbol.IsFrozen)
                     _diagnostics.ReportFrozenAssign(member.Member.Span, field.Name, classSymbol.Name);
                 var fieldType = FieldType(target.Type, field);
                 var value = BindAssignedValue(assign, NarrowedField(new BoundFieldAccess(target, field, fieldType, member.Span)), fieldType, preset);
@@ -2243,7 +2255,7 @@ public sealed partial class Binder
     private BoundStmt BindIndexAssign(AssignStmt assign, IndexExpr indexExpr, BoundExpr? preset)
     {
         var target = BindValue(indexExpr.Target);
-        if (target.Type is TupleOfType)
+        if (target.Type is TupleOfType or VarTupleOfType)
         {
             _diagnostics.ReportCannotAssignTupleElement(indexExpr.Span);
             return OrphanAssign(assign, preset);
@@ -2393,13 +2405,30 @@ public sealed partial class Binder
             return new BoundRaise(new BoundErrorExpr(syntax.Span), raise.Span);
         }
         var value = BindValue(syntax);
+        var cause = raise.Cause is null ? null : BindCause(raise.Cause);
         if (value.Type.ContainsError)
-            return new BoundRaise(value, raise.Span);
+            return new BoundRaise(value, raise.Span) { Cause = cause };
         if (TypeChecker.Unwrap(value.Type) is ClassType { Symbol: var symbol } && BuiltinClasses.IsException(symbol))
             CheckAssignable(value, BuiltinClasses.BaseException.Type, syntax.Span, TypeChecker.Unwrap(value.Type).ToString());
         else
             _diagnostics.ReportCannotRaise(syntax.Span, value.Type);
-        return new BoundRaise(value, raise.Span);
+        return new BoundRaise(value, raise.Span) { Cause = cause };
+    }
+
+    /// <summary><c>from c</c>'s cause (SPEC §3.19): an exception, an optional of one, or <c>None</c>.</summary>
+    private BoundExpr BindCause(Expr syntax)
+    {
+        if (NamedClass(syntax) is { } named)
+        {
+            _diagnostics.ReportBadCause(syntax.Span, named.Name, named.Name);
+            return new BoundErrorExpr(syntax.Span);
+        }
+        var cause = BindValue(syntax);
+        var isException = cause.Type is NoneType
+            || TypeChecker.Unwrap(cause.Type) is ClassType { Symbol: var symbol } && BuiltinClasses.IsException(symbol);
+        if (!cause.Type.ContainsError && !isException)
+            _diagnostics.ReportBadCause(syntax.Span, cause.Type);
+        return cause;
     }
 
     /// <summary>The class a name or <c>module.Name</c> refers to, if it's a class rather than a value.</summary>
@@ -2773,6 +2802,7 @@ public sealed partial class Binder
         var element = iterable.Type switch
         {
             ListOfType list => list.Element,
+            VarTupleOfType varTuple => varTuple.Element,
             SetOfType set => set.Element,
             DictOfType dict => dict.Key,
             PrimitiveType { Name: "str" } => TaipanType.Str,
@@ -2915,6 +2945,9 @@ public sealed partial class Binder
         }
         if (expected is not null && TypeChecker.Unwrap(expected) is TupleOfType target && target.Elements.Length == tuple.Elements.Length)
             return new BoundTupleLiteral([.. tuple.Elements.Select((e, i) => BindExpected(e, target.Elements[i]))], target, tuple.Span);
+        // A literal checked against tuple[T, ...] builds one (SPEC §3.19).
+        if (expected is not null && TypeChecker.Unwrap(expected) is VarTupleOfType varTarget)
+            return new BoundVarTupleLiteral([.. tuple.Elements.Select(e => BindExpected(e, varTarget.Element))], varTarget, tuple.Span);
 
         var elements = tuple.Elements.Select(e => BindValue(e)).ToImmutableArray();
         var types = ImmutableArray.CreateBuilder<TaipanType>();
@@ -2973,7 +3006,7 @@ public sealed partial class Binder
         var (start, stop, step) = (Part(slice.Start), Part(slice.Stop), Part(slice.Step));
 
         var type = target.Type;
-        if (type is not (ListOfType or PrimitiveType { Name: "str" or "py" }) && !type.ContainsError)
+        if (type is not (ListOfType or VarTupleOfType or PrimitiveType { Name: "str" or "py" }) && !type.ContainsError)
         {
             if (type is IteratorOfType or IterableOfType)
                 _diagnostics.ReportNotIterableFromList(slice.Target.Span, $"cannot slice {type}");
@@ -3566,6 +3599,7 @@ public sealed partial class Binder
     {
         PrimitiveType { Name: "str" } when item == TaipanType.Str => TaipanType.Bool,
         ListOfType list when TypeChecker.AreComparable(item, list.Element) => TaipanType.Bool,
+        VarTupleOfType varTuple when TypeChecker.AreComparable(item, varTuple.Element) => TaipanType.Bool,
         SetOfType set when TypeChecker.AreComparable(item, set.Element) => TaipanType.Bool,
         DictOfType dict when TypeChecker.AreComparable(item, dict.Key) => TaipanType.Bool,
         IteratorOfType or IterableOfType when TypeChecker.ElementOf(container) is { } element && TypeChecker.AreComparable(item, element) => TaipanType.Bool,
@@ -3840,6 +3874,8 @@ public sealed partial class Binder
                 return BindTupleElement(target, tuple, indexExpr);
             case ListOfType list:
                 return NarrowedElement(new BoundIndex(target, BindExpected(indexExpr.Index, TaipanType.Int), list.Element, indexExpr.Span));
+            case VarTupleOfType varTuple:
+                return new BoundIndex(target, BindExpected(indexExpr.Index, TaipanType.Int), varTuple.Element, indexExpr.Span);
             case DictOfType dict:
                 return NarrowedElement(new BoundIndex(target, BindExpected(indexExpr.Index, dict.Key), dict.Value, indexExpr.Span));
             case PrimitiveType { Name: "str" }:
@@ -3902,7 +3938,7 @@ public sealed partial class Binder
         if (symbol is FunctionSymbol { Builtin: BuiltinFunction.IsInstance })
             return BindIsInstance(call, nameSpan);
         if (symbol is FunctionSymbol { Builtin: BuiltinFunction.Abs or BuiltinFunction.Min or BuiltinFunction.Max or BuiltinFunction.Sum
-            or BuiltinFunction.Any or BuiltinFunction.All or BuiltinFunction.Round or BuiltinFunction.DivMod or BuiltinFunction.Set } everyday)
+            or BuiltinFunction.Any or BuiltinFunction.All or BuiltinFunction.Round or BuiltinFunction.DivMod or BuiltinFunction.Set or BuiltinFunction.Tuple } everyday)
             return BindEverydayBuiltin(call, everyday, everyday.Builtin!.Value, expected);
         switch (symbol)
         {
@@ -4127,6 +4163,7 @@ public sealed partial class Binder
             TypeParameterType p => !parameters.Contains(p.Symbol) || map.ContainsKey(p.Symbol),
             OptionalOf o => IsKnown(o.Inner),
             ListOfType l => IsKnown(l.Element),
+            VarTupleOfType v => IsKnown(v.Element),
             SetOfType s => IsKnown(s.Element),
             DictOfType d => IsKnown(d.Key) && IsKnown(d.Value),
             ClassType s => s.TypeArguments.All(IsKnown),
@@ -4152,6 +4189,9 @@ public sealed partial class Binder
                     break;
                 case ListOfType l:
                     GiveUp(l.Element);
+                    break;
+                case VarTupleOfType v:
+                    GiveUp(v.Element);
                     break;
                 case SetOfType s:
                     GiveUp(s.Element);
@@ -4199,6 +4239,9 @@ public sealed partial class Binder
                     Unify(p.Inner, actual, fromArgument);
                     break;
                 case (ListOfType p, ListOfType a):
+                    Unify(p.Element, a.Element, fromArgument);
+                    break;
+                case (VarTupleOfType p, VarTupleOfType a):
                     Unify(p.Element, a.Element, fromArgument);
                     break;
                 case (SetOfType p, SetOfType a):
@@ -5065,7 +5108,7 @@ public sealed partial class Binder
             case BuiltinFunction.Len when argument.Type is IteratorOfType or IterableOfType:
                 _diagnostics.ReportNotIterableFromList(argumentSpan, $"'len' takes a list, dict or str, found {argument.Type}");
                 break;
-            case BuiltinFunction.Len when argument.Type is not (ListOfType or DictOfType or SetOfType) && argument.Type != TaipanType.Py && !argument.Type.ContainsError:
+            case BuiltinFunction.Len when argument.Type is not (ListOfType or DictOfType or SetOfType or VarTupleOfType) && argument.Type != TaipanType.Py && !argument.Type.ContainsError:
                 CheckAssignable(argument, TaipanType.Str, argumentSpan, "str, list, dict or set");
                 break;
             case BuiltinFunction.Int or BuiltinFunction.Float when argument.Type == TaipanType.Str:

@@ -1,0 +1,16 @@
+Traceback (most recent call last):
+  File "tests/cases/m41/frames.tpn", line 23, in <module>
+    main()
+  File "tests/cases/m41/frames.tpn", line 21, in main
+    print(box.total)
+  File "tests/cases/m41/frames.tpn", line 11, in total
+    return sum(halve(x) for x in self.xs)
+  File "tests/cases/m41/frames.tpn", line 11, in <genexpr>
+    return sum(halve(x) for x in self.xs)
+  File "tests/cases/m41/frames.tpn", line 17, in halve
+    return [inner(v) for v in [x, x - 1]][1]
+  File "tests/cases/m41/frames.tpn", line 16, in inner
+    return f(y)
+  File "tests/cases/m41/frames.tpn", line 15, in <lambda>
+    let f: Callable[[int], int] = lambda z: 100 // z
+ZeroDivisionError: division by zero

@@ -7,9 +7,9 @@ namespace Taipan.Tests;
 
 /// <summary>
 /// The emission for <c>--native</c> (SPEC §15.3), without NativeAOT: every golden case that runs is
-/// compiled with native line tracking and without debug information, run in-process, and compared
-/// against its sidecars. As in a native build, a panic's location can then come only from what the
-/// program recorded, so this checks that line tracking reports the same lines as stack traces. Cases a native build
+/// bound as for a native build, compiled without debug information, run in-process, and compared
+/// against its sidecars. As in a native build, a traceback can then come only from the program's own
+/// line tracking, so this checks that it doesn't depend on debug information. Cases a native build
 /// rejects (Python, TP0233) are left out.
 /// </summary>
 [Collection(RunningPrograms.Name)]
@@ -47,7 +47,7 @@ public class NativeEmissionTests
             Assert.All(bound.Diagnostics.Where(d => !d.IsWarning), d => Assert.Equal("TP0233", d.Code));
             return;
         }
-        var emitted = CSharpEmitter.Emit(loaded.Modules[0].Source, bound.Program, native: true);
+        var emitted = CSharpEmitter.Emit(loaded.Modules[0].Source, bound.Program);
         var stdout = new StringWriter();
         var stderr = new StringWriter();
         foreach (var warning in loaded.Diagnostics.Concat(bound.Diagnostics).Concat(emitted.Diagnostics))

@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "tests/cases/m41/uncaught_reraise.tpn", line 12, in <module>
+    start()
+  File "tests/cases/m41/uncaught_reraise.tpn", line 7, in start
+    return load({})
+  File "tests/cases/m41/uncaught_reraise.tpn", line 3, in load
+    return d["port"]
+KeyError: missing key "port"

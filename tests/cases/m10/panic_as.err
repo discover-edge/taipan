@@ -1,2 +1,4 @@
-panic: cannot convert Python str to int
-  at tests/cases/m10/panic_as.tpn:6
+Traceback (most recent call last):
+  File "tests/cases/m10/panic_as.tpn", line 6, in <module>
+    let n = data["n"] as int
+TypeError: cannot convert Python str to int

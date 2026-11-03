@@ -1,2 +1,6 @@
-panic: index -1 out of range for length 0
-  at tests/cases/m5/panic_method_line.tpn:6
+Traceback (most recent call last):
+  File "tests/cases/m5/panic_method_line.tpn", line 9, in <module>
+    print(s.top())
+  File "tests/cases/m5/panic_method_line.tpn", line 6, in top
+    return self.items[-1]
+IndexError: index -1 out of range for length 0

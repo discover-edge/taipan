@@ -1,0 +1,13 @@
+Traceback (most recent call last):
+  File "tests/cases/m41/chained_context.tpn", line 7, in port
+    return services[name]
+KeyError: missing key "ftp"
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "tests/cases/m41/chained_context.tpn", line 13, in <module>
+    print(port(services, "ftp"))
+  File "tests/cases/m41/chained_context.tpn", line 9, in port
+    raise ConfigError(f"no port for {name}")
+ConfigError: no port for ftp

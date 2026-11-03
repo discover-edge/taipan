@@ -6,11 +6,22 @@ public static class TaipanProgram
 {
     public static void TopLevel()
     {
+        int @line = 1;
+        string @file = "tests/cases/m40/protocol_emit.tpn";
+        try
+        {
 #line 15 "tests/cases/m40/protocol_emit.tpn"
-        global::@Named @n = global::@Person.@__new__("ann");
+            @line = 15;
+            global::@Named @n = global::@Person.@__new__("ann");
 #line 16 "tests/cases/m40/protocol_emit.tpn"
-        global::Taipan.Runtime.Builtins.Print(@n.@greet(@n.@name));
+            @line = 16;
+            global::Taipan.Runtime.Builtins.Print(@n.@greet(@n.@name));
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "<module>"))
+        {
+            throw;
+        }
     }
 }
 
@@ -32,16 +43,36 @@ public sealed class @Person : global::Taipan.Runtime.IObject, global::@Named
 
     public void @__init__(string @name)
     {
+        int @line = 9;
+        string @file = "tests/cases/m40/protocol_emit.tpn";
+        try
+        {
 #line 10 "tests/cases/m40/protocol_emit.tpn"
-        this.@name = @name;
+            @line = 10;
+            this.@name = @name;
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "__init__"))
+        {
+            throw;
+        }
     }
 
     public string @greet(string @other)
     {
+        int @line = 12;
+        string @file = "tests/cases/m40/protocol_emit.tpn";
+        try
+        {
 #line 13 "tests/cases/m40/protocol_emit.tpn"
-        return $"{(global::Taipan.Runtime.Display.Format(this.@name))} greets {(global::Taipan.Runtime.Display.Format(@other))}";
+            @line = 13;
+            return $"{(global::Taipan.Runtime.Display.Format(this.@name))} greets {(global::Taipan.Runtime.Display.Format(@other))}";
 #line hidden
+        }
+        catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "greet"))
+        {
+            throw;
+        }
     }
 
     string global::@Named.@name { get => this.@name; set => this.@name = value; }

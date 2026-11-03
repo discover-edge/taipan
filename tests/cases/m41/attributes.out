@@ -1,0 +1,18 @@
+("bottom",) 1 bottom
+None None False
+line 9
+line 6
+line 6
+line 5
+() ("a",) ("k",)
+None
+KeyError("inner") KeyError("inner") True
+KeyError("why") True
+TypeError("ctx") False
+IndexError("b") KeyError("a")
+inner context: KeyError("outer")
+bare: None
+("missing key \"missing\"",) KeyError("first")
+True ValueError("b") None
+exit sees line 108
+ValueError("in block")

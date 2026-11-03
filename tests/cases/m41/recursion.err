@@ -1,0 +1,17 @@
+Traceback (most recent call last):
+  File "tests/cases/m41/recursion.tpn", line 15, in <module>
+    twice(1)
+  File "tests/cases/m41/recursion.tpn", line 13, in twice
+    return twice(n - 1)
+  File "tests/cases/m41/recursion.tpn", line 12, in twice
+    return countdown(4)
+  File "tests/cases/m41/recursion.tpn", line 8, in countdown
+    return countdown(n - 1)
+  File "tests/cases/m41/recursion.tpn", line 8, in countdown
+    return countdown(n - 1)
+  File "tests/cases/m41/recursion.tpn", line 8, in countdown
+    return countdown(n - 1)
+  [Previous line repeated 1 more time]
+  File "tests/cases/m41/recursion.tpn", line 7, in countdown
+    raise Bottom()
+Bottom
