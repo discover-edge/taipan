@@ -56,4 +56,31 @@ public static class DotNet
 
     /// <summary><paramref name="make"/> applied to a value, so it's evaluated once: a delegate built around a function (SPEC §13.9).</summary>
     public static TResult With<T, TResult>(T value, Func<T, TResult> make) => make(value);
+
+    /// <summary>A <c>ref</c> argument's box, which the call changes and the result reads back (SPEC §13.14, M43).</summary>
+    public static System.Runtime.CompilerServices.StrongBox<T> Box<T>(T value, out System.Runtime.CompilerServices.StrongBox<T> box) =>
+        box = new System.Runtime.CompilerServices.StrongBox<T>(value);
+
+    // The delegate each function value was given to an event as, by delegate type (SPEC §13.18, M43).
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<object, Dictionary<Type, Delegate>> s_handlers = new();
+
+    /// <summary>The delegate for a function value as an event handler: the same one each time, so <c>-=</c> removes what <c>+=</c> added.</summary>
+    public static TDelegate Handler<TFunction, TDelegate>(TFunction function, Func<TFunction, TDelegate> make)
+        where TFunction : class where TDelegate : Delegate
+    {
+        var made = s_handlers.GetOrCreateValue(function);
+        lock (made)
+        {
+            if (!made.TryGetValue(typeof(TDelegate), out var handler))
+                made[typeof(TDelegate)] = handler = make(function);
+            return (TDelegate)handler;
+        }
+    }
+
+    /// <summary>A .NET enumerable's elements converted to Taipan values, as a loop goes over them (SPEC §13.13, M43).</summary>
+    public static IEnumerable<TResult> Elements<TSource, TResult>(IEnumerable<TSource> source, Func<TSource, TResult> convert)
+    {
+        foreach (var item in source)
+            yield return convert(item);
+    }
 }

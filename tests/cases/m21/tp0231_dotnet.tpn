@@ -1,7 +1,8 @@
-# .NET members using types Taipan can't use yet (SPEC §13.3).
-from dotnet.System.Collections.Generic import List
+# .NET members using types Taipan can't use yet (SPEC §13.3). Since M43 generic types, decimal
+# and object results are usable, so these use Int128 and a span.
+from dotnet.System import Int128, MemoryExtensions
 from dotnet.System.IO import File
-from dotnet.System import Array, AppDomain, Convert
 
-let amount = Convert.ToDecimal(5)
-print(len(AppDomain.CurrentDomain.GetAssemblies()) > 0)
+let big = Int128.Parse("5")
+let span = MemoryExtensions.AsSpan("abc")
+print(len(File.ReadAllBytes("tests/cases/m21/tp0231_dotnet.tpn")) > 0)

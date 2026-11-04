@@ -1,0 +1,10 @@
+tests/cases/m43/tp0225_dotnet.tpn:6:9: error TP0225: cannot derive from 'StringBuilder': it's sealed
+tests/cases/m43/tp0225_dotnet.tpn:9:9: error TP0225: cannot derive from 'Math': it's static
+tests/cases/m43/tp0225_dotnet.tpn:12:9: error TP0225: cannot derive from 'DateTime': it's a struct
+tests/cases/m43/tp0225_dotnet.tpn:15:9: error TP0225: cannot derive from 'Exception': it's an exception class
+  help: derive from 'Exception'
+tests/cases/m43/tp0225_dotnet.tpn:18:7: error TP0225: 'E' must define 'Dispose' to implement 'IDisposable'
+tests/cases/m43/tp0225_dotnet.tpn:21:17: error TP0225: a class can have only one base class
+tests/cases/m43/tp0225_dotnet.tpn:29:9: error TP0225: 'ToString' is defined by '__str__'
+tests/cases/m43/tp0225_dotnet.tpn:32:9: error TP0225: 'G' derives from the .NET class 'Random', so it can't be derived from yet
+tests/cases/m43/tp0225_dotnet.tpn:35:7: error TP0225: generic classes cannot implement .NET interfaces yet

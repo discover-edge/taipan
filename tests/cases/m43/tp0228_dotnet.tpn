@@ -1,0 +1,17 @@
+# Implementations and overrides must match the .NET signatures (SPEC §13.16).
+from dotnet.System import IComparable, Random
+
+class Version(IComparable[Version]):
+    def CompareTo(self, other: Version) -> int:
+        return 0
+
+class Loaded(Random):
+    def __init__(self):
+        super().__init__()
+
+    @override
+    def Next(self, a: str) -> int:
+        return 0
+
+    def NextDouble(self) -> float:
+        return 0.5

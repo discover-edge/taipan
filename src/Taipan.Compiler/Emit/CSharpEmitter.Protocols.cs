@@ -103,7 +103,8 @@ public sealed partial class CSharpEmitter
         foreach (var method in protocol.Symbol.Methods.Values)
         {
             var parameters = string.Join(", ", method.Parameters.Select(p => $"{TypeName(TypeChecker.Substitute(p.Type, self))} @{p.Name}"));
-            var call = $"this.@{method.Name}({string.Join(", ", method.Parameters.Select(p => $"@{p.Name}"))})";
+            var own = classType.Symbol.FindMethod(method.Name) is { } found ? MethodName(found) : method.Name;
+            var call = $"this.@{own}({string.Join(", ", method.Parameters.Select(p => $"@{p.Name}"))})";
             var result = TypeChecker.Substitute(method.ReturnType, self);
             var body = result is NothingType ? $"{{ {call}; }}" : $"=> {call};";
             implementation.Members.Append($"    {TypeName(result)} {name}.@{method.Name}({parameters}) {body}\n");

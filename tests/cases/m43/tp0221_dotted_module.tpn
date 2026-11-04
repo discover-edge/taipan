@@ -1,0 +1,2 @@
+# Only .NET namespaces are dotted; modules aren't (SPEC §4.7, §13.1).
+import geometry.shapes as shapes

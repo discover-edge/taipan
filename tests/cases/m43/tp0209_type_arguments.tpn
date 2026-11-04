@@ -1,0 +1,9 @@
+# Type argument counts for .NET generic types and methods (SPEC §13.8, §13.13).
+from dotnet.System import Array, Math
+from dotnet.System.Collections.Generic import HashSet
+
+let a = Array.Empty[str, int]()
+let b = Math.Abs[int](1)
+let c = HashSet[str, int]()
+let d: HashSet = HashSet[str]()
+let e = HashSet()

@@ -940,10 +940,15 @@ public class ParserTests
     [Theory]
     [InlineData("from m import *\n", "1:15 TP0100: expected name, found '*'")]
     [InlineData("def f():\n    import m\n", "2:5 TP0100: expected statement, found 'import'")]
-    [InlineData("import m.n\n", "1:9 TP0100: expected newline, found '.'")]
+    [InlineData("import m.n as\n", "1:14 TP0100: expected name, found newline")]
     [InlineData("from m import\n", "1:14 TP0100: expected name, found newline")]
     public void ImportSyntaxErrors(string text, string expected) =>
         Assert.Equal([expected], Errors(text));
+
+    // A dotted import names a .NET namespace (SPEC §13.1, M43).
+    [Fact]
+    public void DottedImport() =>
+        Assert.Empty(Errors("import dotnet.System.IO as io\n"));
 
     // ---- try and raise (M16) ----
 

@@ -1,0 +1,21 @@
+# `out`, `ref` and `params` parameters (SPEC §13.14).
+from dotnet.System import Int32, String
+from dotnet.System.IO import Path
+from dotnet.System.Threading import Interlocked
+
+print(Int32.TryParse("12"))
+print(Int32.TryParse("x1"))
+let ok, n = Int32.TryParse("42")
+if ok:
+    print(n + 1)
+
+print(Interlocked.Increment(5))
+print(Interlocked.Exchange(1, 9))
+
+print(Path.Combine("a", "b", "c"))
+print(Path.Combine("a", "b", "c", "d", "e"))
+print(Path.Combine(["x", "y"]))
+print(String.Join(", ", "x", "y", "z"))
+print(String.Join("-", ["p", "q"]))
+print(String.Format("{0}+{1}", 1, 2))
+print(String.Format("{0}{1}{2}{3}", "a", "b", "c", "d"))

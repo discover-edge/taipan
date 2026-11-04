@@ -337,6 +337,9 @@ public sealed class DiagnosticBag
     public void ReportModuleAsValue(TextSpan span, string module) =>
         Add("TP0200", span, $"'{module}' is a module, not a value");
 
+    public void ReportNamespaceAsValue(TextSpan span, string ns) =>
+        Add("TP0200", span, $"'{ns}' is a .NET namespace, not a value");
+
     public void ReportInstantiationTooDeep(TextSpan span, string function, string instance) =>
         Add("TP0219", span, $"instantiating '{function}' needs '{instance}', which is too deep");
 
@@ -704,8 +707,49 @@ public sealed class DiagnosticBag
     public void ReportNoDotNetType(TextSpan span, string ns, string name) =>
         Add("TP0201", span, $".NET namespace '{ns}' has no type '{name}'");
 
-    public void ReportGenericDotNetImport(TextSpan span, string name) =>
-        Add("TP0231", span, $"'{name}' can't be imported: generic .NET types aren't supported yet");
+    // ---- .NET interop III (SPEC §13.13–§13.20, M43) ----
+
+    public void ReportNamespaceImportNeedsName(TextSpan span, string ns) =>
+        Add("TP0221", span, $"'import dotnet.{ns}' needs a name", $"use 'import dotnet.{ns} as <name>'");
+
+    public void ReportMappedGeneric(TextSpan span, string written, object taipan) =>
+        Add("TP0231", span, $"'{written}' is {taipan} in Taipan; write '{taipan}'");
+
+    public void ReportMethodTypeArgumentCount(TextSpan span, string member, int expected, int found) =>
+        Add("TP0209", span, $"'{member}' takes {expected} type argument{(expected == 1 ? "" : "s")}, found {found}");
+
+    public void ReportEventMisuse(TextSpan span, string name) =>
+        Add("TP0200", span, $"'{name}' is an event; use '+=' or '-='");
+
+    public void ReportDotNetCause(TextSpan span, bool isCause) =>
+        Add("TP0200", span, "a .NET exception can't have a cause", isCause ? "pass it to the constructor as the inner exception" : null);
+
+    public void ReportCannotDeriveDotNet(TextSpan span, string type, string reason) =>
+        Add("TP0225", span, $"cannot derive from '{type}': it's {reason}", reason == "an exception class" ? "derive from 'Exception'" : null);
+
+    public void ReportMissingImplementation(TextSpan span, string className, string method, string type) =>
+        Add("TP0225", span, $"'{className}' must define '{method}' to implement '{type}'");
+
+    public void ReportMustOverride(TextSpan span, string className, string method) =>
+        Add("TP0225", span, $"'{className}' must override '{method}'");
+
+    public void ReportDefinedBySpecial(TextSpan span, string method, string special) =>
+        Add("TP0225", span, $"'{method}' is defined by '{special}'");
+
+    public void ReportDerivesFromDotNetClass(TextSpan span, string className, string baseName) =>
+        Add("TP0225", span, $"'{className}' derives from the .NET class '{baseName}', so it can't be derived from yet");
+
+    public void ReportGenericImplementsDotNet(TextSpan span) =>
+        Add("TP0225", span, "generic classes cannot implement .NET interfaces yet");
+
+    public void ReportDotNetSuperFirst(TextSpan span, string baseName) =>
+        Add("TP0226", span, $"'super().__init__' must come first, since '{baseName}' is a .NET class");
+
+    public void ReportDotNetSignature(TextSpan span, string method, string signature, string owner) =>
+        Add("TP0228", span, $"'{method}' must be '{signature}', as in '{owner}.{method}'");
+
+    public void ReportCannotImplement(TextSpan span, string type, string what) =>
+        Add("TP0231", span, $"'{type}' has {what}, which a Taipan class can't implement yet");
 
     public void ReportDotNetUnsupported(TextSpan span, string member, string type) =>
         Add("TP0231", span, $"'{member}' uses {type}, which Taipan can't use yet");

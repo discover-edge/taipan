@@ -1,0 +1,1 @@
+tests/cases/m43/tp0226_dotnet.tpn:9:9: error TP0226: 'super().__init__' must come first, since 'Random' is a .NET class

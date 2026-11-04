@@ -1,0 +1,31 @@
+# Raising .NET exceptions (SPEC §13.6).
+from dotnet.System import InvalidOperationException, ArgumentException
+
+def check(n: int) -> int:
+    if n < 0:
+        raise ArgumentException("negative", "n")
+    return n
+
+try:
+    check(-1)
+except ArgumentException as e:
+    print(e.Message, e.ParamName)
+
+try:
+    raise InvalidOperationException("closed")
+except Exception as e:
+    print(e)
+
+def rethrow():
+    try:
+        raise InvalidOperationException("again")
+    except InvalidOperationException as e:
+        print("first", e.Message)
+        raise e
+
+try:
+    rethrow()
+except InvalidOperationException as e:
+    print("second", e.Message)
+
+raise InvalidOperationException("uncaught")

@@ -1,0 +1,9 @@
+tests/cases/m43/tp0200_dotnet.tpn:8:13: error TP0200: 'CollectionChanged' is an event; use '+=' or '-='
+tests/cases/m43/tp0200_dotnet.tpn:9:7: error TP0200: 'CollectionChanged' is an event; use '+=' or '-='
+tests/cases/m43/tp0200_dotnet.tpn:15:51: error TP0200: a .NET exception can't have a cause
+tests/cases/m43/tp0200_dotnet.tpn:18:32: error TP0200: a .NET exception can't have a cause
+  help: pass it to the constructor as the inner exception
+tests/cases/m43/tp0200_dotnet.tpn:21:11: error TP0200: 'StringBuilder' is not an exception class
+tests/cases/m43/tp0200_dotnet.tpn:23:12: error TP0200: operator '|' cannot be applied to DayOfWeek and DayOfWeek
+tests/cases/m43/tp0200_dotnet.tpn:25:22: error TP0200: StringBuilder can never be a MemoryStream
+tests/cases/m43/tp0200_dotnet.tpn:26:29: error TP0200: expected IFormatProvider?, found int

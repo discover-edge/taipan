@@ -184,11 +184,11 @@ public sealed class Parser
         _ => ParseStmt(),
     };
 
-    // import_stmt = "import" NAME [ "as" NAME ] NEWLINE
+    // import_stmt = "import" module_path [ "as" NAME ] NEWLINE; dotted only for a .NET namespace (SPEC §13.1, M43)
     private ImportStmt ParseImportStmt()
     {
         var start = Next().Span.Start;
-        var module = ExpectIdentifier();
+        var module = ParseModulePath();
         var alias = ParseImportAlias();
         var span = SpanFrom(start);
         Expect(TokenKind.Newline);

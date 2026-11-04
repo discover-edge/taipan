@@ -74,6 +74,7 @@ public abstract record TaipanType
         EnumType enumType => enumType.TypeArguments.Any(a => a.ContainsError),
         FunctionType function => function.Parameters.Any(p => p.ContainsError) || function.Result.ContainsError,
         TupleOfType tuple => tuple.Elements.Any(e => e.ContainsError),
+        DotNetType net => net.TypeArguments.Any(a => a.ContainsError),
         _ => false,
     };
 

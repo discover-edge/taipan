@@ -549,7 +549,11 @@ public sealed partial class CSharpEmitter
     // A class's base list: its base class, or nothing, then the runtime interface it implements,
     // listed again in a subclass to give it its own TypeName (SPEC §8).
     private string BaseList(ClassSymbol symbol, string runtimeInterface) =>
-        (symbol.BaseType is { } baseType ? $"{TypeName(baseType)}, {Runtime}.{runtimeInterface}" : $"{Runtime}.{runtimeInterface}")
+        (symbol.BaseType is { } baseType ? $"{TypeName(baseType)}, {Runtime}.{runtimeInterface}"
+            : symbol.DotNetBaseClass is { } dotnetBase ? $"{DotNetName(dotnetBase)}, {Runtime}.{runtimeInterface}"
+            : $"{Runtime}.{runtimeInterface}")
+        // The .NET interfaces it implements (SPEC §13.16, M43).
+        + string.Concat(symbol.DotNetBases.Where(b => b.Symbol.TypeKind == Microsoft.CodeAnalysis.TypeKind.Interface).Select(b => $", {DotNetName(b)}"))
         + InterfacesMarker(_currentClassName!);
 
     private void EmitClass(BoundClass classDef, string className)
@@ -609,6 +613,7 @@ public sealed partial class CSharpEmitter
         EmitSpecialHooks(symbol, ClassTypeOf(classDef));
         EmitFieldDefaultHelpers(symbol, className);
         EmitMembers(classDef);
+        EmitDotNetBridges(symbol);
         _indent--;
         _out.Append(ImplementationsMarker(className));
         Line("}");
@@ -657,7 +662,14 @@ public sealed partial class CSharpEmitter
         var constructor = symbol.Constructor;
         var parameters = string.Join(", ", constructor.Parameters.Select(p => $"{TypeName(p.Type)} @{p.Name}"));
         var arguments = string.Join(", ", constructor.Parameters.Select(p => $"@{p.Name}"));
-        if (_library is null)
+        // A .NET base class is constructed with the arguments of __init__'s super().__init__(…) (SPEC §13.16).
+        var dotnetInit = symbol.DotNetBaseClass is null ? null
+            : classDef.Methods.FirstOrDefault(m => m.Symbol == symbol.Init)?.Body.Statements.FirstOrDefault() is BoundExprStmt { Expr: BoundDotNetSuperInit init } ? init : null;
+        if (symbol.DotNetBaseClass is { } dotnetClass)
+        {
+            EmitDotNetBaseConstructor(className, dotnetClass, dotnetInit);
+        }
+        else if (_library is null)
         {
             Line($"{(symbol.HasSubclasses ? "protected" : "private")} @{className}() {{ }}");
         }
@@ -674,7 +686,10 @@ public sealed partial class CSharpEmitter
         {
             Line($"{HelperAccess} static {self} @__new__({parameters})");
             Line("{");
-            Line($"    var @__self = new {self}({(_library is null ? "" : HiddenArgument)});");
+            if (symbol.DotNetBaseClass is not null)
+                Line($"    var @__self = new {self}({DotNetBaseArguments(constructor, dotnetInit)});");
+            else
+                Line($"    var @__self = new {self}({(_library is null ? "" : HiddenArgument)});");
             Line($"    @__self.@__init__({arguments});");
             Line("    return @__self;");
             Line("}");
@@ -701,6 +716,7 @@ public sealed partial class CSharpEmitter
             Line("}");
         }
         EmitMembers(classDef);
+        EmitDotNetBridges(symbol);
         _indent--;
         _out.Append(ImplementationsMarker(className));
         Line("}");
@@ -803,6 +819,10 @@ public sealed partial class CSharpEmitter
                 LineDirective(assign.Span);
                 EmitCompound(assign.IsCompound, assign.Target is null ? [] : [assign.Target], () => Line($"{DotNetAssignment(assign)};"));
                 break;
+            case BoundDotNetEvent subscription:
+                LineDirective(subscription.Span);
+                Line($"{DotNetEvent(subscription)};");
+                break;
             case BoundDotNetIndexAssign assign:
                 LineDirective(assign.Span);
                 EmitCompound(assign.IsCompound, [assign.Index.Target, .. assign.Index.Arguments.Select(a => a.Value)], () => Line($"{DotNetIndexAssignment(assign)};"));
@@ -841,6 +861,9 @@ public sealed partial class CSharpEmitter
                 // A generator's body returns its R, or None for an iterator's (SPEC §3.20, §8).
                 Line(_coroutine?.Kind == CoroutineKind.Generator && ret.Value is null ? "return default!;"
                     : ret.Value is null ? "return;" : $"return {Expr(ret.Value)};");
+                break;
+            // The .NET base was constructed by __new__ already (SPEC §13.16).
+            case BoundExprStmt { Expr: BoundDotNetSuperInit }:
                 break;
             case BoundExprStmt { Expr: BoundYield yield } exprStmt:
                 LineDirective(exprStmt.Span);
@@ -900,12 +923,13 @@ public sealed partial class CSharpEmitter
                 LineDirective(forEach.Span);
                 var iterate = Concrete(forEach.Iterable.Type) switch
                 {
-                    PrimitiveType { Name: "py" } => $"{Interop}.Iterate",
+                    PrimitiveType { Name: "py" } => $"{Interop}.Iterate({Expr(forEach.Iterable)})",
                     // An iterator or iterable is a .NET sequence already (SPEC §3.13).
-                    IteratorOfType or IterableOfType or OpaqueType => "",
-                    _ => $"{Runtime}.Iter.Over",
+                    IteratorOfType or IterableOfType or OpaqueType => $"({Expr(forEach.Iterable)})",
+                    DotNetType net => DotNetElements(Expr(forEach.Iterable), net),
+                    _ => $"{Runtime}.Iter.Over({Expr(forEach.Iterable)})",
                 };
-                Line($"foreach ({TypeName(forEach.Variable.Type)} @{_locals[forEach.Variable]} in {iterate}({Expr(forEach.Iterable)}))");
+                Line($"foreach ({TypeName(forEach.Variable.Type)} @{_locals[forEach.Variable]} in {iterate})");
                 EmitLoopBody(forEach.Body, line: LineOf(forEach.Span));
                 break;
             case BoundMatch match:
@@ -1390,6 +1414,22 @@ public sealed partial class CSharpEmitter
                 return $"{VariantTypeName(variant.Variant, variant.Enum)}({string.Join(", ", variant.Fields.Select(Sub))})";
             case BoundClassPattern { Fields.IsEmpty: true } classPattern:
                 return TypeName(classPattern.Class);
+            case BoundDotNetPattern { Members.IsEmpty: true } dotnet:
+                return DotNetName(dotnet.Type);
+            case BoundDotNetPattern dotnet:
+            {
+                // The value is named, and each member's value, converted, is tested in the `when` (SPEC §8).
+                var value = $"@{_locals.Fresh("value")}";
+                foreach (var (member, memberType, sub) in dotnet.Members)
+                {
+                    var inner = new List<string>();
+                    var read = FromDotNet($"{value}.@{member.Name}", DotNetTypes.TypeOf(member), memberType, Who(member));
+                    var tested = Pattern(sub, inner);
+                    guards.Add($"({read}) is {tested}");
+                    guards.AddRange(inner);
+                }
+                return $"{DotNetName(dotnet.Type)} {value}";
+            }
             case BoundClassPattern classPattern:
                 return $"{TypeName(classPattern.Class)} {{ {string.Join(", ", classPattern.Fields.Select(f => $"@{Member(f.Field, classPattern.Class)}: {Sub(f.Pattern)}"))} }}";
             case BoundTuplePattern { Rest: { } tupleRest } tuple:
@@ -1482,6 +1522,8 @@ public sealed partial class CSharpEmitter
 
     private string Throw(BoundRaise raise) =>
         raise.Value is null ? $"throw {Runtime}.Exceptions.Rethrow({_caught.Peek()})"
+        // A .NET exception is thrown as it is (SPEC §13.6, M43).
+        : Concrete(raise.Value.Type) is DotNetType ? $"throw {Expr(raise.Value)}"
         : raise.Cause is { } cause ? $"throw {Runtime}.Exceptions.Raise({Expr(raise.Value)}, {Expr(cause)})"
         : $"throw {Runtime}.Exceptions.Raise({Expr(raise.Value)})";
 
@@ -1564,6 +1606,9 @@ public sealed partial class CSharpEmitter
             BoundNew construct => New(construct),
             BoundSuperCall call => SuperCall(call),
             BoundIsInstance isInstance => $"{Operand(isInstance.Operand)} is {string.Join(" or ", isInstance.Tested.Select(TypeName))}",
+            BoundTypeTest test => TypeChecker.Unwrap(Concrete(test.Operand.Type)) is ObjectType
+                ? $"{Runtime}.Ops.Is<{TypeName(Concrete(test.Target))}>({Expr(test.Operand)})"
+                : $"{Operand(test.Operand)} is {TypeName(Concrete(test.Target))}",
             BoundNarrowed narrowed => Narrowed(narrowed),
             BoundClassCast cast => ClassCast(cast),
             BoundConvertFunction convert => ConvertFunction(convert),
@@ -1591,6 +1636,8 @@ public sealed partial class CSharpEmitter
             BoundDotNetOperator op => DotNetOperator(op),
             BoundDotNetNew created => DotNetNew(created),
             BoundDotNetMember member => DotNetMember(member),
+            BoundDotNetFlags flags => DotNetFlags(flags),
+            BoundCancellationToken => $"{Runtime}.Async.Token",
             _ => throw new InvalidOperationException($"unexpected bound expression {expr.GetType().Name}"),
         };
         return SelfCast(expr, text);
@@ -1604,7 +1651,7 @@ public sealed partial class CSharpEmitter
     {
         var once = call.Shape?.Missing.Any() == true && !IsSimple(call.Target);
         var receiver = once ? $"@{_locals.Fresh("receiver")}" : Operand(call.Target);
-        var invocation = $"{receiver}.@{call.Method.Name}({ShapedArguments(call.Arguments, call.Shape,
+        var invocation = $"{receiver}.@{MethodName(call.Method)}({ShapedArguments(call.Arguments, call.Shape,
             p => $"@{call.Method.Parameters[p].Name}", p => $"{receiver}.@{MethodDefaultName(call.Method, p)}()")})";
         if (!once)
             return invocation;
@@ -1648,7 +1695,10 @@ public sealed partial class CSharpEmitter
         var value = Expr(narrowed.Value);
         var original = Concrete(narrowed.Value.Type);
         var type = Concrete(narrowed.Type);
-        if (type is ClassType && TypeChecker.Unwrap(original) != type)
+        // An object narrowed by isinstance converts at each read (SPEC §13.17).
+        if (TypeChecker.Unwrap(original) is ObjectType)
+            return Cast(new BoundCast(narrowed.Value, narrowed.Type, narrowed.Span));
+        if (type is ClassType or DotNetType && TypeChecker.Unwrap(original) != type)
             return $"(({TypeName(type)}){value})";
         return IsValueType(type) ? $"{value}.Value" : $"{value}!";
     }
@@ -1661,7 +1711,7 @@ public sealed partial class CSharpEmitter
         var target = Concrete(cast.Type);
         if (target is OptionalOf optional)
             return $"({value} as {TypeName(optional.Inner)})";
-        if (TypeChecker.Unwrap(Concrete(cast.Value.Type)) is ClassType from && from.Symbol.DerivesFrom(((ClassType)target).Symbol))
+        if (TypeChecker.Unwrap(Concrete(cast.Value.Type)) is ClassType from && target is ClassType to && from.Symbol.DerivesFrom(to.Symbol))
             return $"(({TypeName(target)}){value})";
         return $"{Runtime}.Ops.Cast<{TypeName(target)}>({value}, \"{target}\")";
     }
@@ -1712,7 +1762,7 @@ public sealed partial class CSharpEmitter
 
     /// <summary>An operand of an operator or member access, parenthesized when it's an operator expression or a C# <c>is</c> test.</summary>
     private string Operand(BoundExpr expr) =>
-        expr is BoundBinary or BoundUnary or BoundIsNone or BoundIs or BoundIsSome or BoundIsInstance && !_hoisted.ContainsKey(expr) ? $"({Expr(expr)})" : Expr(expr);
+        expr is BoundBinary or BoundUnary or BoundIsNone or BoundIs or BoundIsSome or BoundIsInstance or BoundTypeTest && !_hoisted.ContainsKey(expr) ? $"({Expr(expr)})" : Expr(expr);
 
     /// <summary>
     /// Whether C# would fold this int expression of literals at compile time and overflow, which
@@ -2171,7 +2221,7 @@ public sealed partial class CSharpEmitter
         OptionalOf optional => $"{TypeName(optional.Inner)}?",
         FunctionType function => $"{Runtime}.Function<{DelegateName(function)}>",
         TupleOfType tuple => $"({string.Join(", ", tuple.Elements.Select(TypeName))})",
-        DotNetType net => net.Symbol.ToDisplayString(Microsoft.CodeAnalysis.SymbolDisplayFormat.FullyQualifiedFormat),
+        DotNetType net => DotNetName(net),
         OpaqueType opaque => $"global::{opaque.RuntimeName}",
         SelfType when _selfClass is { } selfClass => TypeName(selfClass),
         ClassOfType => $"{Runtime}.ClassValue",

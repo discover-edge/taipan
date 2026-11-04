@@ -1,0 +1,57 @@
+# Taipan classes implementing .NET interfaces and deriving from .NET classes (SPEC §13.16).
+from dotnet.System import IComparable, Random, IDisposable
+from dotnet.System.Collections.Generic import Comparer
+from dotnet.System.Linq import Enumerable
+
+class Version(IComparable[Version]):
+    major: int
+    minor: int
+
+    def __init__(self, major: int, minor: int):
+        self.major = major
+        self.minor = minor
+
+    def CompareTo(self, other: Version?) -> int:
+        if other is None:
+            return 1
+        return (self.major - other.major) * 1000 + (self.minor - other.minor)
+
+    def __repr__(self) -> str:
+        return f"v{self.major}.{self.minor}"
+
+let versions = [Version(2, 0), Version(1, 5), Version(1, 10)]
+versions.Sort()
+print(versions)
+print(versions.Order(), versions.Max())
+print(Comparer[Version].Default.Compare(Version(1, 0), Version(2, 0)) < 0)
+let v: IComparable[Version] = Version(3, 1)
+print(v.CompareTo(Version(3, 0)), v.CompareTo(None))
+
+class Loaded(Random):
+    calls: int
+
+    def __init__(self):
+        super().__init__(7)
+        self.calls = 0
+
+    @override
+    def Next(self) -> int:
+        self.calls += 1
+        return 4
+
+let loaded = Loaded()
+let r: Random = loaded
+print(r.Next(), loaded.Next(), loaded.calls)
+print(r.Next(1, 2), loaded.NextDouble() < 1.0)
+print(isinstance(r, Loaded))
+
+@dataclass
+class Resource(IDisposable):
+    name: str
+
+    def Dispose(self) -> None:
+        print(f"disposing {self.name}")
+
+let d: IDisposable = Resource("db")
+d.Dispose()
+print(Resource("a") == Resource("a"))

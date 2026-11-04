@@ -1,0 +1,4 @@
+tests/cases/m43/tp0221_namespace.tpn:2:8: error TP0221: 'import dotnet.System.IO' needs a name
+  help: use 'import dotnet.System.IO as <name>'
+tests/cases/m43/tp0221_namespace.tpn:3:8: error TP0221: .NET namespace 'No.Such' not found
+tests/cases/m43/tp0221_namespace.tpn:6:7: error TP0200: 'text' is a .NET namespace, not a value

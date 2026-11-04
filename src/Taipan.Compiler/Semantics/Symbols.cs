@@ -79,6 +79,12 @@ public sealed class FunctionSymbol(
     /// <summary>The base class method this method overrides, once checked.</summary>
     public FunctionSymbol? Overrides { get; set; }
 
+    /// <summary>The .NET base class's virtual method this method overrides (SPEC §13.16, M43).</summary>
+    public Microsoft.CodeAnalysis.IMethodSymbol? DotNetOverride { get; set; }
+
+    /// <summary>The .NET interfaces' methods this method implements, each with its interface (SPEC §13.16, M43).</summary>
+    public List<(DotNetType Interface, Microsoft.CodeAnalysis.IMethodSymbol Method)> DotNetImplements { get; } = [];
+
     /// <summary>For a method, the class it's declared in.</summary>
     public ClassSymbol? Owner => DeclaredIn ?? (Self?.Type as ClassType)?.Symbol;
 
@@ -240,8 +246,20 @@ public sealed class ClassSymbol(string name, ImmutableArray<TypeParameterSymbol>
     /// <summary>The protocols the class declares in its base list (SPEC §3.11), checked at its definition.</summary>
     public ImmutableArray<ClassType> Protocols { get; set; } = [];
 
+    /// <summary>
+    /// The .NET class and interfaces the class lists among its bases (SPEC §13.16, M43). A .NET
+    /// class comes first, and counts as the class's one base class.
+    /// </summary>
+    public ImmutableArray<DotNetType> DotNetBases { get; set; } = [];
+
+    /// <summary>The .NET base class, if it has one.</summary>
+    public DotNetType? DotNetBaseClass => DotNetBases.FirstOrDefault(b => b.Symbol.TypeKind == Microsoft.CodeAnalysis.TypeKind.Class);
+
     /// <summary>The base class, if any; never part of a cycle once the declarations are checked.</summary>
     public ClassSymbol? Base => BaseType?.Symbol;
+
+    /// <summary>The same as <see cref="Base"/>, for walking a class's chain.</summary>
+    public ClassSymbol? BaseClass => Base;
 
     /// <summary>
     /// The base class with its type arguments, in terms of this class's own type parameters:
@@ -640,9 +658,26 @@ public sealed class TypeAliasSymbol(string name, ImmutableArray<TypeParameterSym
 }
 
 /// <summary>A .NET type imported with <c>from dotnet.&lt;namespace&gt; import</c> (SPEC §13.1), under the name it's bound to.</summary>
-public sealed class DotNetTypeSymbol(string name, Microsoft.CodeAnalysis.INamedTypeSymbol type) : Symbol(name)
+public sealed class DotNetTypeSymbol(string name, ImmutableArray<Microsoft.CodeAnalysis.INamedTypeSymbol> types) : Symbol(name)
 {
-    public Microsoft.CodeAnalysis.INamedTypeSymbol Type { get; } = type;
+    /// <summary>Each arity the name has in its namespace (SPEC §13.1, M43).</summary>
+    public ImmutableArray<Microsoft.CodeAnalysis.INamedTypeSymbol> Types { get; } = types;
+
+    /// <summary>The non-generic type with the name, or else the first generic one.</summary>
+    public Microsoft.CodeAnalysis.INamedTypeSymbol Type => Types.FirstOrDefault(t => t.Arity == 0) ?? Types[0];
+
+    /// <summary>The type with this many type parameters, if any.</summary>
+    public Microsoft.CodeAnalysis.INamedTypeSymbol? WithArity(int arity) => Types.FirstOrDefault(t => t.Arity == arity);
+}
+
+/// <summary>A .NET namespace imported with <c>import dotnet.&lt;namespace&gt; as n</c> (SPEC §13.1, M43).</summary>
+public sealed class DotNetNamespaceSymbol(string name, Microsoft.CodeAnalysis.INamespaceSymbol ns) : Symbol(name)
+{
+    public Microsoft.CodeAnalysis.INamespaceSymbol Namespace { get; } = ns;
+
+    /// <summary>The namespace's public types with a name, every arity.</summary>
+    public ImmutableArray<Microsoft.CodeAnalysis.INamedTypeSymbol> TypesNamed(string name) =>
+        [.. Namespace.GetTypeMembers(name).Where(t => t.DeclaredAccessibility == Microsoft.CodeAnalysis.Accessibility.Public)];
 }
 
 /// <summary>

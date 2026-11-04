@@ -1,0 +1,9 @@
+# A .NET base is constructed first (SPEC §13.16).
+from dotnet.System import Random
+
+class Loaded(Random):
+    seed: int
+
+    def __init__(self, seed: int):
+        self.seed = seed
+        super().__init__(seed)

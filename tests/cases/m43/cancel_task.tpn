@@ -1,0 +1,28 @@
+# Cancelling .NET tasks with the async function's token (SPEC §13.20).
+import asyncio
+from dotnet.System.Threading.Tasks import Task, TaskCanceledException
+
+async def slow() -> None:
+    await Task.Delay(10000)
+    print("never")
+
+async def main() -> None:
+    try:
+        await asyncio.wait_for(slow(), 0.05)
+    except TimeoutError:
+        print("timed out")
+    let t = Task.Delay(20000)
+    try:
+        async with asyncio.timeout(0.05):
+            await t
+    except TimeoutError:
+        print("timeout again")
+    # The delay's task was cancelled with the function's token, so awaiting it again doesn't wait 20 seconds.
+    try:
+        await t
+    except TaskCanceledException:
+        print("the delay was cancelled")
+    await Task.Delay(1)
+    print("a new token after a caught cancellation")
+
+asyncio.run(main())

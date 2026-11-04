@@ -37,6 +37,17 @@ public sealed class Coverage(TaipanType type)
     /// <summary>A mapping pattern with keys (M38), by its keys; its arguments are their values' patterns.</summary>
     private sealed record MappingKey(string Keys, int Count);
 
+    /// <summary>
+    /// A .NET type's pattern (M43), with the members it names. It never covers a type: other values,
+    /// and other members' values, may still be missing.
+    /// </summary>
+    private sealed record DotNetKey(DotNetType Type, string Members, ImmutableArray<TaipanType> Types)
+    {
+        public bool Equals(DotNetKey? other) => other is not null && other.Type == Type && other.Members == Members;
+
+        public override int GetHashCode() => HashCode.Combine(Type, Members);
+    }
+
     // The keys of constructors that aren't symbols or literals.
     private sealed record TupleKey
     {
@@ -97,6 +108,8 @@ public sealed class Coverage(TaipanType type)
         BoundVariantPattern variant => new Ctor(variant.Variant, [.. variant.Fields.Select(SpaceOf)]),
         BoundClassPattern classPattern => new Ctor(classPattern.Class.Symbol, [.. classPattern.Class.Symbol.AllFields.Select(f =>
             classPattern.Fields.FirstOrDefault(p => p.Field == f).Pattern is { } sub ? SpaceOf(sub) : Any.Instance)]),
+        BoundDotNetPattern dotnet => new Ctor(new DotNetKey(dotnet.Type, string.Join(",", dotnet.Members.Select(m => m.Member.Name)), [.. dotnet.Members.Select(m => m.MemberType)]),
+            [.. dotnet.Members.Select(m => SpaceOf(m.Pattern))]),
         BoundTuplePattern tuple => new Ctor(TupleKey.Instance, [.. tuple.Elements.Select(SpaceOf)]),
         BoundNonePattern => new Ctor(NoneKey.Instance, []),
         BoundSomePattern some => new Ctor(SomeKey.Instance, [SpaceOf(some.Inner)]),
@@ -308,6 +321,9 @@ public sealed class Coverage(TaipanType type)
         (ClassSymbol symbol, ClassType classType) => [.. symbol.AllFields.Select(f =>
             TypeChecker.Substitute(f.Type, TypeChecker.MapOf(symbol == classType.Symbol ? classType : symbol.Type)))],
         (TupleKey, TupleOfType tuple) => [.. tuple.Elements],
+        (DotNetKey dotnet, _) => [.. dotnet.Types],
+        // A class's pattern on an object (SPEC §13.17).
+        (ClassSymbol symbol, _) => [.. symbol.AllFields.Select(f => TypeChecker.Substitute(f.Type, TypeChecker.MapOf(symbol.Type)))],
         (ListLength length, ListOfType list) => [.. Enumerable.Repeat(list.Element, length.Length)],
         (SomeKey, OptionalOf optional) => [optional.Inner],
         (MappingKey mapping, DictOfType dict) => [.. Enumerable.Repeat(dict.Value, mapping.Count)],

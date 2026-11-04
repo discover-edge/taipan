@@ -400,12 +400,35 @@ public static class Ops
 
     /// <summary><c>x as T</c> on an object (SPEC §3.20): its value, if it's a <c>T</c>.</summary>
     public static T Unbox<T>(object? value, string type) =>
-        value is T typed ? typed : throw new TypeError($"cannot convert {TypeOf(value)} to {type}");
+        TryUnbox<T>(value, out var typed) ? typed : throw new TypeError($"cannot convert {TypeOf(value)} to {type}");
 
     /// <summary><c>x as T?</c> on an object: None if it isn't a <c>T</c>.</summary>
-    public static T? UnboxValueOrNone<T>(object? value) where T : struct => value is T typed ? typed : null;
+    public static T? UnboxValueOrNone<T>(object? value) where T : struct => TryUnbox<T>(value, out var typed) ? typed : null;
 
-    public static T? UnboxOrNone<T>(object? value) where T : class => value as T;
+    public static T? UnboxOrNone<T>(object? value) where T : class => TryUnbox<T>(value, out var typed) ? typed : null;
+
+    /// <summary>Whether <c>x as T</c> succeeds on an object (SPEC §13.17): a .NET integer widens to <c>int</c>, a <c>float</c> to <c>float</c>, and a <c>char</c> is a <c>str</c>.</summary>
+    public static bool Is<T>(object? value) => TryUnbox<T>(value, out _);
+
+    private static bool TryUnbox<T>(object? value, out T result)
+    {
+        object? converted = value switch
+        {
+            T => value,
+            int or short or sbyte or byte or ushort or uint when typeof(T) == typeof(long) => System.Convert.ToInt64(value),
+            ulong big when typeof(T) == typeof(long) => big <= long.MaxValue ? (long)big : throw new OverflowError("int too large to convert"),
+            float single when typeof(T) == typeof(double) => (double)single,
+            char c when typeof(T) == typeof(string) => c.ToString(),
+            _ => null,
+        };
+        if (converted is T typed)
+        {
+            result = typed;
+            return true;
+        }
+        result = default!;
+        return false;
+    }
 
     // A value's Taipan type, as a message names it.
     private static string TypeOf(object? value) => value switch

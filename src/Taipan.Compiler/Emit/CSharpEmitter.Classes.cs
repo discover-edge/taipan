@@ -43,6 +43,8 @@ public sealed partial class CSharpEmitter
     {
         { Kind: MemberKind.Property } => $"{method.Name}__get",
         { SetterOf: not null } => $"{method.Name}__set",
+        // A .NET method's override calls the Taipan method, which C# can't give the same name (SPEC §13.16).
+        { DotNetOverride: not null } => $"{method.Name}__own",
         _ => method.Name,
     };
 
