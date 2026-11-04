@@ -2,7 +2,7 @@
 
 A statically typed, compiled language with Python's syntax. Taipan reads like Python, but checks types at compile time, has no `null` surprises, and requires exhaustive `match`. Programs compile to .NET assemblies, and Python libraries are reachable through a checked boundary.
 
-**Documentation:** [taipan-org.github.io/taipan](https://taipan-org.github.io/taipan/), with a tour of the language, guides, and the [specification](SPEC.md). The site's source is in [`website/`](website/).
+**Documentation:** [taipan-lang.org](https://taipan-lang.org), with a tour of the language, guides, and the [specification](SPEC.md). The site's source is in [`website/`](website/).
 
 ```python
 @dataclass
