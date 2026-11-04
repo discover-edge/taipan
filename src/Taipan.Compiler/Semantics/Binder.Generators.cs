@@ -20,6 +20,7 @@ public sealed partial class Binder
         AssignStmt assign => Yields(assign.Target) || Yields(assign.Value),
         ReturnStmt ret => Yields(ret.Value),
         RaiseStmt raise => Yields(raise.Value) || Yields(raise.Cause),
+        AssertStmt check => Yields(check.Condition) || Yields(check.Message),
         ExprStmt exprStmt => Yields(exprStmt.Expr),
         IfStmt ifStmt => ifStmt.Clauses.Any(c => Yields(c.Condition) || Yields(c.Body)) || YieldsIn(ifStmt.Else),
         WhileStmt whileStmt => Yields(whileStmt.Condition) || Yields(whileStmt.Body),

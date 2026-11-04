@@ -9,6 +9,8 @@ namespace Taipan.Tests;
 /// <c>TAIPAN_TEST_NATIVE=1</c> (as CI sets) and otherwise passes with a note.
 /// <see cref="NativeEmissionTests"/> checks the same emission for every case, without NativeAOT.
 /// </summary>
+// It sets the working directory, as the tests that run programs do, so it runs apart from them.
+[Collection(RunningPrograms.Name)]
 public class NativeBuildTests
 {
     public static TheoryData<string> Cases() =>

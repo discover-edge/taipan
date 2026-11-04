@@ -26,6 +26,40 @@ public static class Interop
         return Run(() => Py.Import(module));
     }
 
+    /// <summary>
+    /// The modules Python can import, for the language server's completion (SPEC §16.4, M44): its
+    /// built-in modules and those <c>pkgutil.iter_modules()</c> finds, without private ones; none
+    /// without Python.
+    /// </summary>
+    public static IReadOnlyList<string> ModuleNames()
+    {
+        if (!PythonEngine.IsInitialized && FindLibrary() is null)
+            return [];
+        try
+        {
+            EnsureStarted();
+            return Run(() =>
+            {
+                using var scope = Py.CreateScope();
+                scope.Exec("import pkgutil, sys\nnames = sorted(set(sys.builtin_module_names) | {m.name for m in pkgutil.iter_modules()})");
+                var names = new List<string>();
+                using var list = scope.Get("names");
+                for (var i = 0L; i < list.Length(); i++)
+                {
+                    using var name = list.GetItem((int)i);
+                    var text = name.As<string>();
+                    if (!text.StartsWith('_'))
+                        names.Add(text);
+                }
+                return names;
+            });
+        }
+        catch (TaipanPanic)
+        {
+            return [];
+        }
+    }
+
     private static void EnsureStarted()
     {
         if (PythonEngine.IsInitialized)

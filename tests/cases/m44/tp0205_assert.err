@@ -1,0 +1,2 @@
+tests/cases/m44/tp0205_assert.tpn:3:8: error TP0205: condition must be bool, found int
+tests/cases/m44/tp0205_assert.tpn:4:8: error TP0205: condition must be bool, found tuple[bool, str]

@@ -278,7 +278,7 @@ public class EditorTests
             return responses[i]["error"]!["message"]!.GetValue<string>();
         }
         Assert.Equal("cannot rename the built-in 'print'", Error(0));
-        Assert.Equal("cannot rename the module 'geometry'; rename its file instead", Error(1));
+        Assert.Equal("cannot rename the module 'geometry': the editor can't rename files", Error(1));
         Assert.Equal("'let' is a keyword", Error(2));
         Assert.Equal("'2nd' is not a valid name", Error(3));
         Assert.Equal("'_' is not a valid name", Error(4));

@@ -707,6 +707,11 @@ public sealed class DiagnosticBag
     public void ReportNoDotNetType(TextSpan span, string ns, string name) =>
         Add("TP0201", span, $".NET namespace '{ns}' has no type '{name}'");
 
+    // ---- Tests (SPEC §20, M44) ----
+
+    public void ReportNotATest(TextSpan span, string function) =>
+        Warn("TP0303", span, $"'{function}' takes parameters, so it isn't run as a test");
+
     // ---- .NET interop III (SPEC §13.13–§13.20, M43) ----
 
     public void ReportNamespaceImportNeedsName(TextSpan span, string ns) =>

@@ -93,17 +93,29 @@ public sealed partial class LanguageServer
 
     private static bool IsSpecial(string name) => name.Length > 4 && name.StartsWith("__", StringComparison.Ordinal) && name.EndsWith("__", StringComparison.Ordinal);
 
+    /// <summary>
+    /// The file a module's name names, when it's spelled as the file's name rather than an alias
+    /// for it: renaming it renames the file (SPEC §16.6, M44). Null for anything else.
+    /// </summary>
+    private static string? ModuleFile(Document document, SemanticIndex.Occurrence occurrence) =>
+        occurrence.Target is ModuleSymbol && document.Result.Index!.DefinitionOf(occurrence.Target) is { } definition
+            && Path.GetFileNameWithoutExtension(definition.Source.Path) == document.Source.ToString(occurrence.Span)
+            ? Path.GetFullPath(definition.Source.Path)
+            : null;
+
     /// <summary>Throws the refusal for a name rename won't change (SPEC §16.6), and gives its key otherwise.</summary>
-    private static NameKey Renamable(Document document, SemanticIndex.Occurrence occurrence)
+    private NameKey Renamable(Document document, SemanticIndex.Occurrence occurrence)
     {
         var index = document.Result.Index!;
         var text = document.Source.ToString(occurrence.Span);
         switch (occurrence.Target)
         {
-            case ISymbol or DotNetTypeSymbol:
+            case ISymbol or DotNetTypeSymbol or DotNetNamespaceSymbol:
                 throw new RequestFailedException($"cannot rename the .NET name '{text}'");
-            case ModuleSymbol:
-                throw new RequestFailedException($"cannot rename the module '{text}'; rename its file instead");
+            case ModuleSymbol when index.DefinitionOf(occurrence.Target) is null:
+                throw new RequestFailedException($"cannot rename the built-in '{text}'");
+            case ModuleSymbol when ModuleFile(document, occurrence) is not null && !_canRenameFiles:
+                throw new RequestFailedException($"cannot rename the module '{text}': the editor can't rename files");
             case VariableSymbol { Type: PrimitiveType { Name: "py" } } when index.DefinitionOf(occurrence.Target) is null:
                 throw new RequestFailedException($"cannot rename the Python name '{text}'");
             case FunctionSymbol { Name: var name } when IsSpecial(name):
@@ -142,11 +154,17 @@ public sealed partial class LanguageServer
 
         // An alias isn't spelled as what it imports: renaming the alias edits it in its own file only.
         var name = document.Source.ToString(occurrence.Span);
-        var isAlias = occurrence.Target is Symbol symbol && symbol.Name != name;
+        var moduleFile = ModuleFile(document, occurrence);
+        var isAlias = moduleFile is null && occurrence.Target is Symbol symbol && symbol.Name != name;
+        var renamedFile = moduleFile is null ? null : Path.Combine(Path.GetDirectoryName(moduleFile)!, newName + ".tpn");
+        if (renamedFile is not null && newName != name && (File.Exists(renamedFile) || _documents.ContainsKey(renamedFile)))
+            throw new RequestFailedException($"'{newName}.tpn' already exists");
         var edits = Occurrences(key, before).Where(r => r.Text == name && (!isAlias || r.Path == path)).ToList();
         var changes = new JsonObject();
         if (newName == name)
             return new JsonObject { ["changes"] = changes };
+        // The renamed module's own edits, and its check, are under its new path.
+        string Moved(string file) => file == moduleFile ? renamedFile! : file;
 
         // Checked again with the changes, no file may get an error it didn't have.
         var edited = new Dictionary<string, string>();
@@ -155,18 +173,20 @@ public sealed partial class LanguageServer
             var text = group.First().Source.Text;
             foreach (var edit in group.OrderByDescending(e => e.Span.Start))
                 text = text[..edit.Span.Start] + newName + text[edit.Span.End..];
-            edited[group.Key] = text;
-            changes[UriOf(group.Key)] = new JsonArray([.. group.Select(e => (JsonNode)new JsonObject
+            edited[Moved(group.Key)] = text;
+            changes[UriOf(Moved(group.Key))] = new JsonArray([.. group.Select(e => (JsonNode)new JsonObject
             {
                 ["range"] = Range(e.Source, e.Span),
                 ["newText"] = newName,
             })]);
         }
-        var after = CheckRoot(files, edited);
+        if (moduleFile is not null && !edited.ContainsKey(renamedFile!))
+            edited[renamedFile!] = _documents.TryGetValue(moduleFile, out var open) ? open.Text : File.ReadAllText(moduleFile);
+        var after = CheckRoot([.. files.Select(Moved)], edited);
         foreach (var file in files)
         {
             var counts = Errors(before[file], file).CountBy(d => d.Code).ToDictionary();
-            foreach (var error in Errors(after[file], file))
+            foreach (var error in Errors(after[Moved(file)], Moved(file)))
             {
                 if (counts.GetValueOrDefault(error.Code) > 0)
                 {
@@ -175,10 +195,16 @@ public sealed partial class LanguageServer
                 }
                 var position = error.Source!.GetLinePosition(error.Span.Start);
                 throw new RequestFailedException(
-                    $"renaming '{name}' to '{newName}' would cause an error: {Path.GetRelativePath(directory, file)}:{position.Line}:{position.Column}: {error.Code}: {error.Message}");
+                    $"renaming '{name}' to '{newName}' would cause an error: {Path.GetRelativePath(directory, Moved(file))}:{position.Line}:{position.Column}: {error.Code}: {error.Message}");
             }
         }
-        return new JsonObject { ["changes"] = changes };
+        if (moduleFile is null)
+            return new JsonObject { ["changes"] = changes };
+        // The file is renamed first, then each file's edits, under its URI after the rename (SPEC §16.6).
+        var documentChanges = new JsonArray(new JsonObject { ["kind"] = "rename", ["oldUri"] = UriOf(moduleFile), ["newUri"] = UriOf(renamedFile!) });
+        foreach (var (uri, fileEdits) in changes)
+            documentChanges.Add(new JsonObject { ["textDocument"] = new JsonObject { ["uri"] = uri, ["version"] = null }, ["edits"] = fileEdits!.DeepClone() });
+        return new JsonObject { ["documentChanges"] = documentChanges };
     }
 
     // A file's own errors, from its check as a main file.

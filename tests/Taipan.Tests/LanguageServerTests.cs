@@ -212,7 +212,7 @@ public class LanguageServerTests
     [Fact]
     public void LifecycleAndUnsupportedRequests()
     {
-        var session = new LspSession().Request("textDocument/formatting", new JsonObject()).Run();
+        var session = new LspSession().Request("textDocument/documentHighlight", new JsonObject()).Run();
         Assert.Equal(0, session.ExitCode);
         var initialize = session.Initialize()["capabilities"]!;
         Assert.Equal(1, initialize["textDocumentSync"]!["change"]!.GetValue<int>());

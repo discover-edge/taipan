@@ -230,6 +230,46 @@ public class BuildIntegrationTests(PackedFeed packed) : IClassFixture<PackedFeed
         Assert.EndsWith("hello from dotnet run\n", output.Replace("\r\n", "\n"));
     }
 
+    // M44 (SPEC §18.6): a test project runs its main file's tests with dotnet test and dotnet run.
+    [Fact]
+    public void TestProjectRunsWithDotnetTest()
+    {
+        var root = packed.Workspace("tests");
+        Write(Path.Combine(root, "Checks", "Checks.tpnproj"), $"""
+            <Project Sdk="TaipanLang.Sdk/{packed.Version}">
+              <PropertyGroup>
+                <IsTestProject>true</IsTestProject>
+              </PropertyGroup>
+            </Project>
+            """);
+        Write(Path.Combine(root, "Checks", "Checks.tpn"), """
+            import helpers
+
+            def test_double():
+                assert helpers.double(2) == 4
+
+            def test_wrong():
+                assert helpers.double(2) == 5, "two doubled"
+            """);
+        Write(Path.Combine(root, "Checks", "helpers.tpn"), "def double(n: int) -> int:\n    return n * 2\n");
+        var (exit, output) = Dotnet(Path.Combine(root, "Checks"), "test");
+        Assert.NotEqual(0, exit);
+        output = output.Replace("\r\n", "\n");
+        Assert.Contains("PASS Checks.tpn::test_double", output);
+        Assert.Contains("FAIL Checks.tpn::test_wrong", output);
+        Assert.Contains("  File \"Checks.tpn\", line 7, in test_wrong", output);
+        Assert.Contains("AssertionError: two doubled", output);
+        Assert.Contains("1 passed, 1 failed", output);
+
+        File.WriteAllText(Path.Combine(root, "Checks", "Checks.tpn"), "import helpers\n\ndef test_double():\n    assert helpers.double(2) == 4\n");
+        (exit, output) = Dotnet(Path.Combine(root, "Checks"), "test");
+        Assert.True(exit == 0, output);
+        Assert.Contains("1 passed, 0 failed", output);
+        (exit, output) = Dotnet(Path.Combine(root, "Checks"), "run");
+        Assert.True(exit == 0, output);
+        Assert.EndsWith("PASS Checks.tpn::test_double\n1 passed, 0 failed\n", output.Replace("\r\n", "\n"));
+    }
+
     [Fact]
     public void PackedLibraryInstallsIntoACSharpProject()
     {

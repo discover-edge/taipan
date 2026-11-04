@@ -19,6 +19,7 @@
     <ItemGroup>
       <_TaipanArgument Include="compile;$(TaipanMain)" />
       <_TaipanArgument Include="--library" Condition="'$(OutputType)' == 'Library'" />
+      <_TaipanArgument Include="--test" Condition="'$(IsTestProject)' == 'true'" />
       <_TaipanArgument Include="--out;@(IntermediateAssembly->'%(FullPath)')" />
       <_TaipanArgument Include="--assembly;$(AssemblyName);--namespace;$(RootNamespace);--version;$(Version)" />
       <_TaipanArgument Include="@(ReferencePath->'--reference=%(FullPath)')" />

@@ -230,6 +230,15 @@ public sealed partial class CSharpEmitter
             return code.ToString();
         }
         code.Append($"\npublic static class {_entryClass}\n{{\n");
+        // A test file's entry runs its top level, then its tests (SPEC §20).
+        if (!_program.Tests.IsDefault)
+        {
+            var topLevel = _program.IsAsync ? $"() => {Runtime}.EventLoop.Main({_programClass}.{_topLevelMethod})" : $"{_programClass}.{_topLevelMethod}";
+            var tests = _program.Tests.Select(t => $"new {Runtime}.Test(\"{t.Name}\", () => {(t.IsAsync ? $"{_programClass}.@{t.Name}()" : $"{{ {_programClass}.@{t.Name}(); return null; }}")})");
+            code.Append($"    public static int Main(string[] args) => {Runtime}.Testing.Run(\"{Escape(_source.Path)}\", {topLevel}, [{string.Join(", ", tests)}], args);\n");
+            code.Append("}\n");
+            return code.ToString();
+        }
         // An awaiting top level runs to its end before the program exits (SPEC §3.14).
         code.Append(_program.IsAsync
             ? $"    public static int Main(string[] args) => {Runtime}.Panic.Run(() => {Runtime}.EventLoop.Main({_programClass}.{_topLevelMethod}), args);\n"
@@ -938,6 +947,11 @@ public sealed partial class CSharpEmitter
             case BoundRaise raise:
                 LineDirective(raise.Span);
                 Line($"{Throw(raise)};");
+                break;
+            // The message is evaluated only when the condition is false (SPEC §5.6).
+            case BoundAssert check:
+                LineDirective(check.Span);
+                Line($"if (!{Operand(check.Condition)}) throw {Runtime}.Exceptions.Raise({Runtime}.AssertionError.@__new__({(check.Message is null ? "\"\"" : $"{Runtime}.Display.Format({Expr(check.Message)})")}));");
                 break;
             case BoundTry tryStmt:
                 EmitTry(tryStmt);

@@ -27,6 +27,7 @@ public sealed partial class LanguageServer(Stream input, Stream output)
     // Open documents by path, with their latest check.
     private readonly Dictionary<string, Document> _documents = [];
     private bool _shutdown;
+    private bool _canRenameFiles;
 
     /// <summary>Serves until <c>exit</c>, or the end of input; returns the exit code (SPEC §16.1).</summary>
     public int Run()
@@ -65,6 +66,10 @@ public sealed partial class LanguageServer(Stream input, Stream output)
         switch (method)
         {
             case "initialize":
+                // A module's rename renames its file, which the client must be able to do (SPEC §16.6, M44).
+                var workspaceEdit = parameters?["capabilities"]?["workspace"]?["workspaceEdit"];
+                _canRenameFiles = workspaceEdit?["documentChanges"]?.GetValue<bool>() == true
+                    && workspaceEdit["resourceOperations"] is JsonArray operations && operations.Any(o => o?.GetValue<string>() == "rename");
                 return new JsonObject
                 {
                     ["capabilities"] = new JsonObject
@@ -86,6 +91,8 @@ public sealed partial class LanguageServer(Stream input, Stream output)
                             },
                             ["full"] = true,
                         },
+                        ["documentFormattingProvider"] = true,
+                        ["codeActionProvider"] = new JsonObject { ["codeActionKinds"] = new JsonArray("quickfix") },
                     },
                     ["serverInfo"] = new JsonObject { ["name"] = "taipan" },
                 };
@@ -119,6 +126,10 @@ public sealed partial class LanguageServer(Stream input, Stream output)
                 return Rename(parameters!);
             case "textDocument/semanticTokens/full":
                 return SemanticTokens(parameters!);
+            case "textDocument/formatting":
+                return Formatting(parameters!);
+            case "textDocument/codeAction":
+                return CodeActions(parameters!);
             default:
                 // An unsupported request is MethodNotFound; an unsupported notification is ignored (SPEC §16.1).
                 handled = false;

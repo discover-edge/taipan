@@ -1,0 +1,6 @@
+# A top level that raises runs none of the tests (SPEC §20.2).
+let xs: list[int] = []
+print(xs[0])
+
+def test_never():
+    assert False

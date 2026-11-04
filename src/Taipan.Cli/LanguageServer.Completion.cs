@@ -19,7 +19,7 @@ public sealed partial class LanguageServer
     private static readonly string[] BuiltinTypes = ["bool", "Callable", "dict", "float", "int", "Iterable", "Iterator", "list", "py", "str", "TextIO", "tuple"];
 
     private static readonly string[] StatementKeywords =
-        ["async", "await", "break", "class", "const", "continue", "def", "del", "elif", "else", "enum", "except", "False", "finally", "for", "from",
+        ["assert", "async", "await", "break", "class", "const", "continue", "def", "del", "elif", "else", "enum", "except", "False", "finally", "for", "from",
          "if", "import", "lambda", "let", "match", "None", "not", "pass", "raise", "return", "True", "try", "type", "var", "while", "with", "yield"];
 
     private static readonly string[] ExpressionKeywords = ["await", "False", "lambda", "match", "None", "not", "True"];
@@ -241,6 +241,15 @@ public sealed partial class LanguageServer
 
     // ---- Completion (SPEC §16.4) ----
 
+    private static readonly Regex DotNetPath = new(@"^\s*(from|import)\s+dotnet\.((\w+\.)*)$");
+
+    // Python's importable modules, found once (SPEC §16.4).
+    private static readonly Lazy<IReadOnlyList<string>> PythonModules = new(Taipan.Runtime.Interop.ModuleNames);
+
+    // The .NET assemblies a document's program may use (SPEC §13.2).
+    private static DotNetLibrary DotNetFor(string path) =>
+        ProjectFile.Load(path, out _) is { } project ? DotNetLibrary.For(project.CompileReferences) : DotNetLibrary.Framework;
+
     private static readonly Regex ImportModule = new(@"^\s*(import\s+([\w.]+\s*(as\s+\w+\s*)?,\s*)*|from\s+)$");
     private static readonly Regex FromImport = new(@"^\s*from\s+([\w.]+)\s+import\s+([\w\s,]*,\s*)?$");
 
@@ -257,6 +266,13 @@ public sealed partial class LanguageServer
         var word = WordStart(text, cursor);
         var code = text[prefix.Start..word];
 
+        // .NET namespaces, after dotnet. and each further . (SPEC §16.4, M44).
+        if (DotNetPath.Match(code) is { Success: true } dotnetPath)
+        {
+            foreach (var ns in DotNetFor(path).NamespacesIn(dotnetPath.Groups[2].Value.TrimEnd('.')))
+                items.Add(Item(ns, 9, $"namespace {dotnetPath.Groups[2].Value}{ns}", "0000"));
+            return result;
+        }
         if (ImportModule.IsMatch(code))
         {
             foreach (var module in ImportableModules(path))
@@ -267,8 +283,23 @@ public sealed partial class LanguageServer
         if (FromImport.Match(code) is { Success: true } from)
         {
             var module = from.Groups[1].Value;
-            if (module == ModuleLoader.PythonModule || ModuleLoader.IsDotNet(module))
+            // Python's modules, and a .NET namespace's types (SPEC §16.4, M44).
+            if (module == ModuleLoader.PythonModule)
+            {
+                foreach (var name in PythonModules.Value)
+                    items.Add(Item(name, 9, $"Python module {name}", "0000"));
                 return result;
+            }
+            if (ModuleLoader.IsDotNet(module))
+            {
+                if (module.Length > ModuleLoader.DotNetModule.Length && DotNetFor(path).Namespace(module[(ModuleLoader.DotNetModule.Length + 1)..]) is { } ns)
+                {
+                    foreach (var type in ns.GetTypeMembers().Where(t => t.DeclaredAccessibility == Microsoft.CodeAnalysis.Accessibility.Public)
+                        .DistinctBy(t => t.Name).OrderBy(t => t.Name, StringComparer.Ordinal))
+                        items.Add(Item(type.Name, DotNetKind(type), $".NET {type.ToDisplayString()}", "0000"));
+                }
+                return result;
+            }
             // The module's names, as after `m.` (SPEC §16.4).
             var lineStart = text.LastIndexOf('\n', Math.Max(word - 1, 0)) + 1;
             var line = $"import {module} as {ModulePlaceholder}\n{ModulePlaceholder}.";

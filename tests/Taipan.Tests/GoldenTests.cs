@@ -10,7 +10,9 @@ namespace Taipan.Tests;
 /// for a case that needs CPython), and <c>.library</c>, <c>.native</c> or <c>.python-extension</c>
 /// (empty, for a case checked and emitted with that option, SPEC §14, §15, §17), <c>.args</c>
 /// (program arguments, one per line, with <c>{tmp}</c> standing for a fresh temporary directory)
-/// and <c>.in</c> (the program's stdin) (SPEC §6.1).
+/// and <c>.in</c> (the program's stdin) (SPEC §6.1). Since M44, <c>.fmt</c> is what <c>taipan fmt</c>
+/// makes of the case (SPEC §19), and <c>.test</c> (empty) runs it with <c>taipan test</c> (SPEC §20)
+/// instead of <c>run</c> or <c>check</c>.
 /// </summary>
 [Collection(RunningPrograms.Name)]
 public class GoldenTests
@@ -21,16 +23,22 @@ public class GoldenTests
 
     public static TheoryData<string> Cases()
     {
+        var data = new TheoryData<string>();
+        foreach (var path in CasePaths())
+            data.Add(path);
+        return data;
+    }
+
+    /// <summary>Every case, by its path relative to the repository's root.</summary>
+    public static IEnumerable<string> CasePaths()
+    {
         // A multi-file case is a directory with a main.tpn; its other files are modules, not cases.
         var cases = Directory.EnumerateFiles(Path.Combine(RepoPaths.Root, "tests", "cases"), "*.tpn", SearchOption.AllDirectories)
             .Where(file => Path.GetFileName(file) == "main.tpn" || !File.Exists(Path.Combine(Path.GetDirectoryName(file)!, "main.tpn")))
             .Concat(Directory.EnumerateFiles(Path.Combine(RepoPaths.Root, "examples"), "*.tpn")
                 .Where(file => File.Exists(Path.ChangeExtension(file, ".out"))));
 
-        var data = new TheoryData<string>();
-        foreach (var file in cases.Order())
-            data.Add(Path.GetRelativePath(RepoPaths.Root, file).Replace('\\', '/'));
-        return data;
+        return cases.Order().Select(file => Path.GetRelativePath(RepoPaths.Root, file).Replace('\\', '/'));
     }
 
     [Theory]
@@ -53,7 +61,8 @@ public class GoldenTests
 
         string[] flags = [.. ((string[])["library", "native", "python-extension"]).Where(f => File.Exists(Path.ChangeExtension(casePath, $".{f}"))).Select(f => $"--{f}")];
         using var input = new ProgramInput(casePath);
-        string[] run = expectedOut is not null ? ["run", casePath, .. flags, "--", .. input.Arguments] : ["check", casePath, .. flags];
+        string[] run = File.Exists(Path.ChangeExtension(casePath, ".test")) ? ["test", casePath]
+            : expectedOut is not null ? ["run", casePath, .. flags, "--", .. input.Arguments] : ["check", casePath, .. flags];
         var (exit, stdout, stderr) = RunCli(run, input.Stdin);
         Assert.Equal(expectedErr ?? "", stderr);
         Assert.Equal(expectedOut ?? "", stdout);
@@ -61,9 +70,11 @@ public class GoldenTests
 
         if (ReadSidecar(casePath, ".cs") is { } expectedCSharp)
             Assert.Equal(expectedCSharp, RunCli(["emit", casePath, .. flags]).Stdout);
+        if (ReadSidecar(casePath, ".fmt") is { } expectedFormat)
+            Assert.Equal(expectedFormat, Compiler.Formatting.Formatter.Format(Compiler.Text.SourceText.From(File.ReadAllText(casePath), casePath)).Text);
     }
 
-    private static (int Exit, string Stdout, string Stderr) RunCli(string[] args, string stdin = "")
+    internal static (int Exit, string Stdout, string Stderr) RunCli(string[] args, string stdin = "")
     {
         var stdout = new StringWriter();
         var stderr = new StringWriter();
@@ -71,7 +82,7 @@ public class GoldenTests
         return (exit, Normalize(stdout.ToString()), Normalize(stderr.ToString()));
     }
 
-    private static string? ReadSidecar(string tpnPath, string extension)
+    internal static string? ReadSidecar(string tpnPath, string extension)
     {
         var path = Path.ChangeExtension(tpnPath, extension);
         return File.Exists(path) ? Normalize(File.ReadAllText(path)) : null;

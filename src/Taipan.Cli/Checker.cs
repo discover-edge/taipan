@@ -56,7 +56,7 @@ public static class Checker
         var bound = Binder.Bind(
             loaded.Modules, library,
             asLibrary: target == Target.Library, asNative: target == Target.Native, asExtension: target == Target.PythonExtension,
-            libraryNamespace: options is null ? project.Names.Namespace : options.Namespace);
+            libraryNamespace: options is null ? project.Names.Namespace : options.Namespace, asTests: target == Target.Test);
         if (bound.Unsupported is not null)
             return Fail(diagnostics, $"{bound.Unsupported} is not implemented yet") with { Index = bound.Index };
         diagnostics = [.. diagnostics, .. bound.Diagnostics];
