@@ -3,10 +3,10 @@ import { readFileSync } from 'node:fs';
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
 
-// Where the site is served. With a custom domain, `site` becomes its URL and `base` is '/'.
-// Pages link to each other with relative links, so they work under either.
-const site = 'https://taipan-org.github.io';
-const base = '/taipan';
+// Where the site is served: the custom domain set in the repository's Pages settings. Pages link
+// to each other with relative links, so they work under any base path too.
+const site = 'https://taipan-lang.org';
+const base = '/';
 const repository = 'https://github.com/taipan-org/taipan';
 
 // Taipan is highlighted with the VS Code extension's grammar (SPEC §16.8), and a sample's

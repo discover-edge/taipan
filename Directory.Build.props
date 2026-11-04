@@ -14,7 +14,7 @@
     <Authors>Discover Edge, LLC</Authors>
     <Copyright>Copyright (c) 2026 Discover Edge, LLC</Copyright>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <PackageProjectUrl>https://github.com/taipan-org/taipan</PackageProjectUrl>
+    <PackageProjectUrl>https://taipan-lang.org</PackageProjectUrl>
     <RepositoryUrl>https://github.com/taipan-org/taipan</RepositoryUrl>
     <PackageTags>taipan;language;compiler;python</PackageTags>
     <!-- Only the projects that are packages say so. -->

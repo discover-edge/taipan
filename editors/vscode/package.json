@@ -5,6 +5,7 @@
   "version": "0.1.0",
   "publisher": "discover-edge",
   "license": "MIT",
+  "homepage": "https://taipan-lang.org",
   "repository": {
     "type": "git",
     "url": "https://github.com/taipan-org/taipan"
