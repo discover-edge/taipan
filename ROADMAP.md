@@ -2,7 +2,7 @@
 
 Each milestone is done when **all** of its acceptance criteria pass as golden tests (see CLAUDE.md). Milestones are sequential. Don't start the next one early.
 
-M0–M10 (with M8.1) make up v0.1 and are complete. M11 through M45 are complete.
+M0–M10 (with M8.1) make up v0.1 and are complete. M11 through M46 are complete.
 
 ## M0 — Scaffold
 - Create the solution layout from CLAUDE.md, the `taipan` CLI with `check | emit | build | run` stubs, and the golden-test harness.
@@ -356,3 +356,12 @@ M0–M10 (with M8.1) make up v0.1 and are complete. M11 through M45 are complete
   - A native build for another runtime identifier produces an executable of that platform (checked by its file header).
   - Python creates an instance of a Taipan class from an extension module and calls its methods.
 
+
+## M46 — Website
+- The language's website, built with Astro Starlight in `website/` and deployed to GitHub Pages: Get started, a Tour of Taipan, Taipan for Python developers, guides (NuGet packages, Python, extension modules, .NET libraries, native builds, SDK projects, testing), and reference (built-ins, the CLI, `taipan.json`, `.tpnproj`, diagnostics, and SPEC.md itself).
+- Taipan code is highlighted with the VS Code extension's TextMate grammar.
+- A page for every diagnostic code, generated from SPEC §9's table, showing its failing golden case and the error it gives.
+- Every `taipan` code block on the site with an `output` block after it is a golden case: `dotnet test` runs it and compares the output.
+- **Accept:**
+  - The site builds in CI, and every code sample on it compiles, runs and prints its stated output.
+  - Every code in SPEC §9 has a page, and a push to main deploys the site.

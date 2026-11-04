@@ -35,7 +35,7 @@ public static class TaipanProgram
         {
 #line 8 "tests/cases/m19/emit.tpn"
             @line = 8;
-            return @s switch { global::@Status.@Ok => (double)(0L), global::@Status.@Degraded(var @load) => @load, global::@Status.@Down => throw global::Taipan.Runtime.Exceptions.Raise(global::@Taipan.Runtime.ValueError.@__new__("down")), _ => throw new global::System.Diagnostics.UnreachableException() };
+            return @s switch { global::@Status.@Ok => (double)(0L), global::@Status.@Degraded(var @load) => @load, global::@Status.@Down => throw global::Taipan.Runtime.Exceptions.Raise(global::@Taipan.Runtime.ValueError.@__new__("down")) };
 #line hidden
         }
         catch (global::System.Exception @e) when (global::Taipan.Runtime.Tracebacks.Leave(@e, @file, @line, "weight"))
