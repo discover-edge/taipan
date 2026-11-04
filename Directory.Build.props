@@ -17,7 +17,13 @@
     <PackageProjectUrl>https://taipan-lang.org</PackageProjectUrl>
     <RepositoryUrl>https://github.com/taipan-org/taipan</RepositoryUrl>
     <PackageTags>taipan;language;compiler;python</PackageTags>
+    <PackageIcon>icon.png</PackageIcon>
     <!-- Only the projects that are packages say so. -->
     <IsPackable>false</IsPackable>
   </PropertyGroup>
+
+  <!-- Every package has the logo as its icon. -->
+  <ItemGroup Condition="'$(IsPackable)' == 'true'">
+    <None Include="$(MSBuildThisFileDirectory)assets/icon.png" Pack="true" PackagePath="\" Visible="false" />
+  </ItemGroup>
 </Project>

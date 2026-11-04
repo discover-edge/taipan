@@ -2,12 +2,14 @@
   <!-- The library compiled programs reference (SPEC §12.2). -->
   <PropertyGroup>
     <IsPackable>true</IsPackable>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageId>TaipanLang.Runtime</PackageId>
     <Description>The runtime library that programs compiled by Taipan reference.</Description>
     <!-- CPython's C API, for extension modules (SPEC §17). -->
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
     <PackageReference Include="pythonnet" Version="3.0.5" />
   </ItemGroup>
 </Project>

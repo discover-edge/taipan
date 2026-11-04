@@ -9,19 +9,16 @@ Taipan is a single command, `taipan`, distributed as a .NET tool. It compiles an
 
 ## Requirements
 
-- **The .NET 10 SDK**, from [dot.net](https://dotnet.microsoft.com/download). Running `taipan` needs only the .NET 10 runtime, but building it, and building libraries and native executables, needs the SDK.
+- **The .NET 10 SDK**, from [dot.net](https://dotnet.microsoft.com/download), which installs .NET tools. Running programs needs only the runtime, but building libraries, native executables and extension modules, and restoring NuGet packages, need the SDK.
 - **Optional:** a CPython 3.10 or later, to use Python packages from Taipan. See [Calling Python](../../guides/python/).
 - **Optional:** a C toolchain (`clang` on Linux, Xcode's command-line tools on macOS, Visual Studio's C++ tools on Windows), for [native executables](../../guides/native/).
 
-## Install from source
+## Install
 
-Taipan isn't on nuget.org yet, so build it from the repository and install the tool from the package that builds:
+Taipan is on nuget.org as the `TaipanLang` tool:
 
 ```sh
-git clone https://github.com/taipan-org/taipan.git
-cd taipan
-dotnet pack -c Release -o packages
-dotnet tool install -g TaipanLang --add-source packages
+dotnet tool install -g TaipanLang
 ```
 
 That puts `taipan` on your path. Check it:
@@ -30,7 +27,18 @@ That puts `taipan` on your path. Check it:
 taipan --version
 ```
 
-To update later, pull, pack again, and run `dotnet tool update -g TaipanLang --add-source packages`.
+Update it with `dotnet tool update -g TaipanLang`.
+
+## Install from source
+
+To use the latest code, build the tool from the repository and install it from the package that builds:
+
+```sh
+git clone https://github.com/taipan-org/taipan.git
+cd taipan
+dotnet pack -c Release -o packages
+dotnet tool install -g TaipanLang --add-source packages
+```
 
 ## Without installing
 

@@ -2348,7 +2348,7 @@ Taipan is distributed as NuGet packages, all with the same version:
 - **Version:** one version for every package and `taipan --version`, set in one place in the build. M20's was `0.2.0`, the first packaged release after v0.1; M34's was `0.3.0`, which added `TaipanLang.Sdk`; M44's is `0.4.0`, which adds `taipan fmt`, `taipan test` and test projects.
 - `dotnet pack -c Release -o <dir>` at the repository root builds every package.
 - An installed tool behaves exactly as a source build, Python interop included: CPython is found as §10.6 says, at run time.
-- Publishing to nuget.org is done by hand and isn't part of the build.
+- **Publishing** to nuget.org is done by `.github/workflows/publish.yml` when a tag `v<version>` is pushed: it checks that the tag names the build's version, packs every package and pushes them with NuGet's trusted publishing, so no API key is stored. A version, once published, can't be published again. Before M46 publishing was done by hand.
 
 ---
 
