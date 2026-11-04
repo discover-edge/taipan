@@ -2287,7 +2287,7 @@ ROADMAP.md plans most of these from M35 on. They were never part of v0.1:
 - narrowing elements with keys that can change (`xs[i]` for a `var` `i`), and literal types
 - exceptions beyond §3.19 (M41): `with_traceback`, notes (`add_note`), the `traceback` module, `tb_frame` and `tb_lasti`, Python's own frames in a traceback, `^` markers under the failing part of a line, and `match` on `tuple[T, ...]`
 - nested format specs in f-strings (`{x:{width}}`), and format specs for other types (`__format__`)
-- language server features beyond §16: code actions beyond §16.11's, range formatting and formatting as you type, incremental sync, workspace-wide diagnostics, semantic token deltas and ranges, signature help for built-in functions, references to built-in, Python and .NET names, updating imports when the editor renames a file, and editors other than VS Code
+- language server features beyond §16: code actions beyond §16.11's, range formatting and formatting as you type, incremental sync, workspace-wide diagnostics, semantic token deltas and ranges, signature help for built-in functions, references to built-in, Python and .NET names, updating imports when the editor renames a file, editors' own support beyond VS Code, Vim and Neovim (§16.12), a tree-sitter grammar, and showing `taipan test`'s tests in VS Code's Test Explorer
 - formatting beyond §19: wrapping or joining long lines, and options for the style
 - tests beyond §20: fixtures, parametrized tests, selecting tests by name, capturing their output, and running them in parallel
 - CPython extension modules beyond §17 (M45): Python subclasses of Taipan classes, special methods beyond `__str__`, `__repr__`, `__eq__` and `__hash__`, static and class methods, operations on Python objects inside an extension beyond passing and displaying them, generic functions and classes, and builds for one exact Python version
@@ -2348,7 +2348,7 @@ Taipan is distributed as NuGet packages, all with the same version:
 - **Version:** one version for every package and `taipan --version`, set in one place in the build. M20's was `0.2.0`, the first packaged release after v0.1; M34's was `0.3.0`, which added `TaipanLang.Sdk`; M44's is `0.4.0`, which adds `taipan fmt`, `taipan test` and test projects.
 - `dotnet pack -c Release -o <dir>` at the repository root builds every package.
 - An installed tool behaves exactly as a source build, Python interop included: CPython is found as §10.6 says, at run time.
-- **Publishing** to nuget.org is done by `.github/workflows/publish.yml` when a tag `v<version>` is pushed: it checks that the tag names the build's version, packs every package and pushes them with NuGet's trusted publishing, so no API key is stored. A version, once published, can't be published again. Before M46 publishing was done by hand.
+- **Publishing** to nuget.org is done by `.github/workflows/publish.yml` when a tag `v<version>` is pushed: it checks that the tag names the build's version, packs every package and pushes them with NuGet's trusted publishing, so no API key is stored. A version, once published, can't be published again. Before M46 publishing was done by hand. Since M47 the tag must also match the VS Code extension's version, and the same workflow publishes the extension (§16.8) once the packages are pushed.
 
 ---
 
@@ -2795,7 +2795,7 @@ int main(void) {
 ---
 
 ## 16. Language server (M24, M32)
-`taipan lsp` is a Language Server Protocol (LSP 3.17) server for editors. It reports the compiler's diagnostics as you type, shows a name's type on hover, and goes to a name's definition, across modules too. Since M32 it also completes names, shows a call's signature, finds a name's references, renames across modules, and gives semantic tokens (§16.4–§16.7), and the repository has a VS Code extension that starts it (§16.8).
+`taipan lsp` is a Language Server Protocol (LSP 3.17) server for editors. It reports the compiler's diagnostics as you type, shows a name's type on hover, and goes to a name's definition, across modules too. Since M32 it also completes names, shows a call's signature, finds a name's references, renames across modules, and gives semantic tokens (§16.4–§16.7), and the repository has a VS Code extension that starts it (§16.8). Since M47 the extension is published, and Vim and Neovim have their own support (§16.12).
 
 ### 16.1 Protocol
 - **Transport:** JSON-RPC 2.0 over stdin and stdout, each message framed by a `Content-Length` header, as the LSP specifies. `taipan lsp` takes no arguments but `--stdio`, which clients such as VS Code's pass and which names the only transport. It writes nothing else to stdout.
@@ -2955,14 +2955,24 @@ int main(void) {
   A name where it's defined also has `declaration`.
 
 ### 16.8 The VS Code extension (M32)
-- **Where.** The extension lives in `editors/vscode`, in plain JavaScript with no build step. Its one runtime dependency is `vscode-languageclient`, Microsoft's LSP client. Its development dependencies are `@vscode/vsce`, which packages it, and `vscode-textmate` and `vscode-oniguruma`, which its grammar test runs on, the engine VS Code itself uses.
+- **Where.** The extension lives in `editors/vscode`, in plain JavaScript with no build step. Its one runtime dependency is `vscode-languageclient`, Microsoft's LSP client. Its development dependencies are `@vscode/vsce`, which packages it and publishes it to the Visual Studio Marketplace, `ovsx`, which publishes it to Open VSX (M47), and `vscode-textmate` and `vscode-oniguruma`, which its grammar test runs on, the engine VS Code itself uses.
+- **Its identity** (M47): the extension `taipan`, by the publisher `discover-edge`, so its ID is `discover-edge.taipan`. Its version is the compiler's, `<Version>` in `Directory.Build.props` (§12.2). Its icon is the Taipan logo, `assets/icon.png`, copied to `editors/vscode/icon.png`, since a package can't include files outside its directory.
 - **What it contributes:**
   - the language `taipan`, for `.tpn` files;
   - a language configuration: `#` comments, bracket pairs, auto-closing brackets and quotes, and indenting after a line ending in `:`;
   - the TextMate grammar `source.taipan` (below);
-  - the setting `taipan.path`, the `taipan` command to start, `"taipan"` by default (found on `PATH`).
-- **It starts** `<taipan.path> lsp --stdio` when a `.tpn` file is opened, as the client for every Taipan document, and stops it when VS Code closes.
-- **It packages** with `vsce package` into `taipan-<version>.vsix`, with the extension's own files and its runtime dependency only.
+  - the setting `taipan.path`, the `taipan` command to start, `"taipan"` by default (found on `PATH`);
+  - since M47, two commands, in the command palette when a Taipan file is active:
+    - **Taipan: Run File** (`taipan.runFile`), also a run button in a Taipan editor's title bar. It saves the active Taipan file and runs `<taipan.path> run <file>` in a new terminal named `Taipan`, replacing the one it opened before. The terminal's directory is the workspace folder holding the file, or the file's own directory outside a workspace. The process runs as the terminal's own, not through a shell, so no path needs quoting; its output stays in the terminal after it ends.
+    - **Taipan: Restart Language Server** (`taipan.restartServer`), which stops the server and starts it again, finding `taipan` again first (below).
+- **It starts** `<taipan.path> lsp --stdio` when a `.tpn` file is opened, as the client for every Taipan document, and stops it when VS Code closes. Since M47 it also restarts it when `taipan.path` changes.
+- **When `taipan` can't be found** (M47). Before starting the server, the extension runs `<taipan.path> --version`. If the command doesn't exist, it doesn't start the server, and shows the error `Taipan: '<taipan.path>' wasn't found, so the language server can't start. Install Taipan with 'dotnet tool install -g TaipanLang', or set 'taipan.path'.` with two buttons:
+  - **Install**, which runs `dotnet tool install -g TaipanLang` in a new terminal;
+  - **Open Settings**, which opens the settings at `taipan.path`.
+  After installing, Restart Language Server starts it. Any other failure to start is reported by the LSP client, as before.
+- **It packages** with `vsce package` into `taipan-<version>.vsix`, with the extension's own files, its icon and its runtime dependency only.
+- **It's published** (M47) by `.github/workflows/publish.yml` on a version tag, with the packages (§12.2): the `.vsix` is published to the Visual Studio Marketplace with `vsce publish --oidc` and to Open VSX with `ovsx publish --trusted-publishing`, the registries' trusted publishing, so no token is stored. Open VSX is the registry of VS Code's other builds, such as VSCodium and Cursor. A version already in a registry is skipped, so a failed run can be run again.
+- **Its scripted test** (M47), `test/extension.test.mjs`, runs `extension.js` under Node with stand-ins for the `vscode` module and the LSP client, and checks that activating it registers both commands and starts the server with `lsp --stdio`; that Run File saves the file and opens a terminal running `<taipan.path> run <file>` in the file's workspace folder; that a `taipan.path` that doesn't exist gives the message above and starts no server; and that Restart Language Server stops the client and starts a new one.
 - **The grammar** colors code without the server, so a file is colored as soon as it opens. It gives these scopes, each ending in `.taipan`:
 
   | Text | Scope |
@@ -2993,7 +3003,7 @@ int main(void) {
 - **The golden token list.** `editors/vscode/test/sample.tpn` exercises every row above, and `sample.tokens` lists the tokens the grammar gives it, one per line: `<line>:<column> <text> <scopes>`, with columns from 1, the text as a JSON string, and the token's scopes after `source.taipan`, space-separated (`-` when there are none). Tokens of only whitespace are left out.
 
 ### 16.9 Deferred
-§11 lists what's deferred: code actions beyond §16.11's, range formatting, incremental document sync, workspace-wide diagnostics, semantic token deltas and ranges, signature help for built-ins, references to built-in, Python and .NET names, updating imports when the editor renames a file, and editors other than VS Code. Before M44, formatting, code actions, completing .NET namespaces and Python modules' names, and renaming modules were deferred too.
+§11 lists what's deferred: code actions beyond §16.11's, range formatting, incremental document sync, workspace-wide diagnostics, semantic token deltas and ranges, signature help for built-ins, references to built-in, Python and .NET names, updating imports when the editor renames a file, editors' own support beyond VS Code, Vim and Neovim (§16.12; other editors use the server through their own LSP clients), a tree-sitter grammar, and showing `taipan test`'s tests in VS Code's Test Explorer. Before M47, Vim and Neovim had no support of their own, and the extension was built by hand. Before M44, formatting, code actions, completing .NET namespaces and Python modules' names, and renaming modules were deferred too.
 
 ### 16.10 Formatting (M44)
 - **`textDocument/formatting`** formats the document as `taipan fmt` would (§19), from the client's text, unsaved changes included. The result is one `TextEdit` replacing the whole document, or an empty list when it's formatted already. A document with lexing or parsing errors isn't formatted, and the result is an empty list.
@@ -3012,6 +3022,57 @@ int main(void) {
   | `TP0200` with help `convert it with 'list(…)' first` (an iterator indexed, sliced or measured, §3.13) | wrap the iterator's expression in `list(…)` | `Convert to 'list(…)'` |
 - **Where an import goes:** after the file's last top-level `import` or `from` line, or before its first line of code when it has none, after any comments at the start of the file.
 - Each fix makes exactly that change, and nothing else: it doesn't reformat (§19).
+
+### 16.12 Vim and Neovim (M47)
+- **Where.** `editors/vim` is a Vim runtime directory, which works in Vim 9 and in Neovim. Putting it on the `runtimepath`, as a package or with a plugin manager, gives:
+  - `ftdetect/taipan.vim`: the filetype `taipan` for `.tpn` files;
+  - `syntax/taipan.vim`: highlighting (below);
+  - `ftplugin/taipan.vim`: `#` comments (`comments`, `commentstring`), 4-space indenting with spaces (`expandtab`, `shiftwidth`, `softtabstop`), and `suffixesadd` `.tpn`, so `gf` on a module's name opens its file;
+  - `indent/taipan.vim`: indenting (below);
+  - `lsp/taipan.lua`: Neovim's configuration for the language server, which Neovim 0.11 and later read for `vim.lsp.enable('taipan')`. It starts `taipan lsp --stdio` for the filetype `taipan`, with the project's root at the nearest `taipan.json` or `.git`.
+  Vim has no LSP client of its own. With a plugin that adds one, the server is set up the same way: the command `taipan lsp --stdio`, the filetype `taipan`, and the root markers `taipan.json` and `.git`.
+- **The syntax** colors what the TextMate grammar colors (§16.8), with the same rules, in these groups, each linked to Vim's standard group:
+
+  | Text | Group | Linked to |
+  |---|---|---|
+  | `# …` | `taipanComment` | `Comment` |
+  | `"…"`, `'…'` | `taipanString` | `String` |
+  | escapes in strings | `taipanEscape` | `SpecialChar` |
+  | `{{` and `}}` in f-strings | `taipanFBraces` | `SpecialChar` |
+  | `f"…"`, `f'…'` | `taipanFString` | `String` |
+  | an f-string hole's braces | `taipanHoleBrace` | `Delimiter` |
+  | the code in a hole | `taipanHole` | nothing: colored as code |
+  | a hole's conversion (`!r`) and format spec (`:>8`) | `taipanFormat` | `Special` |
+  | integers | `taipanNumber` | `Number` |
+  | floats | `taipanFloat` | `Float` |
+  | `True`, `False`, `None` | `taipanConstant` | `Constant` |
+  | the flow keywords, and a `for` header's `in` | `taipanStatement` | `Statement` |
+  | `import from as` | `taipanImport` | `Include` |
+  | `and or not is in some` | `taipanOperatorWord` | `Operator` |
+  | `def`, `lambda`, `async` | `taipanFunctionKeyword` | `Keyword` |
+  | `class`, `enum` | `taipanClassKeyword` | `Structure` |
+  | `let var const`, and `type` starting an alias | `taipanDeclaration` | `StorageClass` |
+  | `del` | `taipanDel` | `Keyword` |
+  | the name after `def` | `taipanFunctionName` | `Function` |
+  | the name after `class` or `enum` | `taipanTypeName` | `Type` |
+  | `@name` | `taipanDecorator` | `PreProc` |
+  | `self`, `cls` | `taipanSelf` | `Special` |
+  | built-in functions, with `int`, `float`, `str`, `list` and `set` only before `(` | `taipanBuiltin` | `Function` |
+  | built-in types | `taipanBuiltinType` | `Type` |
+  | arithmetic operators | `taipanArithmetic` | `Operator` |
+  | comparison operators | `taipanComparison` | `Operator` |
+  | assignment operators | `taipanAssignment` | `Operator` |
+  | `->` | `taipanArrow` | `Delimiter` |
+
+  The keyword lists, built-in names and operators are §16.8's.
+- **The golden syntax list.** `editors/vim/test/sample.syntax` lists the groups Vim gives the TextMate grammar's sample, `editors/vscode/test/sample.tpn`, one token per line: `<line>:<column> <text> <group>`, with columns from 1, the text as a JSON string, and the innermost group, after transparent groups are seen through (`-` when there's none). A token is a run of characters with the same group, and a run with no group is also split at spaces. Tokens of only whitespace are left out. `editors/vim/test/syntax.vim` writes the list, in Vim started with no configuration but `editors/vim` on its `runtimepath`.
+- **Indenting.** A new line is indented:
+  - one level (`shiftwidth`) more than the line above, when that line ends in `:`, ignoring a comment after it;
+  - one level less, when the line above is a `return`, `pass`, `break`, `continue` or `raise` statement;
+  - as the line above, otherwise.
+  A line starting with `elif`, `else`, `except` or `finally` is indented one level less than the line above when its `:` is typed, unless it's already indented less. Other lines keep their indentation when Vim reindents them (with `=`), since the end of a block can't be told from the code above it. Lines inside open brackets aren't treated specially.
+- **The indenting test.** `editors/vim/test/indent.vim` types each line of `editors/vim/test/indent.tpn` into an empty buffer without its indentation, as a person would, ending each with Enter, and the buffer must then be the file.
+- **The Neovim test.** `editors/vim/test/lsp.lua` runs in Neovim with no configuration but `editors/vim` on its `runtimepath`. It enables `taipan` with `vim.lsp.enable`, changing only its command (to the `taipan` under test), opens a file and waits for its diagnostics. It writes each as `<line>:<column> <severity> <code>: <message's first line>`, and these must be the diagnostics `taipan check` reports for the file, in its order.
 
 ---
 

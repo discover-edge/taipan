@@ -1,0 +1,16 @@
+def step(count: int, by: int) -> int:
+    while count < by:  # counting up
+        if count > 100:
+            break
+        elif count < 0:
+            raise ValueError("negative")
+        else:
+            pass
+        count += 1
+        continue
+    try:
+        return count
+    except ValueError:
+        pass
+    finally:
+        print("done")
