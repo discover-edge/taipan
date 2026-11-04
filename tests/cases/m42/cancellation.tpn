@@ -1,0 +1,69 @@
+# Cancellation by wait_for, timeout and gather: the innermost finally blocks run first (SPEC §3.20).
+import asyncio
+
+async def slow(name: str, delay: float) -> str:
+    try:
+        await asyncio.sleep(delay)
+        print("finished", name)
+        return name
+    except asyncio.CancelledError:
+        print("cancelled", name)
+        raise
+    finally:
+        print("cleanup", name)
+
+async def outer_work() -> str:
+    try:
+        return await slow("inner", 1.0)
+    finally:
+        print("outer cleanup")
+
+async def stubborn() -> str:
+    try:
+        await asyncio.sleep(1.0)
+    except asyncio.CancelledError:
+        print("ignoring cancel")
+    return "kept going"
+
+async def failing(delay: float) -> int:
+    await asyncio.sleep(delay)
+    raise ValueError(f"failed after {delay}")
+
+async def counter(name: str, n: int) -> int:
+    for i in range(n):
+        print(name, i)
+        await asyncio.sleep(0)
+    return n
+
+async def say(text: str, delay: float):
+    await asyncio.sleep(delay)
+    print(text)
+
+print(await asyncio.wait_for(slow("quick", 0.01), 1.0))
+try:
+    await asyncio.wait_for(outer_work(), 0.05)
+except TimeoutError:
+    print("timed out")
+print(await asyncio.wait_for(stubborn(), 0.05))
+try:
+    async with asyncio.timeout(0.05):
+        await slow("block", 1.0)
+    print("never")
+except TimeoutError as e:
+    print("timeout block", isinstance(e.__cause__, asyncio.CancelledError))
+async with asyncio.timeout(None):
+    await asyncio.sleep(0)
+async with asyncio.timeout(1.0):
+    print(await slow("in time", 0.01))
+try:
+    await asyncio.gather(counter("c", 3), failing(0.01))
+except ValueError as e:
+    print("gather raised", e)
+await asyncio.sleep(0.05)
+try:
+    await asyncio.wait_for(asyncio.gather(slow("g1", 1.0), slow("g2", 1.0)), 0.05)
+except TimeoutError:
+    print("gather timed out")
+await asyncio.wait_for(asyncio.sleep(0.01), None)
+print("slept")
+await asyncio.gather(say("late", 0.06), say("early", 0.02), say("middle", 0.04))

@@ -1,0 +1,43 @@
+# async with: __aenter__ and __aexit__ are awaited, and __aexit__ may suppress (SPEC §3.20).
+import asyncio
+from types import TracebackType
+
+class Connection:
+    name: str
+    suppress: bool
+
+    def __init__(self, name: str, suppress: bool):
+        self.name = name
+        self.suppress = suppress
+
+    async def __aenter__(self) -> str:
+        await asyncio.sleep(0)
+        print("connect", self.name)
+        return self.name.upper()
+
+    async def __aexit__(self, exc_type: type[BaseException]?, exc: BaseException?, tb: TracebackType?) -> bool:
+        await asyncio.sleep(0)
+        print("disconnect", self.name, exc)
+        return self.suppress
+
+async def query(name: str) -> int:
+    async with Connection(name, False) as conn:
+        print("using", conn)
+        return len(conn)
+    # __aexit__ may suppress, so the block may end without returning (SPEC §3.17).
+    return -1
+
+async def main():
+    print(await query("db"))
+    async with Connection("quiet", True) as q, Connection("inner", False):
+        print("inside", q)
+        raise ValueError("oops")
+    print("after")
+    try:
+        async with Connection("loud", False):
+            raise ValueError("v")
+    except ValueError:
+        print("propagated")
+    print(await asyncio.gather(query("a"), query("bb")))
+
+await main()

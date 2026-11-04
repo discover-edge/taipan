@@ -1,0 +1,22 @@
+# The emitted C# for M42: a generator's body as a coroutine over its channel, an async generator,
+# async for, an async function through Async.Start, and the event loop's entry point (SPEC §8).
+import asyncio
+
+def running() -> Generator[int, int, str]:
+    var total = 0
+    while total < 10:
+        total += yield total
+    return "done"
+
+async def ticks(n: int) -> AsyncIterator[int]:
+    for i in range(n):
+        await asyncio.sleep(0)
+        yield i
+
+async def count() -> int:
+    var c = 0
+    async for t in ticks(2):
+        c += t
+    return c
+
+print(await asyncio.gather(count(), count()))

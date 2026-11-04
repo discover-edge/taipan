@@ -1,0 +1,12 @@
+# Generator and AsyncGenerator take three and two type arguments; throw takes one (SPEC §3.20).
+def a() -> Generator[int]:
+    yield 1
+
+async def b() -> AsyncGenerator[int]:
+    yield 1
+
+def c() -> Generator[int, None, None]:
+    yield 1
+
+let g = c()
+g.throw(ValueError, "bad", None)

@@ -48,31 +48,6 @@ public class Iterator<T>(IEnumerator<T> source, string name) : IIterator<T>
     public override string ToString() => $"<{name}>";
 }
 
-/// <summary>A generator's iterator (SPEC §3.13): a <c>StopIteration</c> escaping its body is a <c>RuntimeError</c>, as in Python 3.7+.</summary>
-/// <summary>
-/// A generator's iterator (SPEC §3.13). Its body is a Python frame of its own (SPEC §3.19): an
-/// exception leaving it adds the frame, at the line the body last set.
-/// </summary>
-public sealed class Generator<T>(IEnumerable<T> body, string function, string file, Func<int> line)
-    : Iterator<T>(body.GetEnumerator(), $"generator object {function}")
-{
-    protected override bool Advance(IEnumerator<T> enumerator)
-    {
-        try
-        {
-            return enumerator.MoveNext();
-        }
-        catch (Exception e) when (Tracebacks.Leave(e, file, line(), function))
-        {
-            throw;
-        }
-        catch (StopIteration stop)
-        {
-            throw Tracebacks.FromStopIteration(stop);
-        }
-    }
-}
-
 /// <summary>Iterators for <c>for</c>, the built-ins, and classes (SPEC §3.13).</summary>
 public static class Iterators
 {
@@ -119,9 +94,9 @@ public static class Iterators
     public static IIterator<T> Iter<T>(IEnumerable<T> values, string name) =>
         values as IIterator<T> ?? new Iterator<T>(values.GetEnumerator(), name);
 
-    /// <summary><c>next(it)</c>: the next value, or <c>StopIteration</c>.</summary>
+    /// <summary><c>next(it)</c>: the next value, or <c>StopIteration</c>, with a generator's return value (SPEC §3.20).</summary>
     public static T Next<T>(IIterator<T> iterator) =>
-        iterator.MoveNext() ? iterator.Current : throw new StopIteration("");
+        iterator.MoveNext() ? iterator.Current : throw (iterator is IReturning generator ? generator.Stop() : new StopIteration(""));
 
     /// <summary><c>next(it, default)</c>: the next value, or the default.</summary>
     public static T Next<T>(IIterator<T> iterator, T fallback) => iterator.MoveNext() ? iterator.Current : fallback;

@@ -199,7 +199,40 @@ public class StopIteration : TaipanException
 
     internal StopIteration(string message) : base(message) { }
 
+    /// <summary>The return value of the generator it ended, or None (SPEC §3.20, M42).</summary>
+    public object? @value { get; set; }
+
     public static new StopIteration @__new__(string @message) => Exceptions.Init(new StopIteration(), message);
+}
+
+/// <summary><c>GeneratorExit</c> (SPEC §3.20, M42), which <c>close</c> raises in a generator.</summary>
+public class GeneratorExit : TaipanBaseException
+{
+    protected GeneratorExit() { }
+
+    internal GeneratorExit(string message) : base(message) { }
+
+    public static new GeneratorExit @__new__(string @message) => Exceptions.Init(new GeneratorExit(), message);
+}
+
+/// <summary><c>StopAsyncIteration</c> (SPEC §3.20, M42): an async iterator's end.</summary>
+public class StopAsyncIteration : TaipanException
+{
+    protected StopAsyncIteration() { }
+
+    internal StopAsyncIteration(string message) : base(message) { }
+
+    public static new StopAsyncIteration @__new__(string @message) => Exceptions.Init(new StopAsyncIteration(), message);
+}
+
+/// <summary><c>asyncio.CancelledError</c> (SPEC §3.20, M42), raised in a cancelled async function.</summary>
+public class CancelledError : TaipanBaseException
+{
+    protected CancelledError() { }
+
+    internal CancelledError(string message) : base(message) { }
+
+    public static new CancelledError @__new__(string @message) => Exceptions.Init(new CancelledError(), message);
 }
 
 public class TypeError : TaipanException
@@ -251,6 +284,16 @@ public class OSError : TaipanException
     public string? @filename { get; set; }
 
     public static new OSError @__new__(string @message) => Exceptions.Init(new OSError(), message);
+}
+
+/// <summary><c>TimeoutError</c> (SPEC §3.20, M42), which <c>asyncio.wait_for</c> and <c>asyncio.timeout</c> raise.</summary>
+public class TimeoutError : OSError
+{
+    protected TimeoutError() { }
+
+    internal TimeoutError(string message) : base(message) { }
+
+    public static new TimeoutError @__new__(string @message) => Exceptions.Init(new TimeoutError(), message);
 }
 
 public class FileNotFoundError : OSError

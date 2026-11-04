@@ -1,0 +1,6 @@
+# A yield expression needs parentheses but on the right of let, var or an assignment (SPEC §3.20).
+def gen() -> Generator[int, int, None]:
+    print(yield 1)
+    let x = 1 + yield 2
+    let y = (yield 3)
+    print(x, y)

@@ -1,0 +1,3 @@
+tests/cases/m42/tp0209_generators.tpn:2:12: error TP0209: 'Generator' takes 3 type arguments, found 1
+tests/cases/m42/tp0209_generators.tpn:5:18: error TP0209: 'AsyncGenerator' takes 2 type arguments, found 1
+tests/cases/m42/tp0209_generators.tpn:12:3: error TP0209: 'throw' takes 1 argument, found 3

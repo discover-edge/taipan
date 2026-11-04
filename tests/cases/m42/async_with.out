@@ -1,0 +1,20 @@
+connect db
+using DB
+disconnect db None
+2
+connect quiet
+connect inner
+inside QUIET
+disconnect inner oops
+disconnect quiet oops
+after
+connect loud
+disconnect loud v
+propagated
+connect a
+using A
+connect bb
+using BB
+disconnect a None
+disconnect bb None
+[1, 2]

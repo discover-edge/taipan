@@ -230,6 +230,26 @@ public sealed partial class Binder
                     _ => null,
                 };
             }
+            // A generator's and an async generator's methods (SPEC §3.20, M42).
+            case GeneratorOfType generator:
+                return name switch
+                {
+                    "send" => Method("Generator", Of(generator.Yielded, generator.Sent)),
+                    "throw" => Method("Generator", Of(generator.Yielded, BuiltinClasses.BaseException.Type)),
+                    "close" => Method("Generator", Of(nothing)),
+                    _ => null,
+                };
+            case AsyncGeneratorOfType generator:
+                return name switch
+                {
+                    "__anext__" => Method("Generator", Of(new AwaitableOfType(generator.Yielded))),
+                    "asend" => Method("Generator", Of(new AwaitableOfType(generator.Yielded), generator.Sent)),
+                    "athrow" => Method("Generator", Of(new AwaitableOfType(generator.Yielded), BuiltinClasses.BaseException.Type)),
+                    "aclose" => Method("Generator", Of(new AwaitableOfType(nothing))),
+                    _ => null,
+                };
+            case AsyncIteratorOfType iterator when name == "__anext__":
+                return Method("Generator", Of(new AwaitableOfType(iterator.Element)));
             // A file's methods (SPEC §6.1, M37).
             case OpaqueType { Name: "TextIO" }:
                 return name switch

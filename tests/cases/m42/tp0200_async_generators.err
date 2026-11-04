@@ -1,0 +1,20 @@
+tests/cases/m42/tp0200_async_generators.tpn:5:11: error TP0200: 'numbers' is an async generator, so it must return 'AsyncIterator[T]'
+tests/cases/m42/tp0200_async_generators.tpn:10:12: error TP0200: an async generator can't return a value
+tests/cases/m42/tp0200_async_generators.tpn:27:20: error TP0200: cannot iterate over list[int] with 'async for'
+  help: use 'for'
+tests/cases/m42/tp0200_async_generators.tpn:29:20: error TP0200: cannot iterate over int with 'async for'
+tests/cases/m42/tp0200_async_generators.tpn:31:14: error TP0200: cannot iterate over AsyncIterator[int]
+tests/cases/m42/tp0200_async_generators.tpn:33:16: error TP0200: Plain is not an async context manager
+  help: use 'with'
+tests/cases/m42/tp0200_async_generators.tpn:35:10: error TP0200: Async is not a context manager
+  help: use 'async with'
+tests/cases/m42/tp0200_async_generators.tpn:37:16: error TP0200: int is not an async context manager
+  help: define '__aenter__' and '__aexit__'
+tests/cases/m42/tp0200_async_generators.tpn:39:33: error TP0200: expected AsyncIterator[str], found AsyncIterator[int]
+tests/cases/m42/tp0200_async_generators.tpn:40:23: error TP0200: expected AsyncIterator, found int
+tests/cases/m42/tp0200_async_generators.tpn:41:33: error TP0200: expected int, found str
+tests/cases/m42/tp0200_async_generators.tpn:50:40: error TP0200: expected int, found str
+tests/cases/m42/tp0200_async_generators.tpn:51:32: error TP0200: cannot await int
+tests/cases/m42/tp0200_async_generators.tpn:52:17: error TP0206: cannot infer the type of an empty list
+  help: add a type annotation
+tests/cases/m42/tp0200_async_generators.tpn:53:25: error TP0200: expected float, found str

@@ -1,2 +1,1 @@
-tests/cases/m31/tp0100_yield.tpn:3:5: error TP0100: 'yield' needs a value
-tests/cases/m31/tp0100_yield.tpn:4:13: error TP0100: expected expression, found 'yield'
+tests/cases/m31/tp0100_yield.tpn:3:15: error TP0100: expected expression, found 'yield'

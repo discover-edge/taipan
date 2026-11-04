@@ -1,0 +1,100 @@
+# Async generators, their methods, anext, and classes with __aiter__ and __anext__ (SPEC §3.20).
+import asyncio
+
+async def countdown(n: int) -> AsyncIterator[int]:
+    var i = n
+    try:
+        while i > 0:
+            yield i
+            i -= 1
+    finally:
+        print("countdown done")
+
+async def naturals() -> AsyncIterator[int]:
+    var i = 1
+    while True:
+        await asyncio.sleep(0)
+        yield i
+        i += 1
+
+async def echo() -> AsyncGenerator[str, str?]:
+    var received = "start"
+    try:
+        while True:
+            var got: str? = None
+            try:
+                got = yield received
+            except ValueError as e:
+                got = f"error {e}"
+            if got is some text:
+                received = text
+            else:
+                received = "none"
+    except GeneratorExit:
+        print("echo closing")
+        raise
+
+class Squares:
+    i: int
+    n: int
+
+    def __init__(self, n: int):
+        self.i = 0
+        self.n = n
+
+    def __aiter__(self) -> AsyncIterator[int]:
+        return self
+
+    async def __anext__(self) -> int:
+        if self.i >= self.n:
+            raise StopAsyncIteration()
+        self.i += 1
+        await asyncio.sleep(0)
+        return self.i * self.i
+
+class Pages:
+    pages: list[str]
+
+    def __init__(self, pages: list[str]):
+        self.pages = pages
+
+    def __aiter__(self) -> AsyncIterator[str]:
+        return self.read()
+
+    async def read(self) -> AsyncIterator[str]:
+        for p in self.pages:
+            yield p
+
+let c = countdown(3)
+print(c)
+async for n in c:
+    print(n)
+async for n in naturals():
+    if n == 3:
+        break
+    print("partial", n)
+async for n in countdown(0):
+    print("never")
+print("empty")
+
+let e = echo()
+print(await anext(e))
+print(await e.asend("hello"))
+print(await e.asend(None))
+print(await e.athrow(ValueError("bad")))
+await e.aclose()
+print(await anext(e, "finished"))
+try:
+    await anext(e)
+except StopAsyncIteration:
+    print("StopAsyncIteration")
+
+var total = 0
+async for s in Squares(4):
+    total += s
+print(total)
+async for p in Pages(["one", "two"]):
+    print("page", p)
+
+let it = countdown(2)
+print(await it.__anext__(), await anext(it), await anext(it, -1))

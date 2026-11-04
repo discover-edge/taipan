@@ -1,0 +1,20 @@
+# Async special methods: __anext__, __aenter__ and __aexit__ are async defs, and come in pairs (SPEC §4.8).
+from types import TracebackType
+
+class NotAsync:
+    def __aenter__(self) -> NotAsync:
+        return self
+
+    def __aexit__(self, exc_type: type[BaseException]?, exc: BaseException?, tb: TracebackType?) -> bool:
+        return False
+
+class Half:
+    async def __aenter__(self) -> Half:
+        return self
+
+class Steps:
+    def __aiter__(self) -> Steps:
+        return self
+
+    def __anext__(self) -> int:
+        return 1

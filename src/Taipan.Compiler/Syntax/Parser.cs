@@ -174,6 +174,8 @@ public sealed class Parser
     private TopItem ParseTopItem() => Current.Kind switch
     {
         TokenKind.Name when AtTypeAlias() => ParseTypeAlias(),
+        // `async for` and `async with` are statements (SPEC §3.20, M42).
+        TokenKind.AsyncKeyword when Peek(1).Kind is TokenKind.ForKeyword or TokenKind.WithKeyword => ParseStmt(),
         TokenKind.ImportKeyword => ParseImportStmt(),
         TokenKind.FromKeyword => ParseFromImportStmt(),
         TokenKind.DefKeyword or TokenKind.ClassKeyword or TokenKind.At or TokenKind.AsyncKeyword => ParseDecoratedDef(),
@@ -682,6 +684,11 @@ public sealed class Parser
                 return ParseWhileStmt();
             case TokenKind.ForKeyword:
                 return ParseForStmt();
+            // `async for` and `async with` (SPEC §3.20, M42); otherwise `async def`.
+            case TokenKind.AsyncKeyword when Peek(1).Kind == TokenKind.ForKeyword:
+                return ParseAsync(ParseForStmt);
+            case TokenKind.AsyncKeyword when Peek(1).Kind == TokenKind.WithKeyword:
+                return ParseAsync(ParseWithStmt);
             case TokenKind.MatchKeyword:
                 return ParseMatchStmt();
             case TokenKind.TryKeyword:
@@ -699,6 +706,17 @@ public sealed class Parser
         }
     }
 
+    private Stmt ParseAsync<T>(Func<T> parse) where T : Stmt
+    {
+        var start = Next().Span.Start;
+        return parse() switch
+        {
+            ForStmt forStmt => forStmt with { IsAsync = true, Span = SpanFrom(start) },
+            WithStmt with => with with { IsAsync = true, Span = SpanFrom(start) },
+            var other => other,
+        };
+    }
+
     /// <summary>
     /// A simple statement's NEWLINE, unless its last token ended a match expression's arms, whose
     /// DEDENT ends it (SPEC §2).
@@ -711,6 +729,9 @@ public sealed class Parser
 
     /// <summary>The value of a <c>let</c>, <c>var</c>, assignment or <c>return</c>: an expression list.</summary>
     private Expr ParseValue(bool list = true) => list ? ParseExprList() : ParseExpr();
+
+    /// <summary>The right side of a <c>let</c>, <c>var</c> or assignment, which may also be a <c>yield</c> (SPEC §3.20, M42).</summary>
+    private Expr ParseAssignedValue(bool list = true) => At(TokenKind.YieldKeyword) ? ParseYieldExpr() : ParseValue(list);
 
     // simple_stmt = let_stmt | var_stmt | assign_stmt | return_stmt | raise_stmt | del_stmt | "pass" | "break" | "continue" | expr
     private Stmt ParseSimpleStmt()
@@ -759,12 +780,12 @@ public sealed class Parser
             var name = ExpectIdentifier();
             var type = ParseOptionalAnnotation();
             Expect(TokenKind.Equals);
-            var value = ParseValue();
+            var value = ParseAssignedValue();
             return isVar ? new VarStmt(name, type, value, SpanFrom(start)) : new LetStmt(name, type, value, SpanFrom(start));
         }
         var names = ParseNames();
         Expect(TokenKind.Equals);
-        return new UnpackStmt(isVar, names, ParseValue(), SpanFrom(start));
+        return new UnpackStmt(isVar, names, ParseAssignedValue(), SpanFrom(start));
     }
 
     // names    = unpacked "," unpacked { "," unpacked } [ "," ]
@@ -874,7 +895,7 @@ public sealed class Parser
         if (!IsTarget(target) && target is not SliceExpr)
             ReportSyntaxError(bag => bag.ReportInvalidAssignmentTarget(target.Span));
         Next();
-        var value = ParseValue(list: op == AssignOp.Assign);
+        var value = ParseAssignedValue(list: op == AssignOp.Assign);
         return new AssignStmt(target, op.Value, value, SpanFrom(start));
     }
 
@@ -955,20 +976,24 @@ public sealed class Parser
         return new ReturnStmt(value, SpanFrom(start));
     }
 
-    // yield_stmt = "yield" [ "from" ] expr
+    // yield_stmt = yield_expr
     private YieldStmt ParseYieldStmt()
+    {
+        var yield = ParseYieldExpr();
+        return new YieldStmt(yield.Value, yield.From, yield.Span);
+    }
+
+    // yield_expr = "yield" [ [ "from" ] expr ]   — a bare `yield` since M42 (SPEC §3.20)
+    private YieldExpr ParseYieldExpr()
     {
         var keyword = Next();
         var from = At(TokenKind.FromKeyword);
         if (from)
             Next();
-        if (!CanStartExpression(Current.Kind))
-        {
-            ReportSyntaxError(bag => bag.ReportBareYield(keyword.Span));
-            return new YieldStmt(new ErrorExpr(Here), from, SpanFrom(keyword.Span.Start));
-        }
+        if (!from && (_recovering || !CanStartExpression(Current.Kind)))
+            return new YieldExpr(null, from, keyword.Span);
         var value = ParseExpr();
-        return new YieldStmt(value, from, SpanFrom(keyword.Span.Start));
+        return new YieldExpr(value, from, SpanFrom(keyword.Span.Start));
     }
 
     // raise_stmt = "raise" [ expr [ "from" expr ] ]
@@ -985,7 +1010,7 @@ public sealed class Parser
         return new RaiseStmt(value, cause, SpanFrom(start));
     }
 
-    // with_stmt = "with" with_item { "," with_item } ":" block
+    // with_stmt = [ "async" ] "with" with_item { "," with_item } ":" block   — `async` is ParseAsync's
     private WithStmt ParseWithStmt()
     {
         var start = Next().Span.Start;
@@ -1166,7 +1191,7 @@ public sealed class Parser
         return new WhileStmt(condition, body, SpanFrom(start));
     }
 
-    // for_stmt = "for" ( NAME | names ) "in" expr ":" block
+    // for_stmt = [ "async" ] "for" ( NAME | names ) "in" expr ":" block   — `async` is ParseAsync's
     private ForStmt ParseForStmt()
     {
         var start = Next().Span.Start;
@@ -1575,6 +1600,14 @@ public sealed class Parser
                 Expect(TokenKind.CloseBracket);
                 return new AwaitableType(result, SpanFrom(start));
             }
+            // Generator[Y, S, R] and AsyncGenerator[Y, S], whose arguments may be None (SPEC §3.20, M42).
+            case "Generator" or "AsyncGenerator" when At(TokenKind.OpenBracket):
+            {
+                Next();
+                var arguments = ParseCommaList(TokenKind.CloseBracket, ParseTypeOrNone);
+                Expect(TokenKind.CloseBracket);
+                return new GenericType(name, arguments, SpanFrom(start));
+            }
             default:
                 if (At(TokenKind.Dot))
                 {
@@ -1586,6 +1619,8 @@ public sealed class Parser
                 return ParseTypeArguments(name);
         }
     }
+
+    private TypeSyntax ParseTypeOrNone() => At(TokenKind.NoneKeyword) ? new NoneTypeSyntax(Next().Span) : ParseType();
 
     // NAME [ "[" type { "," type } "]" ]
     private TypeSyntax ParseTypeArguments(Identifier name)
@@ -2028,6 +2063,13 @@ public sealed class Parser
             case TokenKind.OpenParen:
             {
                 Next();
+                // "(" yield_expr ")" (SPEC §3.20, M42)
+                if (At(TokenKind.YieldKeyword))
+                {
+                    var yield = ParseYieldExpr();
+                    Expect(TokenKind.CloseParen);
+                    return yield;
+                }
                 var inner = ParseExpr();
                 if (At(TokenKind.ForKeyword))
                     return ParseComprehension(ComprehensionKind.Generator, inner, null, TokenKind.CloseParen, token.Span.Start);

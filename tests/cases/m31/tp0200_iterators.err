@@ -6,6 +6,7 @@ tests/cases/m31/tp0200_iterators.tpn:6:7: error TP0200: cannot slice Iterator[in
   help: convert it with 'list(…)' first
 tests/cases/m31/tp0200_iterators.tpn:7:7: error TP0200: cannot compare Iterator[tuple[int, int]] and list[tuple[int, int]]
 tests/cases/m31/tp0200_iterators.tpn:9:5: error TP0200: 'numbers' yields, so it must return 'Iterator[T]'
-tests/cases/m31/tp0200_iterators.tpn:14:12: error TP0200: a generator can't return a value
+tests/cases/m31/tp0200_iterators.tpn:14:12: error TP0200: a generator declared 'Iterator[int]' can't return a value
+  help: declare it 'Generator[Y, S, R]'
 tests/cases/m31/tp0200_iterators.tpn:17:11: error TP0200: expected str, found int
 tests/cases/m31/tp0200_iterators.tpn:18:16: error TP0200: expected Iterable[str], found list[int]

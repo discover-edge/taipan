@@ -988,6 +988,36 @@ public class ParserTests
     public void WithSyntaxErrors(string text, string expected) =>
         Assert.Equal(expected, Errors(text).First());
 
+    // ---- yield expressions, async for and async with (M42) ----
+
+    [Theory]
+    [InlineData("yield\n", "YieldStmt(null, False)")]
+    [InlineData("yield from xs\n", "YieldStmt(NameExpr(xs), True)")]
+    [InlineData("let x = yield 1\n", "LetStmt(x, null, YieldExpr(IntLiteral(1), False))")]
+    [InlineData("x += yield\n", "AssignStmt(NameExpr(x), Add, YieldExpr(null, False))")]
+    [InlineData("var r = yield from g()\n", "VarStmt(r, null, YieldExpr(CallExpr(NameExpr(g), []), True))")]
+    [InlineData("print((yield x))\n", "ExprStmt(CallExpr(NameExpr(print), [Argument(null, YieldExpr(NameExpr(x), False))]))")]
+    public void YieldExpressions(string text, string expected) =>
+        Assert.Equal(expected, Snapshot(text));
+
+    [Theory]
+    [InlineData("print(yield 1)\n", "1:7 TP0100: expected expression, found 'yield'")]
+    [InlineData("let x = 1 + yield 2\n", "1:13 TP0100: expected expression, found 'yield'")]
+    public void YieldExpressionErrors(string text, string expected) =>
+        Assert.Equal(expected, Errors(text).First());
+
+    [Theory]
+    [InlineData("async for x in xs:\n    pass\n", "ForStmt([x], NameExpr(xs), Block([PassStmt]), True)")]
+    [InlineData("async with m as v:\n    pass\n", "WithStmt([WithItem(NameExpr(m), v)], Block([PassStmt]), True)")]
+    public void AsyncStatements(string text, string expected) =>
+        Assert.Equal(expected, Snapshot(text));
+
+    [Fact]
+    public void GeneratorTypeWithNone() =>
+        Assert.Equal(
+            "LetStmt(g, GenericType(Generator, [NamedType(int), NoneTypeSyntax, NamedType(str)]), NameExpr(f))",
+            Snapshot("let g: Generator[int, None, str] = f\n"));
+
     [Theory]
     [InlineData("raise\n", "RaiseStmt(null)")]
     [InlineData("raise ValueError(\"x\")\n", "RaiseStmt(CallExpr(NameExpr(ValueError), [Argument(null, StringLiteral(\"x\"))]))")]

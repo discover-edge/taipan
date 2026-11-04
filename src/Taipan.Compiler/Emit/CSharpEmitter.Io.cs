@@ -37,9 +37,12 @@ public sealed partial class CSharpEmitter
         Line("{");
         _indent++;
         Line($"var {manager} = {Expr(with.Manager)};");
+        // `async with` awaits __aenter__ and __aexit__ (SPEC §3.20, M42).
+        string Call(string method, string arguments) =>
+            with.IsAsync ? $"await {Runtime}.Async.Await({manager}.@__a{method}__({arguments}))" : $"{manager}.@__{method}__({arguments})";
         Line(with.Binding is { } binding
-            ? $"{TypeName(binding.Type)} @{_locals[binding]} = {manager}.@__enter__();"
-            : $"{manager}.@__enter__();");
+            ? $"{TypeName(binding.Type)} @{_locals[binding]} = {Call("enter", "")};"
+            : $"{Call("enter", "")};");
         Line($"var {raised} = false;");
         Line("try");
         EmitBody(with.Body);
@@ -50,7 +53,7 @@ public sealed partial class CSharpEmitter
         Line($"{raised} = true;");
         Line($"var {exception} = {Runtime}.Exceptions.From({caught});");
         // __exit__ handles the exception, for the context of one it raises (SPEC §3.19).
-        var exit = $"{manager}.@__exit__({Runtime}.ClassValue.Of({exception}), {exception}, {exception}.@__traceback__)";
+        var exit = Call("exit", $"{Runtime}.ClassValue.Of({exception}), {exception}, {exception}.@__traceback__");
         var suppressed = with.Suppresses ? $"@{_locals.Fresh("suppressed")}" : null;
         if (suppressed is not null)
             Line($"bool {suppressed};");
@@ -74,7 +77,7 @@ public sealed partial class CSharpEmitter
         Line("finally");
         Line("{");
         Line($"    if (!{raised})");
-        Line($"        {manager}.@__exit__(null, null, null);");
+        Line($"        {Call("exit", "null, null, null")};");
         Line("}");
         _indent--;
         Line("}");

@@ -1,4 +1,4 @@
-# 'await' outside an async function, and 'yield' in one (SPEC §3.14).
+# 'await' outside an async function (SPEC §3.14); since M42 an async def may yield (SPEC §3.20).
 from dotnet.System.Threading.Tasks import Task
 
 def plain() -> int:
@@ -8,7 +8,3 @@ def plain() -> int:
 async def later() -> int:
     let f = lambda: await Task.Delay(1)
     return 2
-
-async def stream() -> int:
-    yield 1
-    return 3

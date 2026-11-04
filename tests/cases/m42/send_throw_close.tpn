@@ -1,0 +1,140 @@
+# A generator's send, throw and close, with yield inside try, except, finally and with (SPEC §3.20).
+from types import TracebackType
+
+class Resource:
+    name: str
+
+    def __init__(self, name: str):
+        self.name = name
+
+    def __enter__(self) -> Resource:
+        print("open", self.name)
+        return self
+
+    def __exit__(self, exc_type: type[BaseException]?, exc: BaseException?, tb: TracebackType?) -> bool:
+        print("close", self.name, exc_type is not None)
+        return False
+
+def worker() -> Generator[str, str?, int]:
+    var handled = 0
+    with Resource("log"):
+        while True:
+            try:
+                let job = yield "ready"
+                if job is None:
+                    break
+                print("job", job)
+            except ValueError as e:
+                print("handled", e)
+                handled += 1
+            finally:
+                print("step done")
+    return handled
+
+let w = worker()
+print(next(w))
+print(w.send("a"))
+print(w.throw(ValueError("bad")))
+try:
+    w.send(None)
+except StopIteration as e:
+    print("handled", e.value)
+
+def ticker() -> Generator[int, None, None]:
+    try:
+        var i = 0
+        while True:
+            yield i
+            i += 1
+    finally:
+        print("ticker closed")
+
+let t = ticker()
+print(next(t), next(t))
+t.close()
+t.close()
+print(next(t, -1))
+let fresh = ticker()
+fresh.close()
+print(next(fresh, -1))
+
+def stubborn() -> Generator[int, None, None]:
+    try:
+        yield 1
+    except GeneratorExit:
+        print("ignoring")
+    yield 2
+
+let s = stubborn()
+next(s)
+try:
+    s.close()
+except RuntimeError as e:
+    print(e)
+
+def fragile() -> Generator[int, None, None]:
+    yield 1
+    yield 2
+
+let f = fragile()
+next(f)
+try:
+    f.throw(ValueError("thrown"))
+except ValueError as e:
+    print("propagated", e)
+print(next(f, 99))
+try:
+    f.throw(ValueError("again"))
+except ValueError as e:
+    print("finished", e)
+
+let u = fragile()
+try:
+    u.throw(ValueError("early"))
+except ValueError as e:
+    print("early", e)
+print(next(u, 99))
+
+def catcher() -> Generator[str, None, None]:
+    while True:
+        try:
+            yield "waiting"
+        except GeneratorExit:
+            print("exit")
+            raise
+        except KeyError:
+            print("caught KeyError")
+        except TypeError:
+            print("caught TypeError")
+
+let c = catcher()
+next(c)
+print(c.throw(KeyError("k")))
+print(c.throw(TypeError("t")))
+c.close()
+
+def starter() -> Generator[int, int, None]:
+    yield 0
+
+try:
+    starter().send(5)
+except TypeError as e:
+    print(e)
+
+class Box:
+    gen: Iterator[int]?
+
+    def __init__(self):
+        self.gen = None
+
+def reenter(box: Box) -> Iterator[int]:
+    if box.gen is some g:
+        yield next(g)
+
+let b = Box()
+b.gen = reenter(b)
+if b.gen is some g:
+    try:
+        next(g)
+    except ValueError as e:
+        print(e)

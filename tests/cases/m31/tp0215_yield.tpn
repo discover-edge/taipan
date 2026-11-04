@@ -1,18 +1,4 @@
-# Where yield can't be (SPEC §3.13).
-def risky() -> Iterator[int]:
-    try:
-        yield 1
-    except ValueError:
-        yield 2
-    finally:
-        yield 3
-
-def cleanup() -> Iterator[int]:
-    try:
-        yield 1
-    finally:
-        print("done")
-
+# Where yield can't be (SPEC §3.13); since M42 it may be inside a try (SPEC §3.20).
 def picked(n: int) -> Iterator[int]:
     let x = match n:
         0:

@@ -125,6 +125,7 @@ public sealed partial class CSharpEmitter
         // The built-in exception classes are runtime classes (SPEC §8).
         foreach (var builtin in BuiltinClasses.All)
             _names[builtin] = builtin.RuntimeName!;
+        _names[BuiltinClasses.CancelledError] = BuiltinClasses.CancelledError.RuntimeName!;
         _out = _functionsOut;
         foreach (var function in program.Functions.Where(f => !f.Symbol.TypeParameters.IsEmpty))
         {
@@ -231,7 +232,7 @@ public sealed partial class CSharpEmitter
         code.Append($"\npublic static class {_entryClass}\n{{\n");
         // An awaiting top level runs to its end before the program exits (SPEC §3.14).
         code.Append(_program.IsAsync
-            ? $"    public static int Main(string[] args) => {Runtime}.Panic.Run(() => {_programClass}.{_topLevelMethod}().GetAwaiter().GetResult(), args);\n"
+            ? $"    public static int Main(string[] args) => {Runtime}.Panic.Run(() => {Runtime}.EventLoop.Main({_programClass}.{_topLevelMethod}), args);\n"
             : $"    public static int Main(string[] args) => {Runtime}.Panic.Run({_programClass}.{_topLevelMethod}, args);\n");
         code.Append("}\n");
         return code.ToString();
@@ -352,6 +353,12 @@ public sealed partial class CSharpEmitter
         IteratorOfType iterator => $"iterator_{Mangle(iterator.Element)}",
         AwaitableOfType awaitable => $"awaitable_{Mangle(awaitable.Result)}",
         IterableOfType iterable => $"iterable_{Mangle(iterable.Element)}",
+        GeneratorOfType generator => $"generator_{Mangle(generator.Yielded)}_{Mangle(generator.Sent)}_{Mangle(generator.Returned)}",
+        AsyncIteratorOfType iterator => $"async_iterator_{Mangle(iterator.Element)}",
+        AsyncIterableOfType iterable => $"async_iterable_{Mangle(iterable.Element)}",
+        AsyncGeneratorOfType generator => $"async_generator_{Mangle(generator.Yielded)}_{Mangle(generator.Sent)}",
+        NoneType => "none",
+        ObjectType => "object",
         DictOfType dict => $"dict_{Mangle(dict.Key)}_{Mangle(dict.Value)}",
         OptionalOf optional => $"{Mangle(optional.Inner)}_opt",
         ClassType classType => string.Join("_", [classType.Symbol.Name, .. classType.TypeArguments.Select(Mangle)]),
@@ -418,8 +425,7 @@ public sealed partial class CSharpEmitter
         name ??= owner is null ? symbol.Name : MethodName(symbol);
         // In a library, a property's getter and setter are behind a C# property (SPEC §14).
         var access = symbol.Kind == MemberKind.Property || symbol.SetterOf is not null ? HelperAccess : MemberAccess(symbol.Name);
-        var async = symbol.IsAsync && !symbol.IsAbstract ? "async " : "";
-        var signature = $"{access} {modifier}{async}{TypeName(symbol.ReturnType)} @{name}{typeParameters}({parameters})";
+        var signature = $"{access} {modifier}{TypeName(symbol.ReturnType)} @{name}{typeParameters}({parameters})";
         if (symbol.IsAbstract)
         {
             // An abstract method has no body (SPEC §8); its defaults are still helpers.
@@ -431,20 +437,17 @@ public sealed partial class CSharpEmitter
         Line(signature);
         Line("{");
         _indent++;
-        // A property's getter and setter are frames named for the property (SPEC §3.19).
-        EmitTracked(function.Span, symbol.SetterOf?.Name ?? symbol.Name, () =>
+        if (library)
         {
-            if (library)
-            {
-                foreach (var keywords in function.Parameters.Where((_, i) => symbol.Kinds[i] == ParamKind.VarKeywords))
-                    Line($"@{_locals[keywords]} ??= new();");
-            }
+            foreach (var keywords in function.Parameters.Where((_, i) => symbol.Kinds[i] == ParamKind.VarKeywords))
+                Line($"@{_locals[keywords]} ??= new();");
+        }
+        // A property's getter and setter are frames named for the property (SPEC §3.19).
+        EmitFrame(symbol, function.Span, symbol.SetterOf?.Name ?? symbol.Name, () =>
+        {
             if (isInit)
                 EmitFieldDefaults(owner!);
-            if (symbol.IsGenerator)
-                EmitGeneratorBody(symbol, function.Body.Statements);
-            else
-                EmitStatements(function.Body.Statements);
+            EmitStatements(function.Body.Statements);
             HiddenDirective();
         });
         _indent--;
@@ -835,17 +838,13 @@ public sealed partial class CSharpEmitter
                 break;
             case BoundReturn ret:
                 LineDirective(ret.Span);
-                // A generator's return ends it (SPEC §3.13).
-                Line(_inGenerator ? "yield break;" : ret.Value is null ? "return;" : $"return {Expr(ret.Value)};");
+                // A generator's body returns its R, or None for an iterator's (SPEC §3.20, §8).
+                Line(_coroutine?.Kind == CoroutineKind.Generator && ret.Value is null ? "return default!;"
+                    : ret.Value is null ? "return;" : $"return {Expr(ret.Value)};");
                 break;
-            case BoundYield yield when yield.From:
-                LineDirective(yield.Span);
-                var yielded = $"@{_locals.Fresh("yielded")}";
-                Line($"foreach (var {yielded} in {Expr(yield.Value)}) yield return {yielded};");
-                break;
-            case BoundYield yield:
-                LineDirective(yield.Span);
-                Line($"yield return {Expr(yield.Value)};");
+            case BoundExprStmt { Expr: BoundYield yield } exprStmt:
+                LineDirective(exprStmt.Span);
+                Line($"{Yield(yield)};");
                 break;
             case BoundBreak brk:
                 LineDirective(brk.Span);
@@ -877,7 +876,7 @@ public sealed partial class CSharpEmitter
                 break;
             case BoundExprStmt { Expr: BoundAwait awaited } exprStmt:
                 LineDirective(exprStmt.Span);
-                Line($"{(awaited.Type is NothingType ? "" : "_ = ")}await {Operand(awaited.Operand)};");
+                Line($"{(awaited.Type is NothingType ? "" : "_ = ")}{Await(awaited.Operand)};");
                 break;
             case BoundExprStmt exprStmt:
                 LineDirective(exprStmt.Span);
@@ -893,6 +892,9 @@ public sealed partial class CSharpEmitter
                 break;
             case BoundForRange forStmt:
                 EmitForRange(forStmt);
+                break;
+            case BoundForEach { IsAsync: true } forEach:
+                EmitAsyncFor(forEach);
                 break;
             case BoundForEach forEach:
                 LineDirective(forEach.Span);
@@ -1014,9 +1016,8 @@ public sealed partial class CSharpEmitter
             completed = $"@{_locals.Fresh("completed")}";
             Line($"var {completed} = false;");
         }
-        // A generator's try can't have a catch around a yield, so its finally doesn't chain.
         string? inFlight = null;
-        if (tryStmt.Finally is not null && !_inGenerator)
+        if (tryStmt.Finally is not null)
         {
             inFlight = $"@{_locals.Fresh("inFlight")}";
             Line($"{Runtime}.TaipanBaseException? {inFlight} = null;");
@@ -1169,21 +1170,12 @@ public sealed partial class CSharpEmitter
         var name = $"@{_locals[function.Symbol]}";
         LineDirective(function.Span);
         Line($"{type} {name} = null!;");
-        Line($"{name} = new {type}(\"{function.Function.Name}\", {(function.Function.IsAsync ? "async " : "")}({LambdaParameters(function.Parameters)}) =>");
+        Line($"{name} = new {type}(\"{function.Function.Name}\", ({LambdaParameters(function.Parameters)}) =>");
         var outerLoops = _loops;
         _loops = new Stack<LoopContext>();
         Line("{");
         _indent++;
-        var outerGenerator = _inGenerator;
-        _inGenerator = false;
-        EmitTracked(function.Span, function.Function.Name, () =>
-        {
-            if (function.Function.IsGenerator)
-                EmitGeneratorBody(function.Function, function.Body.Statements);
-            else
-                EmitStatements(function.Body.Statements);
-        });
-        _inGenerator = outerGenerator;
+        EmitFrame(function.Function, function.Span, function.Function.Name, () => EmitStatements(function.Body.Statements));
         _indent--;
         Line("});");
         _loops = outerLoops;
@@ -1529,7 +1521,9 @@ public sealed partial class CSharpEmitter
             BoundUnary { Op: UnaryOp.Negate } unary when OverflowsAtCompileTime(unary) =>
                 $"{Runtime}.Ops.Negate({Expr(unary.Operand)})",
             BoundUnary unary => $"{(unary.Op == UnaryOp.Negate ? "-" : "!")}{Operand(unary.Operand)}",
-            BoundAwait awaited => $"(await {Operand(awaited.Operand)})",
+            BoundAwait awaited => $"({Await(awaited.Operand)})",
+            BoundYield yield => $"({Yield(yield)})",
+            BoundGather gather => Gather(gather),
             BoundBinary binary => Binary(binary),
             BoundCall call => Call(call),
             BoundFString fstring => FString(fstring),
@@ -1539,7 +1533,7 @@ public sealed partial class CSharpEmitter
             BoundMinMax minMax => MinMax(minMax),
             BoundComprehension comprehension => Comprehension(comprehension),
             BoundRangeValues range => RangeValues(range),
-            BoundRuntimeMethodCall { Kind: "TextFile" } call => $"{Operand(call.Target)}.@{call.Name}({string.Join(", ", call.Arguments.Select(Expr))})",
+            BoundRuntimeMethodCall { Kind: "TextFile" or "Generator" } call => $"{Operand(call.Target)}.@{call.Name}({string.Join(", ", call.Arguments.Select(Expr))})",
             BoundRuntimeMethodCall call => $"{Runtime}.{call.Kind}Methods.@{call.Name}({string.Join(", ", [Expr(call.Target), .. call.Arguments.Select(Expr)])})",
             BoundRuntimeProperty property => $"{Operand(property.Target)}.@{property.Name}",
             BoundPrint print => Print(print),
@@ -1876,6 +1870,14 @@ public sealed partial class CSharpEmitter
             BuiltinFunction.Next when call.Arguments is [var iterator, BoundNone] =>
                 $"{Runtime}.Iterators.{(IsValueType(((IteratorOfType)Concrete(iterator.Type)).Element) ? "NextValueOrNone" : "NextOrNone")}({Expr(iterator)})",
             BuiltinFunction.Next => $"{Runtime}.Iterators.Next({arguments})",
+            // M42 (SPEC §3.20).
+            BuiltinFunction.Anext when call.Arguments is [var iterator, BoundNone] =>
+                $"{Runtime}.AsyncIterators.{(IsValueType(((AsyncIteratorOfType)Concrete(iterator.Type)).Element) ? "AnextValueOrNone" : "AnextOrNone")}({Expr(iterator)})",
+            BuiltinFunction.Anext => $"{Runtime}.AsyncIterators.Anext({arguments})",
+            BuiltinFunction.Sleep => $"{Runtime}.Asyncio.sleep({arguments})",
+            BuiltinFunction.WaitFor => $"{Runtime}.Asyncio.wait_for({arguments})",
+            BuiltinFunction.Timeout => $"{Runtime}.Asyncio.timeout({arguments})",
+            BuiltinFunction.Run => $"{Runtime}.Asyncio.run({arguments})",
             BuiltinFunction.Filter => $"{Runtime}.Iterators.Filter({arguments})",
             BuiltinFunction.Enumerate => $"{Runtime}.Iterators.Enumerate({arguments})",
             BuiltinFunction.Zip => ZipRows(call, arguments),
@@ -1947,6 +1949,13 @@ public sealed partial class CSharpEmitter
     {
         var target = Concrete(cast.Type);
         var value = Expr(cast.Value);
+        // An object's value is checked against the type (SPEC §3.20).
+        if (cast.Value.Type is ObjectType)
+        {
+            return target is OptionalOf { Inner: var inner }
+                ? $"{Runtime}.Ops.{(IsValueType(inner) ? "UnboxValueOrNone" : "UnboxOrNone")}<{TypeName(inner)}>({value})"
+                : $"{Runtime}.Ops.Unbox<{TypeName(target)}>({value}, \"{Escape(target.ToString())}\")";
+        }
         var v = $"@{_locals.Fresh("v")}";
         if (target is OptionalOf optional)
         {
@@ -2137,6 +2146,12 @@ public sealed partial class CSharpEmitter
         PrimitiveType { Name: "str" } => "string",
         PrimitiveType { Name: "py" } => PyObject,
         NothingType => "void",
+        // None as a generator's argument, and an object, hold any value (SPEC §3.20).
+        NoneType or ObjectType => "object?",
+        GeneratorOfType generator => $"{Runtime}.IGenerator<{TypeName(generator.Yielded)}, {TypeName(generator.Sent)}, {TypeName(generator.Returned)}>",
+        AsyncIteratorOfType iterator => $"{Runtime}.IAsyncIterator<{TypeName(iterator.Element)}>",
+        AsyncIterableOfType iterable => $"{Runtime}.IAsyncIterable<{TypeName(iterable.Element)}>",
+        AsyncGeneratorOfType generator => $"{Runtime}.AsyncGenerator<{TypeName(generator.Yielded)}, {TypeName(generator.Sent)}>",
         ListOfType list => $"{Collections}.List<{TypeName(list.Element)}>",
         VarTupleOfType varTuple => $"{Runtime}.VarTuple<{TypeName(varTuple.Element)}>",
         SetOfType set => $"{Runtime}.OrderedSet<{TypeName(set.Element)}>",

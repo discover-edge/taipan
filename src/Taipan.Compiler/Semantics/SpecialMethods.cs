@@ -54,7 +54,14 @@ public static class SpecialMethods
         ["__ipow__"] = (1, null),
         ["__format__"] = (1, TaipanType.Str),
         ["__exit__"] = (3, null),
+        // M42 (SPEC §3.20): each but __aiter__ is an async def.
+        ["__aiter__"] = (0, null),
+        ["__anext__"] = (0, null),
+        ["__aenter__"] = (0, null),
+        ["__aexit__"] = (3, null),
     };
+
+    private static bool IsAsyncSpecial(string name) => name is "__anext__" or "__aenter__" or "__aexit__";
 
     /// <summary><c>__exit__</c>'s parameter types (SPEC §3.17, M37).</summary>
     public static ImmutableArray<TaipanType> ExitParameters { get; } =
@@ -81,15 +88,21 @@ public static class SpecialMethods
             return method.ReturnType is not NothingType || method.ReturnType.ContainsError;
         if (method.Parameters.Length != arity || hasDefaults)
             return false;
+        if (IsAsyncSpecial(method.Name) != method.IsAsync)
+            return false;
+        // An async special method's result is what awaiting it gives (SPEC §3.20).
+        var returned = method.IsAsync && method.ReturnType is AwaitableOfType awaitable ? awaitable.Result : method.ReturnType;
         if (method.Name == "__format__" && method.Parameters[0].Type != TaipanType.Str && !method.Parameters[0].Type.ContainsError)
             return false;
         // __exit__ takes exactly Python's three optionals, and suppresses only when it returns bool (SPEC §3.17).
-        if (method.Name == "__exit__")
+        if (method.Name is "__exit__" or "__aexit__")
             return method.Parameters.Select(p => p.Type).Zip(ExitParameters).All(pair => pair.First.ContainsError || pair.First == pair.Second)
-                && (method.ReturnType.ContainsError || method.ReturnType is NothingType || method.ReturnType == TaipanType.Bool);
+                && (returned.ContainsError || returned is NothingType || returned == TaipanType.Bool);
+        if (method.Name == "__aiter__")
+            return method.ReturnType.ContainsError || method.ReturnType is AsyncIteratorOfType;
         if (method.ReturnType.ContainsError)
             return true;
-        if (result is null ? method.ReturnType is NothingType : method.ReturnType != result)
+        if (result is null ? returned is NothingType : returned != result)
             return false;
         // __iter__ gives an iterator (SPEC §3.13).
         if (method.Name == "__iter__" && method.ReturnType is not IteratorOfType)
@@ -116,13 +129,13 @@ public static class SpecialMethods
             case "__format__":
                 return "def __format__(self, spec: str) -> str";
         }
-        if (name == "__exit__")
-            return "def __exit__(self, exc_type: type[BaseException]?, exc: BaseException?, tb: TracebackType?) -> bool";
+        if (name is "__exit__" or "__aexit__")
+            return $"{(name == "__aexit__" ? "async " : "")}def {name}(self, exc_type: type[BaseException]?, exc: BaseException?, tb: TracebackType?) -> bool";
         var (arity, result) = Signatures[name];
         var other = name == "__eq__" ? owner.Type.ToString() : "T";
         var parameters = arity == 0 ? "" : $", other: {other}";
-        var shown = name switch { "__iter__" => "Iterator[T]", "__next__" => "T", _ => result?.ToString() ?? "R" };
-        return $"def {name}(self{parameters}) -> {shown}";
+        var shown = name switch { "__iter__" => "Iterator[T]", "__aiter__" => "AsyncIterator[T]", "__next__" or "__anext__" or "__aenter__" => "T", _ => result?.ToString() ?? "R" };
+        return $"{(IsAsyncSpecial(name) ? "async " : "")}def {name}(self{parameters}) -> {shown}";
     }
 
     /// <summary>How a special method is reached, for the help when it's called directly.</summary>
@@ -136,6 +149,9 @@ public static class SpecialMethods
         "__iter__" => $"iter({target})",
         "__next__" => $"next({target})",
         "__enter__" or "__exit__" => $"with {target}:",
+        "__aiter__" => $"async for … in {target}:",
+        "__anext__" => $"anext({target})",
+        "__aenter__" or "__aexit__" => $"async with {target}:",
         "__len__" => $"len({target})",
         "__getitem__" => $"{target}[…]",
         "__setitem__" => $"{target}[…] = …",

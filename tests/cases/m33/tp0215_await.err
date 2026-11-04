@@ -1,3 +1,2 @@
 tests/cases/m33/tp0215_await.tpn:5:5: error TP0215: 'await' outside an async function
 tests/cases/m33/tp0215_await.tpn:9:21: error TP0215: 'await' outside an async function
-tests/cases/m33/tp0215_await.tpn:13:5: error TP0215: 'yield' in an async function

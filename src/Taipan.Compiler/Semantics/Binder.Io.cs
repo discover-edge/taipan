@@ -8,9 +8,6 @@ namespace Taipan.Compiler.Semantics;
 // objects, and with statements (SPEC §3.17).
 public sealed partial class Binder
 {
-    // How many with blocks enclose the code being bound, in this function: C# can't yield inside one's try.
-    private int _withDepth;
-
     private static readonly string[] Modes = ["r", "w", "a", "x", "rt", "wt", "at", "xt", "tr", "tw", "ta", "tx"];
 
     private static readonly HashSet<string> Encodings =
@@ -186,13 +183,19 @@ public sealed partial class Binder
     /// <c>with</c> (SPEC §3.17): its items nest left to right, each a <see cref="BoundWith"/>
     /// whose body is the next.
     /// </summary>
-    private BoundStmt BindWith(WithStmt with) => BindWithItem(with, 0);
+    private BoundStmt BindWith(WithStmt with)
+    {
+        // `async with` may be only where `await` may (SPEC §3.20).
+        if (with.IsAsync)
+            CheckAsyncContext(new TextSpan(with.Span.Start, "async".Length), "async with");
+        return BindWithItem(with, 0);
+    }
 
     private BoundWith BindWithItem(WithStmt with, int index)
     {
         var item = with.Items[index];
         var manager = BindValue(item.Manager);
-        var (enter, suppresses) = ContextManager(manager, item.Manager.Span);
+        var (enter, suppresses) = with.IsAsync ? AsyncContextManager(manager, item.Manager.Span) : ContextManager(manager, item.Manager.Span);
         var binding = item.Binding is { } bindingName ? new VariableSymbol(bindingName.Text, enter, VariableKind.Let) : null;
 
         BoundBlock BindBody()
@@ -201,11 +204,9 @@ public sealed partial class Binder
             _scope = new Scope(outer);
             if (binding is not null)
                 DeclareLocal(item.Binding!, binding);
-            _withDepth++;
             var body = index + 1 < with.Items.Length
                 ? new BoundBlock([BindWithItem(with, index + 1)], with.Body.Span)
                 : BindBlock(with.Body);
-            _withDepth--;
             _scope = outer;
             return body;
         }
@@ -222,7 +223,7 @@ public sealed partial class Binder
         {
             body = BindBody();
         }
-        return new BoundWith(manager, binding, enter, suppresses, body, item.Span);
+        return new BoundWith(manager, binding, enter, suppresses, body, item.Span) { IsAsync = with.IsAsync };
     }
 
     /// <summary>What a manager's <c>__enter__</c> gives, and whether its <c>__exit__</c> may suppress (returns bool).</summary>
@@ -234,7 +235,29 @@ public sealed partial class Binder
             return (TaipanType.TextIO, false);
         if (SpecialMethods.Method(manager.Type, "__enter__") is var (_, _, enter) && SpecialMethods.Method(manager.Type, "__exit__") is var (_, _, exit))
             return (enter, exit == TaipanType.Bool);
-        _diagnostics.ReportNotContextManager(span, manager.Type);
+        _diagnostics.ReportNotContextManager(span, manager.Type, isAsync: IsAsyncContextManager(manager.Type));
         return (TaipanType.Error, false);
     }
+
+    /// <summary>
+    /// What an async manager's <c>__aenter__</c> gives once awaited, and whether its <c>__aexit__</c>
+    /// may suppress (SPEC §3.20): a class's, or <c>asyncio.timeout</c>'s, which never does.
+    /// </summary>
+    private (TaipanType Enter, bool Suppresses) AsyncContextManager(BoundExpr manager, TextSpan span)
+    {
+        if (manager.Type.ContainsError || ReportIfOptional(manager, span))
+            return (TaipanType.Error, false);
+        if (manager.Type == TaipanType.Timeout)
+            return (TaipanType.Timeout, false);
+        if (SpecialMethods.Method(manager.Type, "__aenter__") is (_, _, AwaitableOfType enter)
+            && SpecialMethods.Method(manager.Type, "__aexit__") is (_, _, AwaitableOfType exit))
+            return (enter.Result, exit.Result == TaipanType.Bool);
+        var isPlain = manager.Type == TaipanType.TextIO
+            || SpecialMethods.Method(manager.Type, "__enter__") is not null && SpecialMethods.Method(manager.Type, "__exit__") is not null;
+        _diagnostics.ReportNotAsyncContextManager(span, manager.Type, isPlain);
+        return (TaipanType.Error, false);
+    }
+
+    private static bool IsAsyncContextManager(TaipanType type) =>
+        type == TaipanType.Timeout || SpecialMethods.Method(type, "__aenter__") is not null && SpecialMethods.Method(type, "__aexit__") is not null;
 }

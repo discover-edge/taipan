@@ -57,7 +57,7 @@ public static class AstPrinter
             .Where(p => !(p.Name == "Guard" && node is MatchArm { Guard: null } or ValueArm { Guard: null }))
             .Where(p => !(p.Name == "Unpack" && node is Argument { Unpack: ArgumentUnpack.None }))
             .Where(p => !(p.Name == "Kind" && node is Param { Kind: ParamKind.Normal }))
-            .Where(p => !(p.Name == "IsAsync" && node is FuncDef { IsAsync: false } or MethodDef { IsAsync: false }))
+            .Where(p => !(p.Name == "IsAsync" && node is FuncDef { IsAsync: false } or MethodDef { IsAsync: false } or ForStmt { IsAsync: false } or WithStmt { IsAsync: false }))
             .Where(p => !(p.Name == "Aliases" && node is ClassDef { Aliases.IsEmpty: true }))
             .Select(p => Print(p.GetValue(node)))
             .ToList();

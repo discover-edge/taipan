@@ -1,0 +1,21 @@
+<async_generator object countdown>
+3
+2
+1
+countdown done
+partial 1
+partial 2
+countdown done
+empty
+start
+hello
+none
+error bad
+echo closing
+finished
+StopAsyncIteration
+30
+page one
+page two
+countdown done
+2 1 -1

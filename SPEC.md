@@ -122,11 +122,11 @@ stmt          = simple_stmt NEWLINE | compound_stmt | type_alias ;   (* type_ali
 simple_stmt   = let_stmt | var_stmt | assign_stmt | return_stmt | raise_stmt | del_stmt | yield_stmt
               | "pass" | "break" | "continue" | expr ;
 del_stmt      = "del" target { "," target } ;                       (* M26, §5.5 *)
-let_stmt      = "let" ( NAME [ ":" type ] | names ) "=" expr_list ;
-var_stmt      = "var" ( NAME [ ":" type ] | names ) "=" expr_list ;
+let_stmt      = "let" ( NAME [ ":" type ] | names ) "=" ( expr_list | yield_expr ) ;   (* yield_expr: M42 *)
+var_stmt      = "var" ( NAME [ ":" type ] | names ) "=" ( expr_list | yield_expr ) ;
 names         = unpacked "," unpacked { "," unpacked } [ "," ] ;      (* unpacking: M12, §3.8 *)
 unpacked      = NAME | "*" NAME | "(" names ")" ;                    (* "*" and nesting: M29 *)
-assign_stmt   = target ( "=" | "+=" | "-=" | "*=" | "/=" | "//=" | "%=" | "**=" ) expr   (* "//=", "%=", "**=": M35 *)
+assign_stmt   = target ( "=" | "+=" | "-=" | "*=" | "/=" | "//=" | "%=" | "**=" ) ( expr | yield_expr )   (* "//=", "%=", "**=": M35; yield_expr: M42 *)
               | targets "=" expr_list ;                              (* M12 *)
 targets       = unpack_target "," unpack_target { "," unpack_target } [ "," ] ;
 unpack_target = target | "*" target | "(" targets ")" ;              (* "*" and nesting: M29 *)
@@ -136,10 +136,11 @@ match_expr    = "match" expr ":" NEWLINE INDENT value_arm { value_arm } DEDENT ;
 value_arm     = pattern [ guard ] ":" ( ( expr | raise_stmt ) NEWLINE | block ) ;   (* block: M29; guard: M38 *)
 expr_list     = expr { "," expr } ;                                  (* two or more make a tuple: M12 *)
 raise_stmt    = "raise" [ expr [ "from" expr ] ] ;                   (* M16, §3.10; "from": M41, §3.19 *)
-yield_stmt    = "yield" [ "from" ] expr ;                            (* M31, §3.13 *)
+yield_stmt    = yield_expr ;                                         (* M31, §3.13 *)
+yield_expr    = "yield" [ [ "from" ] expr ] ;                        (* M31; a value, no value, and as an expression: M42, §3.20 *)
 
 compound_stmt = if_stmt | while_stmt | for_stmt | match_stmt | try_stmt | with_stmt | func_def ;   (* in a block: nested function, M11 *)
-with_stmt     = "with" with_item { "," with_item } ":" block ;   (* M37, §3.17 *)
+with_stmt     = [ "async" ] "with" with_item { "," with_item } ":" block ;   (* M37, §3.17; async: M42, §3.20 *)
 with_item     = expr [ "as" NAME ] ;                              (* a top-level 'as' here is the item's, not a conversion (§10.4) *)
 try_stmt      = "try" ":" block { except_clause } [ "else" ":" block ] [ "finally" ":" block ] ;   (* M16, §3.10 *)
 except_clause = "except" [ except_types [ "as" NAME ] ] ":" block ;
@@ -147,7 +148,7 @@ except_types  = qual_name | "(" qual_name { "," qual_name } [ "," ] ")" ;
 if_stmt       = "if" condition ":" block { "elif" condition ":" block } [ "else" ":" block ] ;
 condition     = expr "is" "some" NAME | expr ;
 while_stmt    = "while" condition ":" block ;
-for_stmt      = "for" ( NAME | names ) "in" expr ":" block ;       (* nested and starred names: M29 *)
+for_stmt      = [ "async" ] "for" ( NAME | names ) "in" expr ":" block ;   (* nested and starred names: M29; async: M42 *)
 match_stmt    = "match" expr ":" NEWLINE INDENT arm { arm } DEDENT ;
 arm           = pattern [ guard ] ":" ( simple_stmt NEWLINE | block ) ;
 guard         = "if" expr ;                                          (* M38, §5.1 *)
@@ -196,6 +197,7 @@ call          = "(" [ arg { "," arg } [ "," ] ] ")"
 arg           = expr | NAME "=" expr | "*" expr | "**" expr ;        (* "*" and "**": M30, §4.2 *)
 atom          = INT | FLOAT | STRING | FSTRING | "True" | "False" | "None"
               | NAME | "self" | "(" expr ")" | "..."                 (* "...": M17, a protocol method's body *)
+              | "(" yield_expr ")"                                    (* M42, §3.20 *)
               | "(" expr "," [ expr { "," expr } [ "," ] ] ")"         (* a tuple: M12; one element is TP0209 *)
               | "[" [ expr { "," expr } [ "," ] ] "]"
               | "{" [ expr ":" expr { "," expr ":" expr } [ "," ] ] "}"
@@ -263,6 +265,9 @@ comp_for      = "for" ( NAME | names ) "in" coalesce { "for" ( NAME | names ) "i
 | `TracebackType` | where an exception was raised, from `types` (M37, §3.17) | `Taipan.Runtime.Traceback` |
 | `Callable[[A, B], R]` | function value (M11, §3.7) | `Taipan.Runtime.Function<D>` (§8) |
 | `Iterator[T]`, `Iterable[T]` | single-pass stream, and anything a `for` loop goes over (M31, §3.13) | `Taipan.Runtime.IIterator<T>`, `IEnumerable<T>` (§8) |
+| `Generator[Y, S, R]` | a generator that also receives `S`s and returns an `R` (M42, §3.20) | `Taipan.Runtime.IGenerator<Y, S, R>`, which `Taipan.Runtime.Generator<Y, S, R>` implements |
+| `AsyncIterator[T]`, `AsyncIterable[T]`, `AsyncGenerator[Y, S]` | async streams, for `async for` (M42, §3.20) | `Taipan.Runtime.IAsyncIterator<T>`, `IAsyncIterable<T>`, `AsyncGenerator<Y, S>` |
+| `object` | any value; only `StopIteration.value` gives one (M42, §3.20) | `object?` |
 | `Comparable`, user protocols | structural interface: a type parameter bound (M17, §3.11), and since M40 a type (§3.18) | a C# interface for a protocol used as a type (M40); nothing for a bound, since bounded generics are monomorphized |
 
 - A function without `-> type` returns nothing (C# `void`). Using its result as a value is `TP0200`. Since M26, `-> None` says the same explicitly, as in Python's type hints, for functions, methods (including `__init__`) and nested `def`s; a function declared `-> None` is the same as one without a return type in every way, its display and function type (`Callable[[…], None]`) included.
@@ -522,11 +527,15 @@ finally:
   | `ValueError` | `Exception` | `int(x)` of a NaN, `split("")` and `replace("", …)`, and a slice step of 0; since M35, `min`/`max` of an empty iterable, a missing value in `list.remove`/`index` and `str.index`, a `range` step of 0, and a negative `int` exponent |
   | `TypeError` | `Exception` | a failed `as` (§4.3, §10.4) |
   | `RuntimeError` | `Exception` | changing a list, dict or set (M35) while iterating over it; `StopIteration` escaping a generator (M31) |
-  | `StopIteration` | `Exception` | `next()` on an exhausted iterator, or a class's `__next__` ending (M31, §3.13) |
+  | `StopIteration` | `Exception` | `next()` on an exhausted iterator, or a class's `__next__` ending (M31, §3.13), and a generator's `send` when it finishes (M42) |
+  | `GeneratorExit` (M42) | `BaseException` | a generator's `close()` (§3.20) |
+  | `StopAsyncIteration` (M42) | `Exception` | an async generator's `__anext__` when it finishes (§3.20) |
+  | `CancelledError` (M42) | `BaseException` | cancelling an async function (§3.20); its name is `asyncio.CancelledError`, not a global |
   | `PythonError` | `Exception` | a Python exception from a `py` operation (§10.5) |
   | `DotNetError` | `Exception` | a .NET exception from a .NET call, caught as `Exception` (M21, §13.6) |
   | `EOFError` (M37) | `Exception` | `input()` at the end of its input |
   | `OSError` (M37) | `Exception` | a file operation the system refuses, and reading or writing a file not opened for it (§6.1) |
+  | `TimeoutError` (M42) | `OSError` | `asyncio.wait_for` and `asyncio.timeout` running out (§3.20) |
   | `FileNotFoundError` (M37) | `OSError` | opening a missing file |
   | `FileExistsError` (M37) | `OSError` | opening an existing file with mode `x` |
   | `PermissionError` (M37) | `OSError` | opening a file without permission |
@@ -734,13 +743,13 @@ for i, name in zip(naturals(1), ["a", "b", "c"]):
 - Iterators aren't convertible to Python (§10.3). A library exports `Iterable[T]` as .NET's `IEnumerable<T>`, and `Iterator[T]` as the runtime's `IIterator<T>`, which is one (§14.2).
 
 **Generators**
-- **A generator function** is one whose body has a `yield`, not counting nested functions. It's declared to return `Iterator[T]` or `Iterable[T]`, as in Python's type hints. Any other return type, or none, is `TP0200`, `'<f>' yields, so it must return 'Iterator[T]'`.
-- **`yield e`** is a statement. It gives `e`, which is checked against `T`, to whatever asked for the next value, and pauses the function there until it's asked again. The value of a `yield` expression (`x = yield e`, Python's `send`) is deferred: `yield` anywhere but at the start of a statement is `TP0100`. A bare `yield` is `TP0100`, `'yield' needs a value`.
+- **A generator function** is one whose body has a `yield`, not counting nested functions. It's declared to return `Iterator[T]` or `Iterable[T]`, or since M42 `Generator[Y, S, R]` (§3.20), as in Python's type hints. Any other return type, or none, is `TP0200`, `'<f>' yields, so it must return 'Iterator[T]'`.
+- **`yield e`** is a statement. It gives `e`, which is checked against `T`, to whatever asked for the next value, and pauses the function there until it's asked again. Before M42, the value of a `yield` expression (`x = yield e`, Python's `send`) was deferred, and a bare `yield` was `TP0100`, `'yield' needs a value`; since M42 both exist (§3.20).
 - **`yield from e`** gives each value of `e`, an `Iterable[U]` with `U` assignable to `T`, in turn.
 - **Calling a generator function** runs none of its body. It gives a new iterator; the body runs up to the first `yield` when the first value is asked for, and so on. The arguments are evaluated at the call, and the defaults too.
-- **`return`** without a value ends the generator, and so does reaching the end of its body. `return e` is `TP0200`, `a generator can't return a value` (generator return values are deferred). Since a generator needn't return, `TP0208` doesn't apply.
+- **`return`** without a value ends the generator, and so does reaching the end of its body. Before M42, `return e` was `TP0200`, `a generator can't return a value`; since M42 a `Generator[Y, S, R]` returns an `R` (§3.20). Since a generator needn't return, `TP0208` doesn't apply.
 - **Where:** `yield` outside a function is `TP0215`, `'yield' outside a function`. A lambda's body is an expression, so it can't yield. Methods may be generators, including `__iter__` (below).
-- **Inside `try` (deferred):** `yield` in the body of a `try` that has an `except` clause, or in an `except` or `finally` block, is `TP0215`, `'yield' can't be inside a 'try' with 'except', or in 'finally'`. A `try` with only `finally` may yield. Its `finally` runs when the generator finishes. A `for` loop that stops early (`break`, `return` or an exception) leaves the generator where it is, so a later loop or `next` continues it, as in Python; one that's never finished never runs its `finally`, where Python would run it when the generator is collected.
+- **Inside `try`:** before M42, `yield` in the body of a `try` that has an `except` clause, or in an `except` or `finally` block, was `TP0215`, `'yield' can't be inside a 'try' with 'except', or in 'finally'`; since M42 it may be anywhere (§3.20). A `finally` around a `yield` runs when the generator finishes. A `for` loop that stops early (`break`, `return` or an exception) leaves the generator where it is, so a later loop or `next` continues it, as in Python; one that's never finished never runs its `finally`, where Python would run it when the generator is collected.
 - **`StopIteration`** raised inside a generator, and not caught there, is `RuntimeError`, `generator raised StopIteration`, as Python 3.7 and later do.
 
 **The iterator protocol for classes (§4.8)**
@@ -771,7 +780,7 @@ print(await first, await second)
 - **Where `await` may appear:** in the body of an `async def`, and at the main file's top level, whose statements then run as an async entry point. Anywhere else, including a lambda, a generator, a nested `def` that isn't `async`, and a `const`, is `TP0215`, `'await' outside an async function`.
 - **Display:** an awaitable displays as `<awaitable>`, and equality is identity.
 - **An awaitable is awaited.** An expression statement whose value is an `Awaitable` is `TP0235`, `this awaitable is never awaited`, with help `write 'await …'`, since its exceptions would be lost. Store it to await it later (`let pending = fetch(url)`).
-- **Deferred:** async generators, `async for`, `async with`, async lambdas, and helpers such as `asyncio.gather`. A `yield` in an `async def` is `TP0215`.
+- **Since M42**, async generators, `async for`, `async with` and the `asyncio` module exist, and async code runs on one thread (§3.20). Before, a `yield` in an `async def` was `TP0215`. Async lambdas are deferred.
 
 ### 3.15 Sets (M35)
 ```python
@@ -838,7 +847,7 @@ with open(source) as src, open(target, "w") as dst:
   - An exception raised by `__exit__` replaces the one in flight, as from a `finally` block.
   - With several items, each later item is inside the earlier ones, so an exception from the second item's `__enter__` calls the first's `__exit__`.
 - **Suppression and checking.** An `__exit__` declared `-> bool` may suppress, so for termination, definite assignment and narrowing (§4.5, §3.9) its `with` statement may end after any statement of its block, as a `try` with an `except` clause may: a block that always returns doesn't make the `with` terminate, and a variable first assigned inside isn't assigned after. One declared `-> None` never suppresses, so the `with` is checked as its block alone. A `TextIO`'s `__exit__` never suppresses. (Python's type checkers make the same distinction.)
-- **`yield` inside `with`** is `TP0215`, `'yield' can't be inside a 'with'`, as inside a `try` with `except` (§3.13); both are deferred. `await` may be inside one (§3.14). `async with` is deferred.
+- **`yield` inside `with`** was `TP0215`, `'yield' can't be inside a 'with'`, before M42; since M42 it's valid (§3.20), and so is `async with`. `await` may be inside one (§3.14).
 - **`type[C]`** is the type of `__exit__`'s first argument: a class as a value, `C` or one deriving from it. `type[A]` is assignable to `type[B]` when `A` derives from `B`. Only `__exit__` receives one; nothing constructs or calls one, and `type[T]` for a `T` that isn't a class is `TP0200`. Its one attribute is `__name__: str`, and it displays as Python's does: `<class 'ValueError'>` for a built-in class, `<class '__main__.Timer'>` for one in the main file, and `<class 'zoo.Timer'>` for one in module `zoo`.
 - **`TracebackType`** comes from the built-in module `types` (§4.7), as in Python. It displays as `<traceback object>`. Since M41, `__exit__` receives the exception's `__traceback__`, whose entries can be read (§3.19).
 
@@ -1053,6 +1062,98 @@ NotFound: db
 - `==` and `!=` compare element by element, ordering compares lexicographically when `T` is ordered, and it's a valid dict key when `T` is, as for tuples (§3.8).
 - It displays as tuples do (§6), with Python's forms for no element and one: `()`, `("a",)`, `(1, 2)`.
 - It converts to and from Python's `tuple` when `T` is convertible (§10.3), as tuples do. A `match` on one is `TP0200`, `cannot match on tuple[T, ...]`; that's deferred.
+
+### 3.20 Generators and async II (M42)
+Generators are Python's coroutines too: `yield` is an expression that receives what `send` passes in, a generator can `return` a value, and `throw` and `close` raise inside it. Async generators, `async for` and `async with` work as in Python, and the built-in module `asyncio` runs awaitables together on one thread, as Python's event loop does.
+
+```python
+def averager() -> Generator[float, float, int]:
+    var total = 0.0
+    var count = 0
+    var average = 0.0
+    while count < 3:
+        let value = yield average
+        total += value
+        count += 1
+        average = total / count
+    return count
+
+let avg = averager()
+next(avg)
+print(avg.send(10.0), avg.send(20.0))   # 10.0 15.0
+
+async def ticks(name: str, n: int) -> AsyncIterator[str]:
+    for i in range(n):
+        await asyncio.sleep(0)
+        yield f"{name}{i}"
+
+async def consume(name: str) -> int:
+    var count = 0
+    async for t in ticks(name, 2):
+        print(t)
+        count += 1
+    return count
+
+print(await asyncio.gather(consume("a"), consume("b")))   # a0 b0 a1 b1, then [2, 2]
+```
+
+**`Generator[Y, S, R]`**
+- A generator that yields `Y`s, receives `S`s from `send`, and returns an `R`, as in Python's `typing`. It takes exactly three type arguments (`TP0209`), any of which may be `None`. A generator function may declare it as its return type, as well as `Iterator[Y]` and `Iterable[Y]` (§3.13), which are a generator that receives and returns `None`.
+- `Generator[Y, S, R]` is assignable to `Iterator[Y]` and `Iterable[Y]`, so `for`, `next` and the iterator built-ins take one. It's covariant in `Y` and `R`, as `Iterator` is in `Y`, and invariant in `S`.
+- It displays as `<generator object f>`, as before.
+
+**`yield` as an expression**
+- `yield e` is also an expression, whose value is what the generator is resumed with: `let x = yield e`, `x = yield e`, `x += yield e`, `return (yield e)`, and anywhere else in parentheses, `print((yield e))`. Unparenthesized, it may only be a whole statement or the right side of `let`, `var` or an assignment (`TP0100`), as in Python.
+- **Its type** is `S`. `yield` without a value yields `None`, so `Y` must accept `None` (`TP0200` otherwise, `'yield' needs a value: '<f>' yields <Y>`).
+- **How it's resumed:** `g.send(v)` resumes it with `v`, checked against `S`. `next(g)`, a `for` loop and the iterator built-ins resume it with `None`. When `S` doesn't accept `None`, resuming a generator that's waiting at a `yield` whose value is used, other than with `send`, raises `TypeError`, `a generator waiting for a <S> can't be resumed with next(); use send()`. Python would give the `yield` the value `None`. A `yield` whose value isn't used (a statement) may be resumed either way, and so may a generator that hasn't started.
+- `yield from e` is an expression too: its value is `e`'s return value when `e` is a `Generator[Y2, S2, R]` (so its type is `R`), and the generator delegates `send`, `throw` and `close` to `e` while it runs, as in Python (PEP 380). `S` must be assignable to `S2` (`TP0200`). Over any other iterable its value has no type: using it is `TP0200`, `'yield from' over <T> gives no value`, and sending a value other than `None` to it raises `TypeError`, `can't send a value to a 'yield from' over an iterator`.
+
+**Return values**
+- `return e` in a generator declared `Generator[Y, S, R]` returns `e`, checked against `R`, and ends the generator. In one declared `Iterator` or `Iterable`, it's `TP0200`, `a generator declared '<T>' can't return a value`, with help `declare it 'Generator[Y, S, R]'`. `TP0208` doesn't apply, since reaching the end returns `None`, which `R` must then accept (`TP0200`, `'<f>' can end without returning a <R>`).
+- The value becomes the `value` of the `StopIteration` that ends the generator, and the value of a `yield from` over it.
+- **`StopIteration.value: object`** is `None` unless the exception ended a generator that returned a value. Since an exception class isn't generic, its type is **`object`**, which holds a value of any type. An `object` displays as its value does, may be tested with `is None` and `is not None` (which don't narrow it), and converts with `as`: `e.value as int` gives the `int`, raising `TypeError`, `cannot convert <runtime type> to <T>`, if it isn't one, and `as T?` gives `None` instead (§4.3). Any value is assignable to `object`. It has no other operations (`TP0200`). A `StopIteration` constructed with a message has `value` `None`; Python's would be the message.
+
+**`send`, `throw` and `close`** are methods of `Generator[Y, S, R]`, as in Python:
+- **`g.send(v: S) -> Y`** resumes the generator with `v` and gives the next value it yields, raising `StopIteration` if it returns instead. Sending a value other than `None` to a generator that hasn't started raises `TypeError`, `can't send non-None value to a just-started generator`, as in Python; start it with `next(g)`.
+- **`g.throw(e: BaseException) -> Y`** raises `e` where the generator is paused, as if its `yield` had raised it, and gives the next value it yields. A generator that hasn't started is closed, and `e` raised from `throw`. Python's older forms, `throw(type, value, traceback)`, are `TP0209`.
+- **`g.close() -> None`** raises **`GeneratorExit`** where the generator is paused, so its `finally` blocks run. If the generator then yields, `close` raises `RuntimeError`, `generator ignored GeneratorExit`. If it returns or raises `GeneratorExit` or `StopIteration`, `close` returns. Closing a generator that hasn't started or has finished does nothing.
+- Resuming a generator from inside itself (calling its own `send` while it runs) raises `ValueError`, `generator already executing`.
+- **`GeneratorExit`** is a built-in class deriving from `BaseException`, as in Python, so `except Exception` doesn't catch it.
+- A finished generator gives no more values: `send`, `next` and `throw` raise `StopIteration` (for `throw`, the exception itself, as in Python).
+
+**`yield` inside `try` and `with`.** Since M42, `yield` may appear anywhere in a generator's body, in a `try` with `except` clauses, in `except`, `else` and `finally` blocks, and inside `with`. Before, each was `TP0215`. An exception thrown in with `throw`, including `GeneratorExit`, reaches the enclosing `except` clauses and `finally` blocks as any exception does. A generator that's never finished or closed still never runs its `finally` (§3.13).
+
+**Async generators**
+- An `async def` whose body has a `yield` is an async generator. It's declared to return **`AsyncIterator[Y]`**, **`AsyncIterable[Y]`** or **`AsyncGenerator[Y, S]`** (two type arguments, as in Python's `typing`); anything else is `TP0200`, `'<f>' is an async generator, so it must return 'AsyncIterator[T]'`. `AsyncGenerator[Y, S]` is assignable to `AsyncIterator[Y]`, and that to `AsyncIterable[Y]`.
+- Like a generator, and unlike an async function (§3.14), calling one runs none of its body: it gives a new async generator, whose body runs as values are asked for. Its body may `await`, and `yield` is an expression of type `S` as above.
+- `return` with a value is `TP0200`, `an async generator can't return a value`, and `yield from` is `TP0215`, `'yield from' can't be in an async generator`, as in Python.
+- Methods, as in Python: `__anext__()` and `asend(v: S)`, which give `Awaitable[Y]` and raise **`StopAsyncIteration`** (a built-in class deriving from `Exception`) when it's finished; `athrow(e)` (`Awaitable[Y]`) and `aclose()` (`Awaitable[None]`), which behave as `throw` and `close` do. The built-in **`anext(it)`** is `it.__anext__()`, and `anext(it, default)` gives `default` when it's finished, as `next` does (§6).
+- Their errors are Python's: `TypeError`, `can't send non-None value to a just-started async generator`; `RuntimeError`, `async generator ignored GeneratorExit`; and `RuntimeError`, `anext(): asynchronous generator is already running`, when one is resumed while its body awaits.
+- It displays as `<async_generator object f>`.
+
+**`async for` and `async with`.** Both may appear only where `await` may (§3.14, `TP0215`, `'async for' outside an async function`).
+- **`async for x in e:`** takes `e`, an `AsyncIterable[T]`: an async generator, or an instance of a class with `__aiter__(self) -> AsyncIterator[T]` and an `async def __anext__(self) -> T` that raises `StopAsyncIteration` at the end (§4.8). Each value is `await`ed from `__anext__`. Otherwise it follows `for` (§5.2): unpacking, `break` and `continue`. Anything else is `TP0200`, `cannot iterate over <T> with 'async for'`; a plain iterable gets help `use 'for'`.
+- **`async with e as v:`** calls and awaits `e.__aenter__()`, and `e.__aexit__(…)` on the way out, as `with` (§3.17) calls `__enter__` and `__exit__`. A class with `async def __aenter__(self) -> T` and `async def __aexit__(self, exc_type: type[BaseException]?, exc: BaseException?, tb: TracebackType?) -> bool` (or `-> None`) is an async context manager. Both must be async, with the same signatures as `__enter__` and `__exit__` otherwise (`TP0225`), and a class must define both or neither. A plain context manager in `async with`, or an async one in `with`, is `TP0200`, with help `use 'with'` or `use 'async with'`.
+- Async comprehensions (`async for` in a comprehension) are deferred.
+
+**The event loop.** Since M42, a program's async code runs on one thread, as Python's `asyncio` event loop does, so it interleaves the same way at the same `await`s:
+- Code after an `await` runs on the program's main thread when what it awaited finishes, in the order those things finished. Code that never awaits runs straight through, as before.
+- The main file's top level, when it has an `await` (§3.14), runs the loop until it finishes. So does `asyncio.run` (below). .NET code that an `await` waits for may run on other threads, but the Taipan code after the `await` doesn't.
+- Calling an async function still starts it (§3.14), unlike Python, where a coroutine starts when it's awaited or made a task. So `gather(f(), g())` starts `f` before `g` is called; in Python both start when `gather` is awaited. Awaiting an async generator's `__anext__` runs its body directly, as Python does, without a turn of the loop in between.
+- In a library (§14), Taipan code after an `await` runs where the .NET caller's context runs it, as before.
+
+**Cancellation.** A running async function can be cancelled, as a Python task can, by `asyncio.wait_for` and `asyncio.timeout` (below), or by cancelling a `gather` that's waiting for it:
+- Cancelling raises **`asyncio.CancelledError`** (deriving from `BaseException`, as in Python) at the `await` the function is paused at, or at its next `await` if it's running. If it's awaiting another running async function or a `gather`, that is cancelled instead, and the `CancelledError` reaches it through that `await`, so the innermost `finally` blocks run first, as in Python.
+- The function may catch `CancelledError` and go on; it isn't cancelled again unless something cancels it again.
+
+**`asyncio`** is a built-in module (§4.7), `import asyncio`, with these names, and no others:
+- **`asyncio.gather(*aws: Awaitable[T]) -> Awaitable[list[T]]`** waits for every awaitable and gives their results in order. The element type is what the arguments' types join to, as list literal elements do (§4.6), or `TP0200`. Its arguments may be awaitables, or `*xs` for a `list[Awaitable[T]]`. Without arguments it needs an expected type, as `[]` does (`TP0206`). If one raises, the `gather` raises that exception at once, while the others keep running, as Python's does (without `return_exceptions`). Cancelling the `gather` cancels them all.
+- **`asyncio.sleep(delay: float) -> Awaitable[None]`** finishes after `delay` seconds (an `int` converts, §3.3). `sleep(0)` lets everything else that's ready run first, as in Python.
+- **`asyncio.wait_for(aw: Awaitable[T], timeout: float?) -> Awaitable[T]`** gives `aw`'s result, unless `timeout` seconds pass first, when it cancels `aw` and waits for it to finish: if it ended with `CancelledError`, `wait_for` raises `TimeoutError`; if it caught that and finished anyway, `wait_for` gives its result, as Python 3.12's does. `None` waits without a limit.
+- **`asyncio.timeout(delay: float?)`** is an async context manager (an `asyncio.Timeout`): `async with asyncio.timeout(1.5):` cancels the code inside after `delay` seconds, and the `async with` then raises `TimeoutError` from the `CancelledError`, as Python 3.11's does. `None` never expires.
+- **`asyncio.run(aw: Awaitable[T]) -> T`** runs the event loop until `aw` finishes and gives its result, so that a program written as Python's `asyncio.run(main())` works. It's an ordinary function, and calling it while the loop is running (in an async function, or at a top level with `await`) raises `RuntimeError`, `asyncio.run() cannot be called from a running event loop`.
+- **`asyncio.CancelledError`** (above), and **`asyncio.TimeoutError`**, which is the built-in **`TimeoutError`**, a new built-in class deriving from `OSError`, as in Python 3.11 and later.
+- Deferred: `create_task` and tasks' methods (`cancel`, `done`, `result`), `return_exceptions`, `wait`, `as_completed`, queues, locks and the other `asyncio` names.
 
 ## 4. Declarations
 
@@ -1276,7 +1377,7 @@ class Point:
   - `import geometry` loads `geometry.tpn` from the main file's directory. Every module of a program lives in that one directory, so there are no packages or dotted module names in v0.1.
   - A missing file is `TP0221`, reported at the import.
   - The module name `python` is reserved for Python interop (§10), and `dotnet` for .NET interop (M21, §13).
-  - **Built-in modules (M37):** `sys`, `os` and `types` are part of Taipan (§6.1), imported as other modules are (`import sys`, `from os import environ`, `import sys as system`), and never loaded from a file, so a `sys.tpn` beside the main file isn't imported. `from python import os` still binds Python's `os` module (§10.1); importing both under one name is `TP0214`. A dotted `from` path is a .NET namespace under `dotnet` (§13.1); any other dotted path is `TP0221`, since modules aren't dotted.
+  - **Built-in modules (M37):** `sys`, `os`, `types` and since M42 `asyncio` (§3.20) are part of Taipan (§6.1), imported as other modules are (`import sys`, `from os import environ`, `import sys as system`), and never loaded from a file, so a `sys.tpn` beside the main file isn't imported. `from python import os` still binds Python's `os` module (§10.1); importing both under one name is `TP0214`. A dotted `from` path is a .NET namespace under `dotnet` (§13.1); any other dotted path is `TP0221`, since modules aren't dotted.
 - **Module files contain declarations only:** `import`, `def`, `class`, `enum` and `const`. A top-level statement (including `let` and `var`) in a module other than the main file is `TP0222`. Only the main file has a top level that runs.
 - **Exports:** a module exports every name it defines, meaning its functions, classes, enums, their variants, constants, protocols (M17) and type aliases (M18). There's no privacy, no re-export (a name a module itself imported can't be imported from it), and no `from m import *` (`TP0100`).
 - **Imports:**
@@ -1357,6 +1458,9 @@ class Shape(ABC):
 | `__iadd__`, `__isub__`, `__imul__`, `__itruediv__`, `__ifloordiv__`, `__imod__`, `__ipow__` (M39) | `(self, other: T) -> R` | `x += y` and the others (§4.9) |
 | `__format__` (M39) | `(self, spec: str) -> str` | f-string holes, with the hole's spec (§4.9) |
 | `__exit__` (M37) | `(self, exc_type: type[BaseException]?, exc: BaseException?, tb: TracebackType?) -> bool`, or `-> None` | `with` (§3.17); a class with one must have the other, or it's `TP0225`, `'<C>' defines '__exit__' but not '__enter__'` (or the reverse) |
+| `__aiter__` (M42) | `(self) -> AsyncIterator[T]` | `async for` (§3.20) |
+| `__anext__` (M42) | `async (self) -> T` | `anext()`, and each value of `async for`, ending with `StopAsyncIteration` (§3.20) |
+| `__aenter__`, `__aexit__` (M42) | as `__enter__` and `__exit__`, each an `async def` | `async with` (§3.20); a class with one must have the other (`TP0225`) |
 
 - Special methods are inherited and overridden like other methods (§4.3), with `@override` when a base class defines the method in its body. Defining one that only Python's `object` has (`__str__`, `__eq__`, …), or that a dataclass generates (below), needs no `@override`.
 - Calling one directly (`m.__add__(n)`, `m.__str__()`) is `TP0200`, `'<m>' cannot be called directly`, with help naming its form (`use '+'`, `use 'str(m)'`, `use 'repr(m)'`, `use 'hash(m)'`), except as `super().__m__(…)` in an override.
@@ -1701,6 +1805,7 @@ In `a == b` and `a != b`, `a`'s type is `b`'s expected type (§4.6), so `m == No
 - `list(xs: Iterable[T]) -> list[T]` (M31) takes every value into a new list, in order: `list(map(f, xs))`. `list()` with no argument needs an expected type, as `[]` does (§4.6).
 - `iter(xs: Iterable[T]) -> Iterator[T]` (M31) starts an iterator over `xs`; on an iterator it gives the iterator itself.
 - `next(it: Iterator[T]) -> T` (M31) takes the next value, raising `StopIteration` when there's none. `next(it, default)` gives `default` instead, which is checked against `T`; a `None` default makes the result `T?`.
+- `anext(it: AsyncIterator[T]) -> Awaitable[T]` (M42, §3.20) is `next`'s async form, raising `StopAsyncIteration`, with the same `default`.
 - `isinstance(x, C) -> bool` (M15) is `True` when `x`'s runtime class is `C` or derives from it, as in Python, and `False` for `None`. Since M26, `isinstance(x, (A, B, …))` is `True` when `x` is any of the listed classes. It narrows `x` to the nearest class all of them derive from (§3.9), as `except (A, B) as e` binds (§3.10), and each listed class follows the rules for one (`TP0200` for a class `x` can never be).
   - `x` must be a class or an optional class, and `C` the name of a class (qualified for another module: `zoo.Dog`) that isn't generic. Anything else is `TP0200`. Since M40, `x` may also be a protocol value, a type parameter bounded by a class, or a `py` value (§3.18).
   - `C` must derive from `x`'s class, or be it or one of its bases. An unrelated class is `TP0200`, since the test could never be `True`.
@@ -1866,8 +1971,12 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 | abstract classes (M28) | `public abstract class`, with `public abstract` methods. An abstract class has no `@__new__`, since nothing constructs it. |
 | `Iterable[T]` / `Iterator[T]` (M31) | `IEnumerable<T>`, and the covariant interface `Taipan.Runtime.IIterator<T>`, an `IEnumerable<T>` over one stream: a second loop over it continues where the first stopped. A list, dict, str or class converts to `Iterable[T]` through a runtime wrapper that starts a fresh pass each time, and keeps the mutation check (§5.2). |
 | comprehensions (M36) | A chain of lazy LINQ operators through `Taipan.Runtime.Comprehensions`: each `for` a `SelectMany` (the last a `Select` of the element), each `if` a `Where`, each over lambdas whose parameters are the loop variables. A list, set or dict comprehension collects it at once; a generator expression wraps it in an `Iterator<T>` (§3.13). |
-| generators (M31) | A C# iterator method returning `IEnumerable<T>`, with `yield return` and `yield break`; the generator function calls it and wraps the result in an `Iterator<T>`, so its body starts at the first value asked for. `yield from e` is a `foreach` that yields each value. |
-| async functions (M33) | A C# `async` method returning `Task<T>` (`Task` for `Awaitable[None]`); `await` is C#'s. `Awaitable[T]` is `Task<T>`. A main file with a top-level `await` gets an `async Task Main`. |
+| generators (M31, M42) | Before M42, a C# iterator method returning `IEnumerable<T>`, with `yield return` and `yield break`. C# iterators can't receive values, and can't `yield` inside a `try` with a `catch`, so since M42 the body is a C# `async` method, `async Task<R> body(Taipan.Runtime.GeneratorChannel<Y, S> channel)`, that the generator object drives as a coroutine: `yield e` is `await channel.Yield(e)`, whose awaiter stores `e` and gives control back to whatever resumed the body, and whose result is what the body is resumed with (the sent value, or an exception from `throw` or `close`, which its `GetResult` throws). C# allows `await` in `try`, `catch` and `finally`, so `yield` may be anywhere. The body's `return r` completes its task with `r`. Nothing else is ever awaited, so the body runs only inside `send`, `next`, `throw` and `close`, on their thread. The generator function returns `new Taipan.Runtime.Generator<Y, S, R>(body, "<f>")`, an `IIterator<Y>`, with `S`'s name as a third argument when `S` doesn't accept `None`, for `next`'s `TypeError`. `yield from e` is a loop in the runtime that delegates to `e`. |
+| async functions (M33, M42) | A C# `async` method returning `Task<T>` (`Task` for `Awaitable[None]`). `Awaitable[T]` is `Task<T>`. A main file with a top-level `await` gets an `async Task Main`. Since M42 the method is `Taipan.Runtime.Async.Start(body)` over a local `async` function, which gives each call a cancellable task (§3.20), and `await e` is `await Taipan.Runtime.Async.Await(e)`, whose awaiter resumes on the event loop, and with `CancelledError` when the task is cancelled. |
+| event loop (M42) | `Taipan.Runtime.EventLoop`, a single-threaded queue of continuations that `Async.Await` posts to, and that `Panic.Run` (for a top-level `await`) and `asyncio.run` run until their awaitable finishes. Timers post to it when they fire. |
+| async generators (M42) | As generators, with an `async Task body(Taipan.Runtime.AsyncGeneratorChannel<Y, S> channel)` that also awaits real work; `Taipan.Runtime.AsyncGenerator<Y, S>` completes each `__anext__` when the body yields, running the awaiting code directly. |
+| `async for`, `async with` (M42) | A `while` loop that awaits `__anext__()` until `StopAsyncIteration`, and `with`'s form (above) with `await` on `__aenter__` and `__aexit__`. |
+| `object` (M42) | `object?`. `x as T` is `Taipan.Runtime.Ops.Cast<T>(x)`. |
 | `map`, `filter`, `zip`, `enumerate` (M31) | Runtime iterators over `IEnumerable<T>`, which call their function or take from their sources only when asked for a value. |
 | `isinstance(x, C)` / narrowed `x` | `x is C`. A narrowed read is `((C)x)`, or `x!` / `x.Value` for `x is not None` on a reference / value type. |
 | `x as C` / `x as C?` | `Taipan.Runtime.Ops.Cast<C>(x)`, which panics as §7 says / `x as C` |
@@ -1941,7 +2050,7 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 | TP0005 | invalid escape sequence |
 | TP0006 | invalid f-string |
 | TP0007 | invalid number literal |
-| TP0100 | syntax error: expected X, found Y (including `'yield' needs a value`, M31) |
+| TP0100 | syntax error: expected X, found Y (including `'yield' needs a value`, M31, until M42 allowed a bare `yield`) |
 | TP0200 | type mismatch |
 | TP0201 | undefined name |
 | TP0202 | cannot assign to `let` binding |
@@ -2014,6 +2123,8 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0200 | `no overload of '<T>.<m>' takes (<A1>, <A2>)` / `'<T>' is a static class` (constructing it, or using it as a type) / `'<T>' cannot be constructed` (an interface, abstract class or enum) / `<v> is out of range for <N>` (a literal argument, `<N>` the .NET type's name, such as `Int32`) / `'<T>.<m>' returned null` (`TypeError`, at run time) / `'<C>' is not an exception class` (a .NET class not deriving from `System.Exception`) / `cannot bind both Taipan and .NET exceptions`, with help `write separate clauses` (M21) |
 | TP0200 | `'<T>' does not satisfy '<P>': it has no field '<f>'` / `'<T>' does not satisfy '<P>': '<f>' must be '<f>: <F>'` / `'<T>' does not derive from '<C>'` / `<P> can never be a <C>` / `'<f>' cannot be used as a value`, with help `wrap it in a lambda` / `'is' compares identity, which <T> doesn't have`, with help `use '=='` / `isinstance on py takes int, float, str, bool, list, dict, tuple or a Python class, found <T>` (M40) |
 | TP0200 | `'from' needs an exception or None, found <T>` (with help `write '<C>(…)'` for a class name) (M41) |
+| TP0200 | `'yield' needs a value: '<f>' yields <Y>` / `a generator declared '<T>' can't return a value`, with help `declare it 'Generator[Y, S, R]'` / `'<f>' can end without returning a <R>` / `'yield from' over <T> gives no value` / `'<f>' is an async generator, so it must return 'AsyncIterator[T]'` / `an async generator can't return a value` / `cannot iterate over <T> with 'async for'` (help `use 'for'` for a plain iterable) / `<T> is not an async context manager` (help `use 'with'` for a plain context manager, `define '__aenter__' and '__aexit__'` otherwise), and with `with`, help `use 'async with'` / `object has no attribute '<a>'`, with help `convert it with 'as'` (M42) |
+| TP0215 | `'yield from' can't be in an async generator` / `'async for' outside an async function` (and `'async with'`) (M42; `'yield' can't be inside a 'with'`, `'yield' in an async function` and `'yield' can't be inside a 'try' with 'except', or in 'finally'` are gone) |
 | TP0200 | `expected Self, found <C>` / `a class attribute can't use '<T>'` / `'<m>' is generic, so it cannot be used as a value` for a generic class's static or class method without type arguments (M39) |
 | TP0200 | `<T> can't be None` / `<T> cannot match a mapping pattern` / `mapping keys must be int, str or bool, found <K>` / `alternatives bind different names: '<x>' is not bound in every one` / `'<x>' is <A> in one alternative and <B> in another` (M38) |
 | TP0200 | `every arm of this 'match' raises`, with help `use a 'match' statement` (M19) / `this arm gives no value`, with help `end it with an expression` / `<T> cannot match a tuple pattern` / `<T> cannot match a list pattern` / `'*<x>' would hold <A> and <B>` (a starred name in a tuple) (M29) |
@@ -2146,12 +2257,12 @@ ROADMAP.md plans most of these from M35 on. They were never part of v0.1:
 - I/O beyond §6.1 (M37): binary files and `bytes`, read-write (`+`) modes, `seek` and `tell`, `open`'s `errors=` and `buffering=`, `newline` values other than `None` and `""`, other encodings, `os.path` and the rest of `os` and `sys`, `contextlib`, parenthesized `with` items and targets other than a name, `yield` inside `with`, and `NotADirectoryError` and Python's other `OSError` classes
 - protocols extending other protocols, a check that a class used with a protocol declares it, properties in protocols, and runtime-checkable protocols (`isinstance(x, P)`)
 - bounds on classes', protocols' and enums' type parameters, bounds that use type parameters, and built-in types' ordinary methods satisfying protocols
-- special methods beyond §4.8 (`__bool__`, `__ne__`, `__delitem__`, the bitwise operators, `__enter__`'s async form), and special methods in protocols other than `__lt__`
+- special methods beyond §4.8 (`__bool__`, `__ne__`, `__delitem__`, the bitwise operators), and special methods in protocols other than `__lt__`
 - mixing dataclasses and plain classes in one hierarchy, generic exception classes, and `isinstance` and class patterns with generic classes
 - an `__init__` written in a dataclass
 - abstract static and class methods, property deleters, instance methods as values (bound methods), `field()` and the other dataclass options (`eq`, `kw_only`, `slots`, …), and slices and `del` on classes (`__getitem__` with a slice, `__delitem__`)
 - methods as values (bound methods; wrap them in a lambda)
-- async generators, `async for`, `async with`, async lambdas and `asyncio`-style helpers (M33), generator `send`, `throw` and `close`, `yield` as an expression, generator return values, `Generator[Y, S, R]`, `yield` inside `try`/`except`, async comprehensions, and `async` iterators
+- async beyond §3.20 (M42): async lambdas, async comprehensions, `asyncio` beyond `gather`, `sleep`, `wait_for`, `timeout` and `run` (tasks, `return_exceptions`, queues, locks), running a generator's `finally` when it's collected, and `object` beyond `StopIteration.value` (§13's `object` results are M43's)
 - patterns beyond §5.1 (M38): value patterns naming constants (`case Color.RED` for a non-enum value), class patterns on .NET types and `py` values, mapping keys that aren't literals, and narrowing a binding at a nested optional position by earlier arms
 - recursive aliases, and a class's aliases reached from outside it (`C.Name`)
 - typed `**kwargs` (`Unpack[TypedDict]`), `*args` and `**kwargs` in function types, and `**e` filling named parameters
