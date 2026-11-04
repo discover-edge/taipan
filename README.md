@@ -2,7 +2,7 @@
 
 A statically typed, compiled language with Python's syntax. Taipan reads like Python, but checks types at compile time, has no `null` surprises, and requires exhaustive `match`. Programs compile to .NET assemblies, and Python libraries are reachable through a checked boundary.
 
-**Documentation:** [taipan-lang.org](https://taipan-lang.org), with a tour of the language, guides, and the [specification](SPEC.md). The site's source is in [`website/`](website/).
+**Documentation:** [taipan-lang.org](https://taipan-lang.org), with a tour of the language, guides, and the [specification](https://github.com/taipan-org/taipan/blob/main/SPEC.md). The site's source is in [`website/`](https://github.com/taipan-org/taipan/tree/main/website).
 
 ```python
 @dataclass
@@ -48,26 +48,31 @@ found worker
 
 ## Getting started
 
-You need the [.NET 10 SDK](https://dotnet.microsoft.com/download). Then build the compiler from source:
+Install the `taipan` command as a .NET tool, with the [.NET 10 SDK](https://dotnet.microsoft.com/download):
+
+```
+dotnet tool install -g TaipanLang
+taipan run examples/health.tpn
+```
+
+See [taipan-lang.org](https://taipan-lang.org/start/install/) for the rest.
+
+### From source
+
+With the [.NET 10 SDK](https://dotnet.microsoft.com/download), build the compiler and run a program with it:
 
 ```
 git clone https://github.com/taipan-org/taipan.git
 cd taipan
 dotnet build
-```
-
-Run a program with:
-
-```
 dotnet run --project src/Taipan.Cli -- run examples/health.tpn
 ```
 
-To put `taipan` on your path instead, pack it as a .NET tool and install it from the local package. It needs only the .NET 10 runtime to run:
+To install a tool built from source, pack it and install it from the local package:
 
 ```
 dotnet pack -c Release -o packages
 dotnet tool install -g TaipanLang --add-source packages
-taipan run examples/health.tpn
 ```
 
 ### Commands
@@ -188,7 +193,7 @@ file-types = ["tpn"]
 language-servers = ["taipan"]
 ```
 
-[SPEC.md](SPEC.md) is the full language definition, and `examples/` and `tests/cases/` have many more programs.
+[SPEC.md](https://github.com/taipan-org/taipan/blob/main/SPEC.md) is the full language definition, and `examples/` and `tests/cases/` have many more programs.
 
 ## How it works
 
@@ -207,7 +212,7 @@ tests/                 golden tests (tests/cases/) and unit tests
 dotnet test
 ```
 
-Golden tests in `tests/cases/` are the main signal. Each `.tpn` runs through the CLI, and its output is compared with sidecar files (`.out`, `.err`, `.exit`, and `.cs` for emitted C#). [CLAUDE.md](CLAUDE.md) describes the conventions, and [ROADMAP.md](ROADMAP.md) has the milestones, past and planned. Language changes start as SPEC.md edits.
+Golden tests in `tests/cases/` are the main signal. Each `.tpn` runs through the CLI, and its output is compared with sidecar files (`.out`, `.err`, `.exit`, and `.cs` for emitted C#). [CLAUDE.md](https://github.com/taipan-org/taipan/blob/main/CLAUDE.md) describes the conventions, and [ROADMAP.md](https://github.com/taipan-org/taipan/blob/main/ROADMAP.md) has the milestones, past and planned. Language changes start as SPEC.md edits.
 
 ## Name
 

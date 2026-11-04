@@ -2,6 +2,7 @@
   <!-- The MSBuild project SDK for .tpnproj projects (SPEC §18), carrying its own copy of the compiler. -->
   <PropertyGroup>
     <IsPackable>true</IsPackable>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageId>TaipanLang.Sdk</PackageId>
     <PackageType>MSBuildSdk</PackageType>
     <Description>The MSBuild project SDK that builds Taipan (.tpnproj) projects with dotnet build.</Description>
@@ -14,6 +15,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
     <ProjectReference Include="../Taipan.Cli/Taipan.Cli.csproj" ReferenceOutputAssembly="false" Private="false" />
     <None Include="Sdk/*.props;Sdk/*.targets" Pack="true" PackagePath="Sdk/" />
   </ItemGroup>
