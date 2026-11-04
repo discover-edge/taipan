@@ -1,0 +1,41 @@
+# The formatter's style (SPEC §19.2): this file is badly laid out on purpose.
+
+
+
+@dataclass( order = True )
+class Point :
+  x : float
+  y : float=0.0   # a default
+  def moved( self , by : float = 1.0 ) -> Point :
+
+      return Point( x = self.x+by , y = self.y )
+def first [ T ] ( xs : list [ T ] ) -> T ? :
+  if len( xs )==0 :
+    return None
+  # the first element
+  return xs [ 0 ]
+def total( *args : int , ** kwargs : int ) -> int:
+    var t=0
+    for a in args :
+        t+=a
+    for k , v in kwargs.items( ) :
+        t += v*-1
+    return t
+let xs=[ 1,2,3 ,4 ]
+print( xs[ 1 : 3 ] , xs[ : : 2 ] , xs[-1] , - xs[0] , 2 ** 3 )
+print( first( xs ) ?? 0 , total( 1 , 2 , a = 3 ) )
+let p=Point( 1.0 )
+print( p.moved( by=2.0 ) , {"a" : 1 , "b":2} , ( 1 , 2, ) )
+let f:Callable[ [int] ,int ]= lambda n : n*2
+print(f( 4 ) , not  True)
+let nested = [
+        [ 1 , 2 ],
+  [3,
+     4],
+          ]
+print( nested )      # trailing
+let picked = (match xs[0]:
+      1: "one"
+      _: "other"
+, "!")
+print( picked )

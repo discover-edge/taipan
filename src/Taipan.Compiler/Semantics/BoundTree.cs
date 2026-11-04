@@ -24,6 +24,7 @@ public static class BoundTree
         BoundDelete delete => delete.Targets,
         BoundReturn { Value: { } value } => [value],
         BoundRaise { Value: { } value } raise => raise.Cause is { } cause ? [value, cause] : [value],
+        BoundAssert check => check.Message is { } message ? [check.Condition, message] : [check.Condition],
         BoundTry tryStmt => tryStmt.Handlers.SelectMany(h => h.PythonClasses),
         BoundExprStmt exprStmt => [exprStmt.Expr],
         BoundIf ifStmt => ifStmt.Clauses.Select(c => c.Condition),

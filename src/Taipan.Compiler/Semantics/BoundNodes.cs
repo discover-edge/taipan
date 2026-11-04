@@ -21,6 +21,9 @@ public sealed record BoundProgram(
     /// <summary>Whether the main file's top level awaits, so its entry point is async (SPEC §3.14, M33).</summary>
     public bool IsAsync { get; init; }
 
+    /// <summary>For <c>taipan test</c>, the main file's test functions, which its entry point runs (SPEC §20); default otherwise.</summary>
+    public ImmutableArray<FunctionSymbol> Tests { get; init; }
+
     /// <summary>How a program bound as a library is exported (SPEC §14); null for a program.</summary>
     public BoundLibrary? Library { get; init; }
 
@@ -235,6 +238,9 @@ public sealed record BoundDotNetNew(DotNetType Created, Microsoft.CodeAnalysis.I
 
 /// <summary>An argument for a .NET parameter; <see cref="Expanded"/> for one of a <c>params</c> parameter's expanded arguments (SPEC §13.14).</summary>
 /// <summary>The running async function's cancellation token, passed where a call leaves one out (SPEC §13.20, M43).</summary>
+/// <summary><c>assert c, m</c> (SPEC §5.6, M44).</summary>
+public sealed record BoundAssert(BoundExpr Condition, BoundExpr? Message, TextSpan Span) : BoundStmt(Span);
+
 /// <summary><c>super().__init__(…)</c> in a class with a .NET base (SPEC §13.16, M43): the .NET constructor that makes the object.</summary>
 public sealed record BoundDotNetSuperInit(DotNetType Base, Microsoft.CodeAnalysis.IMethodSymbol Constructor, ImmutableArray<BoundDotNetArgument> Arguments, TextSpan Span)
     : BoundExpr(TaipanType.Nothing, Span);

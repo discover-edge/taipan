@@ -532,6 +532,8 @@ public static class BuiltinClasses
             CreateStopIteration(),
             // M42 (SPEC §3.20).
             Builtin("GeneratorExit", BaseException),
+            // M44 (SPEC §5.6).
+            Builtin("AssertionError", Exception),
             Builtin("StopAsyncIteration", Exception),
             PythonError,
             DotNetError,

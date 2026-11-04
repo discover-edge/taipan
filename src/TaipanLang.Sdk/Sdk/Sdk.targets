@@ -4,10 +4,31 @@
     <TaipanMain Condition="'$(TaipanMain)' == ''">$(MSBuildProjectDirectory)/$(MSBuildProjectName).tpn</TaipanMain>
   </PropertyGroup>
 
+  <!-- A test project builds a program that runs its main file's tests (SPEC §18.6, M44). -->
+  <PropertyGroup Condition="'$(IsTestProject)' == 'true'">
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
   <ItemGroup>
     <!-- Programs and libraries reference the runtime they're compiled for. -->
     <PackageReference Include="TaipanLang.Runtime" Version="$(TaipanSdkVersion)" />
   </ItemGroup>
 
   <Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk" />
+
+  <!--
+    dotnet test calls VSTest: a test project's program runs its tests and writes their report, and
+    a non-zero exit fails the target (SPEC §18.6). Defined after Microsoft.NET.Sdk's, so it's this one.
+  -->
+  <Target Name="VSTest" DependsOnTargets="Build" Condition="'$(IsTestProject)' == 'true'">
+    <PropertyGroup>
+      <_TaipanTestHost Condition="'$(DOTNET_HOST_PATH)' != ''">$(DOTNET_HOST_PATH)</_TaipanTestHost>
+      <_TaipanTestHost Condition="'$(DOTNET_HOST_PATH)' == ''">dotnet</_TaipanTestHost>
+    </PropertyGroup>
+    <Exec Command="&quot;$(_TaipanTestHost)&quot; &quot;$(TargetPath)&quot;" WorkingDirectory="$(MSBuildProjectDirectory)"
+          IgnoreExitCode="true" EchoOff="true" StandardOutputImportance="high">
+      <Output TaskParameter="ExitCode" PropertyName="_TaipanTestExitCode" />
+    </Exec>
+    <Error Condition="'$(_TaipanTestExitCode)' != '0'" Text="Taipan tests failed in $(MSBuildProjectName)" />
+  </Target>
 </Project>

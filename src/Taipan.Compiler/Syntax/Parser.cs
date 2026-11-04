@@ -748,6 +748,8 @@ public sealed class Parser
                 return ParseRaiseStmt();
             case TokenKind.DelKeyword:
                 return ParseDelStmt();
+            case TokenKind.AssertKeyword:
+                return ParseAssertStmt();
             case TokenKind.YieldKeyword:
                 return ParseYieldStmt();
             case TokenKind.PassKeyword:
@@ -997,6 +999,20 @@ public sealed class Parser
     }
 
     // raise_stmt = "raise" [ expr [ "from" expr ] ]
+    // assert_stmt = "assert" expr [ "," expr ]
+    private AssertStmt ParseAssertStmt()
+    {
+        var start = Next().Span.Start;
+        var condition = ParseExpr();
+        Expr? message = null;
+        if (At(TokenKind.Comma))
+        {
+            Next();
+            message = ParseExpr();
+        }
+        return new AssertStmt(condition, message, SpanFrom(start));
+    }
+
     private RaiseStmt ParseRaiseStmt()
     {
         var start = Next().Span.Start;

@@ -140,6 +140,9 @@ public sealed record ReturnStmt(Expr? Value, TextSpan Span) : Stmt(Span);
 /// <summary><c>raise e</c>, or a bare <c>raise</c> when <see cref="Value"/> is null (SPEC §3.10).</summary>
 public sealed record RaiseStmt(Expr? Value, Expr? Cause, TextSpan Span) : Stmt(Span);
 
+/// <summary><c>assert c</c> or <c>assert c, m</c> (SPEC §5.6, M44).</summary>
+public sealed record AssertStmt(Expr Condition, Expr? Message, TextSpan Span) : Stmt(Span);
+
 /// <summary>
 /// <c>yield e</c>, or <c>yield from e</c> when <see cref="From"/> (SPEC §3.13, M31); a bare
 /// <c>yield</c> has no <see cref="Value"/> (M42).

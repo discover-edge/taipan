@@ -14,7 +14,7 @@ namespace Taipan.Cli;
 /// The <c>taipan</c> command line. Takes its output writers as parameters so the
 /// golden-test runner can drive it in-process.
 /// </summary>
-public static class Cli
+public static partial class Cli
 {
     public const int ExitSuccess = 0;
     public const int ExitCompileError = 1;
@@ -27,8 +27,10 @@ public static class Cli
           taipan build <file> [--library | --native | --python-extension] -o <dir>
           taipan run   <file> [-- args]
           taipan pack  <file> -o <dir>
-          taipan compile <file> [--library] --out <dll> [--reference <dll>]... [--assembly <name>] [--namespace <ns>] [--version <v>]
+          taipan compile <file> [--library | --test] --out <dll> [--reference <dll>]... [--assembly <name>] [--namespace <ns>] [--version <v>]
           taipan lsp [--stdio]
+          taipan fmt [--check] <path>...
+          taipan test [<path>...]
           taipan --version
           taipan --help
         """;
@@ -55,6 +57,8 @@ public static class Cli
             "build" => Build(rest, target!.Value, stdout, stderr),
             "pack" => Pack(rest, stdout, stderr),
             "compile" => CompileAssembly(rest, stderr),
+            "fmt" => Format(rest, stdout, stderr),
+            "test" => Test(rest, stdin, stdout, stderr),
             // Clients such as VS Code's pass --stdio, the only transport (SPEC §16.1).
             "lsp" when rest.Any(a => a != "--stdio") => UsageError(stderr, "lsp takes no arguments but '--stdio'"),
             "lsp" => new LanguageServer(Console.OpenStandardInput(), Console.OpenStandardOutput()).Run(),
@@ -162,6 +166,7 @@ public static class Cli
     {
         string? file = null, output = null, assembly = null, ns = null, version = null;
         var library = false;
+        var test = false;
         var references = ImmutableArray.CreateBuilder<string>();
         for (var i = 0; i < args.Length; i++)
         {
@@ -176,6 +181,10 @@ public static class Cli
             {
                 case "--library":
                     library = true;
+                    continue;
+                // A test project's program runs its tests (SPEC §18.6, M44).
+                case "--test":
+                    test = true;
                     continue;
                 case "--out" or "--reference" or "--assembly" or "--namespace" or "--version" when value is null:
                     return UsageError(stderr, $"{args[i]} needs a value");
@@ -213,7 +222,10 @@ public static class Cli
             stderr.WriteLine($"{Path.GetFullPath(Path.Combine(Path.GetDirectoryName(file) ?? "", ProjectFile.FileName))}(1,1): error TPN002: list references and packages in the project file, not taipan.json");
             return ExitCompileError;
         }
-        var result = Checker.Check(file, library ? Target.Library : Target.Program, options: new CompileOptions(references.ToImmutable(), ns));
+        // A test project reports its file by its path from the project's directory, where MSBuild runs this (SPEC §18.6).
+        if (test)
+            file = Path.GetRelativePath(Directory.GetCurrentDirectory(), file);
+        var result = Checker.Check(file, test ? Target.Test : library ? Target.Library : Target.Program, options: new CompileOptions(references.ToImmutable(), ns));
         foreach (var diagnostic in result.Diagnostics)
             stderr.WriteLine(MSBuildFormat(diagnostic));
         if (result.Failure is not null)
@@ -291,4 +303,6 @@ public enum Target
     Library,
     Native,
     PythonExtension,
+    /// <summary>A test file, whose entry point runs its tests (SPEC §20, M44).</summary>
+    Test,
 }

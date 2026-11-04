@@ -39,6 +39,8 @@ public sealed class PythonStartupTests : IDisposable
         await File.WriteAllTextAsync(path, Program);
         var start = new ProcessStartInfo("dotnet", [Path.Combine(AppContext.BaseDirectory, "taipan.dll"), "run", path])
         {
+            // Not this process's, which another test may have moved to a directory it then deletes.
+            WorkingDirectory = _directory,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
         };

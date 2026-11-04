@@ -1,0 +1,8 @@
+PASS tests/cases/m44/test_async.tpn::test_double
+PASS tests/cases/m44/test_async.tpn::test_shared_state
+FAIL tests/cases/m44/test_async.tpn::test_exit
+Traceback (most recent call last):
+  File "tests/cases/m44/test_async.tpn", line 24, in test_exit
+    sys.exit(3)
+SystemExit: 3
+2 passed, 1 failed

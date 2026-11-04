@@ -154,9 +154,9 @@ public sealed partial class Binder
     /// </summary>
     public static BindResult Bind(
         ImmutableArray<SourceModule> files, DotNetLibrary? library = null, bool asLibrary = false, bool asNative = false, bool asExtension = false,
-        string? libraryNamespace = null)
+        string? libraryNamespace = null, bool asTests = false)
     {
-        var binder = new Binder(library ?? DotNetLibrary.Framework, asLibrary, asNative, asExtension) { _libraryNamespace = libraryNamespace };
+        var binder = new Binder(library ?? DotNetLibrary.Framework, asLibrary, asNative, asExtension) { _libraryNamespace = libraryNamespace, _asTests = asTests };
         var program = binder.BindProgram(files);
         return new BindResult(program, binder._diagnostics.ToImmutable(), binder._unsupported) { Index = binder._index };
     }
@@ -345,7 +345,28 @@ public sealed partial class Binder
             Library = library,
             Extension = extension,
             IsAsync = _topLevelAwaits,
+            Tests = _asTests ? FindTests(main) : default,
         };
+    }
+
+    // Set for taipan test, which runs the main file's test functions (SPEC §20).
+    private bool _asTests;
+
+    /// <summary>
+    /// The main file's own top-level <c>test_</c> functions, in order (SPEC §20.1). One with
+    /// parameters or type parameters isn't a test: TP0303.
+    /// </summary>
+    private ImmutableArray<FunctionSymbol> FindTests(Module main)
+    {
+        var tests = ImmutableArray.CreateBuilder<FunctionSymbol>();
+        foreach (var (syntax, symbol) in main.Functions.Where(f => f.Syntax.Name.Text.StartsWith("test_", StringComparison.Ordinal)))
+        {
+            if (!symbol.Parameters.IsEmpty || !symbol.TypeParameters.IsEmpty)
+                _diagnostics.ReportNotATest(syntax.Name.Span, symbol.Name);
+            else
+                tests.Add(symbol);
+        }
+        return tests.ToImmutable();
     }
 
     /// <summary>Constants, function signatures, class members and variant fields, in source order.</summary>
@@ -2125,6 +2146,7 @@ public sealed partial class Binder
         ForStmt forStmt => BindFor(forStmt),
         MatchStmt match => BindMatch(match),
         RaiseStmt raise => BindRaise(raise),
+        AssertStmt check => BindAssert(check),
         DelStmt delete => BindDelete(delete),
         TryStmt tryStmt => BindTry(tryStmt),
         WithStmt with => BindWith(with),
@@ -2441,6 +2463,15 @@ public sealed partial class Binder
     }
 
     // ---- Exceptions (SPEC §3.10) ----
+
+    /// <summary><c>assert c, m</c> (SPEC §5.6): a condition, which holds for the rest of the block, and a message for <c>str()</c>.</summary>
+    private BoundAssert BindAssert(AssertStmt check)
+    {
+        var condition = BindCondition(new ExprCondition(check.Condition, check.Condition.Span));
+        var message = check.Message is null ? null : BindValue(check.Message);
+        _narrowing = _narrowing.With(Facts(condition, whenTrue: true));
+        return new BoundAssert(condition, message, check.Span);
+    }
 
     private BoundRaise BindRaise(RaiseStmt raise)
     {

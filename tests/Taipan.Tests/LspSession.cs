@@ -13,7 +13,12 @@ internal sealed class LspSession
 
     public int ExitCode { get; private set; }
 
-    public LspSession() => Request("initialize", new JsonObject { ["capabilities"] = new JsonObject() }).Notify("initialized", new JsonObject());
+    public LspSession() : this(new JsonObject())
+    {
+    }
+
+    /// <summary>A session whose client declares <paramref name="capabilities"/>, such as renaming files (SPEC §16.6).</summary>
+    public LspSession(JsonObject capabilities) => Request("initialize", new JsonObject { ["capabilities"] = capabilities.DeepClone() }).Notify("initialized", new JsonObject());
 
     public LspSession Open(string path, string text) => Notify("textDocument/didOpen", new JsonObject
     {

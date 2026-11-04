@@ -1,0 +1,24 @@
+# Async tests, shared state, and test_ functions that can't be tests (SPEC §20).
+import asyncio
+import sys
+
+class Counter:
+    calls: ClassVar[int] = 0
+
+async def double(n: int) -> int:
+    await asyncio.sleep(0)
+    return n * 2
+
+async def test_double():
+    assert await double(2) == 4
+    Counter.calls += 1
+
+def test_shared_state():
+    Counter.calls += 1
+    assert Counter.calls == 2
+
+def test_with_parameter(n: int):
+    assert n > 0
+
+def test_exit():
+    sys.exit(3)

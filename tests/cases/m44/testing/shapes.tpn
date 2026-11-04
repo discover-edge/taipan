@@ -1,0 +1,8 @@
+@dataclass
+class Circle:
+    r: float
+
+def area(c: Circle) -> float:
+    if c.r < 0.0:
+        return -1.0
+    return 3.14159 * c.r * c.r

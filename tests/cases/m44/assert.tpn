@@ -1,0 +1,23 @@
+# assert (SPEC §5.6).
+def first(xs: list[int?]) -> int:
+    let x = xs[0]
+    assert x is not None, "the first element is set"
+    return x + 1
+
+print(first([1, None]))
+assert len("ab") == 2
+
+def describe(n: int) -> str:
+    print("describing", n)
+    return f"bad value {n}"
+
+try:
+    assert 1 > 2, describe(5)
+except AssertionError as e:
+    print("caught:", e)
+try:
+    assert False
+except Exception as e:
+    print(f"empty: [{e}]", isinstance(e, AssertionError))
+assert True, describe(6)
+assert 2 + 2 == 5

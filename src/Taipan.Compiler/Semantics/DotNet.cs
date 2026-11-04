@@ -81,6 +81,10 @@ public sealed class DotNetLibrary
     /// <summary>A .NET type built in to C#, such as <c>long</c>, to check constraints against (SPEC §13.8).</summary>
     public INamedTypeSymbol Special(SpecialType type) => _compilation.GetSpecialType(type);
 
+    /// <summary>The namespaces inside one, or inside the global namespace for <c>""</c>, by name (SPEC §16.4, M44).</summary>
+    public IEnumerable<string> NamespacesIn(string dotted) =>
+        ((dotted.Length == 0 ? _compilation.GlobalNamespace : Namespace(dotted))?.GetNamespaceMembers() ?? []).Select(n => n.Name).Order(StringComparer.Ordinal);
+
     /// <summary>A namespace, by its dotted name (<c>System.Text</c>); null if no assembly defines it.</summary>
     public INamespaceSymbol? Namespace(string dotted)
     {

@@ -215,6 +215,16 @@ public class GeneratorExit : TaipanBaseException
     public static new GeneratorExit @__new__(string @message) => Exceptions.Init(new GeneratorExit(), message);
 }
 
+/// <summary><c>AssertionError</c> (SPEC §5.6, M44): a failed <c>assert</c>.</summary>
+public class AssertionError : TaipanException
+{
+    protected AssertionError() { }
+
+    internal AssertionError(string message) : base(message) { }
+
+    public static new AssertionError @__new__(string @message) => Exceptions.Init(new AssertionError(), message);
+}
+
 /// <summary><c>StopAsyncIteration</c> (SPEC §3.20, M42): an async iterator's end.</summary>
 public class StopAsyncIteration : TaipanException
 {

@@ -1,0 +1,21 @@
+# Tests, found and run by taipan test (SPEC §20).
+from shapes import area, Circle
+
+print("the top level runs first")
+
+def test_area():
+    assert area(Circle(1.0)) > 3.14
+
+def test_negative():
+    assert area(Circle(-1.0)) == 0.0, "a negative radius has no area"
+
+def helper() -> int:
+    return 1
+
+def test_raises():
+    let xs: list[int] = []
+    print("before the error")
+    print(xs[helper()])
+
+def test_last():
+    assert helper() == 1

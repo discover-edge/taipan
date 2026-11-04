@@ -1,0 +1,3 @@
+# A test file with an error runs none of its tests (SPEC §20.1).
+def test_typo():
+    assert lenn("ab") == 2

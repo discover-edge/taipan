@@ -1,0 +1,15 @@
+the top level runs first
+PASS tests/cases/m44/testing/main.tpn::test_area
+FAIL tests/cases/m44/testing/main.tpn::test_negative
+Traceback (most recent call last):
+  File "tests/cases/m44/testing/main.tpn", line 10, in test_negative
+    assert area(Circle(-1.0)) == 0.0, "a negative radius has no area"
+AssertionError: a negative radius has no area
+before the error
+FAIL tests/cases/m44/testing/main.tpn::test_raises
+Traceback (most recent call last):
+  File "tests/cases/m44/testing/main.tpn", line 18, in test_raises
+    print(xs[helper()])
+IndexError: index 1 out of range for length 0
+PASS tests/cases/m44/testing/main.tpn::test_last
+2 passed, 2 failed

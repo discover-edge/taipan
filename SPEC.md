@@ -34,8 +34,8 @@ Taipan is a statically typed, compiled language with Python's surface syntax. Th
 - **Comments:** `#` to end of line.
 - **Identifiers:** `[A-Za-z_][A-Za-z0-9_]*`. A lone `_` is the wildcard pattern only.
 - **Keywords:**
-  `def class enum let var const if elif else while for in match return pass break continue and or not is some None True False as from import lambda try except finally raise del yield async await with`
-  - `yield` is a keyword since M31 (§3.13), `async` and `await` since M33 (§3.14), and `with` since M37 (§3.17).
+  `def class enum let var const if elif else while for in match return pass break continue and or not is some None True False as from import lambda try except finally raise del yield async await with assert`
+  - `yield` is a keyword since M31 (§3.13), `async` and `await` since M33 (§3.14), `with` since M37 (§3.17), and `assert` since M44 (§5.6).
   - `struct` was a keyword before M15. It's now an ordinary name, and records are declared with `@dataclass class` (§4.3).
   - `type` is a *soft keyword* (M18), as in Python 3.12: it starts a type alias (§3.12) only at the start of a line, followed by a name and then `=` or `[`. Anywhere else it's an ordinary name, so `type = "json"` and `e.type` still work.
   - `isinstance` and `super` are built-in functions (§6), not keywords. `Protocol`, `Self` and `Comparable` are built-in names (M17, §3.11), not keywords.
@@ -120,7 +120,8 @@ block         = NEWLINE INDENT stmt { stmt } DEDENT ;
 
 stmt          = simple_stmt NEWLINE | compound_stmt | type_alias ;   (* type_alias in a block: M40, §3.18 *)
 simple_stmt   = let_stmt | var_stmt | assign_stmt | return_stmt | raise_stmt | del_stmt | yield_stmt
-              | "pass" | "break" | "continue" | expr ;
+              | assert_stmt | "pass" | "break" | "continue" | expr ;
+assert_stmt   = "assert" expr [ "," expr ] ;                         (* M44, §5.6 *)
 del_stmt      = "del" target { "," target } ;                       (* M26, §5.5 *)
 let_stmt      = "let" ( NAME [ ":" type ] | names ) "=" ( expr_list | yield_expr ) ;   (* yield_expr: M42 *)
 var_stmt      = "var" ( NAME [ ":" type ] | names ) "=" ( expr_list | yield_expr ) ;
@@ -529,6 +530,7 @@ finally:
   | `RuntimeError` | `Exception` | changing a list, dict or set (M35) while iterating over it; `StopIteration` escaping a generator (M31) |
   | `StopIteration` | `Exception` | `next()` on an exhausted iterator, or a class's `__next__` ending (M31, §3.13), and a generator's `send` when it finishes (M42) |
   | `GeneratorExit` (M42) | `BaseException` | a generator's `close()` (§3.20) |
+  | `AssertionError` (M44) | `Exception` | a failed `assert` (§5.6) |
   | `StopAsyncIteration` (M42) | `Exception` | an async generator's `__anext__` when it finishes (§3.20) |
   | `CancelledError` (M42) | `BaseException` | cancelling an async function (§3.20); its name is `asyncio.CancelledError`, not a global |
   | `PythonError` | `Exception` | a Python exception from a `py` operation (§10.5) |
@@ -1778,6 +1780,13 @@ In `a == b` and `a != b`, `a`'s type is `b`'s expected type (§4.6), so `m == No
   - Deleting anything else is `TP0202`: a name (`cannot delete 'x'`, with help `assign it a new value instead`), a field, or an element or slice of a `str` or tuple. An expression that isn't a target at all (`del f()`) is `TP0100`, `cannot delete this expression`, as for assignment.
   - Deleting from a list or dict while iterating over it is `RuntimeError`, as any change is (§5.2).
 
+### 5.6 `assert` (M44)
+- **`assert c`** raises `AssertionError` when `c` is `False`, and does nothing otherwise. **`assert c, m`** raises `AssertionError(str(m))`, evaluating `m` only when `c` is `False`, as in Python. Without a message, the exception's message is empty, so it displays as `AssertionError` alone (§3.19).
+- `c` is a condition: a `bool` (`TP0205`), and it narrows what follows as `if c:` would with the rest of the block inside it (§3.9), so `assert x is not None` makes `x` usable as a `T`. `m` may be any value that `str()` takes.
+- An `assert` is always checked: there's no `-O` that turns it off.
+- `assert(c, m)`, a tuple, is `TP0205`, since a tuple isn't a `bool`; Python only warns that it's always true.
+- It's how a test (§20) fails, with the traceback pointing at its line.
+
 ---
 
 ## 6. Built-ins (v0.1)
@@ -1981,6 +1990,8 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 | `isinstance(x, C)` / narrowed `x` | `x is C`. A narrowed read is `((C)x)`, or `x!` / `x.Value` for `x is not None` on a reference / value type. |
 | `x as C` / `x as C?` | `Taipan.Runtime.Ops.Cast<C>(x)`, which panics as §7 says / `x as C` |
 | exceptions (M16) | `Exception` is `Taipan.Runtime.Exception`, which derives from `System.Exception` and is emitted against like a plain class's base (`__new__`, `@__init__`, a `message` property); the other built-in exception classes derive from it. A user exception class is a plain class deriving from one of them. Runtime errors throw the matching class, and a Python exception becomes a `PythonError` where the `py` operation calls Python. Checked arithmetic keeps throwing C#'s `OverflowException`, which a `catch` turns into an `OverflowError`. `raise e` is `throw e` (since M41, `throw Taipan.Runtime.Exceptions.Raise(e)`, which sets its context). A bare `raise` is `throw Taipan.Runtime.Exceptions.Rethrow(caught)`, which before M41 rethrew with `ExceptionDispatchInfo` to keep the original stack trace and line, and since M41 marks the exception so that its frame isn't added again (§3.19). |
+| `assert` (M44) | `if (!(c)) throw new Taipan.Runtime.AssertionError(m)`, with the message `Display.Format(m)`, or `""` without one. |
+| tests (M44) | `taipan test` compiles a test file as a program whose entry runs its top level, then calls `Taipan.Runtime.Testing.Run` with each test's name and a delegate calling it (an async one's awaited on the event loop), which writes §20.3's report and gives the exit code. A test project's program is the same (§18.6). |
 | `try` (M16) | A C# `try` with one `catch (System.Exception)` that converts the exception to its Taipan value (or rethrows one that isn't catchable), then tests the `except` clauses in order with `is` (or Python's `isinstance` for a Python class). If none matches, `throw;` rethrows the original. `else` runs after the `try`/`catch`, behind a flag set at the end of the `try` block. `finally` is C#'s `finally`. `Panic.Run` prints an uncaught exception as §3.10 says. |
 | `with` (M37) | The manager and `__enter__`'s result go into temporaries, then a C# `try` whose `catch (System.Exception)` sets a flag, converts the exception to its Taipan value (rethrowing one that isn't catchable), and calls `__exit__` with its class, the exception and a `Taipan.Runtime.Traceback`, rethrowing with `throw;` unless it returns `true`. Its `finally` calls `__exit__(null, null, null)` unless the flag is set. A `TextIO` is a `Taipan.Runtime.TextFile`, whose methods `@__enter__` and `@__exit__` the statement calls as a class's. |
 | `sys`, `os` (M37) | `Taipan.Runtime.Sys` and `Taipan.Runtime.Os`, static classes whose members the names compile to: `sys.argv` is `Sys.argv`. |
@@ -2034,7 +2045,7 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 - Each compiler stage runs only if the stages before it reported no errors: lexing (§1), then parsing (§2), then type checking. This keeps one mistake from cascading into spurious errors in later stages.
 - `<file>` is the source path exactly as given on the command line.
 
-- **Warnings** (`TP0300`, `TP0301` and `TP0302`) print as `<file>:<line>:<col>: warning TP<code>: <message>`. They don't stop compilation or change the exit code. They're printed with the type checker's errors, before the program runs.
+- **Warnings** (`TP0300`, `TP0301`, `TP0302` and `TP0303`) print as `<file>:<line>:<col>: warning TP<code>: <message>`. They don't stop compilation or change the exit code. They're printed with the type checker's errors, before the program runs.
 
 **Exit codes:**
 - `0` success
@@ -2093,6 +2104,7 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 | TP0300 | warning: unreachable code (a statement, `match` arm or `except` clause) |
 | TP0301 | warning: broad `except` clause discards the exception |
 | TP0302 | warning: a library's or extension module's definition can't be exported (M22, M25) |
+| TP0303 | warning: a `test_` function that can't be run as a test (M44, §20; reported only by `taipan test`) |
 
 New codes go into this table before they're implemented.
 
@@ -2191,6 +2203,7 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0230 | `type alias '<A>' refers to itself` / `type alias '<A>' refers to itself through '<B>'` (`'<B>' and '<C>'` for longer cycles), with help `use a class for a recursive type` (M18) |
 | TP0300 | `unreachable match arm` / `unreachable except clause`, with help `'<B>' is already caught above` / `unreachable code` (M16) |
 | TP0301 | `this clause catches every exception and discards it`, with help `catch a specific class, re-raise with 'raise', or bind it with 'as e' and use it` (M16) |
+| TP0303 | `'<f>' takes parameters, so it isn't run as a test` (M44) |
 | TP0302 | `'<f>' is not exported: <reason>`, where `<reason>` is `its type parameter '<T>' has a bound` / `'<T>?' has no .NET generic form` / `it uses '<g>', which isn't a .NET generic` / `it uses '<C>', which isn't exported` / `it has its module's name` (M22) / `'<T>' can't be passed to Python` / `it's generic` (M25) / `it's used as the protocol '<P>'` (M40), with help `rename it '_<f>' to keep it private` |
 
 Types are written as in source: `int`, `str?`, `list[int]`. The type of `None` is written `None`, and a missing value is written `nothing`.
@@ -2273,10 +2286,12 @@ ROADMAP.md plans most of these from M35 on. They were never part of v0.1:
 - narrowing elements with keys that can change (`xs[i]` for a `var` `i`), and literal types
 - exceptions beyond §3.19 (M41): `with_traceback`, notes (`add_note`), the `traceback` module, `tb_frame` and `tb_lasti`, Python's own frames in a traceback, `^` markers under the failing part of a line, and `match` on `tuple[T, ...]`
 - nested format specs in f-strings (`{x:{width}}`), and format specs for other types (`__format__`)
-- language server features beyond §16: formatting, code actions, incremental sync, workspace-wide diagnostics, semantic token deltas and ranges, completion of .NET namespaces and Python modules' names, signature help for built-in functions, references to built-in, Python and .NET names, renaming modules (renaming their files), and editors other than VS Code
+- language server features beyond §16: code actions beyond §16.11's, range formatting and formatting as you type, incremental sync, workspace-wide diagnostics, semantic token deltas and ranges, signature help for built-in functions, references to built-in, Python and .NET names, updating imports when the editor renames a file, and editors other than VS Code
+- formatting beyond §19: wrapping or joining long lines, and options for the style
+- tests beyond §20: fixtures, parametrized tests, selecting tests by name, capturing their output, and running them in parallel
 - CPython extension modules beyond §17: classes and enums as Python types, Python functions and objects as arguments, Python interop inside an extension, generic functions, and builds for one exact Python version
 - .NET interop beyond §13 (M43): C# 14 extension members other than methods, `~` and bitwise operators on `int`, protected members, implementing or overriding .NET properties, events and indexers, implementing generic interface methods, deriving from .NET exception classes or from a Taipan class with a .NET base, generic classes implementing .NET interfaces, .NET variance, `ref` returns and `ref`/`out` parameters of delegates, and packages with native assets
-- build integration beyond §18: multi-targeting, Taipan test projects (tests written in Taipan), native and Python-extension SDK projects, and symbols packages
+- build integration beyond §18: multi-targeting, test projects reporting to `dotnet test`'s own test results (§18.6 runs them as programs), native and Python-extension SDK projects, and symbols packages
 - native builds beyond §15: another architecture (`--runtime <rid>`), Python in native programs, native libraries, and size options such as invariant globalization
 - Taipan libraries beyond §14: XML documentation, value `Equals` and `GetHashCode` for dataclasses, deriving from Taipan classes in other .NET languages, and plain delegates for function types
 
@@ -2302,10 +2317,12 @@ taipan build <file> [<kind>] -o <dir>                write a runnable program to
                                                      or --python-extension (M25, §17)
 taipan run   <file> [-- args]                        compile and run, passing args to the program (sys.argv, M37)
 taipan pack  <file> -o <dir>                         pack a library as a NuGet package (M34, §18.4)
-taipan compile <file> [--library] --out <dll>        compile one assembly, for TaipanLang.Sdk (M34, §18.2)
+taipan compile <file> [--library | --test] --out <dll>   compile one assembly, for TaipanLang.Sdk (M34, §18.2; --test: M44, §18.6)
                [--reference <dll>]… [--assembly <name>] [--namespace <ns>] [--version <v>]
 taipan lsp [--stdio]                                 run the language server on stdin and stdout (M24, §16)
-taipan --version                                     print "taipan <version>", e.g. "taipan 0.3.0"
+taipan fmt [--check] <path>…                         format files, or check that they're formatted (M44, §19)
+taipan test [<path>…]                                run test functions (M44, §20)
+taipan --version                                     print "taipan <version>", e.g. "taipan 0.4.0"
 taipan --help                                        print the usage text
 ```
 - `--version` and `--help` print to stdout and exit `0`. Each takes no other arguments.
@@ -2324,7 +2341,7 @@ Taipan is distributed as NuGet packages, all with the same version:
 - `TaipanLang` installs with `dotnet tool install -g TaipanLang`, which puts `taipan` on the path. It runs on the .NET 10 runtime, and compiles programs against that runtime's assemblies. It needs no SDK.
 - The NuGet ID `taipan` belongs to another project, hence `TaipanLang`. Assembly and namespace names don't change: the runtime is still `Taipan.Runtime.dll`, namespace `Taipan.Runtime`.
 - `TaipanLang.Runtime` isn't needed to run programs, since the tool carries the runtime. It's published for Taipan libraries referenced from other .NET code (M22).
-- **Version:** one version for every package and `taipan --version`, set in one place in the build. M20's was `0.2.0`, the first packaged release after v0.1; M34's is `0.3.0`, which adds `TaipanLang.Sdk`.
+- **Version:** one version for every package and `taipan --version`, set in one place in the build. M20's was `0.2.0`, the first packaged release after v0.1; M34's was `0.3.0`, which added `TaipanLang.Sdk`; M44's is `0.4.0`, which adds `taipan fmt`, `taipan test` and test projects.
 - `dotnet pack -c Release -o <dir>` at the repository root builds every package.
 - An installed tool behaves exactly as a source build, Python interop included: CPython is found as §10.6 says, at run time.
 - Publishing to nuget.org is done by hand and isn't part of the build.
@@ -2716,7 +2733,7 @@ This adds a local store per statement and a filter per method.
 ### 16.1 Protocol
 - **Transport:** JSON-RPC 2.0 over stdin and stdout, each message framed by a `Content-Length` header, as the LSP specifies. `taipan lsp` takes no arguments but `--stdio`, which clients such as VS Code's pass and which names the only transport. It writes nothing else to stdout.
 - **Lifecycle:** `initialize`, `initialized`, `shutdown` and `exit`. `exit` ends the server with code `0` after `shutdown`, and `1` without it, as the LSP specifies.
-- **Capabilities** the server declares: full document sync with open and close notifications (`textDocumentSync: 1`), `hoverProvider` and `definitionProvider`; since M32, `completionProvider` (trigger character `.`), `signatureHelpProvider` (trigger characters `(` and `,`), `referencesProvider`, `renameProvider` (with `prepareProvider`), and `semanticTokensProvider` (`full` only, with §16.7's legend). Positions are in UTF-16 code units, the LSP's default; Taipan's own columns count code points (§9), and the server converts.
+- **Capabilities** the server declares: full document sync with open and close notifications (`textDocumentSync: 1`), `hoverProvider` and `definitionProvider`; since M32, `completionProvider` (trigger character `.`), `signatureHelpProvider` (trigger characters `(` and `,`), `referencesProvider`, `renameProvider` (with `prepareProvider`), and `semanticTokensProvider` (`full` only, with §16.7's legend); since M44, `documentFormattingProvider` (§16.10) and `codeActionProvider` (`codeActionKinds: ["quickfix"]`, §16.11). Positions are in UTF-16 code units, the LSP's default; Taipan's own columns count code points (§9), and the server converts.
 - **Documents** are `file://` URIs; others are ignored. Open documents' text comes from the client (`didOpen`, `didChange`), unsaved changes included, and any other file the server reads from disk.
 - A request the server doesn't support is answered with JSON-RPC's `MethodNotFound` error (`-32601`); an unsupported notification is ignored. A request for a document that isn't open, or that can't be analyzed, gets a null result.
 
@@ -2763,7 +2780,10 @@ This adds a local store per statement and a filter per method.
   |---|---|
   | in a comment, or a string's text (not an f-string's hole) | nothing |
   | after `import` or `from`, or after a comma in `import a, ` | the modules the document may import: the other `.tpn` files in its directory (§4.7), and `python` and `dotnet` |
-  | after `from m import`, or after a comma there | the names `m` exports (§4.7), with an enum's variants; nothing for `python` and `dotnet` modules |
+  | after `from dotnet.` or `import dotnet.`, and after each further `.` of a namespace (M44) | the namespaces inside it that the program's assemblies define (§13.2): `System`, `Microsoft`, …, then `IO`, `Text`, … after `dotnet.System.` |
+  | after `from python import`, or after a comma there (M44) | the modules the Python §10.6 finds can import: its built-in modules and those `pkgutil.iter_modules()` lists, the standard library's and installed packages', except names starting with `_`; nothing without Python |
+  | after `from dotnet.<ns> import`, or after a comma there (M44) | the namespace's public types, each name once whatever its arities |
+  | after `from m import`, or after a comma there | the names `m` exports (§4.7), with an enum's variants |
   | after `.`, on a value of a class | its fields, properties and methods, inherited ones included, and its `ClassVar` attributes, but not static or class methods, or special methods (§4.8) |
   | after `.`, on a class's name | its static and class methods and `ClassVar` attributes |
   | after `.`, on an enum's name | its variants |
@@ -2785,7 +2805,7 @@ This adds a local store per statement and a filter per method.
   | `let`, `var`, parameter | `Variable` (6) |
   | class, exception, type alias, built-in type, .NET class | `Class` (7) |
   | protocol, .NET interface | `Interface` (8) |
-  | module, a Python module (§10) | `Module` (9) |
+  | module, a Python module (§10), a .NET namespace (M44) | `Module` (9) |
   | property, .NET property | `Property` (10) |
   | enum, .NET enum | `Enum` (13) |
   | keyword | `Keyword` (14) |
@@ -2825,7 +2845,10 @@ This adds a local store per statement and a filter per method.
   | a built-in name (§6) | `cannot rename the built-in '<x>'` |
   | a .NET name | `cannot rename the .NET name '<x>'` |
   | a Python name (§10) | `cannot rename the Python name '<x>'` |
-  | a module | `cannot rename the module '<x>'; rename its file instead` |
+  | a module, before M44 | `cannot rename the module '<x>'; rename its file instead` |
+  | a module, when the editor can't rename files (M44, below) | `cannot rename the module '<x>': the editor can't rename files` |
+  | a module to a name that another file in its directory has (M44) | `'<new>.tpn' already exists` |
+  | a built-in module (`sys`, `asyncio`, …) | `cannot rename the built-in '<x>'` |
   | a special method (§4.8), `__init__` included | `cannot rename the special method '<x>'` |
   | a new name that isn't an identifier (§1.3), or is `_` | `'<new>' is not a valid name` |
   | a new name that's a keyword (`type` isn't) | `'<new>' is a keyword` |
@@ -2834,6 +2857,8 @@ This adds a local store per statement and a filter per method.
   | a rename that would add an error: one more error with some code in some file of the module root, when it's checked again with the changes | `renaming '<x>' to '<new>' would cause an error: <path>:<line>:<col>: <code>: <message>`, naming the first such error |
 
   The last row catches clashes (`TP0214`), shadowing (`TP0207`), and a class that stops satisfying a protocol (`TP0225`), among others, so a rename never turns a program that checked into one that doesn't. Paths in these messages are relative to the document's directory.
+
+- **Renaming a module (M44)** renames its file too. On a module's name, in `import shapes`, `from shapes import area` or `shapes.area`, rename gives a `WorkspaceEdit` with `documentChanges`: a `RenameFile` from `shapes.tpn` to `<new>.tpn` in the same directory, then the text edits of every reference spelled as the name, in every file of the module root, the renamed file's own references included under its new URI. It needs a client that declares `workspace.workspaceEdit.documentChanges` and the `rename` resource operation; otherwise it's refused (above). An alias (`import shapes as s`) is renamed as before, as a name of its file. The main file has no module name of its own, so renaming starts at a reference to it from another file.
 
 ### 16.7 Semantic tokens (M32)
 - **`textDocument/semanticTokens/full`** gives a token for each name the binder resolved in the document (§16.3), in LSP's relative encoding, from the document's latest check. It needs the document to parse, and gives a null result otherwise. Keywords, literals, operators and comments get no semantic tokens; the grammar (§16.8) colors them. Names that didn't resolve, and Python names, get no token.
@@ -2880,7 +2905,7 @@ This adds a local store per statement and a filter per method.
   | `f"…"` | `string.interpolated`, with `{{` and `}}` as escapes; each hole `meta.interpolation`, with its braces `punctuation.section.interpolation.begin` and `.end`, its conversion (`!r`) and format spec (`:>8`) `storage.type.format`, and the expression inside colored as code |
   | integers, floats | `constant.numeric.integer`, `constant.numeric.float` |
   | `True`, `False`, `None` | `constant.language` |
-  | `if elif else while for match return pass break continue try except finally raise yield await with` (`with`: M37), and a `for` header's `in` | `keyword.control.flow` |
+  | `if elif else while for match return pass break continue try except finally raise yield await with assert` (`with`: M37; `assert`: M44), and a `for` header's `in` | `keyword.control.flow` |
   | `import from as` | `keyword.control.import` |
   | `and or not is in some` | `keyword.operator.logical` |
   | `def`, `lambda`, `async` | `storage.type.function` |
@@ -2901,7 +2926,25 @@ This adds a local store per statement and a filter per method.
 - **The golden token list.** `editors/vscode/test/sample.tpn` exercises every row above, and `sample.tokens` lists the tokens the grammar gives it, one per line: `<line>:<column> <text> <scopes>`, with columns from 1, the text as a JSON string, and the token's scopes after `source.taipan`, space-separated (`-` when there are none). Tokens of only whitespace are left out.
 
 ### 16.9 Deferred
-§11 lists what's deferred: formatting, code actions, incremental document sync, workspace-wide diagnostics, semantic token deltas and ranges, completing .NET namespaces and Python modules' names, signature help for built-ins, references to built-in, Python and .NET names, renaming modules, and editors other than VS Code.
+§11 lists what's deferred: code actions beyond §16.11's, range formatting, incremental document sync, workspace-wide diagnostics, semantic token deltas and ranges, signature help for built-ins, references to built-in, Python and .NET names, updating imports when the editor renames a file, and editors other than VS Code. Before M44, formatting, code actions, completing .NET namespaces and Python modules' names, and renaming modules were deferred too.
+
+### 16.10 Formatting (M44)
+- **`textDocument/formatting`** formats the document as `taipan fmt` would (§19), from the client's text, unsaved changes included. The result is one `TextEdit` replacing the whole document, or an empty list when it's formatted already. A document with lexing or parsing errors isn't formatted, and the result is an empty list.
+- The request's `FormattingOptions` (`tabSize`, `insertSpaces`) are ignored, since the style has no options.
+
+### 16.11 Code actions (M44)
+- **`textDocument/codeAction`** gives quick fixes (kind `quickfix`) for the document's latest diagnostics that the request's range touches, each with the diagnostic it fixes (`diagnostics`) and its change as a `WorkspaceEdit` (`edit`). Other diagnostics, and requests for other kinds only, get an empty list.
+- **The diagnostics with fixes:**
+
+  | Diagnostic | Fix | Title |
+  |---|---|---|
+  | `TP0201` `undefined name '<x>'`, where another file in the module root (§16.6) exports `<x>` (§4.7) | add `from <m> import <x>`, one for each such module | `Import '<x>' from '<m>'` |
+  | `TP0201` `undefined name '<x>'`, where `<x>` is a module in the module root or a built-in module (`sys`, `os`, `types`, `asyncio`) | add `import <x>` | `Import '<x>'` |
+  | `TP0227` `'<m>' overrides '<B>.<m>'; mark it '@override'` | add `@override` on its own line before the method's `def`, with the `def`'s indentation, after any decorators | `Mark '<m>' '@override'` |
+  | `TP0227` `'<m>' does not override a method of …` | remove the `@override` line | `Remove '@override' from '<m>'` |
+  | `TP0200` with help `convert it with 'list(…)' first` (an iterator indexed, sliced or measured, §3.13) | wrap the iterator's expression in `list(…)` | `Convert to 'list(…)'` |
+- **Where an import goes:** after the file's last top-level `import` or `from` line, or before its first line of code when it has none, after any comments at the start of the file.
+- Each fix makes exactly that change, and nothing else: it doesn't reformat (§19).
 
 ---
 
@@ -2982,7 +3025,7 @@ Taipan projects build with `dotnet build`, alongside C# projects in one solution
 A Taipan project is a `.tpnproj` file using the `TaipanLang.Sdk` project SDK, at the version of the compiler it builds with:
 
 ```xml
-<Project Sdk="TaipanLang.Sdk/0.3.0">
+<Project Sdk="TaipanLang.Sdk/0.4.0">
   <PropertyGroup>
     <OutputType>Library</OutputType>
   </PropertyGroup>
@@ -3006,7 +3049,7 @@ A Taipan project is a `.tpnproj` file using the `TaipanLang.Sdk` project SDK, at
 - **Incremental:** the compile step runs again only when a `.tpn` file, a reference, or the project changes.
 
 ### 18.2 The compile command
-`taipan compile <file> [--library] --out <dll> [--reference <dll>]… [--assembly <name>] [--namespace <ns>] [--version <v>]` is how the SDK runs the compiler. It compiles the main file and its modules into one assembly at `<dll>`, against exactly the assemblies given with `--reference` (framework included), and writes nothing else: no runtime, runtimeconfig or copied references, which MSBuild provides. `taipan.json` isn't read. Diagnostics are written to stderr in MSBuild's format (§18.1), and exit codes are §9's. An argument `@<file>` stands for the arguments in a file, one per line, and `--reference=<dll>` is the one-argument form of `--reference <dll>`, so the SDK passes a long reference list in a response file. It's meant for the SDK, though it works from a shell too.
+`taipan compile <file> [--library | --test] --out <dll> [--reference <dll>]… [--assembly <name>] [--namespace <ns>] [--version <v>]` is how the SDK runs the compiler. It compiles the main file and its modules into one assembly at `<dll>`, against exactly the assemblies given with `--reference` (framework included), and writes nothing else: no runtime, runtimeconfig or copied references, which MSBuild provides. `taipan.json` isn't read. Diagnostics are written to stderr in MSBuild's format (§18.1), and exit codes are §9's. An argument `@<file>` stands for the arguments in a file, one per line, and `--reference=<dll>` is the one-argument form of `--reference <dll>`, so the SDK passes a long reference list in a response file. It's meant for the SDK, though it works from a shell too.
 
 ### 18.3 Naming a library in taipan.json
 For `taipan build --library` and `taipan pack`, `taipan.json` may name the library:
@@ -3043,5 +3086,108 @@ The SDK's own errors, outside any Taipan file:
 | `TPN001` | `the main file '<path>' was not found; set TaipanMain` |
 | `TPN002` | `list references and packages in the project file, not taipan.json` |
 
-### 18.6 Deferred
-§11 lists what's deferred: multi-targeting, Taipan test projects, native and Python-extension SDK projects, and symbols packages. Design-time builds for Visual Studio aren't planned.
+### 18.6 Test projects (M44)
+A test project is a `.tpnproj` with `<IsTestProject>true</IsTestProject>`, MSBuild's usual property for one:
+
+```xml
+<Project Sdk="TaipanLang.Sdk/0.4.0">
+  <PropertyGroup>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Acme.Shapes/Acme.Shapes.tpnproj" />
+  </ItemGroup>
+</Project>
+```
+
+- **Its main file is a test file** (§20), whose `test_*` functions are the project's tests. Its other `.tpn` files are modules it may import, as in any project. `OutputType` is `Exe` whatever the project says, since the built program runs the tests.
+- **`dotnet test`** builds it and runs the program, which runs the tests as `taipan test` would and writes §20's report, failing when the program exits non-zero; **`dotnet run`** runs it the same way. The SDK's `VSTest` target, which `dotnet test` calls, runs the program instead of a test adapter, so the results are the report's, not .NET test results (TRX files and IDE test explorers are deferred).
+- A test file in a project reports itself by its path relative to the project's directory.
+- `TaipanLang.Sdk` and the other packages are version `0.4.0` since M44 (§12.2).
+
+### 18.7 Deferred
+§11 lists what's deferred: multi-targeting, test results in .NET's formats, native and Python-extension SDK projects, and symbols packages. Design-time builds for Visual Studio aren't planned.
+
+---
+
+## 19. Formatting (M44)
+`taipan fmt` rewrites Taipan files in one style, as Black does Python's. It changes only the whitespace between tokens, so it can't change what a program means, and formatting its output again changes nothing.
+
+```
+taipan fmt <path>…          format each file, and each .tpn file under each directory, in place
+taipan fmt --check <path>…  write `would reformat <path>` for each that isn't formatted, and change nothing
+```
+
+`fmt` exits `0` when it formatted every file, or with `--check` when every file was formatted already, and `1` when a file had errors or, with `--check`, would be reformatted.
+
+### 19.1 What it changes, and what it doesn't
+- **Only whitespace:** spaces within a line, indentation, and blank lines. It keeps every token, in order, and every line break inside brackets, so it never joins or splits a line. String and f-string literals, and comments' text, are kept exactly as written, apart from a comment's trailing spaces. Before writing, it lexes its output and checks that the tokens are the input's; a difference would be a bug in the formatter, reported as one (exit `2`) without writing anything.
+- **It formats only valid code:** a file with lexing or parsing errors (`TP00xx`, `TP01xx`) has them printed as `taipan check` prints them, isn't changed, and makes the exit code `1`. Type errors don't stop it, since they don't depend on layout.
+- Line endings are `\n`, and the file ends with exactly one. Trailing whitespace is removed from every line.
+
+### 19.2 The style
+- **Indentation:** four spaces per block level, whatever the file used.
+- **Continuation lines** inside brackets are indented four spaces more than their logical line's start for each bracket still open at the start of the line. A line that starts with closing brackets is indented as the bracket depth after them, so a closing bracket on its own line lines up with the line that opened it. A match expression's arms inside brackets (§5.1.1) are a block, indented four spaces more than the line with the `match`, and the line after them is indented as that line, since less indentation is what ends them:
+
+  ```python
+  let shapes = [
+      Circle(1.0),
+      Square(
+          2.0),
+  ]
+  ```
+- **Within a line**, between two tokens there's one space, unless a rule here says none:
+  - none before `,`, `)`, `]`, `}`, `.`, `?` (a type's optional), and before `:` everywhere;
+  - none after `(`, `[`, `{`, `.`, a decorator's `@`, and a unary operator (`-x`, `+x`, `*args`, `**kwargs`). `-`, `+`, `*` and `**` are unary at the start of a line, and after an opening bracket, a `,`, an operator, `=`, `:`, `->` or a keyword other than `None`, `True` and `False`;
+  - none between a name, a closing bracket, a string or a number and the `(` or `[` after it: calls, indexing and type arguments (`f(x)`, `xs[0]`, `list[int]`, `first[T]`). After a keyword there is one: `if (a or b)`, `in [1, 2]`;
+  - none around `=` inside brackets (keyword arguments, `@dataclass(order=True)`, class patterns' fields) except in a `def`'s parameter list, where a default has one on each side: `def f(x: int = 1, *, sep: str = " ")`;
+  - none around `:` in a subscript's brackets, a slice (`xs[1:n]`, `xs[::2]`). Elsewhere `:` has one space after it, unless the line ends there or a closing bracket follows: `x: int`, `{"a": 1}`, `lambda x: x`, `[T: Animal]`.
+  - `,` has one space after it, unless the line ends there or a closing bracket follows: `(x,)`.
+  - Binary operators (`+ - * / // % ** == != < <= > >= ?? | & ^`), `=` and the augmented assignments, `->`, and keywords (`and`, `in`, `if`, `else`, `as`, …) have one space on each side.
+- **Comments:** a comment after code on its line has two spaces before it. A comment on its own line is indented as the code after it, unless it was indented deeper than that code, when it's indented as the code before it, so a comment at the end of a block stays in the block.
+- **Blank lines:** none at the start of the file or of a block, and none inside brackets. At most two in a row at the top level, and one inside a block. Others are kept as they are.
+- There are no options: the style is the same for every file.
+
+---
+
+## 20. Tests (M44)
+`taipan test` finds and runs test functions, as pytest does Python's.
+
+```python
+# test_shapes.tpn
+from shapes import area, Circle
+
+def test_area():
+    assert area(Circle(1.0)) > 3.14
+
+def test_negative():
+    assert area(Circle(-1.0)) == 0.0, "a negative radius has no area"
+```
+
+```
+$ taipan test
+PASS test_shapes.tpn::test_area
+FAIL test_shapes.tpn::test_negative
+Traceback (most recent call last):
+  File "test_shapes.tpn", line 8, in test_negative
+    assert area(Circle(-1.0)) == 0.0, "a negative radius has no area"
+AssertionError: a negative radius has no area
+1 passed, 1 failed
+```
+
+### 20.1 Finding tests
+- **`taipan test [<path>…]`** takes test files and directories, and `.` when there are none. A directory's test files are the `.tpn` files under it, at any depth, named `test_*.tpn` or `*_test.tpn`, in path order. A file given by name is a test file whatever its name.
+- **Each test file is a main file** (§4.7): it's compiled as `taipan check` compiles it, with its modules loaded from its directory and its `taipan.json` read there. Its diagnostics are printed as `check` prints them. A file with errors has none of its tests run, and counts as an error in the summary.
+- **Its tests** are its own top-level functions whose names start with `test_`, in the order they're defined; functions it imports aren't its tests. A test may be `async` (§3.14), and is then run on the event loop as `asyncio.run` runs an awaitable (§3.20). What a test returns is ignored.
+- A `test_` function with parameters, or with type parameters, can't be called as a test: it's warning `TP0303`, `'<f>' takes parameters, so it isn't run as a test`, reported only by `taipan test`, and the function isn't run.
+
+### 20.2 Running them
+- **The file's top level runs first**, once, as `taipan run` would run it, then each test in order, in the same process. A top level that raises is reported as `ERROR <file>` with the traceback, and the file's tests aren't run.
+- **A test passes** if it returns, and **fails** if it raises any exception, an `AssertionError` from `assert` (§5.6) or any other. A test can't stop the others: `sys.exit` in a test is a failure too.
+- Tests run one after another in one process, so state a test changes, such as a class attribute (§4.8), stays changed for the tests after it. (Functions can't use top-level `var`s, §4.5, so neither can tests.)
+- A program's output, and its input, are as in `taipan run`: the tests' own `print`s appear where they run.
+
+### 20.3 The report
+- After each test, on stdout: `PASS <file>::<test>`, or `FAIL <file>::<test>` followed by the exception's traceback (§3.19), whose first frame is the test's, so the failing `assert` and its line are shown. `<file>` is the path as given, or for a file found in a directory, the directory as given followed by the file's path under it (without a leading `./` for `.`).
+- At the end, a summary: `<p> passed, <f> failed`, with `, <e> errors` (`1 error` for one) added when files had errors or top levels raised, or `no tests found` when there were none.
+- **The exit code** is `0` when tests ran and all passed, and `1` when a test failed, a file had an error, or no tests were found. Bad arguments, or a path that doesn't exist, are `2`, as for other commands (§9).

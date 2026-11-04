@@ -1,0 +1,2 @@
+# assert needs a message after its comma (SPEC §5.6).
+assert 1 > 0,

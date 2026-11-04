@@ -8,6 +8,8 @@ namespace Taipan.Tests;
 /// import and call. It's a NativeAOT build that needs Python to run, so it runs only with
 /// <c>TAIPAN_TEST_NATIVE=1</c> (as CI sets) and a Python installation, and otherwise passes with a note.
 /// </summary>
+// It sets the working directory, as the tests that run programs do, so it runs apart from them.
+[Collection(RunningPrograms.Name)]
 public class PythonExtensionTests
 {
     // The roadmap's acceptance command, then calls covering conversions, defaults, keywords,
