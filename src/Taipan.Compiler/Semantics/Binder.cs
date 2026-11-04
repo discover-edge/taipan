@@ -154,9 +154,14 @@ public sealed partial class Binder
     /// </summary>
     public static BindResult Bind(
         ImmutableArray<SourceModule> files, DotNetLibrary? library = null, bool asLibrary = false, bool asNative = false, bool asExtension = false,
-        string? libraryNamespace = null, bool asTests = false)
+        string? libraryNamespace = null, bool asTests = false, bool asNativeLibrary = false)
     {
-        var binder = new Binder(library ?? DotNetLibrary.Framework, asLibrary, asNative, asExtension) { _libraryNamespace = libraryNamespace, _asTests = asTests };
+        var binder = new Binder(library ?? DotNetLibrary.Framework, asLibrary, asNative || asNativeLibrary, asExtension)
+        {
+            _libraryNamespace = libraryNamespace,
+            _asTests = asTests,
+            _asNativeLibrary = asNativeLibrary,
+        };
         var program = binder.BindProgram(files);
         return new BindResult(program, binder._diagnostics.ToImmutable(), binder._unsupported) { Index = binder._index };
     }
@@ -289,6 +294,8 @@ public sealed partial class Binder
                 _diagnostics.ReportStatementInLibrary(stmt.Span);
             else if (_asExtension)
                 _diagnostics.ReportStatementInExtension(stmt.Span);
+            else if (_asNativeLibrary)
+                _diagnostics.ReportStatementInNativeLibrary(stmt.Span);
             CollectScriptNames(stmt);
         }
 
@@ -331,7 +338,7 @@ public sealed partial class Binder
         _inTopLevel = false;
         var order = InitializationOrder(main, byName);
         var library = _asLibrary ? BindLibrary(modules, byName, functions, classes) : null;
-        var extension = _asExtension ? BindExtension(main) : null;
+        var extension = _asExtension ? BindExtension(main, [.. functions, .. classes.SelectMany(c => c.Methods)], new BoundBlock(topLevel, unit.Span)) : null;
         return new BoundProgram(
             [.. order.SelectMany(m => m.PythonImports)],
             [.. modules.SelectMany(m => m.EnumDefs.Select(e => e.Symbol))],
@@ -346,6 +353,7 @@ public sealed partial class Binder
             Extension = extension,
             IsAsync = _topLevelAwaits,
             Tests = _asTests ? FindTests(main) : default,
+            NativeLibrary = _asNativeLibrary ? BindNativeLibrary(main) : null,
         };
     }
 
@@ -1794,7 +1802,8 @@ public sealed partial class Binder
                 };
             case NamedType { Name.Text: "py" } py:
                 Index(py.Name.Span, new SemanticIndex.BuiltinType("py"));
-                if (_asNative)
+                // An extension module may hold the Python objects it's given (SPEC §17.6, M45).
+                if (_asNative && !_asExtension)
                     _diagnostics.ReportNativePython(py.Span, _asExtension);
                 return TaipanType.Py;
             case NamedType { Name.Text: "TextIO" } file when ResolveTypeName("TextIO") is null:

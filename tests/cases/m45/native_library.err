@@ -1,0 +1,10 @@
+tests/cases/m45/native_library.tpn:11:5: warning TP0302: 'total' is not exported: 'list[float]' can't be passed to C
+  help: rename it '_total' to keep it private
+tests/cases/m45/native_library.tpn:14:5: warning TP0302: 'first' is not exported: it's generic
+  help: rename it '_first' to keep it private
+tests/cases/m45/native_library.tpn:17:11: warning TP0302: 'later' is not exported: it's async
+  help: rename it '_later' to keep it private
+tests/cases/m45/native_library.tpn:20:5: warning TP0302: 'joined' is not exported: it has '*args' or '**kwargs'
+  help: rename it '_joined' to keep it private
+tests/cases/m45/native_library.tpn:23:5: warning TP0302: 'scaled' is not exported: it has keyword-only parameters
+  help: rename it '_scaled' to keep it private

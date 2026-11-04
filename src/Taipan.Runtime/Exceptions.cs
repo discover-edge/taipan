@@ -378,6 +378,16 @@ public sealed class PythonError : TaipanException
         this.value = value;
     }
 
+    /// <summary>A Python callable's exception in an extension module (SPEC §17.6), which has no pythonnet object.</summary>
+    internal PythonError(string type, string message) : base(message)
+    {
+        this.type = type;
+        value = null!;
+    }
+
+    /// <summary>The Python error an extension module fetched, restored when the exception reaches Python again.</summary>
+    internal (nint Type, nint Value, nint Traceback)? Pending { get; init; }
+
     public string @type { get; set; }
 
     public PyObject @value { get; set; }

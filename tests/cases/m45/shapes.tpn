@@ -1,0 +1,67 @@
+# Classes and enums as Python types, and Python objects as arguments (SPEC §17.5, §17.6).
+@dataclass
+class Point:
+    x: float
+    y: float = 0.0
+
+    def moved(self, by: float) -> Point:
+        return Point(self.x + by, self.y)
+
+    def length(self) -> float:
+        return (self.x * self.x + self.y * self.y) ** 0.5
+
+class Animal:
+    name: str
+    legs: int = 4
+
+    def __init__(self, name: str):
+        self.name = name
+
+    def speak(self) -> str:
+        return f"{self.name} makes a sound"
+
+    def __str__(self) -> str:
+        return f"Animal({self.name})"
+
+class Dog(Animal):
+    def __init__(self, name: str):
+        super().__init__(name)
+
+    @override
+    def speak(self) -> str:
+        return f"{self.name} says woof"
+
+enum Shape:
+    Circle(r: float)
+    Rect(w: float, h: float)
+    Empty
+
+def area(s: Shape) -> float:
+    return match s:
+        Circle(r): 3.0 * r * r
+        Rect(w, h): w * h
+        Empty: 0.0
+
+def origin() -> Point:
+    return Point(0.0)
+
+def loudest(animals: list[Animal]) -> Animal:
+    return animals[-1]
+
+def apply(f: Callable[[int], int], x: int) -> int:
+    return f(x) + 1
+
+def safely(f: Callable[[int], int], x: int) -> str:
+    try:
+        return str(f(x))
+    except PythonError as e:
+        return f"{e.type}: {e.message}"
+
+def describe(thing: py) -> str:
+    return f"got {thing}"
+
+def keep(things: list[py]) -> py:
+    return things[0]
+
+def _helper(p: Point) -> float:
+    return p.x

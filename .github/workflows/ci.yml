@@ -20,9 +20,10 @@ jobs:
         with:
           python-version: "3.12"
 
-      # NativeAOT's toolchain, for the native builds (SPEC §15.1).
+      # NativeAOT's toolchain, for the native builds (SPEC §15.1), and the arm64 one, for building
+      # for another architecture (SPEC §15.4).
       - name: Install clang
-        run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
+        run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu libc6-dev-arm64-cross
 
       - name: Build
         run: dotnet build

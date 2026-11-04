@@ -1,4 +1,5 @@
 # What an extension module can't give Python is warned about, unless it's private (SPEC §17.2).
+# Since M45, its classes, enums and function-typed parameters can be given to Python (SPEC §17.5, §17.6).
 @dataclass
 class Point:
     x: float

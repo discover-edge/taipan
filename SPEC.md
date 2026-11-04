@@ -2012,6 +2012,7 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 | libraries (M22) | `--library` (§14): one public static class per module in the library's namespace, with its classes and enums nested inside, instead of `TaipanProgram`, and no `TaipanEntry`. Exported definitions are public and everything else internal. Each module has an internal initializer, called at the start of each exported member, that runs once (§14.3). |
 | .NET types and members (M21) | Used directly, by their full names (`global::System.Text.StringBuilder`). Arguments and results convert as §13.3 says: `checked` casts for narrower integers, copies for arrays and enumerables, and a runtime null check on a result that's not annotated as nullable. |
 | .NET interop III (M43) | A generic .NET type is its constructed C# type, `global::System.Collections.Generic.HashSet<long>`. An `out` parameter is a C# `out` variable declared in the call, and a `ref` one a box the argument is put in, so a call is an expression giving the tuple (`(Int32.TryParse(s, out int v), (long)v)`). An expanded `params` argument is an array, an extension method a static call (`Enumerable.Where<long>(xs, …)`), and explicit type arguments C#'s. A class with .NET bases lists them as C# bases; it implements each interface method explicitly, and overrides each .NET method with a C# `override`, each converting its arguments and result and calling the class's own method, which is emitted under a C# name of its own when the .NET method's would clash with it. A .NET exception is raised with C#'s `throw`, a type test is C#'s `is`, and an event subscription C#'s `+=` and `-=` with the delegate the runtime keeps for the function value. Each async frame's `CancellationTokenSource` is made when its token is first passed, and cancelled when the frame is. |
+| platforms (M45) | `--runtime` is `dotnet publish -r <rid>`, with the target's `<triple>-gcc` and `<triple>-objcopy` as NativeAOT's linker and object copier when Linux cross-compiles; the size options are `InvariantGlobalization` and `OptimizationPreference=Size`. A native library's exports are `[UnmanagedCallersOnly(EntryPoint = "<name>_<f>")]` methods that convert C values, call the function, and catch what it raises into a thread-static last error. An extension module's classes and enums are heap types made with `PyType_FromSpec` (the stable ABI), whose instances hold a `GCHandle` to the Taipan object; their slots call the Taipan members through the same conversions as functions. A `py` value in an extension is a `Taipan.Runtime.PythonHandle` owning a reference, and a Python callable passed as a function is a `Function<D>` over a delegate that calls it. |
 | generics | Monomorphized. Each distinct instantiation the program uses becomes its own C# method or type, named after its type arguments: `first_int`, `Box_str`, `Box_list_int`, `Maybe_int_opt` (for `Maybe[int?]`). A clash with another name gets a numeric suffix. Generic definitions that are never instantiated are type-checked but not emitted. |
 | function types | `Taipan.Runtime.Function<D>` (M11), with `D` a `Func<…>` or `Action<…>`. It wraps the delegate and the display name, and calls go through the delegate. A top-level function used as a value is one cached object per function, and each evaluation of a lambda or nested `def` creates a new object, so `==` is reference equality. In generic instance names, a function type is written `fn_` followed by its parameter and result types: `apply_fn_int_str`, `Box_fn_none`. |
 | lambdas, nested `def` | C# lambdas, which capture locals by reference. A `for x in range(…)` loop copies its variable into a fresh local each iteration, so captures see that iteration's value. |
@@ -2199,12 +2200,12 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0229 | `'<P>' uses 'Self' in '<m>', so it can only be a type parameter bound`, with M17's help / `'<P>' is a protocol`, with help `construct a class that satisfies it` (a construction) or `test for a class that satisfies it` (`isinstance`, `as`, class patterns, `except`), replacing M17's message for these (M40) |
 | TP0231 | `'<T>.<m>' uses <N>, which Taipan can't use yet` (`<N>` the .NET type, e.g. `Dictionary<string, int>` or `Func<int, bool>`) / `'<N>' can't be imported: generic .NET types aren't supported yet` (M21, until M43) / `'<N>[…]' is <T> in Taipan; write '<T>'` / `'<I>' has <the property '<p>'\|the event '<e>'\|an indexer\|the generic method '<m>'\|two methods named '<m>'>, which a Taipan class can't implement yet` (M43) |
 | TP0232 | `ambiguous call to '<T>.<m>': it could be '<m>(<P1>)' or '<m>(<P2>)'` (M21) |
-| TP0233 | `a native program can't use Python`, with help `build it without '--native'` / `'<T>.<m>' can't be used in a native program: <message>` (M23) / `a Python extension can't use Python interop itself` (M25) |
+| TP0233 | `a native program can't use Python`, with help `build it without '--native'` / `'<T>.<m>' can't be used in a native program: <message>` (M23) / `a Python extension can't use Python interop itself` (M25) / `an extension module can only pass Python objects along`, with help `do this in Python, and pass the result` (M45) |
 | TP0230 | `type alias '<A>' refers to itself` / `type alias '<A>' refers to itself through '<B>'` (`'<B>' and '<C>'` for longer cycles), with help `use a class for a recursive type` (M18) |
 | TP0300 | `unreachable match arm` / `unreachable except clause`, with help `'<B>' is already caught above` / `unreachable code` (M16) |
 | TP0301 | `this clause catches every exception and discards it`, with help `catch a specific class, re-raise with 'raise', or bind it with 'as e' and use it` (M16) |
 | TP0303 | `'<f>' takes parameters, so it isn't run as a test` (M44) |
-| TP0302 | `'<f>' is not exported: <reason>`, where `<reason>` is `its type parameter '<T>' has a bound` / `'<T>?' has no .NET generic form` / `it uses '<g>', which isn't a .NET generic` / `it uses '<C>', which isn't exported` / `it has its module's name` (M22) / `'<T>' can't be passed to Python` / `it's generic` (M25) / `it's used as the protocol '<P>'` (M40), with help `rename it '_<f>' to keep it private` |
+| TP0302 | `'<f>' is not exported: <reason>`, where `<reason>` is `its type parameter '<T>' has a bound` / `'<T>?' has no .NET generic form` / `it uses '<g>', which isn't a .NET generic` / `it uses '<C>', which isn't exported` / `it has its module's name` (M22) / `'<T>' can't be passed to Python` / `it's generic` (M25) / `it's used as the protocol '<P>'` (M40) / `'<T>' can't be passed to C` / `it's async` / `it has '*args' or '**kwargs'` / `it has keyword-only parameters` (a native library) (M45), with help `rename it '_<f>' to keep it private` |
 
 Types are written as in source: `int`, `str?`, `list[int]`. The type of `None` is written `None`, and a missing value is written `nothing`.
 
@@ -2289,10 +2290,10 @@ ROADMAP.md plans most of these from M35 on. They were never part of v0.1:
 - language server features beyond §16: code actions beyond §16.11's, range formatting and formatting as you type, incremental sync, workspace-wide diagnostics, semantic token deltas and ranges, signature help for built-in functions, references to built-in, Python and .NET names, updating imports when the editor renames a file, and editors other than VS Code
 - formatting beyond §19: wrapping or joining long lines, and options for the style
 - tests beyond §20: fixtures, parametrized tests, selecting tests by name, capturing their output, and running them in parallel
-- CPython extension modules beyond §17: classes and enums as Python types, Python functions and objects as arguments, Python interop inside an extension, generic functions, and builds for one exact Python version
+- CPython extension modules beyond §17 (M45): Python subclasses of Taipan classes, special methods beyond `__str__`, `__repr__`, `__eq__` and `__hash__`, static and class methods, operations on Python objects inside an extension beyond passing and displaying them, generic functions and classes, and builds for one exact Python version
 - .NET interop beyond §13 (M43): C# 14 extension members other than methods, `~` and bitwise operators on `int`, protected members, implementing or overriding .NET properties, events and indexers, implementing generic interface methods, deriving from .NET exception classes or from a Taipan class with a .NET base, generic classes implementing .NET interfaces, .NET variance, `ref` returns and `ref`/`out` parameters of delegates, and packages with native assets
 - build integration beyond §18: multi-targeting, test projects reporting to `dotnet test`'s own test results (§18.6 runs them as programs), native and Python-extension SDK projects, and symbols packages
-- native builds beyond §15: another architecture (`--runtime <rid>`), Python in native programs, native libraries, and size options such as invariant globalization
+- native builds beyond §15 (M45): Python in native programs, another operating system, musl-based Linux, and a native library's constants, classes, enums and list or dict arguments
 - Taipan libraries beyond §14: XML documentation, value `Equals` and `GetHashCode` for dataclasses, deriving from Taipan classes in other .NET languages, and plain delegates for function types
 
 **Not planned**, since each costs much more than it gives a statically typed language on .NET:
@@ -2314,7 +2315,10 @@ taipan check <file> [<kind>]                         type-check only, printing d
 taipan emit  <file> [<kind>]                         print the generated C# (§8)
 taipan build <file> [<kind>] -o <dir>                write a runnable program to <dir>, or with <kind>:
                                                      --library (M22, §14), --native (M23, §15),
-                                                     or --python-extension (M25, §17)
+                                                     or --python-extension (M25, §17); since M45 also
+                                                     --library --native (§15.6), and with --native or
+                                                     --python-extension, --runtime <rid> (§15.4),
+                                                     --invariant-globalization and --optimize-size (§15.5)
 taipan run   <file> [-- args]                        compile and run, passing args to the program (sys.argv, M37)
 taipan pack  <file> -o <dir>                         pack a library as a NuGet package (M34, §18.4)
 taipan compile <file> [--library | --test] --out <dll>   compile one assembly, for TaipanLang.Sdk (M34, §18.2; --test: M44, §18.6)
@@ -2698,7 +2702,7 @@ $ out/health
 
 ### 15.1 Building
 - **The executable** is `<dir>/<name>` (`<name>.exe` on Windows), where `<name>` is the main file's name without `.tpn`. Nothing else is needed beside it to run.
-- **The platform** is the operating system and architecture `taipan` runs on, by its portable runtime identifier, such as `linux-x64`, even where a distribution's own build of .NET reports its own (`ubuntu.24.04-x64`). NativeAOT can't build for another operating system; choosing another architecture is deferred.
+- **The platform** is the operating system and architecture `taipan` runs on, by its portable runtime identifier, such as `linux-x64`, even where a distribution's own build of .NET reports its own (`ubuntu.24.04-x64`). Since M45, `--runtime <rid>` chooses another architecture (§15.4).
 - **Behavior:** a native program prints the same output and exits with the same codes as under `taipan run`, panics included (§7), with the same `.tpn` locations (§15.3).
 - **Requirements:** building natively uses the .NET SDK's `dotnet publish`, with the native toolchain NativeAOT needs on the platform (a C compiler and linker: clang or gcc on Linux, Xcode's command-line tools on macOS, Visual Studio's C++ tools on Windows). The ILCompiler package comes with the SDK or is restored from the configured NuGet sources (§13.2) the first time. Running the result needs none of these.
 - **References:** the assemblies and packages of `taipan.json` (§13.2) are compiled into the executable.
@@ -2722,8 +2726,71 @@ A native executable has no debug information to map its stack to `.tpn` lines, s
 
 This adds a local store per statement and a filter per method.
 
-### 15.4 Deferred
-§11 lists what's deferred: building for another architecture (`--runtime <rid>`), Python in native programs, native libraries (`--library --native`), and size options such as invariant globalization.
+### 15.4 Other platforms (M45)
+```
+$ taipan build examples/health.tpn --native --runtime linux-arm64 -o out
+built out/health
+```
+- **`--runtime <rid>`** builds a native executable (§15.1), native library (§15.6) or extension module (§17) for a runtime identifier other than the one `taipan` runs on. It may be given with `--native`, `--library --native` and `--python-extension` to `build`, and with nothing else (a usage error, `--runtime needs --native or --python-extension`).
+- **The runtime identifiers** are `linux-x64`, `linux-arm64`, `osx-x64`, `osx-arm64`, `win-x64` and `win-arm64`. Any other is a usage error: `unknown runtime '<rid>'; use one of linux-x64, linux-arm64, osx-x64, osx-arm64, win-x64, win-arm64`.
+- **The same operating system only:** NativeAOT builds for the operating system it runs on, in any of its architectures. A runtime of another operating system is `taipan: cannot build for <rid> on <os>: NativeAOT builds only for the operating system it runs on` (exit `2`, §9), with `<os>` `linux`, `osx` or `win`.
+- **What cross-compiling needs**, besides §15.1's toolchain for the platform `taipan` runs on:
+  - **Linux:** GCC and binutils for the target, as `<triple>-gcc` and `<triple>-objcopy` on `PATH`, and the target's C library, with `<triple>` `aarch64-linux-gnu` for `linux-arm64` and `x86_64-linux-gnu` for `linux-x64`. On Debian and Ubuntu they're the packages `gcc-<triple>`, `binutils-<triple>` and `libc6-dev-<arch>-cross`. Taipan links with them, and without them it's `taipan: building for <rid> needs <triple>-gcc on PATH` (exit `2`), before anything is built.
+  - **macOS:** Xcode's command-line tools build both architectures.
+  - **Windows:** Visual Studio's C++ tools for the target architecture.
+  - Otherwise the build fails as §15.1 says, `native build failed: …`.
+- **The files** are named for the target's operating system: an executable `<name>` (`<name>.exe` for Windows), a native library `<name>.so`, `<name>.dylib` or `<name>.dll`, an extension module `<name>.abi3.so` or `<name>.pyd`. Taipan doesn't run what it builds for another platform.
+
+### 15.5 Size options (M45)
+- **`--invariant-globalization`** builds without culture data (ICU on Linux), which makes the executable smaller and needs no ICU on the machine that runs it, as .NET's `InvariantGlobalization` does. Taipan's own operations don't depend on culture (`str.upper`, number formatting and parsing, and ordering are the same either way), so a Taipan program behaves the same; only .NET APIs that use culture data (§13) see the invariant culture, and creating another culture raises a .NET `CultureNotFoundException`.
+- **`--optimize-size`** has NativeAOT prefer smaller code to faster code (`OptimizationPreference=Size`).
+- Each may be given with `--native`, `--library --native` or `--python-extension`, to `build`; elsewhere it's a usage error, as for `--runtime`.
+
+### 15.6 Native libraries (M45)
+`taipan build <file> --library --native -o <dir>` compiles a module into a native shared library with C functions, so C, and anything that calls C, can use it without .NET:
+
+```python
+# geometry.tpn
+def area(width: float, height: float) -> float:
+    return width * height
+
+def label(name: str, sides: int) -> str:
+    return f"{name} with {sides} sides"
+```
+
+```c
+#include "geometry.h"
+#include <stdio.h>
+
+int main(void) {
+    printf("%f\n", geometry_area(2.0, 3.0));
+    char *text = geometry_label("square", 4);
+    printf("%s\n", text);
+    geometry_free(text);
+}
+```
+
+- **The files** are `<dir>/<name>.so` (`.dylib` on macOS, `.dll` on Windows) and `<dir>/<name>.h`, a C header declaring the exports, where `<name>` is the main file's name without `.tpn` (or `taipan.json`'s `assembly`, §18.3). The library needs nothing beside it, no .NET runtime in particular. Its requirements, errors and platform are a native build's (§15.1, §15.4), and §15.2's restrictions (`TP0233`) apply. Its main file contains declarations only (`TP0222`), as a library's (§14.3).
+- **What's exported:** the main file's own functions whose names don't start with `_` (§14.1), as C functions named `<module>_<function>`, where `<module>` is the main file's name without `.tpn` (always a C identifier, even when `taipan.json` names the file), with C types for Taipan's:
+
+  | Taipan | C |
+  |---|---|
+  | `int` | `int64_t` |
+  | `float` | `double` |
+  | `bool` | `bool` (`<stdbool.h>`) |
+  | `str` (a parameter) | `const char *`, UTF-8 and null-terminated, which the library only reads during the call |
+  | `str` (a result) | `char *`, UTF-8 and null-terminated, newly allocated, which the caller frees with `<module>_free` |
+  | no result | `void` |
+
+  A function with any other parameter or result type, or a generic or async one, isn't exported: warning `TP0302`, with `'<T>' can't be passed to C`, `it's generic` or `it's async`. Its parameters are passed by position, all of them, so a default doesn't apply, and a function with `*args`, `**kwargs` or keyword-only parameters isn't exported either (`TP0302`, `it has '*args' or '**kwargs'` or `it has keyword-only parameters`). Constants, classes and enums aren't exported.
+- **Initialization:** a module initializes when an exported function is first called, as §14.3 says.
+- **Errors:** an exception can't cross into C. A Taipan exception, or a panic, escaping an exported function makes it return `0`, `0.0`, `false` or `NULL`, and sets the calling thread's last error, which **`const char *<module>_last_error(void)`** gives as `<Class>: <message>` (`ValueError: radius -1.0 is negative`), the same text a traceback ends with (§3.19). It's `NULL` after a call that returned normally, and stays valid until the next call into the library on that thread. Nothing is printed.
+- **`void <module>_free(char *text)`** frees a string the library returned; freeing anything else, or a string twice, is undefined, as in C.
+- `print` writes to the process's standard output, as C code does.
+- A native library is built with `--library --native`, which before M45 was a usage error. `taipan check` and `taipan emit` take `--library --native` too, checking and emitting it as for a build.
+
+### 15.7 Deferred
+§11 lists what's deferred: Python in native programs, building for another operating system (which NativeAOT can't do), musl-based Linux, and a native library's exports beyond §15.6's. Before M45, building for another architecture, native libraries and size options were deferred too.
 
 ---
 
@@ -2975,7 +3042,7 @@ $ cd out && python3 -c "import geometry; print(geometry.area(2.0))"
 - **The module** is `<dir>/<name>.abi3.so` (`<name>.pyd` on Windows), where `<name>` is the file's name without `.tpn`, which is also the Python module's name. Its imports are compiled in, but only its own definitions are exported (§17.2).
 - **Python versions:** the module uses only CPython's stable ABI (the limited API of Python 3.10), so one build imports into any CPython from 3.10 on, for the platform it was built for. Python isn't needed to build it. Free-threaded builds of CPython (`python3.13t`) can't load stable-ABI modules, and aren't supported.
 - **Building** is a NativeAOT build as §15.1 says, of a shared library rather than an executable, with the same requirements (the .NET SDK and the native toolchain), errors (`taipan: …`, exit `2`) and platform. Nothing beside the module is needed to import it; in particular, no .NET runtime.
-- **Restrictions:** an extension module runs natively, so §15.2 applies (`TP0233`): it can't use Python interop (§10) itself, or .NET members that need run-time code generation. Like a library's main file (§14.3), it contains declarations only, so a top-level statement is `TP0222`.
+- **Restrictions:** an extension module runs natively, so §15.2 applies (`TP0233`): it can't use Python interop (§10) itself, or .NET members that need run-time code generation. Since M45 it may hold Python objects it's given, as `py` values (§17.6), but not import Python modules or operate on them. Like a library's main file (§14.3), it contains declarations only, so a top-level statement is `TP0222`.
 - `--python-extension` can't be combined with `--library` or `--native` (a usage error). `taipan check <file> --python-extension` and `taipan emit <file> --python-extension` check and emit the module as for a build, with its diagnostics.
 
 ### 17.2 What's exported
@@ -2983,7 +3050,7 @@ The module file's own definitions whose names don't start with `_` (§14.1), as 
 - **Functions** whose parameter and result types are all *convertible* (§10.3), other than `py`: `int`, `float`, `bool`, `str`, and lists, dicts, tuples and optionals of those, or no result. Each is a Python built-in function (`geometry.area`).
 - **Constants** of convertible types, as attributes holding their values (`geometry.PI`), set when the module is imported.
 - **Exception classes** (§3.10) defined in the file, as Python exception classes named `<name>.<Class>` (`geometry.NegativeRadius`). Each derives from the Python class of its Taipan base: the module's own class for an exported exception class, or the built-in of the same name (§17.4), so `except ValueError` catches a Taipan class deriving from `ValueError`. A base that isn't exported (`_Base`) is skipped for its nearest exported or built-in ancestor.
-- **Not exported (`TP0302`):** a function or constant that uses a type that isn't convertible, such as a class, an enum or a function type, is warning `TP0302`, with `'<T>' can't be passed to Python` as the reason, as is a generic function (`it's generic`) and, since M33, an async function (`it's async`). Other classes and enums aren't exported, and aren't warned about.
+- **Not exported (`TP0302`):** a function or constant that uses a type that isn't convertible, such as a class, an enum or a function type, is warning `TP0302`, with `'<T>' can't be passed to Python` as the reason, as is a generic function (`it's generic`) and, since M33, an async function (`it's async`). Before M45, other classes and enums weren't exported; since M45 they're Python types (§17.5), and exported classes, enums and function types are convertible (§17.5, §17.6).
 
 ### 17.3 Calls and conversions
 - **Arguments** are passed by position or by keyword, using the Taipan parameter names, and a parameter with a default may be left out; its default is evaluated at each call, as in Taipan (§4.2). Since M30, positional-only and keyword-only parameters, `*args` and `**kwargs` are Python's, so Python callers bind arguments as Taipan does (§4.2), and each collected argument converts to the element type, as a list's or dict's would. Python's own errors for a wrong call are `TypeError`s with Python's messages: `area() takes 1 positional argument but 2 were given`, `area() got an unexpected keyword argument 'radius'`, `area() missing required argument 'r'`, `area() got multiple values for argument 'r'`, and since M30 `area() got some positional-only arguments passed as keyword arguments: 'r'` and `area() missing required keyword-only argument 'k'`. A keyword-only parameter passed by position is one too many positional arguments: `scale() takes 1 positional argument but 2 were given`.
@@ -3013,9 +3080,52 @@ A Taipan exception raised by an exported function, or while the module's constan
 
 `print` writes to the process's standard output, as C code does, which may interleave with Python's own buffered `sys.stdout` differently than Python's `print` would.
 
-### 17.5 Deferred
-§11 lists what's deferred: classes and enums as Python types, passing Python functions or objects (`py`) to Taipan functions, Python interop inside an extension module, generic functions, and builds for one exact Python version. Free-threaded CPython isn't planned.
+### 17.5 Classes and enums as Python types (M45)
+```python
+# shapes.tpn
+@dataclass
+class Point:
+    x: float
+    y: float = 0.0
 
+    def moved(self, by: float) -> Point:
+        return Point(self.x + by, self.y)
+
+enum Shape:
+    Circle(r: float)
+    Empty
+```
+
+```
+>>> import shapes
+>>> p = shapes.Point(1.0)
+>>> p.moved(2.0)
+Point(x=3.0, y=0.0)
+>>> p.x = 5.0; p.x
+5.0
+>>> shapes.Shape.Circle(2.0).r, shapes.Shape.Empty.name
+(2.0, 'Empty')
+```
+
+- **Which:** the module file's own classes and enums whose names don't start with `_`, that aren't generic, protocols or exception classes (which §17.2 exports already), are Python types `<module>.<Name>`, attributes of the module. A generic class or enum is warning `TP0302`, `it's generic`.
+- **A class** is a Python type whose instances each hold a Taipan object:
+  - **Calling the type** constructs one, as Taipan's construction does (§4.3), with the arguments bound as a function's are (§17.3): `__init__`'s parameters, or a dataclass's fields. An abstract class's type can't be called (`TypeError`, `cannot create '<Class>' instances`).
+  - **Fields** are attributes, converting as arguments and results do, and assigning one assigns the field: a value that doesn't convert is a `TypeError`, `'<Class>.<f>' must be <T>, not <type>`. A frozen dataclass's fields (§4.9), and properties without setters, are read-only, so assigning one is Python's `AttributeError` for a read-only attribute. Properties are attributes too.
+  - **Instance methods** are methods of the type, called with arguments bound as a function's are (§17.3); a method whose parameters or result don't convert isn't on the type, and is warning `TP0302` at its name. Fields, properties and methods whose names start with `_` aren't on it.
+  - **`str()` and `repr()`** give Taipan's display and `repr` (§4.8); **`==` and `!=`** compare as Taipan's `==` does (§4.8), giving `NotImplemented` for an object of another Python type; and **`hash()`** is Taipan's `hash()` for a hashable class, while an unhashable one has `__hash__` set to `None`, as in Python.
+  - **Inheritance:** a class's Python type derives from its base's, when the base is exported too, so `isinstance(dog, zoo.Animal)` is true and a `Dog` is accepted where an `Animal` is. A Python class can't derive from it: Python's `TypeError` at the `class` statement, or, for a class with Taipan subclasses, whose type must accept them, `TypeError`, `a Python class can't derive from a Taipan class`, when it's instantiated. Its other special methods (§4.8) aren't Python's.
+- **An enum** is a Python type whose instances hold its values:
+  - A variant without fields is a class attribute holding its value (`Shape.Empty`). A variant with fields is a class attribute that's called to make one, with its fields as arguments, bound as a function's are (`Shape.Circle(2.0)`, `Shape.Circle(r=2.0)`).
+  - A value has `name`, its variant's name, and its fields as read-only attributes; a field its variant doesn't have is `AttributeError`, `'<Enum>' value <Variant> has no attribute '<f>'`. `str()`, `repr()`, `==` and `hash()` are Taipan's, as for a class.
+- **Passing them:** an exported class or enum is convertible (§10.3, §17.2). A parameter of its type takes an instance of its Python type, or of a type deriving from it, and gives the Taipan function the very object it holds, so changes are shared: anything else is a `TypeError`, as for any argument. A result, field or element of its type gives Python an instance holding the Taipan object; the same object given to Python twice may be two Python objects, which `==` finds equal and `is` doesn't. An unexported class (`_Base`) in a signature still keeps a function from being exported (`TP0302`).
+
+### 17.6 Python objects as arguments (M45)
+- **A function type** is convertible as a parameter (§17.2): `def apply(f: Callable[[int], int], x: int) -> int` takes any Python callable. Calling it from Taipan calls the Python object with the arguments converted to Python, and converts what it returns to the function type's result, raising `TypeError` if it doesn't convert. A Python exception the call raises propagates through the Taipan code as a `PythonError` (§3.10), which an `except PythonError` may catch, and if it isn't caught, back into Python as the original exception. Its parameter and result types must be convertible both ways (`TP0302` otherwise). A function value as a result or a field isn't convertible.
+- **`py`** in an extension module is a Python object it's been given: a parameter, result, field or element of type `py` takes or gives any Python object, unconverted, which Taipan keeps alive while it holds it. Inside the extension, a `py` value can be passed, stored, returned, and displayed (`print`, `str()`, f-strings), which uses Python's `str()`; anything else on it (attributes, calls, indexing, operators, `as`, `isinstance`) is `TP0233`, `an extension module can only pass Python objects along`, with help `do this in Python, and pass the result`.
+- Calls into Python and the conversions run while holding the GIL, which the extension never releases.
+
+### 17.7 Deferred
+§11 lists what's deferred: Python subclasses of Taipan classes, special methods beyond `__str__`, `__repr__`, `__eq__` and `__hash__`, static and class methods, operations on Python objects inside an extension module, generic functions and classes, and builds for one exact Python version. Before M45, classes and enums as Python types, and Python functions and objects as arguments, were deferred too. Free-threaded CPython isn't planned.
 ---
 
 ## 18. Build integration (M34)

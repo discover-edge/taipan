@@ -11,7 +11,11 @@ namespace Taipan.Compiler.Emit;
 /// <param name="EntryClass">The class holding <c>Main</c>, to pass to the C# compiler.</param>
 /// <param name="Diagnostics">Errors found while instantiating generics (TP0219); the code is unusable if there are any.</param>
 /// <param name="References">The .NET assemblies it compiles and runs against beyond the defaults (SPEC §13.2).</param>
-public sealed record EmittedProgram(string Code, string? EntryClass, ImmutableArray<Diagnostic> Diagnostics, ImmutableArray<string> References);
+public sealed record EmittedProgram(string Code, string? EntryClass, ImmutableArray<Diagnostic> Diagnostics, ImmutableArray<string> References)
+{
+    /// <summary>A native library's C header (SPEC §15.6, M45); null otherwise.</summary>
+    public string? Header { get; init; }
+}
 
 /// <summary>
 /// Emits one C# compilation unit for a bound program (SPEC §8). Every statement is preceded by a
@@ -148,9 +152,12 @@ public sealed partial class CSharpEmitter
     {
         var emitter = new CSharpEmitter(source, program);
         var code = program.Library is null ? emitter.EmitProgram() : emitter.EmitLibrary();
-        // A library and an extension module have no entry point (SPEC §14.4, §17.1).
-        var entry = program.Library is null && program.Extension is null ? emitter._entryClass : null;
-        return new EmittedProgram(code, entry, emitter._diagnostics.ToImmutable(), program.References);
+        // A library, an extension module and a native library have no entry point (SPEC §14.4, §17.1, §15.6).
+        var entry = program.Library is null && program.Extension is null && program.NativeLibrary is null ? emitter._entryClass : null;
+        return new EmittedProgram(code, entry, emitter._diagnostics.ToImmutable(), program.References)
+        {
+            Header = program.NativeLibrary is { } nativeLibrary ? CHeader(nativeLibrary, source.Path) : null,
+        };
     }
 
     private string UniqueGlobal(string name)
@@ -227,6 +234,11 @@ public sealed partial class CSharpEmitter
         if (_program.Extension is { } extension)
         {
             code.Append(ExtensionClass(extension));
+            return code.ToString();
+        }
+        if (_program.NativeLibrary is { } nativeLibrary)
+        {
+            code.Append(NativeExportsClass(nativeLibrary));
             return code.ToString();
         }
         code.Append($"\npublic static class {_entryClass}\n{{\n");
@@ -2208,7 +2220,8 @@ public sealed partial class CSharpEmitter
         PrimitiveType { Name: "float" } => "double",
         PrimitiveType { Name: "bool" } => "bool",
         PrimitiveType { Name: "str" } => "string",
-        PrimitiveType { Name: "py" } => PyObject,
+        // In an extension module, a Python object it's been given (SPEC §17.6, M45).
+        PrimitiveType { Name: "py" } => _program.Extension is null ? PyObject : "global::Taipan.Runtime.PythonHandle",
         NothingType => "void",
         // None as a generator's argument, and an object, hold any value (SPEC §3.20).
         NoneType or ObjectType => "object?",
