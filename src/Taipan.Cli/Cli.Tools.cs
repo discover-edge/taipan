@@ -126,4 +126,44 @@ public static partial class Cli
             .Where(f => Path.GetFileName(f) is var name && (name.StartsWith("test_", StringComparison.Ordinal) || name.EndsWith("_test.tpn", StringComparison.Ordinal)))
             .Select(f => directory == "." ? Path.GetRelativePath(".", f) : f)
             .Order(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Takes <c>--runtime &lt;rid&gt;</c>, <c>--invariant-globalization</c> and <c>--optimize-size</c> out of a
+    /// build's arguments (SPEC §15.4, §15.5), giving the usage error for a wrong one, or null.
+    /// </summary>
+    private static string? NativeOptionsOf(ref string[] args, Target target, out NativeOptions options)
+    {
+        options = new NativeOptions(null, false, false);
+        var rest = new List<string>();
+        string? runtime = null;
+        var (invariant, size, given) = (false, false, false);
+        for (var i = 0; i < args.Length; i++)
+        {
+            switch (args[i])
+            {
+                case "--runtime" when i + 1 >= args.Length:
+                    return "--runtime needs a runtime identifier";
+                case "--runtime":
+                    runtime = args[++i];
+                    given = true;
+                    break;
+                case "--invariant-globalization":
+                    invariant = given = true;
+                    break;
+                case "--optimize-size":
+                    size = given = true;
+                    break;
+                default:
+                    rest.Add(args[i]);
+                    break;
+            }
+        }
+        args = [.. rest];
+        if (given && target is not (Target.Native or Target.NativeLibrary or Target.PythonExtension))
+            return "--runtime, --invariant-globalization and --optimize-size need --native or --python-extension";
+        if (runtime is not null && !NativeBuild.RuntimeIdentifiers.Contains(runtime))
+            return $"unknown runtime '{runtime}'; use one of {string.Join(", ", NativeBuild.RuntimeIdentifiers)}";
+        options = new NativeOptions(runtime, invariant, size);
+        return null;
+    }
 }

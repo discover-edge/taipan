@@ -1,0 +1,19 @@
+# An extension module only passes Python objects along (SPEC §17.6).
+def poke(thing: py) -> py:
+    print(thing)
+    let text = f"{thing}"
+    let size = thing.size
+    thing.size = 2
+    let first = thing[0]
+    let total = thing + 1
+    let n = thing as int
+    for item in thing:
+        pass
+    return thing()
+
+def caught() -> str:
+    try:
+        return "ok"
+    except PythonError as e:
+        print(e.value)
+        return e.message

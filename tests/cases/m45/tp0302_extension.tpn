@@ -1,0 +1,25 @@
+# What an extension module can't export as Python types (SPEC §17.5).
+class Box[T]:
+    item: T
+
+    def __init__(self, item: T):
+        self.item = item
+
+class Counter:
+    count: int = 0
+
+    def bump(self) -> int:
+        self.count += 1
+        return self.count
+
+    def each(self) -> Callable[[], int]:
+        return lambda: self.count
+
+enum Wrapped:
+    Holds(f: Callable[[], int])
+
+def make() -> Callable[[], int]:
+    return lambda: 1
+
+def fine(f: Callable[[int], str], c: Counter) -> Counter:
+    return c

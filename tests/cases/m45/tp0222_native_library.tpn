@@ -1,0 +1,5 @@
+# A native library has no top level (SPEC §15.6).
+print("hello")
+
+def f() -> int:
+    return 1

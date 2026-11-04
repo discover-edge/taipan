@@ -1,0 +1,1 @@
+tests/cases/m45/tp0222_native_library.tpn:2:1: error TP0222: a native library can't have top-level statements

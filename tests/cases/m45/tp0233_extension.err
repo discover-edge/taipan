@@ -1,0 +1,18 @@
+tests/cases/m45/tp0233_extension.tpn:5:16: error TP0233: an extension module can only pass Python objects along
+  help: do this in Python, and pass the result
+tests/cases/m45/tp0233_extension.tpn:6:5: error TP0233: an extension module can only pass Python objects along
+  help: do this in Python, and pass the result
+tests/cases/m45/tp0233_extension.tpn:6:18: error TP0233: an extension module can only pass Python objects along
+  help: do this in Python, and pass the result
+tests/cases/m45/tp0233_extension.tpn:7:17: error TP0233: an extension module can only pass Python objects along
+  help: do this in Python, and pass the result
+tests/cases/m45/tp0233_extension.tpn:8:17: error TP0233: an extension module can only pass Python objects along
+  help: do this in Python, and pass the result
+tests/cases/m45/tp0233_extension.tpn:9:13: error TP0233: an extension module can only pass Python objects along
+  help: do this in Python, and pass the result
+tests/cases/m45/tp0233_extension.tpn:10:5: error TP0233: an extension module can only pass Python objects along
+  help: do this in Python, and pass the result
+tests/cases/m45/tp0233_extension.tpn:12:12: error TP0233: an extension module can only pass Python objects along
+  help: do this in Python, and pass the result
+tests/cases/m45/tp0233_extension.tpn:18:15: error TP0233: an extension module can only pass Python objects along
+  help: do this in Python, and pass the result

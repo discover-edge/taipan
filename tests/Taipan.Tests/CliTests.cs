@@ -61,10 +61,11 @@ public class CliTests
     [Fact]
     public void LibraryAndNativeDontCombine()
     {
-        var (exit, stdout, stderr) = Run("build", "examples/health.tpn", "--library", "--native", "-o", "out");
+        // Since M45, --library --native is a native library (SPEC §15.6); the others still don't combine.
+        var (exit, stdout, stderr) = Run("build", "examples/health.tpn", "--native", "--python-extension", "-o", "out");
         Assert.Equal(2, exit);
         Assert.Equal("", stdout);
-        Assert.StartsWith("taipan: --library, --native and --python-extension can't be combined\nusage:\n", stderr);
+        Assert.StartsWith("taipan: --library, --native and --python-extension can't be combined, except --library with --native\nusage:\n", stderr);
     }
 
     [Fact]

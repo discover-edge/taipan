@@ -1,0 +1,8 @@
+tests/cases/m45/tp0302_extension.tpn:2:7: warning TP0302: 'Box' is not exported: it's generic
+  help: rename it '_Box' to keep it private
+tests/cases/m45/tp0302_extension.tpn:15:9: warning TP0302: 'each' is not exported: 'Callable[[], int]' can't be passed to Python
+  help: rename it '_each' to keep it private
+tests/cases/m45/tp0302_extension.tpn:18:6: warning TP0302: 'Wrapped' is not exported: 'Callable[[], int]' can't be passed to Python
+  help: rename it '_Wrapped' to keep it private
+tests/cases/m45/tp0302_extension.tpn:21:5: warning TP0302: 'make' is not exported: 'Callable[[], int]' can't be passed to Python
+  help: rename it '_make' to keep it private

@@ -325,6 +325,12 @@ public sealed class DiagnosticBag
     public void ReportStatementInLibrary(TextSpan span) =>
         Add("TP0222", span, "a library can't have top-level statements");
 
+    public void ReportPythonOperationInExtension(TextSpan span) =>
+        Add("TP0233", span, "an extension module can only pass Python objects along", "do this in Python, and pass the result");
+
+    public void ReportStatementInNativeLibrary(TextSpan span) =>
+        Add("TP0222", span, "a native library can't have top-level statements");
+
     public void ReportStatementInExtension(TextSpan span) =>
         Add("TP0222", span, "a Python extension can't have top-level statements");
 

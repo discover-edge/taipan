@@ -21,6 +21,9 @@ public sealed record BoundProgram(
     /// <summary>Whether the main file's top level awaits, so its entry point is async (SPEC §3.14, M33).</summary>
     public bool IsAsync { get; init; }
 
+    /// <summary>For <c>--library --native</c>, the C functions the library exports (SPEC §15.6, M45).</summary>
+    public BoundNativeLibrary? NativeLibrary { get; init; }
+
     /// <summary>For <c>taipan test</c>, the main file's test functions, which its entry point runs (SPEC §20); default otherwise.</summary>
     public ImmutableArray<FunctionSymbol> Tests { get; init; }
 
@@ -35,8 +38,21 @@ public sealed record BoundProgram(
 /// A CPython extension module (SPEC §17.2): its name, and the module file's exported functions,
 /// constants, and exception classes, each class after its bases.
 /// </summary>
+/// <summary>A native library (SPEC §15.6, M45): its C names' prefix, the main file's name, and the functions it exports.</summary>
+public sealed record BoundNativeLibrary(string Name, ImmutableArray<FunctionSymbol> Functions);
+
 public sealed record BoundExtension(
-    string Name, ImmutableArray<FunctionSymbol> Functions, ImmutableArray<BoundConstant> Constants, ImmutableArray<ClassSymbol> Exceptions);
+    string Name, ImmutableArray<FunctionSymbol> Functions, ImmutableArray<BoundConstant> Constants, ImmutableArray<ClassSymbol> Exceptions)
+{
+    /// <summary>The classes that are Python types (SPEC §17.5, M45), each after its base, with the members on their types.</summary>
+    public ImmutableArray<ExtensionClass> Classes { get; init; } = [];
+
+    /// <summary>The enums that are Python types (SPEC §17.5, M45).</summary>
+    public ImmutableArray<EnumSymbol> Enums { get; init; } = [];
+}
+
+/// <summary>An extension module's class as a Python type: its fields, properties and methods on the type (SPEC §17.5).</summary>
+public sealed record ExtensionClass(ClassSymbol Symbol, ImmutableArray<FieldSymbol> Fields, ImmutableArray<FunctionSymbol> Properties, ImmutableArray<FunctionSymbol> Methods);
 
 /// <summary>
 /// A library's namespace and modules, main file first; the definitions it exports; and the generic

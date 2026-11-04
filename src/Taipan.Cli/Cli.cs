@@ -24,7 +24,8 @@ public static partial class Cli
         usage:
           taipan check <file> [--library | --native | --python-extension]
           taipan emit  <file> [--library | --native | --python-extension]
-          taipan build <file> [--library | --native | --python-extension] -o <dir>
+          taipan build <file> [--library | --native | --library --native | --python-extension] -o <dir>
+                [--runtime <rid>] [--invariant-globalization] [--optimize-size]
           taipan run   <file> [-- args]
           taipan pack  <file> -o <dir>
           taipan compile <file> [--library | --test] --out <dll> [--reference <dll>]... [--assembly <name>] [--namespace <ns>] [--version <v>]
@@ -50,7 +51,7 @@ public static partial class Cli
         var target = command is "check" or "emit" or "build" ? TargetOf(ref rest) : Target.Program;
         return command switch
         {
-            "check" or "emit" or "build" when target is null => UsageError(stderr, "--library, --native and --python-extension can't be combined"),
+            "check" or "emit" or "build" when target is null => UsageError(stderr, "--library, --native and --python-extension can't be combined, except --library with --native"),
             "check" => Check(rest, target!.Value, stderr),
             "run" => RunFile(rest, stdin, stdout, stderr),
             "emit" => Emit(rest, target!.Value, stdout, stderr),
@@ -86,6 +87,9 @@ public static partial class Cli
     {
         var kinds = args.Where(Kinds.ContainsKey).Distinct().ToList();
         args = [.. args.Where(a => !Kinds.ContainsKey(a))];
+        // --library --native is a native library (SPEC §15.6, M45).
+        if (kinds.Count == 2 && kinds.Contains("--library") && kinds.Contains("--native"))
+            return Target.NativeLibrary;
         return kinds.Count switch
         {
             0 => Target.Program,
@@ -113,6 +117,9 @@ public static partial class Cli
 
     private static int Build(string[] args, Target target, TextWriter stdout, TextWriter stderr)
     {
+        // The platform and size options of a native build (SPEC §15.4, §15.5, M45).
+        if (NativeOptionsOf(ref args, target, out var nativeOptions) is { } optionError)
+            return UsageError(stderr, optionError);
         if (args.Length != 3 || args[1] != "-o")
             return UsageError(stderr, "build takes a file and -o <dir>");
         var exit = Compile(args[0], target, stderr, out var program, out var project);
@@ -121,9 +128,11 @@ public static partial class Cli
 
         var name = Path.GetFileNameWithoutExtension(args[0]);
         string path;
-        if (target is Target.Native or Target.PythonExtension)
+        if (target is Target.Native or Target.PythonExtension or Target.NativeLibrary)
         {
-            if (NativeBuild.Publish(program, name, Path.GetDirectoryName(args[0]) ?? "", args[2], project!.RuntimeAssemblies, target == Target.PythonExtension, stderr, out var error) is not { } executable)
+            if (target == Target.NativeLibrary)
+                name = project!.Names.Assembly ?? name;
+            if (NativeBuild.Publish(program, name, Path.GetDirectoryName(args[0]) ?? "", args[2], project!.RuntimeAssemblies, target, nativeOptions, stderr, out var error) is not { } executable)
             {
                 stderr.WriteLine($"taipan: {error}");
                 return ExitUsage;
@@ -303,6 +312,8 @@ public enum Target
     Library,
     Native,
     PythonExtension,
+    /// <summary>A native library with C functions (SPEC §15.6, M45).</summary>
+    NativeLibrary,
     /// <summary>A test file, whose entry point runs its tests (SPEC §20, M44).</summary>
     Test,
 }
