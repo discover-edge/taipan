@@ -7,7 +7,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/discover-edge/taipan"
+    "url": "https://github.com/taipan-org/taipan"
   },
   "engines": {
     "vscode": "^1.82.0"

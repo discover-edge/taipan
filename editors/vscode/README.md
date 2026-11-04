@@ -1,6 +1,6 @@
 # Taipan for VS Code
 
-Language support for [Taipan](https://github.com/discover-edge/taipan) `.tpn` files (SPEC §16):
+Language support for [Taipan](https://github.com/taipan-org/taipan) `.tpn` files (SPEC §16):
 
 - Highlighting, from a TextMate grammar, as soon as a file opens.
 - Diagnostics as you type, hover, go to definition, completion, signature help, find references, rename across modules, and semantic highlighting, from `taipan lsp`.

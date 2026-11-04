@@ -1,0 +1,11 @@
+/* Taipan's colours: a deep green accent, with the logo's yellow in dark mode. */
+:root {
+	--sl-color-accent-low: #0d2e26;
+	--sl-color-accent: #2a9b80;
+	--sl-color-accent-high: #c9efe4;
+}
+:root[data-theme='light'] {
+	--sl-color-accent-low: #d3f1e8;
+	--sl-color-accent: #1f6f5c;
+	--sl-color-accent-high: #0f3a30;
+}

@@ -1,0 +1,33 @@
+---
+title: Taipan
+description: A statically typed, compiled language with Python’s syntax, for .NET.
+template: splash
+hero:
+  tagline: Python’s syntax, checked at compile time, compiled for .NET. Use .NET libraries and Python packages from one language.
+  image:
+    file: ../../assets/logo.svg
+  actions:
+    - text: Get started
+      link: start/install/
+      icon: right-arrow
+    - text: Tour of Taipan
+      link: tour/basics/
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+<CardGrid>
+	<Card title="Reads like Python" icon="open-book">
+		Indentation, `def`, `class`, f-strings, comprehensions and `match`. A Python developer can read any Taipan program on sight.
+	</Card>
+	<Card title="Checked before it runs" icon="approve-check">
+		Types are checked at compile time. Optionals must be narrowed, `match` must be exhaustive, and locals are inferred.
+	</Card>
+	<Card title="Compiled for .NET" icon="rocket">
+		Programs compile to .NET assemblies, or to native executables through NativeAOT, with no runtime to install.
+	</Card>
+	<Card title="Both ecosystems" icon="puzzle">
+		Call any .NET library or NuGet package with static types, and Python packages through a checked boundary. Build .NET libraries and Python extension modules from Taipan.
+	</Card>
+</CardGrid>

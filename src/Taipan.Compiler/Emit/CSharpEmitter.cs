@@ -1499,8 +1499,7 @@ public sealed partial class CSharpEmitter
             return BlockMatchExpr(match, reachable, Value);
         var arms = reachable.SelectMany(arm => GuardedPatterns(arm.Pattern, arm.Guard)
             .Select(pattern => $"{pattern} => {(arm.Raise is { } raise ? Throw(raise) : Value(arm.Value!))}")).ToList();
-        if (!reachable.Any(a => a.Guard is null && Irrefutable(a.Pattern)))
-            arms.Add("_ => throw new global::System.Diagnostics.UnreachableException()");
+        // No fallback arm (SPEC §8): the checker guarantees an arm matches, and C# rejects one it can prove unreachable.
         return $"{Operand(match.Scrutinee)} switch {{ {string.Join(", ", arms)} }}";
     }
 

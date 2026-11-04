@@ -1,0 +1,15 @@
+# A match expression whose arms C# can see cover every value: before M46 its emitted
+# fallback arm was unreachable, which C# rejects (SPEC §8).
+def parity(n: int) -> str:
+    return match n % 2 == 0:
+        True: "even"
+        False: "odd"
+
+def both(a: bool, b: bool?) -> str:
+    return match (a, b):
+        (True, None): "yes, nothing"
+        (True, True) | (True, False): "yes, something"
+        (False, _): "no"
+
+print(parity(4), parity(7))
+print(both(True, None), both(True, False), both(False, True))
