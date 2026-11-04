@@ -18,6 +18,8 @@ public sealed partial class CSharpEmitter
         BoundVariantPattern variant => Product(variant.Fields).Select(f => (BoundPattern)(variant with { Fields = f })),
         BoundClassPattern classPattern => Product([.. classPattern.Fields.Select(f => f.Pattern)])
             .Select(p => (BoundPattern)(classPattern with { Fields = [.. classPattern.Fields.Select((f, i) => (f.Field, p[i]))] })),
+        BoundDotNetPattern dotnet => Product([.. dotnet.Members.Select(m => m.Pattern)])
+            .Select(p => (BoundPattern)(dotnet with { Members = [.. dotnet.Members.Select((m, i) => (m.Member, m.MemberType, p[i]))] })),
         BoundTuplePattern tuple => Product(tuple.Elements).Select(e => (BoundPattern)(tuple with { Elements = e })),
         BoundListPattern list => Product([.. list.Before, .. list.After])
             .Select(e => (BoundPattern)(list with { Before = e[..list.Before.Length], After = e[list.Before.Length..] })),
@@ -48,6 +50,8 @@ public sealed partial class CSharpEmitter
         BoundOrPattern choice => choice.Alternatives.Any(NeedsCase),
         BoundVariantPattern variant => variant.Fields.Any(NeedsCase),
         BoundClassPattern classPattern => classPattern.Fields.Any(f => NeedsCase(f.Pattern)),
+        // Its members are tested in a `when` (SPEC §13.17).
+        BoundDotNetPattern dotnet => !dotnet.Members.IsEmpty,
         _ => false,
     };
 

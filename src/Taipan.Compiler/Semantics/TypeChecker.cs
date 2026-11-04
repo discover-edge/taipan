@@ -30,10 +30,11 @@ public static class TypeChecker
         || (from is ClassOfType fromClassOf && to is ClassOfType toClassOf && Derives(fromClassOf.Class, toClassOf.Class))
         // A class with __call__ is a function value of its shape (SPEC §4.9).
         || (from is ClassType && to is FunctionType && SpecialMethods.CallShape(from) is { } shape && IsSubtype(shape, to))
-        // A .NET object parameter takes int, float, bool, str and .NET values (SPEC §13.3).
-        || (to is DotNetType { IsObject: true } && from is PrimitiveType { Name: not "py" } or DotNetType)
-        || (from is DotNetType fromNet && to is DotNetType toNet && DotNetTypes.Derives(fromNet.Symbol, toNet.Symbol))
-        || (from is OptionalOf { Inner: DotNetType fromInner } && to is OptionalOf { Inner: DotNetType toInner } && DotNetTypes.Derives(fromInner.Symbol, toInner.Symbol))
+        // A .NET value to its bases and interfaces, and a Taipan class to its .NET ones (SPEC §13.13, §13.16).
+        || (from is DotNetType fromNet && to is DotNetType toNet && DotNetTypes.IsBase(fromNet, toNet))
+        || (from is OptionalOf { Inner: DotNetType fromInner } && to is OptionalOf { Inner: DotNetType toInner } && DotNetTypes.IsBase(fromInner, toInner))
+        || (from is ClassType fromClassNet && to is DotNetType toClassNet && DotNetTypes.ClassIsBase(fromClassNet, toClassNet))
+        || (from is OptionalOf { Inner: ClassType fromClassInner } && to is OptionalOf { Inner: DotNetType toClassInner } && DotNetTypes.ClassIsBase(fromClassInner, toClassInner))
         // Anything iterable is an Iterable, and iterators are covariant for classes (SPEC §3.13).
         || (to is IterableOfType iterable && ElementOf(from) is { } element && IsElementOf(element, iterable.Element))
         || (to is IteratorOfType iterator && IteratorElementOf(from) is { } produced && IsElementOf(produced, iterator.Element))
@@ -71,6 +72,8 @@ public static class TypeChecker
         IterableOfType iterable => iterable.Element,
         GeneratorOfType generator => generator.Yielded,
         OpaqueType { Name: "TextIO" } => TaipanType.Str,
+        // A .NET IEnumerable<T> (SPEC §13.13, M43).
+        DotNetType net => DotNetTypes.EnumerableElement(net)?.Element,
         ClassType classType when classType.Symbol.FindMethod("__iter__") is { ReturnType: var result } => Substitute(result, MapOf(classType)) is IteratorOfType iterator ? iterator.Element : null,
         ClassType => IteratorElementOf(type),
         _ => null,
@@ -148,7 +151,7 @@ public static class TypeChecker
         if (left is ClassType lc && right is ClassType rc)
             return lc.Symbol != rc.Symbol && (Derives(lc, rc) || Derives(rc, lc));
         if (left is DotNetType ln && right is DotNetType rn)
-            return DotNetTypes.Derives(ln.Symbol, rn.Symbol) || DotNetTypes.Derives(rn.Symbol, ln.Symbol);
+            return DotNetTypes.IsBase(ln, rn) || DotNetTypes.IsBase(rn, ln);
         if (left is FunctionType && right is FunctionType)
             return IsSubtype(left, right) || IsSubtype(right, left);
         // Element by element (SPEC §3.8).
@@ -192,6 +195,7 @@ public static class TypeChecker
             EnumType enumType => enumType with { TypeArguments = [.. enumType.TypeArguments.Select(a => Substitute(a, map))] },
             FunctionType function => new FunctionType([.. function.Parameters.Select(p => Substitute(p, map))], Substitute(function.Result, map)),
             TupleOfType tuple => new TupleOfType([.. tuple.Elements.Select(e => Substitute(e, map))]),
+            DotNetType { IsGeneric: true } net => new DotNetType(net.Symbol, [.. net.TypeArguments.Select(a => Substitute(a, map))]),
             _ => type,
         };
     }

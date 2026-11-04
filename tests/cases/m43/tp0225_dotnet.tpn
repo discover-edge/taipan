@@ -1,0 +1,37 @@
+# Invalid .NET bases (SPEC §13.16).
+from dotnet.System import Math, DateTime, Exception as NetException, IDisposable, Random
+from dotnet.System.Text import StringBuilder
+from dotnet.System.IO import Stream
+
+class A(StringBuilder):
+    pass
+
+class B(Math):
+    pass
+
+class C(DateTime):
+    pass
+
+class D(NetException):
+    pass
+
+class E(IDisposable):
+    pass
+
+class F(Random, Stream):
+    def __init__(self):
+        super().__init__()
+
+class G(Random):
+    def __init__(self):
+        super().__init__()
+
+    def ToString(self) -> str:
+        return "g"
+
+class H(G):
+    pass
+
+class Box[T](IDisposable):
+    def Dispose(self) -> None:
+        pass

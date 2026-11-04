@@ -1,0 +1,11 @@
+# Flags enums (SPEC §13.19).
+from dotnet.System.IO import FileAttributes
+from dotnet.System.Text.RegularExpressions import Regex, RegexOptions
+
+let attrs = FileAttributes.ReadOnly | FileAttributes.Hidden
+print(attrs)
+print(FileAttributes.Hidden in attrs, FileAttributes.System in attrs, FileAttributes.System not in attrs)
+print(attrs & FileAttributes.Hidden, attrs ^ FileAttributes.ReadOnly)
+print(attrs == (FileAttributes.Hidden | FileAttributes.ReadOnly))
+let pattern = Regex("ab", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)
+print(pattern.IsMatch("xAB"))

@@ -1,0 +1,6 @@
+# Namespace imports need a name (SPEC §13.1).
+import dotnet.System.IO
+import dotnet.No.Such as missing
+import dotnet.System.Text as text
+
+print(text)

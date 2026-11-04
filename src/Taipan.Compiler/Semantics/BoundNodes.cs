@@ -104,7 +104,18 @@ public sealed record BoundClassAttributeAssign(ClassAttributeSymbol Attribute, B
 
 /// <summary><c>x.P = v</c> on a .NET property or field (SPEC §13.4), <see cref="Target"/> null for a static one.</summary>
 public sealed record BoundDotNetAssign(BoundExpr? Target, Microsoft.CodeAnalysis.ISymbol Member, BoundExpr Value, bool IsCompound, TextSpan Span)
-    : BoundStmt(Span);
+    : BoundStmt(Span)
+{
+    /// <summary>The generic type it's a member of (SPEC §13.13), or the type a static member is reached through.</summary>
+    public DotNetType? Owner { get; init; }
+}
+
+/// <summary><c>x.E += f</c> or <c>x.E -= f</c> on a .NET event (SPEC §13.18, M43), <see cref="Target"/> null for a static one.</summary>
+public sealed record BoundDotNetEvent(BoundExpr? Target, Microsoft.CodeAnalysis.IEventSymbol Event, BoundExpr Handler, bool Subscribe, TextSpan Span)
+    : BoundStmt(Span)
+{
+    public DotNetType? Owner { get; init; }
+}
 
 /// <summary><c>target[index] = value</c>; compound forms share instances as for <see cref="BoundFieldAssign"/>.</summary>
 public sealed record BoundIndexAssign(BoundExpr Target, BoundExpr Index, BoundExpr Value, bool IsCompound, TextSpan Span)
@@ -208,19 +219,37 @@ public sealed record BoundArm(BoundPattern Pattern, BoundBlock Body, bool IsReac
 public sealed record BoundDotNetCall(BoundExpr? Target, Microsoft.CodeAnalysis.IMethodSymbol Method,
     ImmutableArray<BoundDotNetArgument> Arguments, TaipanType Type, TextSpan Span) : BoundExpr(Type, Span)
 {
-    /// <summary>A generic method's inferred type arguments (SPEC §13.8); null otherwise.</summary>
+    /// <summary>
+    /// The type arguments of a generic method (SPEC §13.8) and of a generic type it's a member of
+    /// (§13.13, M43); null if there are none.
+    /// </summary>
     public TypeArguments? TypeArguments { get; init; }
+
+    /// <summary>The type a static call is made through, with its type arguments; an extension method's class (SPEC §13.15).</summary>
+    public DotNetType? Owner { get; init; }
 }
 
 /// <summary>A .NET constructor call; <see cref="Constructor"/> is null for a struct's default value (SPEC §13.4).</summary>
 public sealed record BoundDotNetNew(DotNetType Created, Microsoft.CodeAnalysis.IMethodSymbol? Constructor,
     ImmutableArray<BoundDotNetArgument> Arguments, TextSpan Span) : BoundExpr(Created, Span);
 
-public sealed record BoundDotNetArgument(Microsoft.CodeAnalysis.IParameterSymbol Parameter, BoundExpr Value);
+/// <summary>An argument for a .NET parameter; <see cref="Expanded"/> for one of a <c>params</c> parameter's expanded arguments (SPEC §13.14).</summary>
+/// <summary>The running async function's cancellation token, passed where a call leaves one out (SPEC §13.20, M43).</summary>
+/// <summary><c>super().__init__(…)</c> in a class with a .NET base (SPEC §13.16, M43): the .NET constructor that makes the object.</summary>
+public sealed record BoundDotNetSuperInit(DotNetType Base, Microsoft.CodeAnalysis.IMethodSymbol Constructor, ImmutableArray<BoundDotNetArgument> Arguments, TextSpan Span)
+    : BoundExpr(TaipanType.Nothing, Span);
+
+public sealed record BoundCancellationToken(TaipanType Type, TextSpan Span) : BoundExpr(Type, Span);
+
+public sealed record BoundDotNetArgument(Microsoft.CodeAnalysis.IParameterSymbol Parameter, BoundExpr Value, bool Expanded = false);
 
 /// <summary><c>x[i]</c> through a .NET indexer (SPEC §13.10, M33).</summary>
 public sealed record BoundDotNetIndex(BoundExpr Target, Microsoft.CodeAnalysis.IPropertySymbol Indexer,
-    ImmutableArray<BoundDotNetArgument> Arguments, TaipanType Type, TextSpan Span) : BoundExpr(Type, Span);
+    ImmutableArray<BoundDotNetArgument> Arguments, TaipanType Type, TextSpan Span) : BoundExpr(Type, Span)
+{
+    /// <summary>The generic type's type arguments (SPEC §13.13), if it's generic.</summary>
+    public TypeArguments? TypeArguments { get; init; }
+}
 
 /// <summary><c>x[i] = v</c> through a .NET indexer's setter (SPEC §13.10, M33).</summary>
 public sealed record BoundDotNetIndexAssign(BoundDotNetIndex Index, BoundExpr Value, bool IsCompound, TextSpan Span) : BoundStmt(Span);
@@ -229,8 +258,15 @@ public sealed record BoundDotNetIndexAssign(BoundDotNetIndex Index, BoundExpr Va
 public sealed record BoundDotNetOperator(string Op, Microsoft.CodeAnalysis.IMethodSymbol Method,
     ImmutableArray<BoundDotNetArgument> Arguments, TaipanType Type, TextSpan Span) : BoundExpr(Type, Span);
 
+/// <summary><c>a | b</c>, <c>&amp;</c>, <c>^</c>, <c>in</c> or <c>not in</c> on a flags enum's values (SPEC §13.19, M43).</summary>
+public sealed record BoundDotNetFlags(string Op, BoundExpr Left, BoundExpr Right, TaipanType Type, TextSpan Span) : BoundExpr(Type, Span);
+
 /// <summary>Reading a .NET property or field, or an enum member (SPEC §13.4); <see cref="Target"/> is null for a static one.</summary>
-public sealed record BoundDotNetMember(BoundExpr? Target, Microsoft.CodeAnalysis.ISymbol Member, TaipanType Type, TextSpan Span) : BoundExpr(Type, Span);
+public sealed record BoundDotNetMember(BoundExpr? Target, Microsoft.CodeAnalysis.ISymbol Member, TaipanType Type, TextSpan Span) : BoundExpr(Type, Span)
+{
+    /// <summary>The generic type it's a member of, with its type arguments (SPEC §13.13), or the type a static member is reached through.</summary>
+    public DotNetType? Owner { get; init; }
+}
 
 /// <summary>A <c>match</c> expression (SPEC §5.1.1); arms marked unreachable are checked but not emitted.</summary>
 public sealed record BoundMatchExpr(BoundExpr Scrutinee, ImmutableArray<BoundValueArm> Arms, TaipanType Type, TextSpan Span) : BoundExpr(Type, Span);
@@ -286,6 +322,12 @@ public sealed record BoundVariantPattern(VariantSymbol Variant, TaipanType Enum,
 
 /// <summary>A class pattern (SPEC §5.1): the class, and a sub-pattern for each field it names, in source order.</summary>
 public sealed record BoundClassPattern(ClassType Class, ImmutableArray<(FieldSymbol Field, BoundPattern Pattern)> Fields) : BoundPattern;
+
+/// <summary>
+/// A class pattern naming a .NET type (SPEC §13.17, M43): it matches the type's values, and each
+/// sub-pattern a property's or field's value, converted as a result.
+/// </summary>
+public sealed record BoundDotNetPattern(DotNetType Type, ImmutableArray<(Microsoft.CodeAnalysis.ISymbol Member, TaipanType MemberType, BoundPattern Pattern)> Members) : BoundPattern;
 
 /// <summary>
 /// A tuple pattern (M29): one sub-pattern per element. A <c>*</c> (M38) stands for wildcards from
@@ -579,6 +621,12 @@ public sealed record BoundIsInstance(BoundExpr Operand, ClassType Class, TextSpa
 {
     public ImmutableArray<ClassType> Tested { get; init; } = [Class];
 }
+
+/// <summary>
+/// <c>isinstance(x, T)</c> on an <c>object</c> or a .NET value, or with a .NET type (SPEC §13.17,
+/// M43): whether <c>x as T</c> would succeed.
+/// </summary>
+public sealed record BoundTypeTest(BoundExpr Operand, TaipanType Target, TextSpan Span) : BoundExpr(TaipanType.Bool, Span);
 
 /// <summary>A name read where a condition has narrowed it (SPEC §3.9): <see cref="Value"/> is the variable.</summary>
 /// <summary>A name or field path read where it's narrowed (SPEC §3.9): <see cref="Value"/> is the read, a variable or field access.</summary>

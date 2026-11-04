@@ -21,18 +21,30 @@ public abstract class Owner
     /// <summary>Whether code awaiting it resumes as soon as it's done, as for a coroutine awaited in Python, rather than on the loop's next turn.</summary>
     internal virtual bool ResumesInline => true;
 
+    // The token .NET calls in its code are given (SPEC §13.20, M43), made when one is first passed.
+    private CancellationTokenSource? _tokenSource;
+
+    internal CancellationToken Token => (_tokenSource ??= new CancellationTokenSource()).Token;
+
     internal virtual bool Cancel()
     {
         if (IsDone)
             return false;
         if (Waiter is { } waiter)
         {
-            if (!waiter.Scheduled && Async.OwnerOf(waiter.Task) is { IsDone: false } inner && inner.Cancel())
-                return true;
-            waiter.Cancel();
-            return true;
+            if (waiter.Scheduled || Async.OwnerOf(waiter.Task) is not { IsDone: false } inner || !inner.Cancel())
+                waiter.Cancel();
         }
-        CancelPending = true;
+        else
+        {
+            CancelPending = true;
+        }
+        // The .NET work it started stops too; what it starts after catching the cancellation gets a new token.
+        if (_tokenSource is { } source)
+        {
+            _tokenSource = null;
+            source.Cancel();
+        }
         return true;
     }
 }
@@ -67,6 +79,9 @@ public static class Async
     internal static Owner? OwnerOf(Task task) => s_owners.TryGetValue(task, out var owner) ? owner : null;
 
     internal static void Own(Task task, Owner owner) => s_owners.AddOrUpdate(task, owner);
+
+    /// <summary>The running async function's cancellation token, which a .NET call it makes is given (SPEC §13.20, M43).</summary>
+    public static CancellationToken Token => t_current?.Token ?? CancellationToken.None;
 
     /// <summary>Calls an async function's body, which runs until its first <c>await</c> of something not yet done (SPEC §3.14).</summary>
     public static Task<T> Start<T>(Func<Task<T>> body)

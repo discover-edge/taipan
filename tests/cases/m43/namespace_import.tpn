@@ -1,0 +1,16 @@
+# Namespace imports (SPEC §13.1).
+import dotnet.System.IO as io
+import dotnet.System.Text as text
+import dotnet.System.Collections.Generic as gen
+
+let sb: text.StringBuilder = text.StringBuilder()
+sb.Append("ab")
+print(sb.ToString(), io.Path.GetExtension("a.txt"))
+
+def ext(info: io.FileInfo) -> str:
+    return info.Extension
+
+print(ext(io.FileInfo("x.tpn")))
+let numbers = gen.HashSet[int]([1, 1, 2])
+let same: gen.HashSet[int] = numbers
+print(same.Count)

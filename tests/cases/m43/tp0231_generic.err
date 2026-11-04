@@ -1,0 +1,3 @@
+tests/cases/m43/tp0231_generic.tpn:5:10: error TP0231: 'List[int]' is list[int] in Taipan; write 'list[int]'
+tests/cases/m43/tp0231_generic.tpn:6:8: error TP0231: 'Dictionary[str, int]' is dict[str, int] in Taipan; write 'dict[str, int]'
+tests/cases/m43/tp0231_generic.tpn:8:7: error TP0231: 'IEnumerator' has the property 'Current', which a Taipan class can't implement yet

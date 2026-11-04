@@ -1,0 +1,26 @@
+# Misused events, .NET exceptions, flags and type tests (SPEC §13.6, §13.17–§13.19).
+from dotnet.System import InvalidOperationException, DayOfWeek, Int32
+from dotnet.System.Text import StringBuilder
+from dotnet.System.IO import MemoryStream
+from dotnet.System.Collections.ObjectModel import ObservableCollection
+
+let items = ObservableCollection[str]()
+print(items.CollectionChanged)
+items.CollectionChanged = None
+
+def chained() -> None:
+    try:
+        pass
+    except ValueError as e:
+        raise InvalidOperationException("a") from e
+
+def caused(e: InvalidOperationException) -> None:
+    raise ValueError("b") from e
+
+def not_an_exception() -> None:
+    raise StringBuilder()
+
+let days = DayOfWeek.Monday | DayOfWeek.Friday
+let sb = StringBuilder()
+print(isinstance(sb, MemoryStream))
+let n = Int32.TryParse("1", 5)

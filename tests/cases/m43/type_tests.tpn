@@ -1,0 +1,45 @@
+# isinstance, `as` and class patterns on .NET types and `object` (SPEC §13.17).
+from dotnet.System import Convert, TypeCode
+from dotnet.System.Text import StringBuilder
+from dotnet.System.IO import Stream, MemoryStream, FileStream
+
+class Dog:
+    name: str
+
+    def __init__(self, name: str):
+        self.name = name
+
+def describe(o: object) -> str:
+    if isinstance(o, int):
+        return f"int {o + 1}"
+    if isinstance(o, StringBuilder):
+        return f"builder {o.Length}"
+    if isinstance(o, str):
+        return f"str {o.upper()}"
+    return "other"
+
+print(describe(Convert.ChangeType("41", TypeCode.Int32)))
+print(describe(StringBuilder("abc")))
+print(describe("hi"), describe(2.5))
+
+let s: Stream = MemoryStream()
+print(isinstance(s, MemoryStream), isinstance(s, FileStream))
+let m = s as MemoryStream
+print(m.Capacity, (s as FileStream?) is None)
+try:
+    print(s as FileStream)
+except TypeError as e:
+    print(e)
+
+def kind(o: object) -> str:
+    match o:
+        StringBuilder(Length=0):
+            return "empty builder"
+        StringBuilder(Length=n):
+            return f"builder of {n}"
+        Dog(name=name):
+            return f"dog {name}"
+        _:
+            return "something"
+
+print(kind(StringBuilder()), kind(StringBuilder("xy")), kind(Dog("rex")), kind(1))

@@ -40,6 +40,8 @@ public sealed partial class Binder
         BoundAsPattern named => Narrows(named.Pattern, type),
         BoundSomePattern some when type is OptionalOf optional => Narrows(some.Inner, optional.Inner) ?? optional.Inner,
         BoundClassPattern classPattern when type is ClassType classType && classPattern.Class.Symbol.DerivesFrom(classType.Symbol) => classPattern.Class,
+        // A .NET type narrows a .NET value or a class with .NET bases; an object isn't narrowed, since its reads would convert (SPEC §13.17).
+        BoundDotNetPattern dotnet when type is DotNetType or ClassType => dotnet.Type,
         BoundOrPattern choice => choice.Alternatives.Select(a => Narrows(a, type)).ToList() is var each && each.All(t => t is not null)
             ? each.Skip(1).Aggregate(each[0], (a, b) => a == b ? a : Join(a!, b!) ?? (TypeChecker.Unwrap(type) is var inner && a == inner && b == inner ? inner : null))
             : null,
@@ -123,6 +125,7 @@ public sealed partial class Binder
             BoundOrPattern choice => new BoundOrPattern([.. choice.Alternatives.Select(Sub)]),
             BoundVariantPattern variant => variant with { Fields = [.. variant.Fields.Select(Sub)] },
             BoundClassPattern classPattern => classPattern with { Fields = [.. classPattern.Fields.Select(f => (f.Field, Sub(f.Pattern)))] },
+            BoundDotNetPattern dotnet => dotnet with { Members = [.. dotnet.Members.Select(m => (m.Member, m.MemberType, Sub(m.Pattern)))] },
             BoundTuplePattern tuple => tuple with { Elements = [.. tuple.Elements.Select(Sub)], Rest = Symbol(tuple.Rest) },
             BoundListPattern list => list with { Before = [.. list.Before.Select(Sub)], After = [.. list.After.Select(Sub)], Rest = Symbol(list.Rest) },
             BoundMappingPattern mapping => mapping with { Entries = [.. mapping.Entries.Select(e => (e.Key, Sub(e.Value)))], Rest = Symbol(mapping.Rest) },

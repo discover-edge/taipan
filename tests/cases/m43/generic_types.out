@@ -1,0 +1,13 @@
+True True False
+2 True False
+a
+b
+["a", "b"] ["a", "b"]
+3 6 [6, 2, 4]
+True
+1 1
+(True, 2)
+(False, 0)
+[1, 2]
+-1
+x 1

@@ -1,0 +1,22 @@
+# .NET `object` results, and Decimal (SPEC §13.3).
+from dotnet.System import Convert, TypeCode, Decimal, Math
+from dotnet.System.Collections import ArrayList
+
+let o = Convert.ChangeType("5", TypeCode.Int32)
+print(o)
+print(o as int + 1)
+print(o as str?)
+
+let items = ArrayList()
+items.Add("x")
+items.Add(3)
+print(items[0] as str, items[1] as int, items.Count)
+print(items[0] as int?)
+items[1] = None
+print(items[1] is None)
+
+let price = Decimal(1999) / 100
+print(price)
+print(price * 3, price + Decimal(1), price - 1)
+print(price > Decimal(10), price == Decimal(1999) / 100)
+print(Math.Round(price), Decimal.ToDouble(price))

@@ -389,6 +389,9 @@ public sealed partial class Binder
                 case ImportStmt import when import.Module.Text == ModuleLoader.DotNetModule:
                     _diagnostics.ReportDotNetNotModule(import.Module.Span);
                     break;
+                case ImportStmt import when ModuleLoader.IsDotNet(import.Module.Text):
+                    ImportDotNetNamespace(import);
+                    break;
                 case FromImportStmt from when ModuleLoader.IsDotNet(from.Module.Text):
                     ImportDotNet(from);
                     break;
@@ -930,11 +933,19 @@ public sealed partial class Binder
         }
         var protocols = ImmutableArray.CreateBuilder<ClassType>();
         var bases = new List<TypeSyntax>();
+        var dotnetBases = new List<(DotNetType Type, TextSpan Span)>();
         foreach (var syntax in classDef.Bases)
         {
             if (IsAbcMarker(syntax))
             {
                 symbol.IsAbc = true;
+                continue;
+            }
+            // .NET classes and interfaces (SPEC §13.16, M43).
+            if (IsDotNetBase(syntax))
+            {
+                if (BindDotNetBase(syntax, symbol, classDef.Name.Span) is { } dotnetBase)
+                    dotnetBases.Add((dotnetBase, syntax.Span));
                 continue;
             }
             if (DeclaredProtocol(syntax, symbol) is not { } protocol)
@@ -953,7 +964,15 @@ public sealed partial class Binder
             module.DeclaredProtocols.Add((symbol, protocol, syntax.Span));
         }
         symbol.Protocols = protocols.ToImmutable();
-        if (bases.Count == 0)
+        // A .NET class counts as the one base class, and comes first among the .NET bases.
+        var dotnetClasses = dotnetBases.Where(b => b.Type.Symbol.TypeKind == Microsoft.CodeAnalysis.TypeKind.Class).ToList();
+        if (dotnetClasses.Count > 0 && (bases.Count > 0 || dotnetClasses.Count > 1))
+        {
+            _diagnostics.ReportMultipleBases(bases.Count > 0 && bases[0].Span.Start > dotnetClasses[0].Span.Start ? bases[0].Span : dotnetClasses[^1].Span);
+            dotnetBases.RemoveAll(b => dotnetClasses.Skip(1).Contains(b));
+        }
+        symbol.DotNetBases = [.. dotnetBases.OrderBy(b => b.Type.Symbol.TypeKind == Microsoft.CodeAnalysis.TypeKind.Class ? 0 : 1).Select(b => b.Type)];
+        if (bases.Count == 0 || dotnetClasses.Count > 0)
             return;
         if (bases.Count > 1)
             _diagnostics.ReportMultipleBases(bases[1].Span);
@@ -1399,8 +1418,9 @@ public sealed partial class Binder
             var overridden = baseClass?.FindMethod(method.Name);
             if (overridden is null)
             {
-                if (method.IsMarkedOverride)
-                    _diagnostics.ReportNothingToOverride(syntax.Name.Span, method.Name, baseClass?.Name);
+                // A .NET base class's virtual methods are checked with its other members (SPEC §13.16).
+                if (method.IsMarkedOverride && !(symbol.DotNetBaseClass is { } dotnetBase && VirtualMethods(dotnetBase, method.Name).Count > 0))
+                    _diagnostics.ReportNothingToOverride(syntax.Name.Span, method.Name, baseClass?.Name ?? symbol.DotNetBaseClass?.ToString());
                 continue;
             }
             if (overridden.IsFinal)
@@ -1414,6 +1434,7 @@ public sealed partial class Binder
             method.Overrides = overridden;
         }
         CheckSpecialInheritance(classDef, symbol, methods);
+        CheckDotNetBases(classDef, symbol, methods);
 
         if (symbol.IsDataclass)
         {
@@ -1805,7 +1826,11 @@ public sealed partial class Binder
                 return ExpandAlias(alias, named.Name, [], named.Span);
             case NamedType named when _global.Lookup(named.Name.Text) is DotNetTypeSymbol dotnet:
                 Index(named.Name.Span, dotnet);
-                return DotNetTypeOf(dotnet.Type, named.Span);
+                return BindDotNetType(dotnet.Types, named.Name.Text, ImmutableArray<TaipanType>.Empty, named.Span);
+            // A generic .NET type with its type arguments (SPEC §13.13, M43).
+            case GenericType generic when _global.Lookup(generic.Name.Text) is DotNetTypeSymbol dotnet:
+                Index(generic.Name.Span, dotnet);
+                return BindDotNetType(dotnet.Types, generic.Name.Text, generic.Arguments, generic.Span);
             case GenericType generic when LookupAlias(generic.Name.Text) is { } alias:
                 Index(generic.Name.Span, alias);
                 return ExpandAlias(alias, generic.Name, generic.Arguments, generic.Span);
@@ -1918,6 +1943,14 @@ public sealed partial class Binder
             if (NestedType(outer.Type, name.Text) is { } nested)
                 return DotNetTypeOf(nested, qualified.Span);
             _diagnostics.ReportUndefinedType(name.Span, name.Text);
+            return TaipanType.Error;
+        }
+        // A type in an imported .NET namespace: io.FileInfo, gen.HashSet[int] (SPEC §13.1, M43).
+        if (_scope.Lookup(qualified.Module.Text) is DotNetNamespaceSymbol ns)
+        {
+            if (ns.TypesNamed(name.Text) is { IsEmpty: false } types)
+                return BindDotNetType(types, name.Text, arguments, qualified.Span);
+            _diagnostics.ReportNoDotNetType(name.Span, ns.Namespace.ToDisplayString(), name.Text);
             return TaipanType.Error;
         }
         if (_scope.Lookup(qualified.Module.Text) is not ModuleSymbol module)
@@ -2228,8 +2261,8 @@ public sealed partial class Binder
 
     private BoundStmt BindFieldAssign(AssignStmt assign, MemberExpr member, BoundExpr? preset)
     {
-        if (DotNetTypeNamed(member.Target) is { } owner)
-            return BindDotNetAssign(assign, null, owner, member, preset);
+        if (DotNetTypeNamed(member.Target) is { } namedNet)
+            return namedNet is DotNetType owner ? BindDotNetAssign(assign, null, owner, member, preset) : OrphanAssign(assign, preset);
         // A class attribute through its class (SPEC §4.8).
         if (ClassNamed(member.Target) is { } named)
             return BindMemberAssign(assign, member, null, named, named.Name, preset) ?? NotAnAttribute(assign, member, named, preset);
@@ -2239,7 +2272,7 @@ public sealed partial class Binder
         if (target.Type.ContainsError || ReportIfOptional(target, member.Target.Span))
             return OrphanAssign(assign, preset);
         if (target.Type is DotNetType net)
-            return BindDotNetAssign(assign, target, net.Symbol, member, preset);
+            return BindDotNetAssign(assign, target, net, member, preset);
         if (target.Type == TaipanType.Py)
         {
             var current = new BoundPyGetAttr(target, member.Member.Text, member.Span);
@@ -2428,6 +2461,15 @@ public sealed partial class Binder
         var cause = raise.Cause is null ? null : BindCause(raise.Cause);
         if (value.Type.ContainsError)
             return new BoundRaise(value, raise.Span) { Cause = cause };
+        // A .NET exception is thrown as it is, and has no cause (SPEC §13.6, M43).
+        if (value.Type is DotNetType net)
+        {
+            if (!IsDotNetException(net.Symbol))
+                _diagnostics.ReportNotExceptionClass(syntax.Span, net.ToString());
+            else if (raise.Cause is { } causeSyntax && cause is { Type.ContainsError: false } and not { Type: DotNetType })
+                _diagnostics.ReportDotNetCause(causeSyntax.Span, isCause: false);
+            return new BoundRaise(value, raise.Span) { Cause = cause };
+        }
         if (TypeChecker.Unwrap(value.Type) is ClassType { Symbol: var symbol } && BuiltinClasses.IsException(symbol))
             CheckAssignable(value, BuiltinClasses.BaseException.Type, syntax.Span, TypeChecker.Unwrap(value.Type).ToString());
         else
@@ -2444,6 +2486,11 @@ public sealed partial class Binder
             return new BoundErrorExpr(syntax.Span);
         }
         var cause = BindValue(syntax);
+        if (cause.Type is DotNetType net && IsDotNetException(net.Symbol))
+        {
+            _diagnostics.ReportDotNetCause(syntax.Span, isCause: true);
+            return new BoundErrorExpr(syntax.Span);
+        }
         var isException = cause.Type is NoneType
             || TypeChecker.Unwrap(cause.Type) is ClassType { Symbol: var symbol } && BuiltinClasses.IsException(symbol);
         if (!cause.Type.ContainsError && !isException)
@@ -2601,8 +2648,8 @@ public sealed partial class Binder
         }
         if (DotNetTypeNamed(type) is { } dotnetClass)
         {
-            if (IsDotNetException(dotnetClass))
-                return new DotNetType(dotnetClass);
+            if (dotnetClass is DotNetType { IsGeneric: false } net && IsDotNetException(net.Symbol))
+                return net;
             _diagnostics.ReportNotExceptionClass(type.Span, display);
             return null;
         }
@@ -2842,6 +2889,8 @@ public sealed partial class Binder
             IterableOfType iterated => iterated.Element,
             // A file gives its lines (SPEC §6.1).
             OpaqueType { Name: "TextIO" } => TaipanType.Str,
+            // A .NET IEnumerable<T> (SPEC §13.13, M43).
+            DotNetType net when DotNetTypes.EnumerableElement(net) is { } enumerable => enumerable.Element,
             { ContainsError: true } => TaipanType.Error,
             OptionalOf when ReportIfOptional(iterable, syntax.Span) => TaipanType.Error,
             _ => CannotIterate(syntax.Span, iterable.Type),
@@ -2948,6 +2997,14 @@ public sealed partial class Binder
     {
         var value = BindValue(cast.Value);
         var target = BindType(cast.Type);
+        // Between .NET types, and Taipan classes with .NET bases (SPEC §13.17, M43).
+        if (TypeChecker.Unwrap(value.Type) is DotNetType or ClassType && TypeChecker.Unwrap(target) is DotNetType or ClassType
+            && (TypeChecker.Unwrap(value.Type) is DotNetType || TypeChecker.Unwrap(target) is DotNetType))
+        {
+            return CheckDotNetRelated(TypeChecker.Unwrap(value.Type), TypeChecker.Unwrap(target), cast.Type.Span)
+                ? new BoundClassCast(value, target, cast.Span)
+                : new BoundErrorExpr(cast.Span);
+        }
         if (TypeChecker.Unwrap(value.Type) is ClassType from && TypeChecker.Unwrap(target) is ClassType to)
         {
             return CheckRelated(to, from, cast.Type.Span) is null
@@ -3362,6 +3419,9 @@ public sealed partial class Binder
             case ModuleSymbol:
                 _diagnostics.ReportModuleAsValue(span, name);
                 return new BoundErrorExpr(span);
+            case DotNetNamespaceSymbol:
+                _diagnostics.ReportNamespaceAsValue(span, name);
+                return new BoundErrorExpr(span);
             case VariantSymbol variant:
                 return BindVariantValue(variant, span, expected);
             case AmbiguousVariantSymbol ambiguous:
@@ -3427,6 +3487,9 @@ public sealed partial class Binder
         }
         if (op is BinaryOp.In or BinaryOp.NotIn && right.Type is ClassType && TypeChecker.ElementOf(right.Type) is { } element)
             right = Convert(right, new IterableOfType(element));
+        // A flags enum's |, &, ^ and in (SPEC §13.19, M43).
+        if (left.Type is DotNetType && BindFlags(left, op, right, span) is { } flags)
+            return flags;
         // An operator on a .NET value calls its type's operator (SPEC §13.10).
         if ((left.Type is DotNetType || right.Type is DotNetType) && BindDotNetOperator(left, op, right, span) is { } dotnet)
             return dotnet;
@@ -3544,6 +3607,7 @@ public sealed partial class Binder
     {
         BoundIsInstance isInstance when whenTrue => Narrow(isInstance.Operand, InstanceType(isInstance)),
         BoundPyIsInstance { Narrows: { } type } test when whenTrue => Narrow(test.Operand, type),
+        BoundTypeTest test when whenTrue => Narrow(test.Operand, test.Target),
         BoundIsNone isNone when isNone.Negated == whenTrue => Narrow(isNone.Operand, TypeChecker.Unwrap(isNone.Operand.Type)),
         BoundIsSome isSome when whenTrue => Narrow(isSome.Operand, TypeChecker.Unwrap(isSome.Operand.Type)),
         BoundBinary { Op: BinaryOp.Equal or BinaryOp.NotEqual } equality => EqualityFacts(equality, (equality.Op == BinaryOp.Equal) == whenTrue),
@@ -3835,9 +3899,11 @@ public sealed partial class Binder
         }
         if (TryModuleMember(member, out var definition))
             return BindSymbolValue(definition, member.Member.Text, member.Span, expected, member);
-        if (DotNetTypeNamed(member.Target) is { } owner)
+        if (DotNetTypeNamed(member.Target) is { } namedNet)
         {
-            RecordReceiver(member.Member.Span, owner);
+            if (namedNet is not DotNetType owner)
+                return new BoundErrorExpr(member.Span);
+            RecordReceiver(member.Member.Span, owner.Symbol);
             return BindDotNetMember(null, owner, member);
         }
         // A class attribute, or a static or class method as a value, through a class or cls (SPEC §4.8, §4.9).
@@ -3860,7 +3926,7 @@ public sealed partial class Binder
         if (target.Type == TaipanType.Py)
             return new BoundPyGetAttr(target, name, member.Span);
         if (target.Type is DotNetType net)
-            return BindDotNetMember(target, net.Symbol, member);
+            return BindDotNetMember(target, net, member);
         if (IoAttribute(target.Type, name) is { } ioAttribute)
             return new BoundRuntimeProperty(target, name, ioAttribute, member.Span);
         // An object has only its value, read with 'as' (SPEC §3.20).
@@ -3882,6 +3948,9 @@ public sealed partial class Binder
                 return BindClassMethodValue(member, classSymbol, target, viaCls: false, classLevel, null);
             if (BindInstanceMember(target, classSymbol, member) is { } instanceMember)
                 return instanceMember is BoundClassAttribute attribute ? NarrowedAttribute(attribute) : instanceMember;
+            // The .NET base class's members (SPEC §13.16, M43).
+            if (classSymbol.FindMethod(name) is null && DotNetBaseOf(classSymbol) is { } dotnetBase && HasMember(dotnetBase.Symbol, name, isStatic: false))
+                return BindDotNetMember(target, dotnetBase, member);
             if (name == "__init__")
                 _diagnostics.ReportInitCalled(member.Member.Span);
             else if (classSymbol.FindMethod(name) is not null)
@@ -3892,6 +3961,11 @@ public sealed partial class Binder
         else if (BuiltinMethodOf(target.Type, name) is not null)
         {
             _diagnostics.ReportMethodAsValue(member.Member.Span, name);
+        }
+        // A list's List<T> members (SPEC §13.4, M43).
+        else if (target.Type is ListOfType list && ListAsDotNet(list) is var listType && HasMember(listType.Symbol, name, isStatic: false))
+        {
+            return BindDotNetMember(target, listType, member);
         }
         else
         {
@@ -3928,7 +4002,7 @@ public sealed partial class Binder
             case PrimitiveType { Name: "str" }:
                 return new BoundIndex(target, BindExpected(indexExpr.Index, TaipanType.Int), TaipanType.Str, indexExpr.Span);
             case DotNetType net:
-                return BindDotNetIndex(target, net.Symbol, indexExpr);
+                return BindDotNetIndex(target, net, indexExpr);
             // A class with __getitem__ (SPEC §4.9, M39).
             case ClassType when SpecialMethods.Method(target.Type, "__getitem__") is var (_, key, _):
                 return SpecialCall(target, "__getitem__", [BindExpected(indexExpr.Index, key!)], indexExpr.Span);
@@ -3950,6 +4024,9 @@ public sealed partial class Binder
     {
         if (call.Callee is MemberExpr member)
             return BindMethodCall(call, member, expected);
+        // A generic .NET type's construction, or a .NET method with explicit type arguments (SPEC §13.8, §13.13, M43).
+        if (call.Callee is IndexExpr indexed && BindExplicitlyTyped(call, indexed) is { } explicitlyTyped)
+            return explicitlyTyped;
 
         if (call.Callee is not NameExpr calleeName)
         {
@@ -4012,7 +4089,7 @@ public sealed partial class Binder
                 _diagnostics.ReportAliasAsValue(nameSpan, name, alias.TargetName);
                 return new BoundErrorExpr(call.Span);
             case DotNetTypeSymbol dotnet:
-                return BindDotNetConstruct(call, dotnet.Type, nameSpan);
+                return BindDotNetConstruct(call, new DotNetType(dotnet.Type), nameSpan);
             case FunctionSymbol { Builtin: BuiltinFunction.List or BuiltinFunction.Iter or BuiltinFunction.Next or BuiltinFunction.Anext } function:
                 ReportKeywordArguments(call, function.Name);
                 return BindIteratorBuiltin(call, function, expected);
@@ -4218,6 +4295,7 @@ public sealed partial class Binder
             DictOfType d => IsKnown(d.Key) && IsKnown(d.Value),
             ClassType s => s.TypeArguments.All(IsKnown),
             EnumType e => e.TypeArguments.All(IsKnown),
+            DotNetType n => n.TypeArguments.All(IsKnown),
             FunctionType f => f.Parameters.All(IsKnown) && IsKnown(f.Result),
             TupleOfType t => t.Elements.All(IsKnown),
             AwaitableOfType a => IsKnown(a.Result),
@@ -4252,6 +4330,9 @@ public sealed partial class Binder
                     break;
                 case ClassType s:
                     s.TypeArguments.ToList().ForEach(GiveUp);
+                    break;
+                case DotNetType n:
+                    n.TypeArguments.ToList().ForEach(GiveUp);
                     break;
                 case EnumType e:
                     e.TypeArguments.ToList().ForEach(GiveUp);
@@ -4313,6 +4394,11 @@ public sealed partial class Binder
                     break;
                 case (ClassType p, ClassType a) when p.Symbol == a.Symbol:
                     foreach (var (pa, aa) in p.TypeArguments.Zip(a.TypeArguments))
+                        Unify(pa, aa, fromArgument);
+                    break;
+                // A generic .NET type, or a base or interface of the argument's (SPEC §13.13).
+                case (DotNetType p, DotNetType a) when p.IsGeneric && DotNetTypes.AsBase(a, p.Symbol) is { } seen:
+                    foreach (var (pa, aa) in p.TypeArguments.Zip(seen.TypeArguments))
                         Unify(pa, aa, fromArgument);
                     break;
                 // A generic protocol from what the argument has (SPEC §3.18): each member's types, matched exactly.
@@ -4501,6 +4587,9 @@ public sealed partial class Binder
         var operand = Upcast(BindValue(call.Arguments[0].Value));
         if (operand.Type == TaipanType.Py)
             return BindPyIsInstance(operand, call);
+        // An object, a .NET value, or a .NET type to test for (SPEC §13.17, M43).
+        if (TypeChecker.Unwrap(operand.Type) is ObjectType or DotNetType || DotNetTypeNamed(call.Arguments[1].Value) is not null)
+            return BindTypeTest(operand, call);
         var operandClass = TypeChecker.Unwrap(operand.Type) as ClassType;
         if (operandClass is null && !operand.Type.ContainsError)
         {
@@ -4633,6 +4722,17 @@ public sealed partial class Binder
         {
             BindArguments(call);
             _diagnostics.ReportSuperOutsideMethod(superSpan);
+            return new BoundErrorExpr(call.Span);
+        }
+        // A .NET base class's constructor (SPEC §13.16, M43).
+        if (owner.Base is null && owner.DotNetBaseClass is { } dotnetBase)
+        {
+            if (name == "__init__" && _outerFunction != owner.Init)
+                _diagnostics.ReportSuperInitOutsideInit(superSpan);
+            if (name == "__init__")
+                return BindDotNetSuperInit(call, dotnetBase, member.Member.Span);
+            BindArguments(call);
+            _diagnostics.ReportNoMethod(member.Member.Span, dotnetBase, name);
             return new BoundErrorExpr(call.Span);
         }
         if (owner.Base is not { } baseClass)
@@ -4823,8 +4923,21 @@ public sealed partial class Binder
             && _scope.Lookup("super") is FunctionSymbol { Builtin: BuiltinFunction.Super })
             return BindSuperCall(call, member, superCall);
 
-        if (DotNetTypeNamed(member.Target) is { } owner)
-            return BindDotNetCall(call, null, owner, member.Member);
+        // A type in an imported .NET namespace, constructed: io.FileInfo(path) (SPEC §13.1, M43).
+        if (member.Target is NameExpr namespaceName && _scope.Lookup(namespaceName.Name) is DotNetNamespaceSymbol && DotNetTypeNamed(member) is { } inNamespace)
+        {
+            if (inNamespace is DotNetType created)
+                return BindDotNetConstruct(call, created, member.Member.Span);
+            BindArguments(call);
+            return new BoundErrorExpr(call.Span);
+        }
+        if (DotNetTypeNamed(member.Target) is { } namedNet)
+        {
+            if (namedNet is DotNetType owner)
+                return BindDotNetCall(call, null, owner, member.Member);
+            BindArguments(call);
+            return new BoundErrorExpr(call.Span);
+        }
         // Static and class methods through a class or cls (SPEC §4.8), or a generic class's instantiation (SPEC §4.9).
         if (GenericClassReceiver(member.Target) is { } instantiation)
             return BindClassMethodCall(call, member, instantiation.Symbol, viaCls: false, instantiation);
@@ -4847,7 +4960,7 @@ public sealed partial class Binder
         }
 
         if (target.Type is DotNetType net)
-            return BindDotNetCall(call, target, net.Symbol, member.Member);
+            return BindDotNetCall(call, target, net, member.Member);
 
         // Special methods are reached through operators and built-ins (SPEC §3.11, §4.8).
         if (SpecialMethods.IsSupported(name) && target.Type is ClassType or TypeParameterType)
@@ -4910,6 +5023,11 @@ public sealed partial class Binder
                     call, method, name, member.Member.Span, [], t => TypeChecker.Substitute(t, map), returnType, null);
                 return new BoundMethodCall(target, method, arguments, returnType, call.Span) { Shape = valid ? shape : null };
             }
+            // The .NET base class's methods, then extension methods (SPEC §13.15, §13.16, M43).
+            if (classSymbol.FindField(name) is null && DotNetBaseOf(classSymbol) is { } dotnetBase && HasMember(dotnetBase.Symbol, name, isStatic: false))
+                return BindDotNetCall(call, target, dotnetBase, member.Member);
+            if (classSymbol.FindField(name) is null && BindExtensionCall(call, target, member.Member, null) is { } classExtension)
+                return classExtension;
             BindArguments(call);
             if (classSymbol.FindField(name) is not null)
                 _diagnostics.ReportFieldNotMethod(member.Member.Span, name);
@@ -4930,6 +5048,11 @@ public sealed partial class Binder
             return added;
         if (BuiltinMethodOf(target.Type, name) is not { } builtin)
         {
+            // A list's List<T> methods, then extension methods (SPEC §13.4, §13.15, M43).
+            if (target.Type is ListOfType list && ListAsDotNet(list) is var listType && HasMember(listType.Symbol, name, isStatic: false))
+                return BindDotNetCall(call, target, listType, member.Member);
+            if (RuntimeMethodOf(target.Type, name) is null && BindExtensionCall(call, target, member.Member, null) is { } extension)
+                return extension;
             BindArguments(call);
             _diagnostics.ReportNoMethod(member.Member.Span, target.Type, name);
             return new BoundErrorExpr(call.Span);

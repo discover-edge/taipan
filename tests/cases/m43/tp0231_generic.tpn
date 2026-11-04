@@ -1,0 +1,13 @@
+# Generic types Taipan maps itself, and interfaces a class can't implement yet (SPEC §13.13, §13.16).
+from dotnet.System.Collections.Generic import List, Dictionary
+from dotnet.System.Collections import IEnumerator
+
+let xs = List[int]()
+let d: Dictionary[str, int] = {}
+
+class Counter(IEnumerator):
+    def MoveNext(self) -> bool:
+        return False
+
+    def Reset(self) -> None:
+        pass

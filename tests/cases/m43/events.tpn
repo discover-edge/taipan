@@ -1,0 +1,20 @@
+# Subscribing to .NET events (SPEC §13.18).
+from dotnet.System.Collections.ObjectModel import ObservableCollection
+from dotnet.System.Collections.Specialized import NotifyCollectionChangedEventArgs
+
+let items = ObservableCollection[str]()
+
+def on_change(sender: object, e: NotifyCollectionChangedEventArgs) -> None:
+    print("changed:", e.Action, e.NewStartingIndex)
+
+items.CollectionChanged += on_change
+items.Add("a")
+items.Add("b")
+items.CollectionChanged -= on_change
+items.Add("c")
+let count: Callable[[object, NotifyCollectionChangedEventArgs], None] = lambda sender, e: print("count", items.Count)
+items.CollectionChanged += count
+items.RemoveAt(0)
+items.CollectionChanged -= count
+items.Clear()
+print(items.Count)

@@ -1,0 +1,39 @@
+# The C# M43's .NET interop emits (SPEC §8).
+from dotnet.System import Int32, IComparable, Random
+from dotnet.System.Collections.Generic import HashSet
+from dotnet.System.IO import Path
+from dotnet.System.Linq import Enumerable
+from dotnet.System.Threading.Tasks import Task
+
+class Score(IComparable[Score]):
+    value: int
+
+    def __init__(self, value: int):
+        self.value = value
+
+    def CompareTo(self, other: Score?) -> int:
+        if other is None:
+            return 1
+        return self.value - other.value
+
+class Fixed(Random):
+    def __init__(self, seed: int):
+        super().__init__(seed)
+
+    @override
+    def Next(self) -> int:
+        return 7
+
+async def pause() -> None:
+    await Task.Delay(1)
+
+let seen = HashSet[str]()
+seen.Add("a")
+let ok, n = Int32.TryParse("12")
+let words = [3, 1, 2].Where(lambda x: x > 1).Select(str)
+let path = Path.Combine("a", "b", "c", "d", "e")
+let scores = [Score(2), Score(1)]
+scores.Sort()
+let r: Random = Fixed(1)
+await pause()
+print(seen.Count, ok, n, words, path, scores[0].value, r.Next())

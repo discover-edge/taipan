@@ -152,6 +152,8 @@ public sealed partial class CSharpEmitter
                 ? $"{Runtime}.Iterators.FromNext({value}, static ({TypeName(type)} {self}) => {self}.@__next__())"
                 : $"{Runtime}.Iterators.FromIter<{TypeName(type)}, {element}>({value}, static {self} => {self}.@__iter__())";
         }
+        if (type is DotNetType net)
+            return DotNetElements(value, net);
         return $"{Runtime}.Iter.Over({value})";
     }
 

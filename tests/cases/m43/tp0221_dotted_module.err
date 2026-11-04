@@ -1,0 +1,1 @@
+tests/cases/m43/tp0221_dotted_module.tpn:2:8: error TP0221: module 'geometry.shapes' not found

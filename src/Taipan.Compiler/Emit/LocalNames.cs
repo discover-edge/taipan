@@ -116,6 +116,7 @@ public sealed class LocalNames
         BoundBindingPattern p => [p.Symbol],
         BoundVariantPattern p => p.Fields.SelectMany(PatternBindings),
         BoundClassPattern p => p.Fields.SelectMany(f => PatternBindings(f.Pattern)),
+        BoundDotNetPattern p => p.Members.SelectMany(m => PatternBindings(m.Pattern)),
         BoundTuplePattern p => [.. p.Elements.SelectMany(PatternBindings), .. ((VariableSymbol?[])[p.Rest]).OfType<VariableSymbol>()],
         BoundSomePattern p => PatternBindings(p.Inner),
         // Each alternative binds the same symbols (SPEC §5.1, M38).

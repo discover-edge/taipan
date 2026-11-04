@@ -237,7 +237,7 @@ public sealed partial class Binder
         var type = scrutinee.Type;
         // Since M38: a float, a dict, or an optional of any of these (SPEC §5.1).
         var inner = TypeChecker.Unwrap(type);
-        if (!type.ContainsError && inner is not (EnumType or ClassType or TupleOfType or ListOfType or DictOfType)
+        if (!type.ContainsError && inner is not (EnumType or ClassType or TupleOfType or ListOfType or DictOfType or ObjectType or DotNetType)
             && inner != TaipanType.Int && inner != TaipanType.Str && inner != TaipanType.Bool && inner != TaipanType.Float)
         {
             _diagnostics.ReportCannotMatch(syntax.Span, type);
@@ -357,6 +357,9 @@ public sealed partial class Binder
                 return LiteralPattern(pattern, TaipanType.Bool, type, boolPattern.Value, bindings);
             case VariantPattern { Module: null, Enum: null, Bindings: null } bare when IsBinding(bare.Variant.Text, type):
                 return BindName(bare.Variant, type, bindings);
+            // A .NET type, or a class on an object (SPEC §13.17, M43).
+            case VariantPattern typePattern when type is ObjectType or DotNetType || type is ClassType && NamesDotNetType(typePattern):
+                return BindDotNetPattern(typePattern, type, bindings);
             case VariantPattern classPattern when type is ClassType classType:
                 return BindClassPattern(classPattern, classType, bindings);
             case VariantPattern variantPattern:

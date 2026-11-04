@@ -74,6 +74,10 @@ public sealed class DotNetLibrary
     /// <summary>Every assembly's path, to compile and load the program against.</summary>
     public ImmutableArray<string> References { get; }
 
+    /// <summary>A type by its metadata name, such as <c>System.Collections.Generic.List`1</c>.</summary>
+    public INamedTypeSymbol Named(string metadataName) =>
+        _compilation.GetTypeByMetadataName(metadataName) ?? throw new InvalidOperationException($"no type {metadataName}");
+
     /// <summary>A .NET type built in to C#, such as <c>long</c>, to check constraints against (SPEC §13.8).</summary>
     public INamedTypeSymbol Special(SpecialType type) => _compilation.GetSpecialType(type);
 
@@ -108,25 +112,66 @@ public sealed class DotNetLibrary
     }
 }
 
-/// <summary>A public, non-generic .NET class, struct, interface or enum, as an opaque type (SPEC §13.3).</summary>
-public sealed record DotNetType(INamedTypeSymbol Symbol) : TaipanType
+/// <summary>
+/// A public .NET class, struct, interface or enum, as an opaque type (SPEC §13.3). A generic one
+/// (M43, §13.13) is its definition with Taipan type arguments, which stand for their .NET forms:
+/// <c>HashSet[int]</c> is <c>HashSet&lt;long&gt;</c>. The arguments are those of the types containing
+/// it first, then its own, as Roslyn's type parameters are ordered.
+/// </summary>
+public sealed record DotNetType : TaipanType
 {
     private static readonly SymbolDisplayFormat Format = new(
         typeQualificationStyle: SymbolDisplayTypeQualificationStyle.NameAndContainingTypes);
 
-    public bool IsObject => Symbol.SpecialType == SpecialType.System_Object;
+    private static readonly SymbolDisplayFormat NameOnly = new(genericsOptions: SymbolDisplayGenericsOptions.None);
 
-    public bool Equals(DotNetType? other) => other is not null && SymbolEqualityComparer.Default.Equals(other.Symbol, Symbol);
+    public DotNetType(INamedTypeSymbol symbol, ImmutableArray<TaipanType> typeArguments = default)
+    {
+        Symbol = symbol.OriginalDefinition;
+        TypeArguments = typeArguments.IsDefault ? [] : typeArguments;
+    }
+
+    /// <summary>The type's definition.</summary>
+    public INamedTypeSymbol Symbol { get; }
+
+    public ImmutableArray<TaipanType> TypeArguments { get; }
+
+    public bool IsGeneric => !TypeArguments.IsEmpty;
+
+    /// <summary>Its type parameters, and those of the types containing it, as Taipan types.</summary>
+    public TypeArguments? Map => IsGeneric
+        ? new TypeArguments(DotNetTypes.AllTypeParameters(Symbol).Zip(TypeArguments, KeyValuePair.Create))
+        : null;
+
+    public bool Equals(DotNetType? other) =>
+        other is not null && SymbolEqualityComparer.Default.Equals(other.Symbol, Symbol) && other.TypeArguments.SequenceEqual(TypeArguments);
 
     public override int GetHashCode() => SymbolEqualityComparer.Default.GetHashCode(Symbol);
 
-    protected override string Describe() => IsObject ? "object" : Symbol.ToDisplayString(Format);
+    protected override string Describe()
+    {
+        if (!IsGeneric)
+            return Symbol.ToDisplayString(Format);
+        // HashSet[str], or List[int].Enumerator for a type nested in a generic one.
+        var used = 0;
+        string Part(INamedTypeSymbol type)
+        {
+            var outer = type.ContainingType is { } containing ? Part(containing) + "." : "";
+            var arguments = TypeArguments.Skip(used).Take(type.TypeParameters.Length).ToList();
+            used += type.TypeParameters.Length;
+            return outer + type.ToDisplayString(NameOnly) + (arguments.Count == 0 ? "" : $"[{string.Join(", ", arguments)}]");
+        }
+        return Part(Symbol);
+    }
 }
 
 /// <summary>A generic method's type parameters, as Taipan types (SPEC §13.8).</summary>
 public sealed class TypeArguments(IEnumerable<KeyValuePair<ITypeParameterSymbol, TaipanType>> pairs)
     : Dictionary<ITypeParameterSymbol, TaipanType>(pairs, SymbolEqualityComparer.Default)
 {
+    /// <summary>Both maps' type parameters, such as a generic type's and its generic method's; null if neither has any.</summary>
+    public static TypeArguments? Merge(TypeArguments? a, TypeArguments? b) =>
+        a is null ? b : b is null ? a : new TypeArguments(a.Concat(b));
 }
 
 /// <summary>How well an argument fits a .NET parameter, best last (SPEC §13.5).</summary>
@@ -150,11 +195,22 @@ public static class DotNetTypes
         var mapped = MapInner(type, result, ref unsupported, typeArguments);
         if (mapped is null)
             return null;
-        // A reference type is optional when it's annotated so, or as a result without annotations.
-        var optional = type.IsReferenceType && mapped is not DotNetType { IsObject: true }
+        // A reference type is optional when it's annotated so, or as a result without annotations; an object may hold None already.
+        var optional = type.IsReferenceType && mapped is not ObjectType
             && (type.NullableAnnotation == NullableAnnotation.Annotated || (result && type.NullableAnnotation == NullableAnnotation.None));
-        return optional ? new OptionalOf(mapped) : mapped;
+        // An unconstrained T? is optional when T stands for a reference type, as C# reads it (SPEC §13.16).
+        if (type is ITypeParameterSymbol && type.NullableAnnotation == NullableAnnotation.Annotated && IsReferenceForm(mapped))
+            optional = true;
+        return optional && mapped is not OptionalOf ? new OptionalOf(mapped) : mapped;
     }
+
+    /// <summary>Whether a Taipan type's .NET form (SPEC §8) is a reference type.</summary>
+    public static bool IsReferenceForm(TaipanType type) => type switch
+    {
+        PrimitiveType { Name: "int" or "float" or "bool" } or TupleOfType or OptionalOf or NothingType or ErrorType or TypeParameterType => false,
+        DotNetType net => !net.Symbol.IsValueType,
+        _ => true,
+    };
 
     private static TaipanType? MapInner(ITypeSymbol type, bool result, ref ITypeSymbol? unsupported, TypeArguments? typeArguments)
     {
@@ -178,9 +234,9 @@ public static class DotNetTypes
                 return TaipanType.Str;
             case SpecialType.System_Void:
                 return TaipanType.Nothing;
-            case SpecialType.System_Object when !result:
-                return new DotNetType((INamedTypeSymbol)type);
-            case SpecialType.System_Object or SpecialType.System_Decimal or SpecialType.System_IntPtr or SpecialType.System_UIntPtr:
+            case SpecialType.System_Object:
+                return TaipanType.Object;
+            case SpecialType.System_IntPtr or SpecialType.System_UIntPtr:
                 unsupported = type;
                 return null;
         }
@@ -204,7 +260,7 @@ public static class DotNetTypes
                 return new AwaitableOfType(TaipanType.Nothing);
             var awaited = Map(named.TypeArguments[0], result, out var inner, typeArguments);
             unsupported ??= inner;
-            return awaited is null or NothingType or DotNetType { IsObject: true } ? Unsupported(named.TypeArguments[0], ref unsupported) : new AwaitableOfType(awaited);
+            return awaited is null or NothingType ? Unsupported(named.TypeArguments[0], ref unsupported) : new AwaitableOfType(awaited);
         }
         if (named.IsGenericType)
         {
@@ -215,14 +271,142 @@ public static class DotNetTypes
                 var key = Map(named.TypeArguments[0], result, out var keyFault, typeArguments);
                 var value = Map(named.TypeArguments[1], result, out var valueFault, typeArguments);
                 unsupported ??= keyFault ?? valueFault;
-                return key is null or NothingType or DotNetType { IsObject: true } || !DictOfType.IsValidKey(key) && key is not TypeParameterType ? Unsupported(named.TypeArguments[0], ref unsupported)
-                    : value is null or NothingType or DotNetType { IsObject: true } ? Unsupported(named.TypeArguments[1], ref unsupported)
+                return key is null or NothingType or ObjectType || !DictOfType.IsValidKey(key) && key is not TypeParameterType ? Unsupported(named.TypeArguments[0], ref unsupported)
+                    : value is null or NothingType ? Unsupported(named.TypeArguments[1], ref unsupported)
                     : new DictOfType(key, value);
             }
-            return Unsupported(type, ref unsupported);
+            // Any other generic type is opaque, when its type arguments are Taipan types' .NET forms (SPEC §13.13).
+            var arguments = ImmutableArray.CreateBuilder<TaipanType>();
+            foreach (var argument in AllTypeArguments(named))
+            {
+                if (Exact(argument, typeArguments) is not { } exact)
+                    return Unsupported(type, ref unsupported);
+                arguments.Add(exact);
+            }
+            return new DotNetType(named, arguments.ToImmutable());
         }
+        if (named.ContainingType is { } outer && AllTypeArguments(outer).Any())
+            return Unsupported(type, ref unsupported);
         return new DotNetType(named);
     }
+
+    /// <summary>The type parameters of a type and the types containing it, outermost first, as Roslyn orders them.</summary>
+    public static IEnumerable<ITypeParameterSymbol> AllTypeParameters(INamedTypeSymbol type) =>
+        (type.ContainingType is { } outer ? AllTypeParameters(outer) : []).Concat(type.OriginalDefinition.TypeParameters);
+
+    /// <summary>The type arguments of a constructed type and the types containing it, outermost first.</summary>
+    public static IEnumerable<ITypeSymbol> AllTypeArguments(INamedTypeSymbol type) =>
+        (type.ContainingType is { } outer ? AllTypeArguments(outer) : []).Concat(type.TypeArguments);
+
+    /// <summary>
+    /// The Taipan type whose .NET form (SPEC §8) is exactly <paramref name="type"/>, as a generic
+    /// .NET type's type argument must be (§13.13), or null: <c>long</c> is <c>int</c>, but
+    /// <c>int</c> is no Taipan type's form.
+    /// </summary>
+    public static TaipanType? Exact(ITypeSymbol type, TypeArguments? typeArguments)
+    {
+        var optional = type.IsReferenceType && type.NullableAnnotation == NullableAnnotation.Annotated;
+        var exact = ExactInner(type.WithNullableAnnotation(NullableAnnotation.NotAnnotated), typeArguments);
+        return exact is null ? null : optional && exact is not ObjectType and not OptionalOf ? new OptionalOf(exact) : exact;
+    }
+
+    private static TaipanType? ExactInner(ITypeSymbol type, TypeArguments? typeArguments)
+    {
+        if (type is ITypeParameterSymbol parameter)
+            return typeArguments?.GetValueOrDefault(parameter);
+        switch (type.SpecialType)
+        {
+            case SpecialType.System_Int64:
+                return TaipanType.Int;
+            case SpecialType.System_Double:
+                return TaipanType.Float;
+            case SpecialType.System_Boolean:
+                return TaipanType.Bool;
+            case SpecialType.System_String:
+                return TaipanType.Str;
+            case SpecialType.System_Object:
+                return TaipanType.Object;
+        }
+        if (type is not INamedTypeSymbol named || named.DeclaredAccessibility != Accessibility.Public || named.IsRefLikeType || IsUnsupportedStruct(named)
+            || named.TypeKind is not (TypeKind.Class or TypeKind.Struct or TypeKind.Interface or TypeKind.Enum) || IsNarrowInteger(named)
+            || named.SpecialType is SpecialType.System_Single or SpecialType.System_Char or SpecialType.System_Void or SpecialType.System_IntPtr or SpecialType.System_UIntPtr)
+            return null;
+        if (named.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T)
+            return Exact(named.TypeArguments[0], typeArguments) is { } inner and not OptionalOf ? new OptionalOf(inner) : null;
+        if (named.Arity == 1 && named.Name == "List" && named.ContainingNamespace?.ToDisplayString() == "System.Collections.Generic")
+            return Exact(named.TypeArguments[0], typeArguments) is { } element ? new ListOfType(element) : null;
+        if (IsTask(named) && named.Name == "Task")
+            return named.TypeArguments.IsEmpty ? new AwaitableOfType(TaipanType.Nothing)
+                : Exact(named.TypeArguments[0], typeArguments) is { } awaited ? new AwaitableOfType(awaited) : null;
+        if (IsListLike(named) || IsDictionary(named) || named.TypeKind == TypeKind.Delegate || IsTask(named))
+            return null;
+        var arguments = ImmutableArray.CreateBuilder<TaipanType>();
+        foreach (var argument in AllTypeArguments(named))
+        {
+            if (Exact(argument, typeArguments) is not { } exact)
+                return null;
+            arguments.Add(exact);
+        }
+        return new DotNetType(named, arguments.ToImmutable());
+    }
+
+    /// <summary>
+    /// The constructed base class or interface of <paramref name="type"/> whose definition is
+    /// <paramref name="target"/>, with the type arguments in its Roslyn form, substituted by <paramref name="type"/>'s;
+    /// null if it doesn't derive from it.
+    /// </summary>
+    public static INamedTypeSymbol? BaseNamed(INamedTypeSymbol type, INamedTypeSymbol target)
+    {
+        var definition = target.OriginalDefinition;
+        for (var current = type.OriginalDefinition; current is not null; current = current.BaseType)
+        {
+            if (SymbolEqualityComparer.Default.Equals(current.OriginalDefinition, definition))
+                return current;
+        }
+        return type.OriginalDefinition.AllInterfaces.FirstOrDefault(i => SymbolEqualityComparer.Default.Equals(i.OriginalDefinition, definition));
+    }
+
+    /// <summary>
+    /// <paramref name="type"/> seen as its base class or interface <paramref name="target"/>, with its
+    /// type arguments: <c>ISet[str]</c> for <c>HashSet[str]</c>. Null if it doesn't derive from it, or a type argument isn't exact.
+    /// </summary>
+    public static DotNetType? AsBase(DotNetType type, INamedTypeSymbol target)
+    {
+        if (BaseNamed(type.Symbol, target) is not { } found)
+            return null;
+        var map = type.Map;
+        var arguments = ImmutableArray.CreateBuilder<TaipanType>();
+        foreach (var argument in AllTypeArguments(found))
+        {
+            if (Exact(argument, map) is not { } exact)
+                return null;
+            arguments.Add(exact);
+        }
+        return new DotNetType(found, arguments.ToImmutable());
+    }
+
+    /// <summary>Whether a .NET type is, derives from or implements another, with the same type arguments.</summary>
+    public static bool IsBase(DotNetType type, DotNetType target) =>
+        target.Symbol.SpecialType == SpecialType.System_Object || AsBase(type, target.Symbol) == target;
+
+    /// <summary>
+    /// The element type of a .NET value that implements <c>IEnumerable&lt;T&gt;</c>, mapped as a
+    /// result (SPEC §13.13), and its .NET form, or null.
+    /// </summary>
+    public static (TaipanType Element, ITypeSymbol NetElement)? EnumerableElement(DotNetType type)
+    {
+        var enumerable = type.Symbol.TypeKind == TypeKind.Interface && IsEnumerableOfT(type.Symbol)
+            ? type.Symbol
+            : type.Symbol.AllInterfaces.FirstOrDefault(IsEnumerableOfT);
+        if (enumerable is null)
+            return null;
+        var element = enumerable.TypeArguments[0];
+        return Map(element, result: true, out _, type.Map) is { } mapped and not NothingType ? (mapped, element) : null;
+    }
+
+    private static bool IsEnumerableOfT(INamedTypeSymbol type) =>
+        type.OriginalDefinition.SpecialType == SpecialType.System_Collections_Generic_IEnumerable_T;
+
 
     /// <summary>
     /// A delegate type as a function type (SPEC §13.9). A Taipan function given to .NET receives its
@@ -255,7 +439,7 @@ public static class DotNetTypes
     {
         var mapped = Map(element, result, out var inner, typeArguments);
         unsupported ??= inner;
-        return mapped is null or NothingType or DotNetType { IsObject: true } ? Unsupported(element, ref unsupported) : new ListOfType(mapped);
+        return mapped is null or NothingType ? Unsupported(element, ref unsupported) : new ListOfType(mapped);
     }
 
     // Int128 and friends have no Taipan form, though they're ordinary structs.
@@ -341,11 +525,21 @@ public static class DotNetTypes
     {
         switch (mapped)
         {
-            case DotNetType { IsObject: true }:
-                return argument is PrimitiveType { Name: not "py" } or DotNetType ? DotNetFit.Object : DotNetFit.None;
+            case ObjectType:
+                return argument is ObjectType ? DotNetFit.Exact
+                    : argument is PrimitiveType { Name: not "py" } or DotNetType ? DotNetFit.Object : DotNetFit.None;
             case DotNetType target when argument is DotNetType value:
-                return SymbolEqualityComparer.Default.Equals(value.Symbol, target.Symbol) ? DotNetFit.Exact
-                    : Derives(value.Symbol, target.Symbol) ? DotNetFit.Conversion : DotNetFit.None;
+                return value == target ? DotNetFit.Exact
+                    : IsBase(value, target) ? DotNetFit.Conversion : DotNetFit.None;
+            // A Taipan class with .NET bases is one of them (SPEC §13.16).
+            case DotNetType target when argument is ClassType classType:
+                return ClassIsBase(classType, target) ? DotNetFit.Conversion : DotNetFit.None;
+            case DotNetType when ConvertsImplicitly(argument, parameter):
+                return DotNetFit.Conversion;
+            // A .NET collection is passed as is to an interface it implements (SPEC §13.13).
+            case ListOfType when argument is DotNetType collection:
+                return parameter is INamedTypeSymbol { TypeKind: TypeKind.Interface } wanted && Implements(collection, wanted, typeArguments)
+                    ? DotNetFit.Conversion : DotNetFit.None;
             case ListOfType when argument is ListOfType list:
                 var element = parameter is IArrayTypeSymbol array ? array.ElementType : ((INamedTypeSymbol)parameter).TypeArguments[0];
                 // A list is passed as is only if its elements are already the parameter's.
@@ -379,6 +573,48 @@ public static class DotNetTypes
         if (argument == TaipanType.Str)
             return parameter.SpecialType switch { SpecialType.System_String => DotNetFit.Exact, SpecialType.System_Char => DotNetFit.Conversion, _ => DotNetFit.None };
         return argument == mapped ? DotNetFit.Exact : DotNetFit.None;
+    }
+
+    /// <summary>
+    /// Whether a .NET value implements a constructed interface, whose type arguments may use a
+    /// generic method's type parameters, with exactly the same type arguments.
+    /// </summary>
+    public static bool Implements(DotNetType value, INamedTypeSymbol wanted, TypeArguments? typeArguments)
+    {
+        if (BaseNamed(value.Symbol, wanted) is not { } found)
+            return false;
+        var map = value.Map;
+        return AllTypeArguments(found).Zip(AllTypeArguments(wanted)).All(pair =>
+            Exact(pair.First, map) is { } have && Exact(pair.Second, typeArguments) is { } need && have == need);
+    }
+
+    /// <summary>A Taipan class's .NET bases, its own and its base classes', that are or derive from <paramref name="target"/> (SPEC §13.16).</summary>
+    public static bool ClassIsBase(ClassType type, DotNetType target)
+    {
+        for (var current = type.Symbol; current is not null; current = current.BaseClass)
+        {
+            if (current.DotNetBases.Any(b => IsBase(b, target)))
+                return true;
+        }
+        return target.Symbol.SpecialType == SpecialType.System_Object;
+    }
+
+    /// <summary>Whether a .NET type defines an implicit conversion from an argument's .NET form: <c>int</c> to <c>Decimal</c> (SPEC §13.3).</summary>
+    public static bool ConvertsImplicitly(TaipanType argument, ITypeSymbol target)
+    {
+        var from = argument switch
+        {
+            PrimitiveType { Name: "int" } => SpecialType.System_Int64,
+            PrimitiveType { Name: "float" } => SpecialType.System_Double,
+            PrimitiveType { Name: "bool" } => SpecialType.System_Boolean,
+            PrimitiveType { Name: "str" } => SpecialType.System_String,
+            _ => SpecialType.None,
+        };
+        return target is INamedTypeSymbol named && named.GetMembers("op_Implicit").OfType<IMethodSymbol>().Any(m =>
+            m.MethodKind == MethodKind.Conversion && m.DeclaredAccessibility == Accessibility.Public && m.Parameters.Length == 1
+            && SymbolEqualityComparer.Default.Equals(m.ReturnType, target)
+            && (from != SpecialType.None ? m.Parameters[0].Type.SpecialType == from
+                : argument is DotNetType net && SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, net.Symbol)));
     }
 
     /// <summary>Whether a .NET type derives from, or implements, another.</summary>

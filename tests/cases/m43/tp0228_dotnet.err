@@ -1,0 +1,3 @@
+tests/cases/m43/tp0228_dotnet.tpn:5:9: error TP0228: 'CompareTo' must be 'def CompareTo(self, other: Version?) -> int', as in 'IComparable[Version].CompareTo'
+tests/cases/m43/tp0228_dotnet.tpn:13:9: error TP0228: 'Next' must be 'def Next(self, maxValue: int) -> int', as in 'Random.Next'
+tests/cases/m43/tp0228_dotnet.tpn:16:9: error TP0227: 'NextDouble' overrides 'Random.NextDouble'; mark it '@override'
