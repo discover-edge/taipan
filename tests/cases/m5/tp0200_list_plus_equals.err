@@ -1,0 +1,9 @@
+tests/cases/m5/tp0200_list_plus_equals.tpn:6:1: error TP0200: operator '+' cannot be applied to list[int] and list[str]
+tests/cases/m5/tp0200_list_plus_equals.tpn:7:1: error TP0200: operator '+' cannot be applied to list[int] and tuple[int, int]
+tests/cases/m5/tp0200_list_plus_equals.tpn:8:1: error TP0200: operator '+' cannot be applied to list[int] and int
+tests/cases/m5/tp0200_list_plus_equals.tpn:10:1: error TP0202: cannot assign to 'n': it is a let binding
+  help: declare it with 'var'
+tests/cases/m5/tp0200_list_plus_equals.tpn:12:1: error TP0202: cannot assign to 't': it is a let binding
+  help: declare it with 'var'
+tests/cases/m5/tp0200_list_plus_equals.tpn:14:3: error TP0202: cannot assign to 'xs': 'Frozen' is frozen
+tests/cases/m5/tp0200_list_plus_equals.tpn:16:5: error TP0202: cannot assign to 'k': it is a parameter

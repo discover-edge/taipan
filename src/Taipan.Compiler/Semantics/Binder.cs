@@ -2306,6 +2306,11 @@ public sealed partial class Binder
                 return new BoundExprStmt(new BoundInPlaceCheck(current, call, OpText(assign.Op), assign.Span), assign.Span);
         }
 
+        // A list's += changes the list and rebinds nothing, so any binding of a list may use it (SPEC §4.5).
+        if (variable.Kind is VariableKind.Let or VariableKind.Parameter or VariableKind.LoopVariable
+            && assign.Op == AssignOp.Add && preset is null && variable.Type is ListOfType)
+            return new BoundExprStmt(BindCompound(assign, new BoundVariable(variable, target.Span), variable.Type), assign.Span);
+
         if (variable.Kind != VariableKind.Var)
         {
             var (what, help) = variable.Kind switch
@@ -2435,11 +2440,19 @@ public sealed partial class Binder
         if (assign.Op == AssignOp.Assign)
             return BindExpected(assign.Value, targetType);
 
+        return BindCompound(assign, current, targetType);
+    }
+
+    private BoundExpr BindCompound(AssignStmt assign, BoundExpr current, TaipanType targetType)
+    {
         var operand = BindValue(assign.Value);
         // A class's in-place method runs first, as in Python (SPEC §4.9, M39).
         BoundExpr value = BindInPlace(current, assign.Op, operand, assign.Span)
             ?? BindBinaryOperation(current, TypeChecker.ToBinaryOp(assign.Op), operand, assign.Span);
         CheckAssignable(value, targetType, assign.Value.Span);
+        // A list's += adds to the list itself, as in Python (SPEC §4.5).
+        if (assign.Op == AssignOp.Add && value is BoundBinary { Op: BinaryOp.Add, Type: ListOfType } add)
+            return new BoundListExtend(add.Left, add.Right, assign.Span);
         return value;
     }
 

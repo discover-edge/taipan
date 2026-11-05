@@ -564,6 +564,13 @@ public static class Ops
 
     public static List<T> Concat<T>(List<T> left, List<T> right) => [.. left, .. right];
 
+    /// <summary><c>xs += ys</c>: adds to the list itself, and gives it back to be assigned (SPEC §4.5).</summary>
+    public static List<T> Extend<T>(List<T> list, List<T> items)
+    {
+        list.AddRange(items);
+        return list;
+    }
+
     public static T Pop<T>(List<T> list)
     {
         if (list.Count == 0)

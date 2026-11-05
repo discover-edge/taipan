@@ -725,4 +725,7 @@ public sealed record BoundCallableObject(BoundExpr Value, FunctionType Function,
 /// <c>x op= y</c> on a <c>let</c> through an in-place method (SPEC §4.9, M39): the call, checked at run
 /// time to give <c>x</c> itself back, since a <c>let</c> can't be rebound.
 /// </summary>
+/// <summary><c>xs += ys</c> on a list: adds to the list itself and gives it back (SPEC §4.5).</summary>
+public sealed record BoundListExtend(BoundExpr List, BoundExpr Items, TextSpan Span) : BoundExpr(List.Type, Span);
+
 public sealed record BoundInPlaceCheck(BoundExpr Target, BoundMethodCall Call, string Op, TextSpan Span) : BoundExpr(TaipanType.Nothing, Span);
