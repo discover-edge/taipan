@@ -1,0 +1,7 @@
+const rate: float = 2
+const retries = 3
+
+def report() -> float:
+    return rate * retries
+
+print(report())

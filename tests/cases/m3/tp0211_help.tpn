@@ -1,0 +1,29 @@
+let rate: float = 2
+var retries = 3
+var total = 0
+let names = ["a", "b"]
+let greeting = f"hi {rate}"
+let pair = (1, 2)
+var left = 1
+var right = 2
+left, right = right, left
+
+for step in range(2):
+    total += step
+
+if True:
+    let inner = 1
+
+let inner = 2
+
+def report() -> float:
+    return rate * retries
+
+def summary() -> int:
+    return total + len(names) + len(greeting) + pair[0]
+
+def shadowed() -> int:
+    return inner
+
+def swapped() -> int:
+    return left
