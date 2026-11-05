@@ -3,7 +3,7 @@
 The MSBuild project SDK for [Taipan](https://taipan-lang.org) projects. A `.tpnproj` file builds with `dotnet build`, runs with `dotnet run`, tests with `dotnet test` and packs with `dotnet pack`, alongside C# projects in one solution:
 
 ```xml
-<Project Sdk="TaipanLang.Sdk/0.4.1">
+<Project Sdk="TaipanLang.Sdk/0.4.2">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
   </PropertyGroup>

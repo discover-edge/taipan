@@ -2326,7 +2326,7 @@ taipan compile <file> [--library | --test] --out <dll>   compile one assembly, f
 taipan lsp [--stdio]                                 run the language server on stdin and stdout (M24, §16)
 taipan fmt [--check] <path>…                         format files, or check that they're formatted (M44, §19)
 taipan test [<path>…]                                run test functions (M44, §20)
-taipan --version                                     print "taipan <version>", e.g. "taipan 0.4.1"
+taipan --version                                     print "taipan <version>", e.g. "taipan 0.4.2"
 taipan --help                                        print the usage text
 ```
 - `--version` and `--help` print to stdout and exit `0`. Each takes no other arguments.
@@ -2345,7 +2345,7 @@ Taipan is distributed as NuGet packages, all with the same version:
 - `TaipanLang` installs with `dotnet tool install -g TaipanLang`, which puts `taipan` on the path. It runs on the .NET 10 runtime, and compiles programs against that runtime's assemblies. It needs no SDK.
 - The NuGet ID `taipan` belongs to another project, hence `TaipanLang`. Assembly and namespace names don't change: the runtime is still `Taipan.Runtime.dll`, namespace `Taipan.Runtime`.
 - `TaipanLang.Runtime` isn't needed to run programs, since the tool carries the runtime. It's published for Taipan libraries referenced from other .NET code (M22).
-- **Version:** one version for every package and `taipan --version`, set in one place in the build. M20's was `0.2.0`, the first packaged release after v0.1; M34's was `0.3.0`, which added `TaipanLang.Sdk`; M44's was `0.4.0`, which added `taipan fmt`, `taipan test` and test projects; M47's is `0.4.1`, which publishes the VS Code extension at the same version.
+- **Version:** one version for every package and `taipan --version`, set in one place in the build. M20's was `0.2.0`, the first packaged release after v0.1; M34's was `0.3.0`, which added `TaipanLang.Sdk`; M44's was `0.4.0`, which added `taipan fmt`, `taipan test` and test projects; M47's is `0.4.2`, which publishes the VS Code extension at the same version (`0.4.1`'s extension release failed).
 - `dotnet pack -c Release -o <dir>` at the repository root builds every package.
 - An installed tool behaves exactly as a source build, Python interop included: CPython is found as §10.6 says, at run time.
 - **Publishing** to nuget.org is done by `.github/workflows/publish.yml` when a tag `v<version>` is pushed: it checks that the tag names the build's version, packs every package and pushes them with NuGet's trusted publishing, so no API key is stored. A version, once published, can't be published again. Before M46 publishing was done by hand. Since M47 the tag must also match the VS Code extension's version, and the same workflow publishes the extension (§16.8) once the packages are pushed.
@@ -3196,7 +3196,7 @@ Taipan projects build with `dotnet build`, alongside C# projects in one solution
 A Taipan project is a `.tpnproj` file using the `TaipanLang.Sdk` project SDK, at the version of the compiler it builds with:
 
 ```xml
-<Project Sdk="TaipanLang.Sdk/0.4.1">
+<Project Sdk="TaipanLang.Sdk/0.4.2">
   <PropertyGroup>
     <OutputType>Library</OutputType>
   </PropertyGroup>
@@ -3261,7 +3261,7 @@ The SDK's own errors, outside any Taipan file:
 A test project is a `.tpnproj` with `<IsTestProject>true</IsTestProject>`, MSBuild's usual property for one:
 
 ```xml
-<Project Sdk="TaipanLang.Sdk/0.4.1">
+<Project Sdk="TaipanLang.Sdk/0.4.2">
   <PropertyGroup>
     <IsTestProject>true</IsTestProject>
   </PropertyGroup>
@@ -3274,7 +3274,7 @@ A test project is a `.tpnproj` with `<IsTestProject>true</IsTestProject>`, MSBui
 - **Its main file is a test file** (§20), whose `test_*` functions are the project's tests. Its other `.tpn` files are modules it may import, as in any project. `OutputType` is `Exe` whatever the project says, since the built program runs the tests.
 - **`dotnet test`** builds it and runs the program, which runs the tests as `taipan test` would and writes §20's report, failing when the program exits non-zero; **`dotnet run`** runs it the same way. The SDK's `VSTest` target, which `dotnet test` calls, runs the program instead of a test adapter, so the results are the report's, not .NET test results (TRX files and IDE test explorers are deferred).
 - A test file in a project reports itself by its path relative to the project's directory.
-- `TaipanLang.Sdk` and the other packages are version `0.4.1` since M47 (§12.2).
+- `TaipanLang.Sdk` and the other packages are version `0.4.2` since M47 (§12.2).
 
 ### 18.7 Deferred
 §11 lists what's deferred: multi-targeting, test results in .NET's formats, native and Python-extension SDK projects, and symbols packages. Design-time builds for Visual Studio aren't planned.
