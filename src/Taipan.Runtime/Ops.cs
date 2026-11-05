@@ -174,12 +174,8 @@ public static class Ops
     public static void SetIndex<T>(List<T> list, long index, T value) => list[(int)Normalize(index, list.Count)] = value;
 
     /// <summary><c>d[k] = v</c> inserts or updates; an update keeps the key's position.</summary>
-    public static void SetIndex<TKey, TValue>(OrderedDictionary<TKey, TValue> dict, TKey key, TValue value) where TKey : notnull
-    {
-        if (Iter.IsIterating(dict))
-            throw new RuntimeError("dict mutated during iteration");
+    public static void SetIndex<TKey, TValue>(OrderedDictionary<TKey, TValue> dict, TKey key, TValue value) where TKey : notnull =>
         dict[key] = value;
-    }
 
     // ---- Slice assignment and del (SPEC §5.5, M26) ----
 
@@ -345,11 +341,34 @@ public static class Ops
         Order(list, key.Invoke, reverse, less);
 
     /// <summary><c>xs.sort(reverse=…)</c>: sorts in place, as <see cref="Sorted"/>.</summary>
-    public static void Sort<T>(List<T> list, bool reverse = false, Func<T, T, bool>? less = null) => Replace(list, Sorted(list, reverse, less));
+    public static void Sort<T>(List<T> list, bool reverse = false, Func<T, T, bool>? less = null) =>
+        SortInPlace(list, items => Sorted(items, reverse, less));
+
+    // The list is empty while it's sorted, as in Python: what a key or __lt__ adds to it is lost, and
+    // reported once the sort is done (SPEC §6).
+    private static void SortInPlace<T>(List<T> list, Func<List<T>, List<T>> sort)
+    {
+        var items = list.ToList();
+        list.Clear();
+        List<T> sorted;
+        try
+        {
+            sorted = sort(items);
+        }
+        catch
+        {
+            Replace(list, items);
+            throw;
+        }
+        var modified = list.Count != 0;
+        Replace(list, sorted);
+        if (modified)
+            throw new ValueError("list modified during sort");
+    }
 
     /// <summary><c>xs.sort(key=…, reverse=…)</c>.</summary>
     public static void SortBy<T, TKey>(List<T> list, Function<Func<T, TKey>> key, bool reverse = false, Func<TKey, TKey, bool>? less = null) =>
-        Replace(list, SortedBy(list, key, reverse, less));
+        SortInPlace(list, items => SortedBy(items, key, reverse, less));
 
     /// <summary><c>a op b</c> through the right operand's reflected method, after evaluating both (SPEC §3.11, §4.8).</summary>
     public static TResult Reversed<TLeft, TRight, TResult>(TLeft left, TRight right, Func<TRight, TLeft, TResult> method) => method(right, left);

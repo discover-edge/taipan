@@ -1,0 +1,61 @@
+let xs = [1, 2, 3]
+for i, x in enumerate(xs):
+    xs[i] = x * 2
+print(xs)
+
+let later = [1, 2, 3]
+for x in later:
+    print(x)
+    later[2] = 9
+
+let turned = [1, 2, 3]
+for x in turned:
+    print(x)
+    turned.reverse()
+print(turned)
+
+let swapped = [1, 2, 3]
+for x in swapped:
+    if x == 1:
+        swapped.pop()
+        swapped.append(7)
+print(swapped)
+
+let d = {"a": 1, "b": 2}
+for k in d:
+    d[k] = d[k] + 1
+print(d["a"], d["b"])
+for k in d:
+    d[k] = 0
+    for j in d:
+        d[j] = d[j] + 1
+print(d["a"], d["b"])
+
+let stopped = [1]
+for x in stopped:
+    stopped.append(2)
+    break
+print(len(stopped))
+
+let closed = {"a": 1}
+for k in closed:
+    closed["b"] = 2
+    break
+print(len(closed))
+
+def write(ys: list[int], i: int, n: int) -> int:
+    ys[i] = n * 2
+    return n
+
+let keyed = [2, 1]
+print(sorted(keyed, key=lambda n: write(keyed, 0, n)), keyed)
+let mapped = [1, 2]
+print(list(map(lambda n: write(mapped, 1, n), mapped)), mapped)
+let filtered = [1, 2]
+print(list(filter(lambda n: write(filtered, 1, n) > 0, filtered)), filtered)
+let shown = [1, 2]
+print([write(shown, 1, n) for n in shown], shown)
+let tested = [1, 2]
+print(any(write(tested, 1, n) > 5 for n in tested), tested)
+let smallest = [2, 1]
+print(min(smallest, key=lambda n: write(smallest, 1, n)), smallest)

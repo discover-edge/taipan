@@ -1738,7 +1738,9 @@ def area(s: Shape) -> float:
   - since M31, `Iterator[T]` or `Iterable[T]`, giving `x: T`, or an instance of a class with `__iter__` or `__next__` (§3.13)
 - The loop variable is a `let` scoped to the body.
 - `for a, b in e` unpacks each element, which must be a tuple with that many elements, or since M29 a list (§3.8), with nesting and a starred name as for `let`. Each name is a loop variable.
-- Mutating a list or dict while iterating over it panics.
+- **Changing a collection's size during a loop over it** raises `RuntimeError` at the loop's next step (§7): adding to or removing from a list, or adding or removing a key of a dict or a value of a set. So a `break` right after the change ends the loop without an error, as in Python.
+  - Writing to what's already there doesn't change the size, so it's allowed, and later steps see the new values, as in Python: `xs[i] = v`, `d[k] = v` for a key `d` has, and reordering a list with `sort` or `reverse`.
+  - A list's size is compared at each step, so a step that removes one element and adds another isn't noticed, as in Python.
 
 ### 5.3 Operators
 
@@ -1851,10 +1853,10 @@ In `a == b` and `a != b`, `a`'s type is `b`'s expected type (§4.6), so `m == No
   - `set()` and `set(xs)` (§3.15).
 - `zip(xs: Iterable[A], ys: Iterable[B], …) -> Iterator[tuple[A, B, …]]` (M12) groups the values of two or more iterables, stopping at the shortest, as in Python: `zip(names, ages, cities)` is an `Iterator[tuple[str, int, str]]`. For each tuple it takes a value from each iterable in turn, left to right, and stops at the first that has none, so `zip(naturals(0), ["a", "b"])` ends. Before M26 it took exactly two lists, and before M31 it gave a new list. One iterable, which would need a one-element tuple, is `TP0209`.
 - `sorted(xs: Iterable[T], …)` takes any iterable since M31, and still gives a new list.
-- `sorted`, `sort`, `map`, `filter`, `enumerate` and `zip` iterate their lists (§5.2), so a function argument that changes a list panics with `list mutated during iteration`. Since M31 the lazy ones do so when they're iterated.
+- `sorted`, `map`, `filter`, `enumerate` and `zip` iterate their lists (§5.2), so a function argument that adds to or removes from a list panics with `list mutated during iteration`. Since M31 the lazy ones do so when they're iterated.
 
 **Methods**
-- `list[T]`: `append(x: T)`, `pop() -> T` (removes and returns the last element; `IndexError` if empty), `insert(i: int, x: T)` (Python semantics: a negative `i` counts from the end, and out-of-range indices clamp), `contains(x: T) -> bool`, `sort(key=…, reverse=False)` (M11: sorts in place, with the same rules as `sorted`)
+- `list[T]`: `append(x: T)`, `pop() -> T` (removes and returns the last element; `IndexError` if empty), `insert(i: int, x: T)` (Python semantics: a negative `i` counts from the end, and out-of-range indices clamp), `contains(x: T) -> bool`, `sort(key=…, reverse=False)` (M11: sorts in place, with the same rules as `sorted`; as in Python, the list is empty while it's being sorted, so a key or `__lt__` that reads it sees it empty, and if one adds to it, the sort still finishes and then raises `ValueError`, `list modified during sort`)
 - `dict[K, V]`: `get(k: K) -> V?` (M6), and since M35 `get(k: K, default: V) -> V`, `keys() -> list[K]`, `values() -> list[V]`, `items() -> list[tuple[K, V]]` (M12) (new lists, in insertion order), `remove(k: K) -> bool` (`True` if the key was present)
 - `str`: `upper() -> str`, `lower() -> str` (invariant-culture case mapping), `strip() -> str` (removes leading and trailing whitespace), `split(sep: str) -> list[str]` (an empty `sep` panics), `startswith(p: str) -> bool`, `endswith(p: str) -> bool`, `replace(old: str, new: str) -> str` (every occurrence; an empty `old` panics)
 - **Since M35**, with Python's names and behavior:
@@ -1955,7 +1957,7 @@ print("done", file=sys.stderr)
   - index out of range: `index <i> out of range for length <n>` (`IndexError`)
   - missing dict key: `missing key <k>`, with `<k>` as written inside a container (strings quoted) (`KeyError`)
   - `pop()` on an empty list: `pop from empty list` (`IndexError`)
-  - mutation during iteration: `list mutated during iteration` / `dict mutated during iteration`. Any change to the list or dict being iterated counts, including assigning to an existing element. (`RuntimeError`)
+  - mutation during iteration: `list mutated during iteration` / `dict mutated during iteration`. Only a change of size counts, as §5.2 says. (`RuntimeError`)
   - `split("")` / `replace("", …)`: `empty separator` (`ValueError`)
   - a slice step of 0: `slice step cannot be zero` (M12) (`ValueError`)
   - `**e` at a call with a key naming a parameter, or one the call already gives (M30, §4.2): `<f>() got multiple values for argument '<k>'` / `… for keyword argument '<k>'` (`TypeError`)

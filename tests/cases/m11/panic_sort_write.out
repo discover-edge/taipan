@@ -1,0 +1,6 @@
+before
+list modified during sort [1, 2, 3]
+0
+0
+[1, 2]
+IndexError [2, 1]
