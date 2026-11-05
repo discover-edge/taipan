@@ -28,7 +28,7 @@ If `taipan` isn't on your `PATH`, set **Taipan: Path** (`taipan.path`) to it. Wh
 ```
 npm ci
 npx vsce package
-code --install-extension taipan-*.vsix
+code --install-extension taipan-lang-*.vsix
 ```
 
 `npm test` runs the extension's scripted test, and `npm run tokens` prints the grammar's tokens for `test/sample.tpn`, which the repository's tests compare with `test/sample.tokens` (SPEC §16.8).

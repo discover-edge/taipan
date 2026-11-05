@@ -16,7 +16,7 @@ Every editor below starts `taipan lsp --stdio`, so [install Taipan](../install/)
 
 ## VS Code
 
-Install **Taipan** (`discover-edge.taipan`) from the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=discover-edge.taipan), or from the Extensions view: search for "Taipan". VSCodium, Cursor and other editors built on VS Code install it from [Open VSX](https://open-vsx.org/extension/discover-edge/taipan).
+Install **Taipan** (`discover-edge.taipan-lang`) from the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=discover-edge.taipan-lang), or from the Extensions view: search for "Taipan". VSCodium, Cursor and other editors built on VS Code install it from [Open VSX](https://open-vsx.org/extension/discover-edge/taipan-lang).
 
 Besides the language server, the extension gives:
 
