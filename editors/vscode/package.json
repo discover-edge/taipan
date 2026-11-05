@@ -2,7 +2,7 @@
   "name": "taipan",
   "displayName": "Taipan",
   "description": "Taipan language support: highlighting, running files, and the taipan language server's diagnostics, completion, navigation, rename and formatting.",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "publisher": "discover-edge",
   "license": "MIT",
   "icon": "icon.png",
@@ -106,7 +106,7 @@
     "vscode-languageclient": "9.0.1"
   },
   "devDependencies": {
-    "@vscode/vsce": "4.0.0",
+    "@vscode/vsce": "4.1.0",
     "ovsx": "1.3.0",
     "vscode-oniguruma": "2.0.1",
     "vscode-textmate": "9.2.0"
