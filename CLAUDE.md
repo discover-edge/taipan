@@ -6,6 +6,10 @@
 - **ROADMAP.md defines the order.** Work on exactly one milestone at a time, and don't implement features from later milestones, even partially.
 - New diagnostic codes go into the SPEC §9 table before they're used.
 
+## Design principles
+- SPEC.md opens with Taipan's design principles. **Check every language change against them**, and state the result in the proposal and the PR.
+- A difference from Python has to be a match, a compile error, or an entry in the spec's list of exceptions with its reason. Never leave a silent difference unlisted.
+
 ## Stack
 - .NET 10, C# latest, `<Nullable>enable</Nullable>`, `<TreatWarningsAsErrors>true</TreatWarningsAsErrors>` (compiler code only, not generated code).
 - Roslyn (`Microsoft.CodeAnalysis.CSharp`) for compiling emitted C#.
@@ -66,7 +70,7 @@ dotnet run --project src/Taipan.Cli -- run examples/health.tpn
 ```
 
 ## Workflow per milestone
-1. Re-read the relevant SPEC sections and the milestone's acceptance criteria.
+1. Re-read the design principles, the relevant SPEC sections and the milestone's acceptance criteria.
 2. Write the golden cases first (spec-driven: tests encode the spec).
 3. Implement until green.
 4. Summarize what was built, any spec questions raised, and anything deferred.
