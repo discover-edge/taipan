@@ -164,6 +164,7 @@ print(area(Rect(2.0, 3.0)))
 ## Smaller differences
 
 - **Defaults are evaluated on every call**, so `def f(xs: list[int] = [])` gets a new list each time. Python's shared-default trap doesn't exist.
+- **A nested function needs `nonlocal` to assign to an outer variable**, as in Python, but a new local of the same name isn't possible, so forgetting it is a compile error (`TP0236`). Top-level variables have no `global`: a nested function can read them but not assign to them.
 - **Each loop iteration has its own variable**, so `[lambda: i for i in range(3)]` gives functions returning 0, 1 and 2.
 - **No conditional expression**: `a if c else b` is written as an `if` statement or a `match` expression.
 - **Strings in containers print with double quotes**: `print(["a"])` is `["a"]`.

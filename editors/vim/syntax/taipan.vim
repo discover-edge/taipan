@@ -46,7 +46,7 @@ syn match taipanDeclaration "^\s*\zstype\ze\s\+\h\w*\s*[=[]"
 syn region taipanFor matchgroup=taipanStatement start="\<for\>" end="\<in\>\|\ze:\|$" oneline transparent contains=@taipanCode
 
 syn keyword taipanConstant True False None
-syn keyword taipanStatement if elif else while match return pass break continue try except finally
+syn keyword taipanStatement if elif else while match return pass break continue nonlocal try except finally
 syn keyword taipanStatement raise yield await with assert
 syn keyword taipanImport import from as
 syn keyword taipanOperatorWord and or not is in some

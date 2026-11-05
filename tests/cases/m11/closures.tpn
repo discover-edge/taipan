@@ -3,6 +3,7 @@
 def counter() -> Callable[[], int]:
     var count = 0
     def bump() -> int:
+        nonlocal count
         count += 1
         return count
     return bump
@@ -63,11 +64,11 @@ dep(5)
 dep(7)
 print(acct.balance)
 
-# A nested def in a top-level block sees top-level bindings, and may assign a captured var.
-var total = 0
+# A nested def in a top-level block sees top-level bindings.
+var total = 3
 if True:
-    def add(n: int):
-        total += n
-    add(3)
-    add(4)
-print(total)
+    def add(n: int) -> int:
+        return total + n
+    print(add(3))
+    total = 4
+    print(add(3))

@@ -154,6 +154,8 @@ public sealed record DelStmt(ImmutableArray<Expr> Targets, TextSpan Span) : Stmt
 
 public sealed record PassStmt(TextSpan Span) : Stmt(Span);
 
+public sealed record NonlocalStmt(ImmutableArray<Identifier> Names, TextSpan Span) : Stmt(Span);
+
 public sealed record BreakStmt(TextSpan Span) : Stmt(Span);
 
 public sealed record ContinueStmt(TextSpan Span) : Stmt(Span);

@@ -10,35 +10,35 @@ public static class TaipanProgram
         string @file = "tests/cases/m11/emit.tpn";
         try
         {
-#line 16 "tests/cases/m11/emit.tpn"
-            @line = 16;
-            global::Taipan.Runtime.Function<global::System.Func<long>> @c = @counter();
 #line 17 "tests/cases/m11/emit.tpn"
             @line = 17;
-            @c.Invoke();
+            global::Taipan.Runtime.Function<global::System.Func<long>> @c = @counter();
 #line 18 "tests/cases/m11/emit.tpn"
             @line = 18;
-            global::Taipan.Runtime.Builtins.Print(@apply_int_int(global::TaipanProgram.@double_value, 4L), @apply_str_str(new global::Taipan.Runtime.Function<global::System.Func<string, string>>("<lambda>", (string @s) => { try { return @s + "!"; } catch (global::System.Exception @e2) when (global::Taipan.Runtime.Tracebacks.Leave(@e2, "tests/cases/m11/emit.tpn", 18, "<lambda>")) { throw; } }), "hi"), @c.Invoke());
+            @c.Invoke();
 #line 19 "tests/cases/m11/emit.tpn"
             @line = 19;
-            global::System.Collections.Generic.List<global::Taipan.Runtime.Function<global::System.Action>> @fs = new global::System.Collections.Generic.List<global::Taipan.Runtime.Function<global::System.Action>>();
+            global::Taipan.Runtime.Builtins.Print(@apply_int_int(global::TaipanProgram.@double_value, 4L), @apply_str_str(new global::Taipan.Runtime.Function<global::System.Func<string, string>>("<lambda>", (string @s) => { try { return @s + "!"; } catch (global::System.Exception @e2) when (global::Taipan.Runtime.Tracebacks.Leave(@e2, "tests/cases/m11/emit.tpn", 19, "<lambda>")) { throw; } }), "hi"), @c.Invoke());
 #line 20 "tests/cases/m11/emit.tpn"
             @line = 20;
+            global::System.Collections.Generic.List<global::Taipan.Runtime.Function<global::System.Action>> @fs = new global::System.Collections.Generic.List<global::Taipan.Runtime.Function<global::System.Action>>();
+#line 21 "tests/cases/m11/emit.tpn"
+            @line = 21;
             for (long @i2 = 0L, @end = 2L; @i2 < @end; @i2++)
             {
                 long @i = @i2;
-#line 21 "tests/cases/m11/emit.tpn"
-                @line = 21;
-                @fs.Add(new global::Taipan.Runtime.Function<global::System.Action>("<lambda>", () => { try { global::Taipan.Runtime.Builtins.Print(@i); } catch (global::System.Exception @e3) when (global::Taipan.Runtime.Tracebacks.Leave(@e3, "tests/cases/m11/emit.tpn", 21, "<lambda>")) { throw; } }));
-            }
 #line 22 "tests/cases/m11/emit.tpn"
-            @line = 22;
+                @line = 22;
+                @fs.Add(new global::Taipan.Runtime.Function<global::System.Action>("<lambda>", () => { try { global::Taipan.Runtime.Builtins.Print(@i); } catch (global::System.Exception @e3) when (global::Taipan.Runtime.Tracebacks.Leave(@e3, "tests/cases/m11/emit.tpn", 22, "<lambda>")) { throw; } }));
+            }
+#line 23 "tests/cases/m11/emit.tpn"
+            @line = 23;
             foreach (global::Taipan.Runtime.Function<global::System.Action> @f in global::Taipan.Runtime.Iter.Over(@fs))
             {
-#line 23 "tests/cases/m11/emit.tpn"
-                @line = 23;
+#line 24 "tests/cases/m11/emit.tpn"
+                @line = 24;
                 @f.Invoke();
-                @line = 22;
+                @line = 23;
             }
 #line hidden
         }
@@ -83,11 +83,11 @@ public static class TaipanProgram
                 string @file2 = "tests/cases/m11/emit.tpn";
                 try
                 {
-#line 12 "tests/cases/m11/emit.tpn"
-                    @line2 = 12;
-                    @n = @n + 1L;
 #line 13 "tests/cases/m11/emit.tpn"
                     @line2 = 13;
+                    @n = @n + 1L;
+#line 14 "tests/cases/m11/emit.tpn"
+                    @line2 = 14;
                     return @n;
                 }
                 catch (global::System.Exception @e2) when (global::Taipan.Runtime.Tracebacks.Leave(@e2, @file2, @line2, "bump"))
@@ -95,8 +95,8 @@ public static class TaipanProgram
                     throw;
                 }
             });
-#line 14 "tests/cases/m11/emit.tpn"
-            @line = 14;
+#line 15 "tests/cases/m11/emit.tpn"
+            @line = 15;
             return @bump;
 #line hidden
         }

@@ -213,6 +213,12 @@ public class ParserTests
     // ---- block ----
 
     [Fact]
+    public void Nonlocal() =>
+        Assert.Equal(
+            "NonlocalStmt([a, b])",
+            Snapshot("nonlocal a, b\n"));
+
+    [Fact]
     public void NestedBlocks() =>
         Assert.Equal(
             "IfStmt([IfClause(ExprCondition(NameExpr(a)), Block([" +

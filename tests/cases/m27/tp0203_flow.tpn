@@ -48,6 +48,7 @@ def assigned_in_loop(x: int?):
 def assigned_by_nested(x: int?) -> int:
     var y = x
     def reset():
+        nonlocal y
         y = None
     if y is None:
         return 0

@@ -125,12 +125,13 @@ A lambda's parameter types come from where it's used, so it needs no annotations
 
 ## Closures
 
-Nested functions and lambdas capture the variables around them. A captured `var` is shared, so the function sees later changes and may change it itself. There's no `nonlocal`: assignment never declares, so it's not needed.
+Nested functions and lambdas capture the variables around them. A captured `var` is shared, so the function sees later changes. To assign to it, the nested function declares it with `nonlocal`, as in Python.
 
 ```taipan
 def counter() -> Callable[[], int]:
     var count = 0
     def step() -> int:
+        nonlocal count
         count += 1
         return count
     return step

@@ -115,6 +115,11 @@ public sealed partial class Binder
     private readonly Dictionary<string, (Expr Value, bool IsVar)> _topLevelBindings = [];
     private readonly HashSet<string> _assignedNames = [];
     private readonly List<(TextSpan Span, string Function, string Name)> _topLevelUses = [];
+
+    // The scope each function's body starts in, with the names it declares nonlocal (SPEC §3.7), and
+    // the nonlocal statements that come first in their function's body, where they're allowed.
+    private readonly Dictionary<Scope, HashSet<string>> _functionScopes = [];
+    private readonly HashSet<NonlocalStmt> _leadingNonlocals = [];
     private Scope _scope;
     private FunctionSymbol? _function;
 
@@ -1650,6 +1655,7 @@ public sealed partial class Binder
         _loopDepth = 0;
         (_handlerDepth, _finallyLoopDepth) = (0, null);
         _scope = new Scope(_global);
+        _functionScopes[_scope] = [];
         if (symbol.Self is { } self)
             _scope.Declare(self);
         if (symbol.Cls is { } cls)
@@ -2180,6 +2186,7 @@ public sealed partial class Binder
         AssignStmt assign => BindAssign(assign),
         ReturnStmt ret => BindReturn(ret),
         PassStmt pass => new BoundBlock([], pass.Span),
+        NonlocalStmt nonlocal => BindNonlocal(nonlocal),
         BreakStmt brk => BindBreak(brk),
         ContinueStmt cont => BindContinue(cont),
         ExprStmt exprStmt => BindExprStmt(exprStmt),
@@ -2204,6 +2211,98 @@ public sealed partial class Binder
     /// A nested <c>def</c> (SPEC §3.7): a local function value, visible from here to the end of the
     /// block and in its own body. Its body sees the enclosing bindings, and has its own returns and loops.
     /// </summary>
+    // The statements a nested function's nonlocal may follow: only a docstring and other nonlocals (SPEC §3.7).
+    private void NoteLeadingNonlocals(Block body)
+    {
+        foreach (var (stmt, index) in body.Statements.Select((s, i) => (s, i)))
+        {
+            if (stmt is NonlocalStmt nonlocal)
+                _leadingNonlocals.Add(nonlocal);
+            else if (index > 0 || stmt is not ExprStmt { Expr: StringLiteral })
+                return;
+        }
+    }
+
+    private enum Reach { Local, EnclosingFunction, TopLevel, Unknown }
+
+    // Where a name's binding is, seen from the function being bound: its own, an enclosing function's,
+    // or outside every function.
+    private Reach ReachOf(string name)
+    {
+        var crossed = false;
+        for (var scope = _scope; scope is not null; scope = scope.Parent)
+        {
+            if (scope.LookupLocal(name) is VariableSymbol)
+            {
+                if (!crossed)
+                    return Reach.Local;
+                for (var outer = scope; outer is not null; outer = outer.Parent)
+                {
+                    if (_functionScopes.ContainsKey(outer))
+                        return Reach.EnclosingFunction;
+                }
+                return Reach.TopLevel;
+            }
+            crossed |= _functionScopes.ContainsKey(scope);
+        }
+        return Reach.Unknown;
+    }
+
+    // The names the innermost function has declared nonlocal, or null outside any function.
+    private HashSet<string>? CurrentNonlocals()
+    {
+        for (var scope = _scope; scope is not null; scope = scope.Parent)
+        {
+            if (_functionScopes.TryGetValue(scope, out var names))
+                return names;
+        }
+        return null;
+    }
+
+    private BoundBlock BindNonlocal(NonlocalStmt stmt)
+    {
+        var start = new TextSpan(stmt.Span.Start, "nonlocal".Length);
+        if (_function is null || _function == _outerFunction)
+            _diagnostics.ReportNonlocalOutsideNested(start);
+        else if (!_leadingNonlocals.Contains(stmt))
+            _diagnostics.ReportNonlocalNotFirst(start);
+        else
+        {
+            foreach (var name in stmt.Names)
+            {
+                switch (ReachOf(name.Text))
+                {
+                    case Reach.EnclosingFunction:
+                        CurrentNonlocals()!.Add(name.Text);
+                        Index(name.Span, _scope.Lookup(name.Text)!);
+                        break;
+                    case Reach.Local:
+                        _diagnostics.ReportNonlocalOwnName(name.Span, name.Text);
+                        break;
+                    default:
+                        _diagnostics.ReportNonlocalNotFound(name.Span, name.Text);
+                        break;
+                }
+            }
+        }
+        return new BoundBlock([], stmt.Span);
+    }
+
+    // Assigning to a binding of an enclosing function needs nonlocal, and one outside every function
+    // can't be assigned from a function at all (SPEC §3.7).
+    private void CheckNonlocalAssign(NameExpr target)
+    {
+        switch (ReachOf(target.Name))
+        {
+            case Reach.EnclosingFunction when CurrentNonlocals()?.Contains(target.Name) != true:
+                _diagnostics.ReportAssignedWithoutNonlocal(target.Span, target.Name);
+                break;
+            case Reach.TopLevel:
+                _diagnostics.ReportAssignedTopLevelInNested(target.Span, target.Name);
+                break;
+        }
+    }
+
     private BoundLocalFunction BindLocalFunction(FuncDefStmt stmt)
     {
         var def = stmt.Function;
@@ -2238,6 +2337,8 @@ public sealed partial class Binder
         _loopDepth = 0;
         (_handlerDepth, _finallyLoopDepth) = (0, null);
         _scope = new Scope(outerScope);
+        _functionScopes[_scope] = [];
+        NoteLeadingNonlocals(def.Body);
         for (var i = 0; i < parameters.Length; i++)
             DeclareLocal(def.Params[i].Name, parameters[i]);
         // It runs later, so it doesn't see narrowed vars or paths (SPEC §3.9).
@@ -2296,6 +2397,11 @@ public sealed partial class Binder
             return OrphanAssign(assign, preset);
         }
 
+        // A let's or parameter's assignment is TP0202 anyway, unless it's a list's +=, which changes the list.
+        var isListAdd = assign.Op == AssignOp.Add && preset is null && variable.Type is ListOfType;
+        if (variable.Kind == VariableKind.Var || isListAdd)
+            CheckNonlocalAssign(target);
+
         // A let can't be rebound, but an in-place method that gives it back may change it (SPEC §4.9, M39).
         if (variable.Kind == VariableKind.Let && assign.Op != AssignOp.Assign && preset is null && variable.Type is ClassType
             && SpecialMethods.InPlace(assign.Op) is { } inPlace && SpecialMethods.Method(variable.Type, inPlace) is var (_, _, inPlaceResult)
@@ -2308,7 +2414,7 @@ public sealed partial class Binder
 
         // A list's += changes the list and rebinds nothing, so any binding of a list may use it (SPEC §4.5).
         if (variable.Kind is VariableKind.Let or VariableKind.Parameter or VariableKind.LoopVariable
-            && assign.Op == AssignOp.Add && preset is null && variable.Type is ListOfType)
+            && isListAdd)
             return new BoundExprStmt(BindCompound(assign, new BoundVariable(variable, target.Span), variable.Type), assign.Span);
 
         if (variable.Kind != VariableKind.Var)
@@ -3242,6 +3348,7 @@ public sealed partial class Binder
 
         var outer = _scope;
         _scope = new Scope(outer);
+        _functionScopes[_scope] = [];
         var parameters = ImmutableArray.CreateBuilder<VariableSymbol>();
         foreach (var (name, type) in lambda.Parameters.Zip(parameterTypes))
         {
