@@ -1882,7 +1882,7 @@ public sealed partial class CSharpEmitter
             BinaryOp.NotEqual => $"{left} != {right}",
             BinaryOp.Less or BinaryOp.LessEqual or BinaryOp.Greater or BinaryOp.GreaterEqual when tuple => $"{Runtime}.Ops.{binary.Op}({l}, {r})",
             BinaryOp.Less or BinaryOp.LessEqual or BinaryOp.Greater or BinaryOp.GreaterEqual when leftType == TaipanType.Str =>
-                $"string.CompareOrdinal({l}, {r}) {TypeChecker.Display(binary.Op)} 0",
+                $"{Runtime}.Ops.CompareStr({l}, {r}) {TypeChecker.Display(binary.Op)} 0",
             BinaryOp.Less or BinaryOp.LessEqual or BinaryOp.Greater or BinaryOp.GreaterEqual =>
                 $"{left} {TypeChecker.Display(binary.Op)} {right}",
             // __contains__ (SPEC §4.9): the item is evaluated first, as in Python.

@@ -91,7 +91,7 @@ public static class TaipanProgram
                 {
 #line 20 "tests/cases/m17/emit.tpn"
                     @line = 20;
-                    if (string.CompareOrdinal(@x, @b) > 0)
+                    if (global::Taipan.Runtime.Ops.CompareStr(@x, @b) > 0)
                     {
 #line 21 "tests/cases/m17/emit.tpn"
                         @line = 21;

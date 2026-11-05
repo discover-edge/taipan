@@ -545,7 +545,7 @@ finally:
   | `LookupError` | `Exception` | |
   | `IndexError` | `LookupError` | an index out of range, and `pop()` on an empty list |
   | `KeyError` | `LookupError` | a missing dict key; a missing set value in `remove` and `pop` from an empty set (M35) |
-  | `ValueError` | `Exception` | `int(x)` of a NaN, `split("")` and `replace("", …)`, and a slice step of 0; since M35, `min`/`max` of an empty iterable, a missing value in `list.remove`/`index` and `str.index`, a `range` step of 0, and a negative `int` exponent |
+  | `ValueError` | `Exception` | `int(x)` of a NaN, `split("")`, and a slice step of 0; since M35, `min`/`max` of an empty iterable, a missing value in `list.remove`/`index` and `str.index`, a `range` step of 0, and a negative `int` exponent |
   | `TypeError` | `Exception` | a failed `as` (§4.3, §10.4) |
   | `RuntimeError` | `Exception` | changing a list, dict or set (M35) while iterating over it; `StopIteration` escaping a generator (M31) |
   | `StopIteration` | `Exception` | `next()` on an exhausted iterator, or a class's `__next__` ending (M31, §3.13), and a generator's `send` when it finishes (M42) |
@@ -1759,7 +1759,7 @@ def area(s: Shape) -> float:
 | `\| & - ^`, `<= < >= >` | set[T], set[T] | set[T], bool | M35, §3.15 |
 | `== !=` | same type, int/float, or related classes | bool | structural for dataclasses, enums, lists, dicts, tuples; identity for plain classes (§4.3) and functions (§3.7); a class's `__eq__` since M28 (§4.8) |
 | `is None`, `is not None` | T? | bool | M15; narrows (§3.9) |
-| `< <= > >=` | numeric, or str (ordinal), or tuples of those (M12) | bool | tuples compare lexicographically |
+| `< <= > >=` | numeric, or str (by code point, as in Python), or tuples of those (M12) | bool | tuples compare lexicographically |
 | `< >` | a class with `__lt__`, or a type parameter bounded by a protocol with `__lt__` (M17) | bool | `a < b` is `a.__lt__(b)`, `a > b` is `b.__lt__(a)` (§3.11) |
 | `< <= > >=`, `+ - * / // %`, unary `-` | a class with the matching special method (M28) | the method's | §4.8 |
 | `in`, `not in` | T in list[T]; K in dict[K,V]; str in str; T in set[T] (M35) | bool | |
@@ -1846,7 +1846,7 @@ In `a == b` and `a != b`, `a`'s type is `b`'s expected type (§4.6), so `m == No
 - **Since M35**, as in Python:
   - `abs(x)` gives an `int` for an `int` (`OverflowError` for the smallest one) and a `float` for a `float`.
   - `min(a, b, …)` and `max(a, b, …)` take two or more arguments, and `min(xs)` and `max(xs)` any iterable. The values, or their keys with `key=`, must be ordered as `sorted`'s are (`TP0200` otherwise, as for `sorted`). With `int` and `float` arguments mixed, the result is a `float`, so `max(0, 2.5)` is `2.5` and `max(3, 2.5)` is `3.0`, where Python keeps the `3`. An empty iterable raises `ValueError`, `min() iterable argument is empty`, unless `default=` gives a value, which must have the element type (`None` gives `T?`). Of equal values, the first is the result. `key` and `default` are keyword-only.
-  - `sum(xs)` and `sum(xs, start)` add an iterable of `int` or `float` values to `start` (default `0`): an `int` for `int` values and an `int` start, a `float` otherwise. Other element types are `TP0200`, `sum() takes numbers, found <T>`, with help `use ''.join(…)` for `str`.
+  - `sum(xs)` and `sum(xs, start)` add an iterable of `int` or `float` values to `start` (default `0`): an `int` for `int` values and an `int` start, a `float` otherwise. `float` values are added with compensated summation, as in Python 3.12, so ten values of `0.1` add up to `1.0`. Other element types are `TP0200`, `sum() takes numbers, found <T>`, with help `use ''.join(…)` for `str`.
   - `any(xs)` and `all(xs)` take an iterable of `bool`, stopping at the first `True` or `False`. Since Taipan has no truthiness, other element types are `TP0200`, with help `test each value, as in any(x > 0 for x in xs)`.
   - `round(x)` gives the nearest `int`, with ties to the even one (`round(2.5)` is `2`), and `round(x, n)` a `float` rounded to `n` digits after the point, as Python rounds the exact value (`round(2.675, 2)` is `2.67`). On an `int`, `round(x)` is `x` and `round(x, n)` rounds to `-n` tens (`round(1234, -2)` is `1200`). A NaN or infinity raises `ValueError` or `OverflowError`.
   - `divmod(a, b)` is `(a // b, a % b)`, a `tuple[int, int]` or `tuple[float, float]`.
@@ -1858,7 +1858,7 @@ In `a == b` and `a != b`, `a`'s type is `b`'s expected type (§4.6), so `m == No
 **Methods**
 - `list[T]`: `append(x: T)`, `pop() -> T` (removes and returns the last element; `IndexError` if empty), `insert(i: int, x: T)` (Python semantics: a negative `i` counts from the end, and out-of-range indices clamp), `contains(x: T) -> bool`, `sort(key=…, reverse=False)` (M11: sorts in place, with the same rules as `sorted`; as in Python, the list is empty while it's being sorted, so a key or `__lt__` that reads it sees it empty, and if one adds to it, the sort still finishes and then raises `ValueError`, `list modified during sort`)
 - `dict[K, V]`: `get(k: K) -> V?` (M6), and since M35 `get(k: K, default: V) -> V`, `keys() -> list[K]`, `values() -> list[V]`, `items() -> list[tuple[K, V]]` (M12) (new lists, in insertion order), `remove(k: K) -> bool` (`True` if the key was present)
-- `str`: `upper() -> str`, `lower() -> str` (invariant-culture case mapping), `strip() -> str` (removes leading and trailing whitespace), `split(sep: str) -> list[str]` (an empty `sep` panics), `startswith(p: str) -> bool`, `endswith(p: str) -> bool`, `replace(old: str, new: str) -> str` (every occurrence; an empty `old` panics)
+- `str`: `upper() -> str`, `lower() -> str` (invariant-culture case mapping), `strip() -> str` (removes leading and trailing whitespace), `split(sep: str) -> list[str]` (an empty `sep` panics), `startswith(p: str) -> bool`, `endswith(p: str) -> bool`, `replace(old: str, new: str) -> str` (every occurrence; an empty `old` matches between all the code points and at both ends, as in Python)
 - **Since M35**, with Python's names and behavior:
   - `list[T]`: `extend(xs: Iterable[T])`, `remove(x: T)` (the first equal value; `ValueError`, `list.remove(x): x not in list`, if none), `index(x: T) -> int` (`ValueError` if absent), `count(x: T) -> int`, `reverse()`, `clear()`, `copy() -> list[T]`, `pop(i: int) -> T` (a negative `i` counts from the end; `IndexError` out of range).
   - `dict[K, V]`: `pop(k: K) -> V` (`KeyError` if absent), `pop(k: K, default: V) -> V`, `setdefault(k: K, default: V) -> V`, `update(other: dict[K, V])`, `clear()`, `copy() -> dict[K, V]`.
@@ -1958,7 +1958,7 @@ print("done", file=sys.stderr)
   - missing dict key: `missing key <k>`, with `<k>` as written inside a container (strings quoted) (`KeyError`)
   - `pop()` on an empty list: `pop from empty list` (`IndexError`)
   - mutation during iteration: `list mutated during iteration` / `dict mutated during iteration`. Only a change of size counts, as §5.2 says. (`RuntimeError`)
-  - `split("")` / `replace("", …)`: `empty separator` (`ValueError`)
+  - `split("")`: `empty separator` (`ValueError`)
   - a slice step of 0: `slice step cannot be zero` (M12) (`ValueError`)
   - `**e` at a call with a key naming a parameter, or one the call already gives (M30, §4.2): `<f>() got multiple values for argument '<k>'` / `… for keyword argument '<k>'` (`TypeError`)
   - unpacking a list of the wrong length (M29, §3.8): `not enough values to unpack (expected <n>, got <m>)`, `not enough values to unpack (expected at least <n>, got <m>)` with a starred name, or `too many values to unpack (expected <n>)` (`ValueError`)
@@ -2024,7 +2024,7 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 | `enum E` | `public abstract record E` with a private constructor; each variant is `public sealed record V(...) : E` nested inside |
 | `T?` | `T?` |
 | `list[T]` / `dict[K, V]` | `List<T>` / `OrderedDictionary<K, V>`. `for` over them goes through a runtime iterator that turns concurrent modification into the §7 panic. |
-| `tuple[A, B]` | a C# value tuple `(A, B)` (M12), with elements read as `Item1`, `Item2`, …. Unpacking stores the value in a temporary first. `==` uses `Taipan.Runtime.Equality.Equal`, and ordering uses a runtime comparison that orders strings by ordinal. In generic instance names, a tuple type is written `tuple_` followed by its element types: `first_tuple_int_str`. |
+| `tuple[A, B]` | a C# value tuple `(A, B)` (M12), with elements read as `Item1`, `Item2`, …. Unpacking stores the value in a temporary first. `==` uses `Taipan.Runtime.Equality.Equal`, and ordering uses a runtime comparison that orders strings by code point. In generic instance names, a tuple type is written `tuple_` followed by its element types: `first_tuple_int_str`. |
 | slices | `Taipan.Runtime.Ops.Slice(target, start, stop, step)`, with `null` for an omitted part (M12) |
 | type aliases (M18) | Nothing: each use is its expanded type. |
 | line tracking (M23, M41) | §15.3: each method that's a Python frame declares `int line` and `string file`, assigns `line` before each statement, and wraps its body in `try { … } catch (System.Exception e) when (Taipan.Runtime.Tracebacks.Leave(e, file, line, "<name>")) { throw; }`, whose filter adds the frame to the exception's traceback and returns false. Before M41 this was only for `--native`, and recorded only the innermost frame. A generator passes a function reading its body's `line` to its `Generator<T>`, which adds the frame the same way. |

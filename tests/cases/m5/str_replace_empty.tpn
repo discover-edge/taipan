@@ -1,0 +1,5 @@
+print("abc".replace("", "-"))
+print("".replace("", "-"))
+print("a😀".replace("", "-"))
+print("abc".replace("", ""))
+print("aXa".replace("a", "b"))

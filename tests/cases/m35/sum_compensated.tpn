@@ -1,0 +1,5 @@
+print(sum([0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]))
+print(sum([1e100, 1.0, -1e100]), sum([0.1, 0.2]), sum([1e308, 1e308]), sum([1.5, 2.5], 1.0))
+print(sum([1e308, 1e308, -1e308]), sum(x * 0.1 for x in [1.0, 2.0, 3.0]))
+let empty: list[float] = []
+print(sum(empty), sum([-0.0]), sum([1, 2]), sum([1, 2], 0.5))
