@@ -1168,6 +1168,7 @@ print(await asyncio.gather(consume("a"), consume("b")))   # a0 b0 a1 b1, then [2
 - **Top level:**
   - `def`, `class`, `enum`, and `const` are hoisted and visible everywhere.
   - Top-level `let` and `var` are script locals. They're visible only to later top-level statements. Referencing one from inside a function is `TP0211`.
+  - `TP0211`'s help offers `const` only when the binding could be one: a `let` or `var` statement directly at the top level, not in a block, whose initializer is a constant expression (§4.5), with no other top-level binding of the name, and for a `var`, no assignment to the name anywhere in the file.
 
 ### 4.2 Functions
 - `def` declares a function. Recursion and mutual recursion are allowed, since functions are hoisted. A `def` inside a block is a nested function, which isn't hoisted (§3.7).
@@ -2169,7 +2170,7 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0209 | `'<f>' takes <n> positional arguments, found <m>` / `missing keyword-only argument '<x>'` / `'*<e>' can only fill '*<args>'` / `'<f>' has no '*args' for '*<e>'` / `'<f>' has no '**kwargs' for '**<e>'` / `'**<e>' can't fill '<x>'` (M30) |
 | TP0209 | `expected a lambda with <n> parameters, found <m>` (`parameter` when n is 1) / `'Callable' takes a parameter list and a result type` |
 | TP0210 | `<T> has no field '<x>'` / `<T> has no method '<x>'` / `<E> has no variant '<x>'` |
-| TP0211 | `'<f>' cannot use top-level variable '<x>'`, with help `pass it as a parameter, or make it a const` |
+| TP0211 | `'<f>' cannot use top-level variable '<x>'`, with help `pass it as a parameter, or make it a const` when `<x>` could be a constant (§4.1), and `pass it as a parameter` otherwise |
 | TP0213 | `optional types cannot be nested` |
 | TP0214 | `duplicate definition of '<x>'` |
 | TP0214 | `key <k> appears twice in a mapping pattern` (M38) |

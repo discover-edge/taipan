@@ -108,6 +108,13 @@ public sealed partial class Binder
     private Module? _module;
     private Module? _mainModule;
     private readonly HashSet<string> _scriptNames = [];
+
+    // For TP0211's help: how often each script name is bound, the let and var statements directly at
+    // the top level, the names assigned anywhere, and the uses, reported once all of them are known.
+    private readonly Dictionary<string, int> _scriptNameCounts = [];
+    private readonly Dictionary<string, (Expr Value, bool IsVar)> _topLevelBindings = [];
+    private readonly HashSet<string> _assignedNames = [];
+    private readonly List<(TextSpan Span, string Function, string Name)> _topLevelUses = [];
     private Scope _scope;
     private FunctionSymbol? _function;
 
@@ -297,6 +304,10 @@ public sealed partial class Binder
             else if (_asNativeLibrary)
                 _diagnostics.ReportStatementInNativeLibrary(stmt.Span);
             CollectScriptNames(stmt);
+            if (stmt is LetStmt let)
+                _topLevelBindings[let.Name.Text] = (let.Value, false);
+            else if (stmt is VarStmt var)
+                _topLevelBindings[var.Name.Text] = (var.Value, true);
         }
 
         // Defaults before any body, since a call anywhere may leave them out (SPEC §4.2).
@@ -336,6 +347,8 @@ public sealed partial class Binder
         _inTopLevel = true;
         var topLevel = BindStatements([.. unit.Items.OfType<Stmt>()]);
         _inTopLevel = false;
+        foreach (var (span, function, name) in _topLevelUses)
+            _diagnostics.ReportTopLevelVariableInFunction(span, function, name, CouldBeConstant(name));
         var order = InitializationOrder(main, byName);
         var library = _asLibrary ? BindLibrary(modules, byName, functions, classes) : null;
         var extension = _asExtension ? BindExtension(main, [.. functions, .. classes.SelectMany(c => c.Methods)], new BoundBlock(topLevel, unit.Span)) : null;
@@ -1676,22 +1689,42 @@ public sealed partial class Binder
         _ => [],
     };
 
+    private void AddScriptName(string name)
+    {
+        _scriptNames.Add(name);
+        _scriptNameCounts[name] = _scriptNameCounts.GetValueOrDefault(name) + 1;
+    }
+
+    private void AddScriptNames(IEnumerable<string> names)
+    {
+        foreach (var name in names)
+            AddScriptName(name);
+    }
+
+    // Whether TP0211 may suggest making a script name a const (SPEC §4.1): its only binding is a let or
+    // var directly at the top level, with a constant initializer, and a var is never assigned.
+    private bool CouldBeConstant(string name) =>
+        _scriptNameCounts.GetValueOrDefault(name) == 1
+        && _topLevelBindings.TryGetValue(name, out var binding)
+        && IsConstantExpression(binding.Value)
+        && !(binding.IsVar && _assignedNames.Contains(name));
+
     /// <summary>Records every let/var/loop variable outside functions, for TP0211.</summary>
     private void CollectScriptNames(Stmt stmt)
     {
         switch (stmt)
         {
             case LetStmt let:
-                _scriptNames.Add(let.Name.Text);
+                AddScriptName(let.Name.Text);
                 break;
             case VarStmt var:
-                _scriptNames.Add(var.Name.Text);
+                AddScriptName(var.Name.Text);
                 break;
             case IfStmt ifStmt:
                 foreach (var clause in ifStmt.Clauses)
                 {
                     if (clause.Condition is IsSomeCondition isSome)
-                        _scriptNames.Add(isSome.Binding.Text);
+                        AddScriptName(isSome.Binding.Text);
                     CollectScriptNames(clause.Body);
                 }
                 if (ifStmt.Else is not null)
@@ -1699,28 +1732,28 @@ public sealed partial class Binder
                 break;
             case WhileStmt whileStmt:
                 if (whileStmt.Condition is IsSomeCondition whileSome)
-                    _scriptNames.Add(whileSome.Binding.Text);
+                    AddScriptName(whileSome.Binding.Text);
                 CollectScriptNames(whileStmt.Body);
                 break;
             case ForStmt forStmt:
-                _scriptNames.UnionWith(UnpackedNames(forStmt.Variables));
+                AddScriptNames(UnpackedNames(forStmt.Variables));
                 CollectScriptNames(forStmt.Body);
                 break;
             case UnpackStmt unpack:
-                _scriptNames.UnionWith(UnpackedNames(unpack.Names));
+                AddScriptNames(UnpackedNames(unpack.Names));
                 break;
             case FuncDefStmt funcDef:
-                _scriptNames.Add(funcDef.Function.Name.Text);
+                AddScriptName(funcDef.Function.Name.Text);
                 break;
             case MatchStmt match:
                 foreach (var arm in match.Arms)
                 {
-                    _scriptNames.UnionWith(PatternNames(arm.Pattern));
+                    AddScriptNames(PatternNames(arm.Pattern));
                     CollectScriptNames(arm.Body);
                 }
                 break;
             case WithStmt with:
-                _scriptNames.UnionWith(with.Items.Select(i => i.Binding?.Text).OfType<string>());
+                AddScriptNames(with.Items.Select(i => i.Binding?.Text).OfType<string>());
                 CollectScriptNames(with.Body);
                 break;
         }
@@ -1780,7 +1813,7 @@ public sealed partial class Binder
             return symbol;
         }
         if (_outerFunction is not null && _scriptNames.Contains(name))
-            _diagnostics.ReportTopLevelVariableInFunction(span, _function!.Name, name);
+            _topLevelUses.Add((span, _function!.Name, name));
         else
             _diagnostics.ReportUndefinedName(span, name);
         Unresolved(span, inType: false);
@@ -2254,6 +2287,7 @@ public sealed partial class Binder
 
     private BoundStmt BindVariableAssign(AssignStmt assign, NameExpr target, BoundExpr? preset)
     {
+        _assignedNames.Add(target.Name);
         var symbol = LookupName(target.Name, target.Span);
         if (symbol is not VariableSymbol variable)
         {

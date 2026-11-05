@@ -486,9 +486,9 @@ public sealed class DiagnosticBag
     public void ReportWrongArgumentCount(TextSpan span, string function, string expected, int found) =>
         Add("TP0209", span, $"'{function}' takes {expected}, found {found}");
 
-    public void ReportTopLevelVariableInFunction(TextSpan span, string function, string name) =>
+    public void ReportTopLevelVariableInFunction(TextSpan span, string function, string name, bool couldBeConstant) =>
         Add("TP0211", span, $"'{function}' cannot use top-level variable '{name}'",
-            "pass it as a parameter, or make it a const");
+            couldBeConstant ? "pass it as a parameter, or make it a const" : "pass it as a parameter");
 
     public void ReportDuplicateDefinition(TextSpan span, string name) =>
         Add("TP0214", span, $"duplicate definition of '{name}'");

@@ -1,0 +1,16 @@
+tests/cases/m3/tp0211_help.tpn:20:12: error TP0211: 'report' cannot use top-level variable 'rate'
+  help: pass it as a parameter, or make it a const
+tests/cases/m3/tp0211_help.tpn:20:19: error TP0211: 'report' cannot use top-level variable 'retries'
+  help: pass it as a parameter, or make it a const
+tests/cases/m3/tp0211_help.tpn:23:12: error TP0211: 'summary' cannot use top-level variable 'total'
+  help: pass it as a parameter
+tests/cases/m3/tp0211_help.tpn:23:24: error TP0211: 'summary' cannot use top-level variable 'names'
+  help: pass it as a parameter
+tests/cases/m3/tp0211_help.tpn:23:37: error TP0211: 'summary' cannot use top-level variable 'greeting'
+  help: pass it as a parameter
+tests/cases/m3/tp0211_help.tpn:23:49: error TP0211: 'summary' cannot use top-level variable 'pair'
+  help: pass it as a parameter
+tests/cases/m3/tp0211_help.tpn:26:12: error TP0211: 'shadowed' cannot use top-level variable 'inner'
+  help: pass it as a parameter
+tests/cases/m3/tp0211_help.tpn:29:12: error TP0211: 'swapped' cannot use top-level variable 'left'
+  help: pass it as a parameter
