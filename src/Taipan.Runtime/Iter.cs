@@ -1,12 +1,24 @@
 namespace Taipan.Runtime;
 
 /// <summary>
-/// What <c>for</c> iterates over (SPEC §5.2). Changing a list or dict during its iteration
-/// panics (SPEC §7); .NET's enumerators detect it and this turns their error into the panic.
+/// What <c>for</c> iterates over (SPEC §5.2). Changing a collection's size during its iteration
+/// panics (SPEC §7). A list checks its size itself, since .NET's enumerator also rejects writing to
+/// an element. For a dict or set, .NET's enumerators detect it and this turns their error into the panic.
 /// </summary>
 public static class Iter
 {
-    public static IEnumerable<T> Over<T>(List<T> list) => Guard(list, "list");
+    public static IEnumerable<T> Over<T>(List<T> list)
+    {
+        var count = list.Count;
+        for (var i = 0; ; i++)
+        {
+            if (list.Count != count)
+                throw new RuntimeError("list mutated during iteration");
+            if (i == count)
+                yield break;
+            yield return list[i];
+        }
+    }
 
     /// <summary>A tuple[T, ...] can't change, so it needs no guard (SPEC §3.19).</summary>
     public static IEnumerable<T> Over<T>(VarTuple<T> tuple) => tuple;
@@ -14,27 +26,12 @@ public static class Iter
     /// <summary>A set iterates over its values, in insertion order (SPEC §3.15).</summary>
     public static IEnumerable<T> Over<T>(OrderedSet<T> set) where T : notnull => Guard(set, "set");
 
-    // Dicts with an iteration in progress, with nesting counts. .NET's enumerator catches added
-    // and removed keys but not a changed value, which Ops.SetIndex checks against this.
-    private static readonly Dictionary<object, int> IteratingDicts = new(ReferenceEqualityComparer.Instance);
-
     /// <summary>A dict iterates over its keys, in insertion order.</summary>
     public static IEnumerable<TKey> Over<TKey, TValue>(OrderedDictionary<TKey, TValue> dict) where TKey : notnull
     {
-        IteratingDicts[dict] = IteratingDicts.GetValueOrDefault(dict) + 1;
-        try
-        {
-            foreach (var entry in Guard(dict, "dict"))
-                yield return entry.Key;
-        }
-        finally
-        {
-            if (--IteratingDicts[dict] == 0)
-                IteratingDicts.Remove(dict);
-        }
+        foreach (var entry in Guard(dict, "dict"))
+            yield return entry.Key;
     }
-
-    internal static bool IsIterating(object dict) => IteratingDicts.ContainsKey(dict);
 
     /// <summary>A str iterates over its characters (code points), each as a str.</summary>
     public static IEnumerable<string> Over(string value)

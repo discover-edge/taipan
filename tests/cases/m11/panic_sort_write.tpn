@@ -1,0 +1,29 @@
+def add(ys: list[int], y: int) -> int:
+    ys.append(y)
+    return y
+
+var xs = [3, 1, 2]
+print("before")
+try:
+    xs.sort(key=lambda x: add(xs, x))
+except ValueError as e:
+    print(e, xs)
+
+def size(ys: list[int], y: int) -> int:
+    print(len(ys))
+    return y
+
+let zs = [2, 1]
+zs.sort(key=lambda z: size(zs, z))
+print(zs)
+
+def write(ys: list[int], y: int) -> int:
+    ys[0] = y
+    return y
+
+let ws = [2, 1]
+try:
+    ws.sort(key=lambda w: write(ws, w))
+except IndexError as e:
+    print("IndexError", ws)
+ws.sort(key=lambda w: write(ws, w))
