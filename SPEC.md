@@ -19,7 +19,17 @@ Taipan is a statically typed, compiled language with Python's surface syntax. Th
 5. **Use .NET honestly.** Performance and easy deployment are reasons to differ from Python, but the difference has to be visible, as with a 64-bit `int` that raises on overflow rather than wrapping.
 
 **Exceptions to principle 1** are listed here, each with its reason. If the list grows long, the principle isn't true and has to be rewritten.
-- **Defaults are evaluated on each call** (§4.2), since Python's single evaluation is a well-known trap.
+- **Defaults, field defaults and loop variables are new each time** (§4.2, §4.3, §3.7), since Python's sharing is a well-known trap.
+- **An `int` that widens to a `float` is a `float`,** so `let x: float = 1` displays as `1.0`, and `[1, 2.5]` as `[1.0, 2.5]`, and `min(1, 2.5)` is `1.0` (§3.3, §6), since a value has its static type.
+- **`int(s)` and `float(s)` give an optional** (§6), so that a failed parse can't go unhandled. Displaying the result without narrowing it shows `None`, where Python raises `ValueError`.
+- **Calling an async function starts it** (§3.14), as a .NET task starts, where a Python coroutine waits to be awaited. A forgotten `await` is a compile error (`TP0235`).
+- **`keys()`, `values()` and `items()` give new lists** (§6), not live views, which is simpler. Adding to a dict while looping over one of them works, where Python raises `RuntimeError`.
+- **Adding to or removing from a list during a loop over it raises `RuntimeError`** (§5.2), since Python's behaviour silently skips or repeats elements.
+- **Exception messages are Taipan's own** (§7), so `str(e)` can differ from Python's. They aren't meant to be parsed.
+- **Comparing an `int` with a `float` converts the `int`** (§5.3), so `2 ** 53 + 1 == 2.0 ** 53` is `True`, since an exact comparison would slow every mixed comparison.
+- **Case conversion and number parsing follow .NET and ASCII** (§6): `"ß".upper()` is `ß`, where Python gives `SS`, and `int("٣")` is `None`, where Python gives `3`.
+- **A class without `__str__` or `__repr__` displays as `<C object>`** (§4.8), without Python's module name and memory address.
+- **Strings display with double quotes in containers and `repr`** (§6), as Taipan writes string literals, so `print(["a"])` is `["a"]`, where Python gives `['a']`.
 
 ---
 
