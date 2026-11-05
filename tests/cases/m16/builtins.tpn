@@ -50,7 +50,6 @@ attempt("pop", lambda: print([0][1:].pop()))
 attempt("nan", lambda: print(int(float("nan") ?? 0.0)))
 attempt("inf", lambda: print(int(float("inf") ?? 0.0)))
 attempt("split", lambda: print("a,b".split("")))
-attempt("replace", lambda: print("ab".replace("", "x")))
 attempt("slice", lambda: print(xs[::zero]))
 attempt("cast", lambda: print(Animal() as Dog))
 

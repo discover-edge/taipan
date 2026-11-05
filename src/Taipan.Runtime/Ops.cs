@@ -266,7 +266,7 @@ public static class Ops
             return Apply(l.Length, r.Length, ordering);
         }
         if (left is string ls && right is string rs)
-            return Apply(string.CompareOrdinal(ls, rs), 0, ordering);
+            return Apply(CompareStr(ls, rs), 0, ordering);
         if (left is long ll && right is long rl)
             return Apply(ll, rl, ordering);
         return Apply(System.Convert.ToDouble(left), System.Convert.ToDouble(right), ordering);
@@ -285,7 +285,7 @@ public static class Ops
     {
         (ITuple l, ITuple r) => Enumerable.Range(0, Math.Min(l.Length, r.Length)).Select(i => SortCompare(l[i], r[i])).FirstOrDefault(c => c != 0) is var c and not 0
             ? c : l.Length.CompareTo(r.Length),
-        (string l, string r) => string.CompareOrdinal(l, r),
+        (string l, string r) => CompareStr(l, r),
         (long l, long r) => l.CompareTo(r),
         _ => System.Convert.ToDouble(left).CompareTo(System.Convert.ToDouble(right)),
     };
@@ -549,10 +549,10 @@ public static class Ops
         return [.. ordered.Select(p => p.Item)];
     }
 
-    /// <summary>How sort keys compare: by a class's <c>__lt__</c>, strings by ordinal, tuples element by element.</summary>
+    /// <summary>How sort keys compare: by a class's <c>__lt__</c>, strings by code point, tuples element by element.</summary>
     internal static IComparer<TKey> ComparerFor<TKey>(Func<TKey, TKey, bool>? less) =>
         less is not null ? Comparer<TKey>.Create((l, r) => less(l, r) ? -1 : less(r, l) ? 1 : 0)
-            : typeof(TKey) == typeof(string) ? (IComparer<TKey>)StringComparer.Ordinal
+            : typeof(TKey) == typeof(string) ? (IComparer<TKey>)Comparer<string>.Create(CompareStr)
             : typeof(ITuple).IsAssignableFrom(typeof(TKey)) ? Comparer<TKey>.Create((l, r) => SortCompare(l, r))
             : Comparer<TKey>.Default;
 
@@ -649,9 +649,26 @@ public static class Ops
 
     public static string Replace(string value, string oldValue, string newValue)
     {
+        // An empty old value matches between all the code points and at both ends, as in Python.
         if (oldValue.Length == 0)
-            throw new ValueError("empty separator");
+            return newValue + string.Concat(value.EnumerateRunes().Select(rune => rune + newValue));
         return value.Replace(oldValue, newValue, StringComparison.Ordinal);
+    }
+
+    /// <summary>Orders strings by code point, as in Python (SPEC §5.3). UTF-16 order differs only for surrogates, which come above the rest of the BMP.</summary>
+    public static int CompareStr(string left, string right)
+    {
+        var shared = Math.Min(left.Length, right.Length);
+        var at = left.AsSpan(0, shared).CommonPrefixLength(right.AsSpan(0, shared));
+        if (at == shared)
+            return left.Length.CompareTo(right.Length);
+        int l = left[at], r = right[at];
+        if (l >= 0xD800 && r >= 0xD800)
+        {
+            l = l >= 0xE000 ? l - 0x800 : l + 0x2000;
+            r = r >= 0xE000 ? r - 0x800 : r + 0x2000;
+        }
+        return l - r;
     }
 
     /// <summary><c>int(x)</c> for a float: truncates toward zero (SPEC §6).</summary>

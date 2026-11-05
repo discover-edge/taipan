@@ -206,7 +206,7 @@ public static class TaipanProgram
                 {
 #line 12 "tests/cases/m8_1/constraints.tpn"
                     @line = 12;
-                    if (string.CompareOrdinal(@x, @b) > 0)
+                    if (global::Taipan.Runtime.Ops.CompareStr(@x, @b) > 0)
                     {
 #line 13 "tests/cases/m8_1/constraints.tpn"
                         @line = 13;

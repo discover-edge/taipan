@@ -1,0 +1,11 @@
+True True True False
+["B", "a", "～", "😀"]
+["😀", "～", "a"]
+～ 😀 😀 a
+[("～", 2), ("😀", 1)]
+True
+["a", "b"]
+["😀", "😀a", "😀b"]
+True False True False
+True False
+["～", "😀"]

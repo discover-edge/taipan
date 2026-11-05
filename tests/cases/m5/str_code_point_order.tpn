@@ -1,0 +1,15 @@
+let emoji = "😀"
+let wide = "～"
+print(emoji > wide, wide < emoji, emoji >= wide, emoji <= wide)
+print(sorted([emoji, wide, "a", "B"]))
+print(sorted([emoji, wide, "a"], reverse=True))
+print(min(emoji, wide), max(emoji, wide), max([wide, emoji]), min(["b", "a"]))
+print(sorted([(emoji, 1), (wide, 2)]))
+print((emoji, 1) > (wide, 2))
+print(sorted(["b", "a"], key=lambda s: s + emoji))
+print(sorted([emoji + "b", emoji + "a", emoji]))
+print("a" < "b", "a" < "B", "" < "a", "ab" < "a")
+print(emoji == emoji, emoji < emoji)
+let words = [wide, emoji]
+words.sort()
+print(words)

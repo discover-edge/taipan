@@ -50,11 +50,18 @@ public static class Numbers
         return start;
     }
 
+    // Compensated summation (Neumaier's), as in Python 3.12 (SPEC §6).
     public static double Sum(IEnumerable<double> values, double start)
     {
+        var total = start;
+        var compensation = 0.0;
         foreach (var value in values)
-            start += value;
-        return start;
+        {
+            var next = total + value;
+            compensation += Math.Abs(total) >= Math.Abs(value) ? total - next + value : value - next + total;
+            total = next;
+        }
+        return compensation != 0 && double.IsFinite(compensation) ? total + compensation : total;
     }
 
     public static double Sum(IEnumerable<long> values, double start)

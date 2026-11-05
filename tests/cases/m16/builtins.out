@@ -10,7 +10,6 @@ pop IndexError: pop from empty list
 nan ValueError: cannot convert nan to int
 inf OverflowError: cannot convert inf to int
 split ValueError: empty separator
-replace ValueError: empty separator
 slice ValueError: slice step cannot be zero
 cast TypeError: cannot convert Animal to Dog
 mutate RuntimeError: list mutated during iteration
