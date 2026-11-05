@@ -36,7 +36,7 @@ public class EditorExtensionTests
     {
         var manifest = JsonNode.Parse(File.ReadAllText(Path.Combine(Extension, "package.json")))!;
         Assert.Equal("discover-edge", manifest["publisher"]!.GetValue<string>());
-        Assert.Equal("taipan", manifest["name"]!.GetValue<string>());
+        Assert.Equal("taipan-lang", manifest["name"]!.GetValue<string>());
         // The compiler's version, which a release's tag names (SPEC §12.2).
         var props = File.ReadAllText(Path.Combine(RepoPaths.Root, "Directory.Build.props"));
         Assert.Equal(Regex.Match(props, "<Version>(.*)</Version>").Groups[1].Value, manifest["version"]!.GetValue<string>());
@@ -89,7 +89,7 @@ public class EditorExtensionTests
         try
         {
             var version = JsonNode.Parse(File.ReadAllText(Path.Combine(Extension, "package.json")))!["version"]!.GetValue<string>();
-            var vsix = Path.Combine(directory, $"taipan-{version}.vsix");
+            var vsix = Path.Combine(directory, $"taipan-lang-{version}.vsix");
             var (exitCode, output, error) = Node(Extension, "node_modules/@vscode/vsce/vsce", "package", "--out", vsix);
             Assert.True(exitCode == 0, output + error);
 

@@ -1,8 +1,8 @@
 {
-  "name": "taipan",
+  "name": "taipan-lang",
   "displayName": "Taipan",
   "description": "Taipan language support: highlighting, running files, and the taipan language server's diagnostics, completion, navigation, rename and formatting.",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "publisher": "discover-edge",
   "license": "MIT",
   "icon": "icon.png",
