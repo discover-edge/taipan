@@ -142,7 +142,7 @@ print(sb.ToString())
 - **In a .NET solution:** a `.tpnproj` using the `TaipanLang.Sdk` project SDK builds `.tpn` files with `dotnet build`, `dotnet run`, `dotnet test` and `dotnet pack`, with `ProjectReference`s to and from C# projects and `PackageReference`s as usual:
 
 ```xml
-<Project Sdk="TaipanLang.Sdk/0.4.0">
+<Project Sdk="TaipanLang.Sdk/0.4.1">
   <ItemGroup>
     <ProjectReference Include="../Greeting/Greeting.csproj" />
   </ItemGroup>
