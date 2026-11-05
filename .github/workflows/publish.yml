@@ -3,7 +3,8 @@ name: Publish
 # Publishes the packages to nuget.org when a version tag is pushed (SPEC §12.2), with NuGet's
 # trusted publishing: the job exchanges its GitHub OIDC token for a short-lived API key, so no
 # key is stored. The repository's NUGET_USER secret is the nuget.org account that owns the
-# trusted publishing policy for this workflow.
+# trusted publishing policy for this workflow. Then it publishes the VS Code extension to the
+# Visual Studio Marketplace and Open VSX (SPEC §16.8), with their trusted publishing too.
 on:
   push:
     tags: ["v*"]
@@ -22,12 +23,18 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
-      # The tag must name the version the packages are built at, which Directory.Build.props sets.
+      # The tag must name the version the packages are built at, which Directory.Build.props sets,
+      # and the extension's version must be the same.
       - name: Check the version
         run: |
           version=$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' Directory.Build.props)
           if [ "v$version" != "$GITHUB_REF_NAME" ]; then
             echo "::error::tag $GITHUB_REF_NAME doesn't match version $version in Directory.Build.props"
+            exit 1
+          fi
+          extension=$(node -p "require('./editors/vscode/package.json').version")
+          if [ "$extension" != "$version" ]; then
+            echo "::error::the VS Code extension's version $extension isn't $version"
             exit 1
           fi
 
@@ -43,3 +50,28 @@ jobs:
       # --skip-duplicate lets a run that failed partway be run again.
       - name: Push
         run: dotnet nuget push "packages/*.nupkg" --api-key "${{ steps.login.outputs.NUGET_API_KEY }}" --source https://api.nuget.org/v3/index.json --skip-duplicate
+
+  extension:
+    needs: publish
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: editors/vscode
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Package
+        run: npm ci && npx vsce package --out taipan.vsix
+
+      # Each registry's trusted publishing policy names this repository and workflow, and each
+      # exchanges the job's OIDC token for a short-lived token of its own. --skip-duplicate lets a
+      # run that failed partway be run again.
+      - name: Publish to the Visual Studio Marketplace
+        run: npx vsce publish --oidc --packagePath taipan.vsix --skip-duplicate
+
+      - name: Publish to Open VSX
+        run: npx ovsx publish taipan.vsix --trusted-publishing --skip-duplicate

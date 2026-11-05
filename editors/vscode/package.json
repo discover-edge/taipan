@@ -1,20 +1,37 @@
 {
   "name": "taipan",
   "displayName": "Taipan",
-  "description": "Taipan language support: highlighting, and the taipan language server's diagnostics, completion, navigation and rename.",
-  "version": "0.1.0",
+  "description": "Taipan language support: highlighting, running files, and the taipan language server's diagnostics, completion, navigation, rename and formatting.",
+  "version": "0.4.1",
   "publisher": "discover-edge",
   "license": "MIT",
+  "icon": "icon.png",
   "homepage": "https://taipan-lang.org",
   "repository": {
     "type": "git",
     "url": "https://github.com/taipan-org/taipan"
   },
+  "bugs": {
+    "url": "https://github.com/taipan-org/taipan/issues"
+  },
+  "galleryBanner": {
+    "color": "#0d2e26",
+    "theme": "dark"
+  },
   "engines": {
     "vscode": "^1.82.0"
   },
   "categories": [
-    "Programming Languages"
+    "Programming Languages",
+    "Linters",
+    "Formatters"
+  ],
+  "keywords": [
+    "taipan",
+    "tpn",
+    "python",
+    ".net",
+    "language server"
   ],
   "main": "./extension.js",
   "contributes": {
@@ -47,17 +64,50 @@
           "description": "The taipan command the extension starts as its language server, with `lsp --stdio`. Found on PATH unless it's a path."
         }
       }
+    },
+    "commands": [
+      {
+        "command": "taipan.runFile",
+        "title": "Run File",
+        "category": "Taipan",
+        "icon": "$(play)"
+      },
+      {
+        "command": "taipan.restartServer",
+        "title": "Restart Language Server",
+        "category": "Taipan"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "taipan.runFile",
+          "when": "editorLangId == taipan"
+        },
+        {
+          "command": "taipan.restartServer",
+          "when": "editorLangId == taipan"
+        }
+      ],
+      "editor/title/run": [
+        {
+          "command": "taipan.runFile",
+          "when": "resourceLangId == taipan"
+        }
+      ]
     }
   },
   "scripts": {
     "tokens": "node test/tokenize.mjs test/sample.tpn",
+    "test": "node test/extension.test.mjs",
     "package": "vsce package"
   },
   "dependencies": {
     "vscode-languageclient": "9.0.1"
   },
   "devDependencies": {
-    "@vscode/vsce": "3.2.1",
+    "@vscode/vsce": "4.0.0",
+    "ovsx": "1.3.0",
     "vscode-oniguruma": "2.0.1",
     "vscode-textmate": "9.2.0"
   }

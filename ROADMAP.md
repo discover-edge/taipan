@@ -2,7 +2,7 @@
 
 Each milestone is done when **all** of its acceptance criteria pass as golden tests (see CLAUDE.md). Milestones are sequential. Don't start the next one early.
 
-M0–M10 (with M8.1) make up v0.1 and are complete. M11 through M46 are complete.
+M0–M10 (with M8.1) make up v0.1 and are complete. M11 through M47 are complete.
 
 ## M0 — Scaffold
 - Create the solution layout from CLAUDE.md, the `taipan` CLI with `check | emit | build | run` stubs, and the golden-test harness.
@@ -365,3 +365,13 @@ M0–M10 (with M8.1) make up v0.1 and are complete. M11 through M46 are complete
 - **Accept:**
   - The site builds in CI, and every code sample on it compiles, runs and prints its stated output.
   - Every code in SPEC §9 has a page, and a push to main deploys the site.
+
+## M47 — Editors
+- The VS Code extension, published to the Visual Studio Marketplace and Open VSX by the publish workflow on a version tag, with trusted publishing and at the compiler's version. It gains an icon, the commands Run File and Restart Language Server, and a message with the install command when `taipan` can't be started.
+- Vim and Neovim support in `editors/vim`: filetype detection, a syntax file, and a filetype plugin and indent script (comments, indenting after `:`). Neovim's LSP configuration (`lsp/taipan.lua`) is included too.
+- A website page on editors: VS Code, Neovim, Vim, and any other LSP client.
+- Update SPEC first: what the extension contributes and how it's published, the Vim syntax groups and what each highlights, and what's still deferred (tree-sitter, Test Explorer).
+- **Accept:**
+  - The extension packages at the compiler's version with its icon and commands, and its scripted tests show Run File running the file and a missing `taipan` giving the install message.
+  - Vim highlights the grammar's sample file as its golden syntax list says, and typing a block indents it.
+  - A scripted Neovim session using `lsp/taipan.lua` gets the diagnostics `taipan check` reports.

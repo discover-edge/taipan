@@ -142,7 +142,7 @@ print(sb.ToString())
 - **In a .NET solution:** a `.tpnproj` using the `TaipanLang.Sdk` project SDK builds `.tpn` files with `dotnet build`, `dotnet run`, `dotnet test` and `dotnet pack`, with `ProjectReference`s to and from C# projects and `PackageReference`s as usual:
 
 ```xml
-<Project Sdk="TaipanLang.Sdk/0.4.0">
+<Project Sdk="TaipanLang.Sdk/0.4.1">
   <ItemGroup>
     <ProjectReference Include="../Greeting/Greeting.csproj" />
   </ItemGroup>
@@ -169,22 +169,14 @@ $ cd out && python3 -c "import geometry; print(geometry.area(2.0))"
 ```
 
 - **Language server:** `taipan lsp` speaks the Language Server Protocol over stdin and stdout, for diagnostics as you type, the type of a name on hover, go to definition, completion, signature help, find references, rename across modules (refusing a rename that would break the program), and semantic highlighting.
-- **VS Code:** `editors/vscode` is an extension with a TextMate grammar that starts `taipan lsp`. Build it with `npm ci && npx vsce package` there, and install the `.vsix` with *Extensions: Install from VSIX…*. Any other LSP client works too. In Neovim:
-
-```lua
-vim.filetype.add({ extension = { tpn = "taipan" } })
-vim.api.nvim_create_autocmd("FileType", {
-  pattern = "taipan",
-  callback = function() vim.lsp.start({ name = "taipan", cmd = { "taipan", "lsp" } }) end,
-})
-```
-
-In Helix's `languages.toml`:
+- **VS Code:** install **Taipan** (`discover-edge.taipan`) from the Visual Studio Marketplace, or from Open VSX in VSCodium and Cursor. It highlights code, starts `taipan lsp`, and runs the current file. Its source is `editors/vscode`.
+- **Vim and Neovim:** `editors/vim` is a runtime directory with the `taipan` filetype, highlighting, indenting, and Neovim's language server configuration. Add it to your `runtimepath`; in Neovim 0.11 or later, `vim.lsp.enable('taipan')` then starts the server.
+- **Other editors:** any LSP client works, started as `taipan lsp --stdio`. [Editor setup](https://taipan-lang.org/start/editor/) covers each editor. In Helix's `languages.toml`:
 
 ```toml
 [language-server.taipan]
 command = "taipan"
-args = ["lsp"]
+args = ["lsp", "--stdio"]
 
 [[language]]
 name = "taipan"
