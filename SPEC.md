@@ -11,6 +11,16 @@ Taipan is a statically typed, compiled language with Python's surface syntax. Th
 
 **Non-goals:** source compatibility with Python, dynamic features (`eval`, monkey-patching, `setattr`), and truthiness.
 
+**Design principles, in priority order.** The goals say what Taipan is, and these decide what it does. Every change to the language is checked against them.
+1. **Don't surprise the reader.** If code compiles and looks like Python, it does what a Python developer would expect. If Taipan has to do something else, it's a compile error whose help says what to write instead.
+2. **Catch mistakes at compile time.** If the compiler can reject a mistake, it does. Anything left to run time needs a reason.
+3. **When unsure, leave it out.** A feature earns its place by being common in real programs, not by being in Python or C#. A compile error can become a feature later, but a behaviour people depend on is hard to take back.
+4. **One obvious way to do things.** Fewer features with simple rules, even where Python offers several.
+5. **Use .NET honestly.** Performance and easy deployment are reasons to differ from Python, but the difference has to be visible, as with a 64-bit `int` that raises on overflow rather than wrapping.
+
+**Exceptions to principle 1** are listed here, each with its reason. If the list grows long, the principle isn't true and has to be rewritten.
+- **Defaults are evaluated on each call** (§4.2), since Python's single evaluation is a well-known trap.
+
 ---
 
 ## 1. Lexical structure
