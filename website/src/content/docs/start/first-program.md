@@ -57,11 +57,7 @@ With `--native`, it's a single native executable that doesn't need .NET installe
 
 ## Arguments and input
 
-Arguments after `--` go to the program, as `sys.argv`:
-
-```sh
-taipan run copy.tpn -- source.txt target.txt
-```
+Arguments after `--` go to the program, as `sys.argv`. Its first element is the program's path, as in Python, so this `count.tpn` counts the rest. Run without arguments, it prints its usage:
 
 ```taipan
 import sys
@@ -74,6 +70,16 @@ else:
 
 ```output
 usage: count <word>...
+```
+
+With arguments, it counts them:
+
+```sh
+taipan run count.tpn -- red green blue
+```
+
+```output
+3 words
 ```
 
 ## Next

@@ -51,6 +51,42 @@ main.tpn:3:5: error TP0201: undefined name 'cuont'
 
 `const` declares a top-level constant. Blocks have their own scope, as in C#, and a name in an inner block can't shadow one in an outer block.
 
+## Functions don't see top-level variables
+
+A top-level `let` or `var` belongs to the script's top level, so a function can't use it, where Python would read a module variable:
+
+```taipan
+let limit = 3
+
+def check(n: int) -> bool:
+    return n < limit
+
+print(check(2))
+```
+
+```error
+main.tpn:4:16: error TP0211: 'check' cannot use top-level variable 'limit'
+  help: pass it as a parameter, or make it a const
+```
+
+Pass the value in as a parameter, or make it a `const`. A `const` is visible everywhere, but its value must be a literal or arithmetic on literals, so it can't hold a list or a dict. For a lookup table, a class attribute works:
+
+```taipan
+class Ports:
+    BY_NAME: ClassVar[dict[str, int]] = {"api": 8080, "admin": 9000}
+
+def port(name: str) -> int:
+    return Ports.BY_NAME.get(name) ?? 80
+
+print(port("api"), port("web"))
+```
+
+```output
+8080 80
+```
+
+It's an ordinary mutable dict, and its value may only be plain list, dict and tuple literals, without enum variants, constructors or sets. For a table that needs those, a function with no parameters that returns it works, though it builds the table again on every call.
+
 ## Annotate functions; the rest is inferred
 
 Parameters and results are annotated, as in typed Python. Locals take their type from their initializer. An empty `[]` or `{}` needs a type from somewhere, such as `let names: list[str] = []`.
