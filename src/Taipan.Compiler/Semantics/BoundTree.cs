@@ -75,6 +75,7 @@ public static class BoundTree
         BoundRuntimeProperty property => [property.Target],
         BoundCallableObject callable => [callable.Value],
         BoundInPlaceCheck check => [check.Call],
+        BoundListExtend extend => [extend.List, extend.Items],
         BoundPrint print => [.. print.Values, .. ((BoundExpr?[])[print.Sep, print.End, print.File, print.Flush]).OfType<BoundExpr>()],
         BoundMinMax minMax => [minMax.Values, .. ((BoundExpr?[])[minMax.Key, minMax.Default]).OfType<BoundExpr>()],
         BoundListLiteral list => list.Elements,

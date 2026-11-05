@@ -1,0 +1,67 @@
+var a = [1]
+let b = a
+a += [2]
+print(a, b, a is b)
+
+let c = [1]
+c += [2]
+print(c)
+
+def add(xs: list[int]):
+    xs += [9]
+
+let d = [1]
+add(d)
+print(d)
+
+for row in [[1], [2]]:
+    row += [0]
+    print(row)
+
+let e = [1, 2]
+e += e
+print(e)
+
+class Box:
+    items: list[int]
+
+    def __init__(self):
+        self.items = [1]
+
+    def grow(self):
+        self.items += [2]
+
+let box = Box()
+let held = box.items
+box.grow()
+box.items += [3]
+print(held, box.items is held)
+
+var calls = 0
+def boxed(x: Box) -> Box:
+    print("called")
+    return x
+
+boxed(box).items += [4]
+print(held)
+
+let rows = [[1], [2]]
+let first = rows[0]
+rows[0] += [5]
+print(rows, first)
+
+let table = {"a": [1]}
+let entry = table["a"]
+table["a"] += [6]
+print(table["a"], entry)
+
+let empty: list[str] = []
+empty += ["x"]
+print(empty)
+
+var s = "a"
+s += "b"
+print(s)
+
+let fresh = a + [3]
+print(a, fresh)

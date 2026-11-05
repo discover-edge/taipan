@@ -914,7 +914,7 @@ public sealed partial class CSharpEmitter
                 LineDirective(exprStmt.Span);
                 Line($"throw {Exit(exit)};");
                 break;
-            case BoundExprStmt { Expr: BoundCall or BoundPrint or BoundInPlaceCheck or BoundMethodCall or BoundBuiltinMethodCall or BoundPyCall or BoundInvoke or BoundSort or BoundSuperCall or BoundClassMethodCall or BoundRuntimeMethodCall or BoundDotNetCall { Method.ReturnsVoid: true } } exprStmt:
+            case BoundExprStmt { Expr: BoundCall or BoundPrint or BoundInPlaceCheck or BoundListExtend or BoundMethodCall or BoundBuiltinMethodCall or BoundPyCall or BoundInvoke or BoundSort or BoundSuperCall or BoundClassMethodCall or BoundRuntimeMethodCall or BoundDotNetCall { Method.ReturnsVoid: true } } exprStmt:
                 LineDirective(exprStmt.Span);
                 Line($"{Expr(exprStmt.Expr)};");
                 break;
@@ -1605,6 +1605,7 @@ public sealed partial class CSharpEmitter
             BoundRuntimeProperty property => $"{Operand(property.Target)}.@{property.Name}",
             BoundPrint print => Print(print),
             BoundCallableObject callable => CallableObject(callable),
+            BoundListExtend extend => $"{Runtime}.Ops.Extend({Expr(extend.List)}, {Expr(extend.Items)})",
             BoundInPlaceCheck check => $"{Runtime}.Ops.InPlace({Expr(check.Target)}, {Expr(check.Call)}, \"{check.Op}\", \"{check.Call.Method.Name}\")",
             BoundDictLiteral dict => DictLiteral(dict),
             BoundConstruct construct => Construct(construct),

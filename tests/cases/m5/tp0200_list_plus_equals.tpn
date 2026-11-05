@@ -1,0 +1,16 @@
+@dataclass(frozen=True)
+class Frozen:
+    xs: list[int]
+
+let xs = [1]
+xs += ["a"]
+xs += (1, 2)
+xs += 1
+let n = 1
+n += 1
+let t = "a"
+t += "b"
+let f = Frozen([1])
+f.xs += [2]
+def g(k: int):
+    k += 1
