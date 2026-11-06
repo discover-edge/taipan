@@ -1,0 +1,13 @@
+let a = "\{"
+let b = "\}"
+let c = f"\{a\}"
+let d = "\q"
+let e = "\N{DASH}"
+let f = "\x4"
+let g = "\xzz"
+let h = "\u12"
+let i = "\U0001F60"
+let j = "\ud83d"
+let k = "\U00110000"
+let l = "ok \q and \z"
+print(a, b, c, d, e, f, g, h, i, j, k, l)

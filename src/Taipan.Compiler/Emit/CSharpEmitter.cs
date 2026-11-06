@@ -2209,7 +2209,8 @@ public sealed partial class CSharpEmitter
                 '\n' => @"\n",
                 '\t' => @"\t",
                 '\r' => @"\r",
-                _ when char.IsControl(c) => $"\\u{(int)c:X4}",
+                // C# ends a line at U+2028 and U+2029 too.
+                _ when char.IsControl(c) || c is '\u2028' or '\u2029' => $"\\u{(int)c:X4}",
                 _ => c.ToString(),
             });
         }

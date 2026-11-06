@@ -1,0 +1,1 @@
+tests/cases/m49/tp0100_class_fstring.tpn:2:5: error TP0100: expected name, found f-string

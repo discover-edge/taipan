@@ -1,0 +1,4 @@
+"""The program."""
+import helper
+
+print(helper.twice(2))

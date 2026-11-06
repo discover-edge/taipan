@@ -50,11 +50,71 @@
       ]
     },
     "escape": {
-      "match": "\\\\[nt\\\\\\\\\\\"'{}]",
+      "match": "\\\\(?:[ntrabfv\\\\\\\"']|[0-7]{1,3}|x\\h{2}|u\\h{4}|U\\h{8}|$)",
       "name": "constant.character.escape.taipan"
     },
     "string": {
       "patterns": [
+        {
+          "begin": "r\"\"\"",
+          "end": "\"\"\"",
+          "name": "string.quoted.raw.taipan",
+          "patterns": [
+            {
+              "match": "\\\\."
+            }
+          ]
+        },
+        {
+          "begin": "r'''",
+          "end": "'''",
+          "name": "string.quoted.raw.taipan",
+          "patterns": [
+            {
+              "match": "\\\\."
+            }
+          ]
+        },
+        {
+          "begin": "r\"",
+          "end": "\"|$",
+          "name": "string.quoted.raw.taipan",
+          "patterns": [
+            {
+              "match": "\\\\."
+            }
+          ]
+        },
+        {
+          "begin": "r'",
+          "end": "'|$",
+          "name": "string.quoted.raw.taipan",
+          "patterns": [
+            {
+              "match": "\\\\."
+            }
+          ]
+        },
+        {
+          "begin": "\"\"\"",
+          "end": "\"\"\"",
+          "name": "string.quoted.double.taipan",
+          "patterns": [
+            {
+              "include": "#escape"
+            }
+          ]
+        },
+        {
+          "begin": "'''",
+          "end": "'''",
+          "name": "string.quoted.single.taipan",
+          "patterns": [
+            {
+              "include": "#escape"
+            }
+          ]
+        },
         {
           "begin": "\"",
           "end": "(\")|$",
@@ -79,6 +139,102 @@
     },
     "fstring": {
       "patterns": [
+        {
+          "begin": "(?:rf|fr)\"\"\"",
+          "end": "\"\"\"",
+          "name": "string.interpolated.taipan",
+          "patterns": [
+            {
+              "match": "\\\\[^{}]"
+            },
+            {
+              "include": "#braces"
+            },
+            {
+              "include": "#hole"
+            }
+          ]
+        },
+        {
+          "begin": "(?:rf|fr)'''",
+          "end": "'''",
+          "name": "string.interpolated.taipan",
+          "patterns": [
+            {
+              "match": "\\\\[^{}]"
+            },
+            {
+              "include": "#braces"
+            },
+            {
+              "include": "#hole"
+            }
+          ]
+        },
+        {
+          "begin": "(?:rf|fr)\"",
+          "end": "\"|$",
+          "name": "string.interpolated.taipan",
+          "patterns": [
+            {
+              "match": "\\\\[^{}]"
+            },
+            {
+              "include": "#braces"
+            },
+            {
+              "include": "#hole"
+            }
+          ]
+        },
+        {
+          "begin": "(?:rf|fr)'",
+          "end": "'|$",
+          "name": "string.interpolated.taipan",
+          "patterns": [
+            {
+              "match": "\\\\[^{}]"
+            },
+            {
+              "include": "#braces"
+            },
+            {
+              "include": "#hole"
+            }
+          ]
+        },
+        {
+          "begin": "f\"\"\"",
+          "end": "\"\"\"",
+          "name": "string.interpolated.taipan",
+          "patterns": [
+            {
+              "include": "#escape"
+            },
+            {
+              "include": "#braces"
+            },
+            {
+              "include": "#hole"
+            }
+          ]
+        },
+        {
+          "begin": "f'''",
+          "end": "'''",
+          "name": "string.interpolated.taipan",
+          "patterns": [
+            {
+              "include": "#escape"
+            },
+            {
+              "include": "#braces"
+            },
+            {
+              "include": "#hole"
+            }
+          ]
+        },
         {
           "begin": "f(\")",
           "end": "(\")|$",

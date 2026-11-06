@@ -1,0 +1,8 @@
+"""A module's docstring,
+across lines."""
+
+"And another."
+
+def twice(n: int) -> int:
+    """Doubles it."""
+    return n * 2

@@ -1,0 +1,9 @@
+"""A library's docstring."""
+
+def twice(n: int) -> int:
+    """Doubles it."""
+    return n * 2
+
+class Box:
+    """A box."""
+    value: int = 0

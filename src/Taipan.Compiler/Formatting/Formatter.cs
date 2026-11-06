@@ -75,6 +75,8 @@ public static class Formatter
                     // INDENT and DEDENT tokens sit at the start of the line they affect.
                     while (structureIndex < structure.Count && structure[structureIndex].Span.Start <= codeLine.Tokens[0].Span.Start)
                         Structure(structure[structureIndex++]);
+                    // A multi-line string's lines belong to its code line, and a comment follows the last.
+                    line = codeLine.LastLine;
                     var trailing = commentIndex < comments.Count && comments[commentIndex].Line == line ? comments[commentIndex++] : default;
                     WriteCode(codeLine.Tokens, trailing.Text);
                     continue;
@@ -102,15 +104,17 @@ public static class Formatter
                 _armsEnd = arms.Column - 4;
         }
 
-        private List<(int Line, List<Token> Tokens)> GroupLines(List<Token> code)
+        private List<(int Line, int LastLine, List<Token> Tokens)> GroupLines(List<Token> code)
         {
-            var lines = new List<(int Line, List<Token> Tokens)>();
+            var lines = new List<(int Line, int LastLine, List<Token> Tokens)>();
             foreach (var token in code)
             {
                 var line = source.GetLinePosition(token.Span.Start).Line;
-                if (lines.Count == 0 || lines[^1].Line != line)
-                    lines.Add((line, []));
+                var lastLine = source.GetLinePosition(token.Span.End).Line;
+                if (lines.Count == 0 || lines[^1].LastLine != line)
+                    lines.Add((line, lastLine, []));
                 lines[^1].Tokens.Add(token);
+                lines[^1] = lines[^1] with { LastLine = lastLine };
             }
             return lines;
         }

@@ -80,6 +80,19 @@ public class FormatterTests
     /// The style depends only on the tokens and the lines they're on (SPEC §19): a case with its
     /// indentation doubled and two spaces between its tokens formats as the case itself does.
     /// </summary>
+    // A multi-line string's text stays as it is, and the code around it is still formatted (SPEC §1, M49).
+    [Fact]
+    public void FormattingLeavesMultiLineStringsAlone()
+    {
+        const string source = "let  a  =  \"\"\"x\n   # not a comment\n\n  y  z\"\"\" + \"w\"   # a comment\n\n\n\nlet   b = \"joined \\\n   line\"\n"
+            + "def f( ) -> str:\n      \"\"\"Doc\n         more\n      \"\"\"\n      return   \"\"\"q\"\"\"\n";
+        const string expected = "let a = \"\"\"x\n   # not a comment\n\n  y  z\"\"\" + \"w\"  # a comment\n\n\nlet b = \"joined \\\n   line\"\n"
+            + "def f() -> str:\n    \"\"\"Doc\n         more\n      \"\"\"\n    return \"\"\"q\"\"\"\n";
+        var formatted = Formatter.Format(SourceText.From(source, "t.tpn")).Text;
+        Assert.Equal(expected, formatted);
+        Assert.Equal(expected, Formatter.Format(SourceText.From(expected, "t.tpn")).Text);
+    }
+
     [Theory]
     [MemberData(nameof(Cases))]
     public void FormattingIgnoresWhitespace(string casePath)
@@ -94,6 +107,9 @@ public class FormatterTests
     private static string Respace(string text)
     {
         var source = SourceText.From(text);
+        // This rewrites line by line, which can't split a multi-line string; FormattingLeavesMultiLineStringsAlone covers those.
+        if (Compiler.Lexing.Lexer.Lex(source).Tokens.Any(t => t.Kind is Compiler.Lexing.TokenKind.String or Compiler.Lexing.TokenKind.FString && t.Text.Contains('\n')))
+            return text;
         var tokens = Compiler.Lexing.Lexer.Lex(source).Tokens.Where(t => t.Span.Length > 0 && t.Kind != Compiler.Lexing.TokenKind.Newline).ToList();
         var lines = text.Split('\n');
         var result = new List<string>();

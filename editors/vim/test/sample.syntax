@@ -345,3 +345,42 @@
 66:25 "file" -
 66:29 "=" taipanAssignment
 66:30 "sys.stderr)" -
+68:1 "def" taipanFunctionKeyword
+68:5 "docs" taipanFunctionName
+68:9 "()" -
+68:12 "->" taipanArrow
+68:15 "str" taipanBuiltinType
+68:18 ":" -
+69:5 "\"\"\"A docstring" taipanString
+70:1 "    across lines, with an escape" taipanString
+70:33 "\\t" taipanEscape
+70:35 "." taipanString
+71:1 "    \"\"\"" taipanString
+72:5 "let" taipanDeclaration
+72:9 "raw" -
+72:13 "=" taipanAssignment
+72:15 "r\"\\d+\\n\"" taipanString
+72:24 "+" taipanArithmetic
+72:26 "r\"\"\"\\s" taipanString
+73:1 "\"\"\"" taipanString
+74:5 "let" taipanDeclaration
+74:9 "codes" -
+74:15 "=" taipanAssignment
+74:17 "\"" taipanString
+74:18 "\\r\\x41\\u00e9\\U0001F600\\012" taipanEscape
+74:44 "\"" taipanString
+75:5 "return" taipanStatement
+75:12 "f\"\"\"" taipanFString
+75:16 "{" taipanHoleBrace
+75:17 "raw" taipanHole
+75:20 "}" taipanHoleBrace
+75:22 "{{" taipanFBraces
+75:24 "braces" taipanFString
+75:30 "}}" taipanFBraces
+76:1 "\"\"\"" taipanFString
+76:5 "+" taipanArithmetic
+76:7 "rf\"\\d" taipanFString
+76:12 "{" taipanHoleBrace
+76:13 "codes" taipanHole
+76:18 "}" taipanHoleBrace
+76:19 "\"" taipanFString

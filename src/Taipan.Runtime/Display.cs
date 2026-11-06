@@ -63,12 +63,41 @@ public static class Display
     /// </summary>
     public static string Repr(object? value) => value switch
     {
-        string s => "\"" + s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\t", "\\t") + "\"",
+        string s => QuotedRepr(s),
         null => Format(value),
         // A class's __repr__ (SPEC §4.8); an exception's shows its class and message, as Python's does (SPEC §6).
         IClass c => c.__repr__(),
         _ => ExternalFormat?.Invoke(value, true) ?? Format(value),
     };
+
+    /// <summary>A string as Python's <c>repr</c> escapes it, always in <c>"</c> quotes (SPEC §6, M49).</summary>
+    private static string QuotedRepr(string value)
+    {
+        var text = new System.Text.StringBuilder().Append('"');
+        foreach (var rune in value.EnumerateRunes())
+        {
+            text.Append(rune.Value switch
+            {
+                '\\' => "\\\\",
+                '"' => "\\\"",
+                '\n' => "\\n",
+                '\r' => "\\r",
+                '\t' => "\\t",
+                _ when IsPrintable(rune) => rune.ToString(),
+                < 0x100 => $"\\x{rune.Value:x2}",
+                < 0x10000 => $"\\u{rune.Value:x4}",
+                _ => $"\\U{rune.Value:x8}",
+            });
+        }
+        return text.Append('"').ToString();
+    }
+
+    // Python's str.isprintable: a space, or anything but a control, format, private, unassigned or separator character.
+    private static bool IsPrintable(System.Text.Rune rune) => rune.Value == ' ' || System.Text.Rune.GetUnicodeCategory(rune) is not (
+        System.Globalization.UnicodeCategory.Control or System.Globalization.UnicodeCategory.Format
+        or System.Globalization.UnicodeCategory.Surrogate or System.Globalization.UnicodeCategory.PrivateUse
+        or System.Globalization.UnicodeCategory.OtherNotAssigned or System.Globalization.UnicodeCategory.SpaceSeparator
+        or System.Globalization.UnicodeCategory.LineSeparator or System.Globalization.UnicodeCategory.ParagraphSeparator);
 
     /// <summary>
     /// Python's <c>repr</c> of a string, in <c>'</c> quotes unless it holds one and no <c>"</c>, for

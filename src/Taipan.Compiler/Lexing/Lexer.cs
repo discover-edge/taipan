@@ -165,10 +165,16 @@ public sealed class Lexer
                 SkipComment();
                 break;
             case '"' or '\'':
-                ScanString();
+                ScanString(prefix: 0, raw: false);
                 break;
             case 'f' when Peek(1) is '"' or '\'':
-                ScanFString();
+                ScanFString(prefix: 1, raw: false);
+                break;
+            case 'r' when Peek(1) is '"' or '\'':
+                ScanString(prefix: 1, raw: true);
+                break;
+            case 'r' or 'f' when Peek(1) is 'r' or 'f' && Peek(1) != Current && Peek(2) is '"' or '\'':
+                ScanFString(prefix: 2, raw: true);
                 break;
             case >= '0' and <= '9':
                 ScanNumber();
@@ -250,28 +256,57 @@ public sealed class Lexer
         return valid && previous != '_';
     }
 
-    private void ScanString()
+    // Moves past a string's opening quote or quotes, and says whether it's triple-quoted.
+    private bool OpenQuote(char quote)
+    {
+        var triple = Peek(1) == quote && Peek(2) == quote;
+        _pos += triple ? 3 : 1;
+        return triple;
+    }
+
+    private bool AtCloseQuote(char quote, bool triple) =>
+        Current == quote && (!triple || (Peek(1) == quote && Peek(2) == quote));
+
+    // A raw string keeps a backslash and the character after it, which can't close the string. In an
+    // f-string, a brace after it still opens a hole, as in Python (SPEC §1).
+    private void ReadRawBackslash(StringBuilder value, bool inFString)
+    {
+        value.Append('\\');
+        _pos++;
+        if (!AtEnd && !(inFString && Current is '{' or '}'))
+        {
+            value.Append(Current);
+            _pos++;
+        }
+    }
+
+    private void ScanString(int prefix, bool raw)
     {
         var start = _pos;
+        _pos += prefix;
+        var quotePos = _pos;
         var quote = Current;
-        _pos++;
+        var triple = OpenQuote(quote);
 
         var value = new StringBuilder();
         while (true)
         {
-            if (AtEnd || Current == '\n')
+            if (AtEnd || (Current == '\n' && !triple))
             {
-                _diagnostics.ReportUnterminatedString(new TextSpan(start, 1));
+                _diagnostics.ReportUnterminatedString(new TextSpan(quotePos, 1));
                 break;
             }
-            if (Current == quote)
+            if (AtCloseQuote(quote, triple))
             {
-                _pos++;
+                _pos += triple ? 3 : 1;
                 break;
             }
             if (Current == '\\')
             {
-                ReadEscape(value);
+                if (raw)
+                    ReadRawBackslash(value, inFString: false);
+                else
+                    ReadEscape(value);
                 continue;
             }
             value.Append(Current);
@@ -284,12 +319,13 @@ public sealed class Lexer
         });
     }
 
-    private void ScanFString()
+    private void ScanFString(int prefix, bool raw)
     {
         var start = _pos;
-        var quotePos = _pos + 1;
+        var quotePos = _pos + prefix;
         var quote = _text[quotePos];
-        _pos += 2;
+        _pos += prefix;
+        var triple = OpenQuote(quote);
 
         var parts = ImmutableArray.CreateBuilder<FStringPart>();
         var literal = new StringBuilder();
@@ -304,21 +340,24 @@ public sealed class Lexer
 
         while (true)
         {
-            if (AtEnd || Current == '\n')
+            if (AtEnd || (Current == '\n' && !triple))
             {
                 _diagnostics.ReportUnterminatedString(new TextSpan(quotePos, 1));
                 break;
             }
             var c = Current;
-            if (c == quote)
+            if (AtCloseQuote(quote, triple))
             {
                 FlushLiteral();
-                _pos++;
+                _pos += triple ? 3 : 1;
                 break;
             }
             if (c == '\\')
             {
-                ReadEscape(literal);
+                if (raw)
+                    ReadRawBackslash(literal, inFString: true);
+                else
+                    ReadEscape(literal);
                 continue;
             }
             if ((c == '{' || c == '}') && Peek(1) == c)
@@ -408,7 +447,7 @@ public sealed class Lexer
             else if (c is '"' or '\'')
             {
                 var prefix = _pos - 1;
-                if (prefix >= exprStart && _text[prefix] == 'f' && (prefix == exprStart || !IsIdentifierChar(_text[prefix - 1])))
+                if (prefix >= exprStart && IsFStringPrefix(exprStart, ref prefix))
                     _diagnostics.ReportNestedFString(new TextSpan(prefix, 1));
                 if (!SkipNestedString(quotePos))
                     return false;
@@ -454,21 +493,35 @@ public sealed class Lexer
         return true;
     }
 
+    // Whether the characters before a quote at prefix + 1 are f, rf or fr, as a whole word.
+    private bool IsFStringPrefix(int exprStart, ref int prefix)
+    {
+        var first = prefix;
+        if (first > exprStart && _text[first - 1] is 'r' or 'f' && _text[first - 1] != _text[first] && _text[first] is 'r' or 'f')
+            first--;
+        else if (_text[first] != 'f')
+            return false;
+        if (first > exprStart && IsIdentifierChar(_text[first - 1]))
+            return false;
+        prefix = first;
+        return true;
+    }
+
     /// <summary>Skips a string literal inside a hole; the parser validates it when re-lexing the hole.</summary>
     private bool SkipNestedString(int quotePos)
     {
         var quote = Current;
-        _pos++;
+        var triple = OpenQuote(quote);
         while (true)
         {
-            if (AtEnd || Current == '\n')
+            if (AtEnd || (Current == '\n' && !triple))
             {
                 _diagnostics.ReportUnterminatedString(new TextSpan(quotePos, 1));
                 return false;
             }
-            if (Current == quote)
+            if (AtCloseQuote(quote, triple))
             {
-                _pos++;
+                _pos += triple ? 3 : 1;
                 return true;
             }
             _pos += Current == '\\' && Peek(1) != '\n' && _pos + 1 < _end ? 2 : 1;
@@ -476,14 +529,20 @@ public sealed class Lexer
     }
 
     /// <summary>
-    /// Decodes the escape at <c>\</c> into <paramref name="value"/>. A backslash at end of line is
-    /// consumed alone so the caller reports the string as unterminated.
+    /// Decodes the escape at <c>\</c> into <paramref name="value"/>. A backslash at the end of the
+    /// source is consumed alone so the caller reports the string as unterminated, and one before a
+    /// newline joins the lines (SPEC §1).
     /// </summary>
     private void ReadEscape(StringBuilder value)
     {
-        if (_pos + 1 >= _end || Peek(1) == '\n')
+        if (_pos + 1 >= _end)
         {
             _pos++;
+            return;
+        }
+        if (Peek(1) == '\n')
+        {
+            _pos += 2;
             return;
         }
 
@@ -491,11 +550,14 @@ public sealed class Lexer
         {
             'n' => '\n',
             't' => '\t',
+            'r' => '\r',
+            'a' => '\a',
+            'b' => '\b',
+            'f' => '\f',
+            'v' => '\v',
             '\\' => '\\',
             '"' => '"',
             '\'' => '\'',
-            '{' => '{',
-            '}' => '}',
             _ => (char?)null,
         };
 
@@ -506,9 +568,51 @@ public sealed class Lexer
             return;
         }
 
+        if (Peek(1) is >= '0' and <= '7')
+        {
+            var digits = 0;
+            var code = 0;
+            while (digits < 3 && Peek(1 + digits) is >= '0' and <= '7' and var digit)
+            {
+                code = code * 8 + (digit - '0');
+                digits++;
+            }
+            value.Append((char)code);
+            _pos += 1 + digits;
+            return;
+        }
+
+        if (Peek(1) is 'x' or 'u' or 'U')
+        {
+            ReadHexEscape(value, Peek(1) switch { 'x' => 2, 'u' => 4, _ => 8 });
+            return;
+        }
+
         var rune = RuneAt(_pos + 1, out var length);
         _diagnostics.ReportInvalidEscape(new TextSpan(_pos, 1 + length), rune);
         _pos += 1 + length;
+    }
+
+    // \xhh, \uhhhh or \Uhhhhhhhh, whose value a Taipan string must be able to hold (SPEC §1).
+    private void ReadHexEscape(StringBuilder value, int digits)
+    {
+        var letter = Peek(1);
+        var found = 0;
+        while (found < digits && Uri.IsHexDigit(Peek(2 + found)))
+            found++;
+        var span = new TextSpan(_pos, 2 + found);
+        if (found < digits)
+            _diagnostics.ReportEscapeNeedsHexDigits(span, letter, digits);
+        else
+        {
+            var hex = _text.Substring(_pos + 2, digits);
+            var code = long.Parse(hex, System.Globalization.NumberStyles.HexNumber);
+            if (code > 0x10FFFF || code is >= 0xD800 and <= 0xDFFF)
+                _diagnostics.ReportEscapeNotACharacter(span, letter, hex);
+            else
+                value.Append(char.ConvertFromUtf32((int)code));
+        }
+        _pos += 2 + found;
     }
 
     private void ScanOperator()

@@ -1,0 +1,2 @@
+"""A library still can't have other statements."""
+print("no")

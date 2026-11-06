@@ -20,13 +20,25 @@ syn cluster taipanCode contains=taipanFString,taipanString,taipanNumber,taipanFl
 syn match taipanComment "#.*$" contains=@Spell
 
 " Strings end at their quote, or at the end of the line when they aren't closed.
-syn match taipanEscape "\\[nt\\\"'{}]" contained
+syn match taipanEscape "\\\%([ntrabfv\\\"']\|\o\{1,3}\|x\x\{2}\|u\x\{4}\|U\x\{8}\|$\)" contained
 syn region taipanString start=+"+ skip=+\\\\\|\\"+ end=+"\|$+ contains=taipanEscape,@Spell
 syn region taipanString start=+'+ skip=+\\\\\|\\'+ end=+'\|$+ contains=taipanEscape,@Spell
+syn region taipanString start=+"""+ skip=+\\.+ end=+"""+ contains=taipanEscape,@Spell
+syn region taipanString start=+\'\'\'+ skip=+\\.+ end=+\'\'\'+ contains=taipanEscape,@Spell
+syn region taipanString start=+\<r"+ skip=+\\.+ end=+"\|$+ contains=@Spell
+syn region taipanString start=+\<r'+ skip=+\\.+ end=+'\|$+ contains=@Spell
+syn region taipanString start=+\<r"""+ skip=+\\.+ end=+"""+ contains=@Spell
+syn region taipanString start=+\<r\'\'\'+ skip=+\\.+ end=+\'\'\'+ contains=@Spell
 
 " An f-string's holes hold code, with a conversion and a format spec at their end.
 syn region taipanFString start=+\<f"+ skip=+\\\\\|\\"+ end=+"\|$+ contains=taipanEscape,taipanHole,taipanFBraces
 syn region taipanFString start=+\<f'+ skip=+\\\\\|\\'+ end=+'\|$+ contains=taipanEscape,taipanHole,taipanFBraces
+syn region taipanFString start=+\<f"""+ skip=+\\.+ end=+"""+ contains=taipanEscape,taipanHole,taipanFBraces
+syn region taipanFString start=+\<f\'\'\'+ skip=+\\.+ end=+\'\'\'+ contains=taipanEscape,taipanHole,taipanFBraces
+syn region taipanFString start=+\<\%(rf\|fr\)"+ skip=+\\[^{}]+ end=+"\|$+ contains=taipanHole,taipanFBraces
+syn region taipanFString start=+\<\%(rf\|fr\)'+ skip=+\\[^{}]+ end=+'\|$+ contains=taipanHole,taipanFBraces
+syn region taipanFString start=+\<\%(rf\|fr\)"""+ skip=+\\[^{}]+ end=+"""+ contains=taipanHole,taipanFBraces
+syn region taipanFString start=+\<\%(rf\|fr\)\'\'\'+ skip=+\\[^{}]+ end=+\'\'\'+ contains=taipanHole,taipanFBraces
 syn region taipanHole matchgroup=taipanHoleBrace start=+{+ end=+}+ contained contains=@taipanCode,taipanFormat
 syn match taipanFBraces "{{\|}}" contained
 syn match taipanFormat "![rs]\ze[:}]" contained

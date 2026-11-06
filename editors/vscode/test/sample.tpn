@@ -64,3 +64,13 @@ def stats(xs: list[int]) -> set[int]:
 def copy(path: str) -> None:
     with open(path) as f:
         print(f.read(), file=sys.stderr)
+
+def docs() -> str:
+    """A docstring
+    across lines, with an escape\t.
+    """
+    let raw = r"\d+\n" + r"""\s
+"""
+    let codes = "\r\x41\u00e9\U0001F600\012"
+    return f"""{raw} {{braces}}
+""" + rf"\d{codes}"

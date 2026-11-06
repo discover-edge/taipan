@@ -329,6 +329,25 @@ public class EditorTests
 
     private static readonly string[] Modifiers = ["declaration", "readonly", "static", "defaultLibrary"];
 
+    // Names after a multi-line string, and in a triple-quoted f-string's holes, keep their lines (SPEC §1, M49).
+    [Fact]
+    public void GivesSemanticTokensAroundMultiLineStrings()
+    {
+        const string text = "var first = \"\"\"a\nb\"\"\"\nvar second = f\"\"\"\n{first}\nc{first}\"\"\"\nprint(second)\n";
+        var session = new LspSession().Open(Main, text).SemanticTokens(Main).Run();
+        var data = session.Responses().Single()["result"]!["data"]!.AsArray().Select(n => n!.GetValue<int>()).ToArray();
+        var lines = text.Split('\n');
+        var names = new List<string>();
+        int line = 0, column = 0;
+        for (var i = 0; i < data.Length; i += 5)
+        {
+            line += data[i];
+            column = data[i] == 0 ? column + data[i + 1] : data[i + 1];
+            names.Add($"{line + 1}:{column + 1} {lines[line].Substring(column, data[i + 2])}");
+        }
+        Assert.Equal(["1:5 first", "3:5 second", "4:2 first", "5:3 first", "6:7 second"], names.Where(n => !n.EndsWith("print")));
+    }
+
     [Fact]
     public void GivesSemanticTokens()
     {

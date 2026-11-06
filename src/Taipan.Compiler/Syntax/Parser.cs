@@ -513,6 +513,13 @@ public sealed class Parser
             Expect(TokenKind.Newline);
             return pass;
         }
+        // A docstring does nothing (SPEC §1, M49).
+        if (At(TokenKind.String))
+        {
+            var docstring = new PassStmt(Next().Span);
+            Expect(TokenKind.Newline);
+            return docstring;
+        }
         var name = ExpectIdentifier();
         Expect(TokenKind.Colon);
         var type = ParseType();

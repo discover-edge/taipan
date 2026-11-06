@@ -1,0 +1,18 @@
+tests/cases/m49/tp0005_escapes.tpn:1:10: error TP0005: invalid escape sequence '\{'
+  help: write '{{' in an f-string, or '{' elsewhere
+tests/cases/m49/tp0005_escapes.tpn:2:10: error TP0005: invalid escape sequence '\}'
+  help: write '}}' in an f-string, or '}' elsewhere
+tests/cases/m49/tp0005_escapes.tpn:3:11: error TP0005: invalid escape sequence '\{'
+  help: write '{{' in an f-string, or '{' elsewhere
+tests/cases/m49/tp0005_escapes.tpn:3:14: error TP0005: invalid escape sequence '\}'
+  help: write '}}' in an f-string, or '}' elsewhere
+tests/cases/m49/tp0005_escapes.tpn:4:10: error TP0005: invalid escape sequence '\q'
+tests/cases/m49/tp0005_escapes.tpn:5:10: error TP0005: invalid escape sequence '\N'
+tests/cases/m49/tp0005_escapes.tpn:6:10: error TP0005: '\x' needs 2 hex digits
+tests/cases/m49/tp0005_escapes.tpn:7:10: error TP0005: '\x' needs 2 hex digits
+tests/cases/m49/tp0005_escapes.tpn:8:10: error TP0005: '\u' needs 4 hex digits
+tests/cases/m49/tp0005_escapes.tpn:9:10: error TP0005: '\U' needs 8 hex digits
+tests/cases/m49/tp0005_escapes.tpn:10:10: error TP0005: '\ud83d' isn't a character a string can hold
+tests/cases/m49/tp0005_escapes.tpn:11:10: error TP0005: '\U00110000' isn't a character a string can hold
+tests/cases/m49/tp0005_escapes.tpn:12:13: error TP0005: invalid escape sequence '\q'
+tests/cases/m49/tp0005_escapes.tpn:12:20: error TP0005: invalid escape sequence '\z'
