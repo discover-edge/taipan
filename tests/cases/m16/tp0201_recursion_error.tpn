@@ -1,0 +1,9 @@
+def f(n: int) -> int:
+    return f(n + 1)
+
+try:
+    print(f(0))
+except RecursionError as e:
+    print("caught")
+
+raise RecursionError("too deep")

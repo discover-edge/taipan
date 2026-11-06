@@ -451,13 +451,19 @@ public sealed class DiagnosticBag
         Add("TP0210", span, $"{type} has no method '{name}'", whyNotNarrowed);
 
     public void ReportUndefinedName(TextSpan span, string name) =>
-        Add("TP0201", span, $"undefined name '{name}'", NoneHelp(name));
+        Add("TP0201", span, $"undefined name '{name}'", UndefinedHelp(name));
 
     public void ReportUndefinedType(TextSpan span, string name) =>
-        Add("TP0201", span, $"undefined type '{name}'", name == "Self" ? "'Self' can only be used in a protocol" : NoneHelp(name));
+        Add("TP0201", span, $"undefined type '{name}'", name == "Self" ? "'Self' can only be used in a protocol" : UndefinedHelp(name));
 
-    // Python's spelling is None; a lowercase none is just an undefined name (SPEC §3.4).
-    private static string? NoneHelp(string name) => name == "none" ? "use 'None'" : null;
+    // Python's spelling is None; a lowercase none is just an undefined name (SPEC §3.4). Python has a
+    // RecursionError, but a stack overflow in .NET can't be caught (SPEC, design principles).
+    private static string? UndefinedHelp(string name) => name switch
+    {
+        "none" => "use 'None'",
+        "RecursionError" => "infinite recursion ends the process, as in .NET, so nothing can catch it",
+        _ => null,
+    };
 
     public void ReportCannotAssign(TextSpan span, string name, string what, string? help) =>
         Add("TP0202", span, $"cannot assign to '{name}': it is a {what}", help);
