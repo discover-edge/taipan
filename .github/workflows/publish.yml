@@ -70,6 +70,8 @@ jobs:
       # Each registry's trusted publishing policy names this repository and workflow, and each
       # exchanges the job's OIDC token for a short-lived token of its own. --skip-duplicate lets a
       # run that failed partway be run again.
+      # Open VSX registers a trusted publisher per extension, and only for one that already has a
+      # version, so a new extension's first version there is uploaded by hand with an access token.
       - name: Publish to the Visual Studio Marketplace
         run: npx vsce publish --oidc --packagePath taipan.vsix --skip-duplicate
 
