@@ -490,6 +490,25 @@ public sealed class DiagnosticBag
         Add("TP0211", span, $"'{function}' cannot use top-level variable '{name}'",
             couldBeConstant ? "pass it as a parameter, or make it a const" : "pass it as a parameter");
 
+    public void ReportAssignedWithoutNonlocal(TextSpan span, string name) =>
+        Add("TP0236", span, $"'{name}' belongs to an enclosing function, so assigning to it needs 'nonlocal'",
+            $"add 'nonlocal {name}' at the start of this function, or use 'let' with another name for a new variable");
+
+    public void ReportAssignedTopLevelInNested(TextSpan span, string name) =>
+        Add("TP0236", span, $"a nested function can't assign to the top-level variable '{name}'", "pass it in and return the new value");
+
+    public void ReportNonlocalOutsideNested(TextSpan span) =>
+        Add("TP0236", span, "'nonlocal' can only be used in a nested function");
+
+    public void ReportNonlocalNotFirst(TextSpan span) =>
+        Add("TP0236", span, "'nonlocal' must come first in a function's body");
+
+    public void ReportNonlocalNotFound(TextSpan span, string name) =>
+        Add("TP0236", span, $"no binding for nonlocal '{name}' found");
+
+    public void ReportNonlocalOwnName(TextSpan span, string name) =>
+        Add("TP0236", span, $"'{name}' is declared in this function, so it can't be nonlocal");
+
     public void ReportDuplicateDefinition(TextSpan span, string name) =>
         Add("TP0214", span, $"duplicate definition of '{name}'");
 

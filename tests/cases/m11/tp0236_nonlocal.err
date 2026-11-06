@@ -1,0 +1,22 @@
+tests/cases/m11/tp0236_nonlocal.tpn:6:9: error TP0236: 'n' belongs to an enclosing function, so assigning to it needs 'nonlocal'
+  help: add 'nonlocal n' at the start of this function, or use 'let' with another name for a new variable
+tests/cases/m11/tp0236_nonlocal.tpn:8:9: error TP0236: 'n' belongs to an enclosing function, so assigning to it needs 'nonlocal'
+  help: add 'nonlocal n' at the start of this function, or use 'let' with another name for a new variable
+tests/cases/m11/tp0236_nonlocal.tpn:10:9: error TP0236: 'n' belongs to an enclosing function, so assigning to it needs 'nonlocal'
+  help: add 'nonlocal n' at the start of this function, or use 'let' with another name for a new variable
+tests/cases/m11/tp0236_nonlocal.tpn:10:12: error TP0201: undefined name 'm'
+tests/cases/m11/tp0236_nonlocal.tpn:13:9: error TP0236: 'xs' belongs to an enclosing function, so assigning to it needs 'nonlocal'
+  help: add 'nonlocal xs' at the start of this function, or use 'let' with another name for a new variable
+tests/cases/m11/tp0236_nonlocal.tpn:16:9: error TP0236: 'nonlocal' must come first in a function's body
+tests/cases/m11/tp0236_nonlocal.tpn:18:18: error TP0236: no binding for nonlocal 'nothing' found
+tests/cases/m11/tp0236_nonlocal.tpn:20:18: error TP0236: 'p' is declared in this function, so it can't be nonlocal
+tests/cases/m11/tp0236_nonlocal.tpn:23:9: error TP0236: 'nonlocal' must come first in a function's body
+tests/cases/m11/tp0236_nonlocal.tpn:24:5: error TP0236: 'nonlocal' can only be used in a nested function
+tests/cases/m11/tp0236_nonlocal.tpn:26:1: error TP0236: 'nonlocal' can only be used in a nested function
+tests/cases/m11/tp0236_nonlocal.tpn:30:9: error TP0236: a nested function can't assign to the top-level variable 'total'
+  help: pass it in and return the new value
+tests/cases/m11/tp0236_nonlocal.tpn:32:18: error TP0236: no binding for nonlocal 'total' found
+tests/cases/m11/tp0236_nonlocal.tpn:33:9: error TP0236: a nested function can't assign to the top-level variable 'total'
+  help: pass it in and return the new value
+tests/cases/m11/tp0236_nonlocal.tpn:39:9: error TP0202: cannot assign to 'k': it is a let binding
+  help: declare it with 'var'

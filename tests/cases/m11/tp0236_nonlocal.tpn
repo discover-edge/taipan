@@ -1,0 +1,39 @@
+var total = 0
+
+def plain():
+    var n = 1
+    def assign():
+        n = 2
+    def compound():
+        n += 1
+    def pair():
+        n, m = 1, 2
+    let xs = [1]
+    def add():
+        xs += [2]
+    def late():
+        var z = 1
+        nonlocal n
+    def missing():
+        nonlocal nothing
+    def own(p: int):
+        nonlocal p
+    def local():
+        var q = 1
+        nonlocal q
+    nonlocal n
+
+nonlocal total
+
+if True:
+    def in_block():
+        total = 1
+    def in_block_nonlocal():
+        nonlocal total
+        total = 2
+
+def still_let():
+    let k = 1
+    def f():
+        nonlocal k
+        k = 2

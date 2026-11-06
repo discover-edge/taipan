@@ -9,6 +9,7 @@ def double(x: int) -> int:
 def counter() -> Callable[[], int]:
     var n = 0
     def bump() -> int:
+        nonlocal n
         n += 1
         return n
     return bump

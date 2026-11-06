@@ -1,0 +1,94 @@
+def counter() -> int:
+    var n = 0
+    def inc():
+        nonlocal n
+        n += 1
+    inc()
+    inc()
+    return n
+
+print(counter())
+
+def deep() -> int:
+    var n = 1
+    def middle():
+        def inner():
+            nonlocal n
+            n = 5
+        inner()
+    middle()
+    return n
+
+print(deep())
+
+def two() -> tuple[int, int]:
+    var a = 1
+    var b = 2
+    def swap():
+        "Swaps them."
+        nonlocal a, b
+        nonlocal a
+        a, b = b, a
+    swap()
+    return (a, b)
+
+print(two())
+
+def reads() -> int:
+    var n = 1
+    def get() -> int:
+        return n
+    n = 2
+    return get()
+
+print(reads())
+
+def own() -> int:
+    var n = 1
+    def local() -> int:
+        var m = 5
+        m += 1
+        return m
+    return n + local()
+
+print(own())
+
+def lists() -> list[int]:
+    let xs = [1]
+    def add():
+        nonlocal xs
+        xs += [2]
+    add()
+    def write():
+        xs[0] = 9
+        xs.append(3)
+    write()
+    return xs
+
+print(lists())
+
+class Box:
+    value: int
+
+    def __init__(self):
+        self.value = 1
+
+    def bump(self) -> int:
+        var n = self.value
+        def go():
+            nonlocal n
+            n += 1
+        go()
+        return n
+
+print(Box().bump())
+
+def gen() -> Iterator[int]:
+    var n = 0
+    def inc():
+        nonlocal n
+        n += 1
+    inc()
+    yield n
+
+print(list(gen()))

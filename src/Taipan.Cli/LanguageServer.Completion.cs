@@ -20,7 +20,7 @@ public sealed partial class LanguageServer
 
     private static readonly string[] StatementKeywords =
         ["assert", "async", "await", "break", "class", "const", "continue", "def", "del", "elif", "else", "enum", "except", "False", "finally", "for", "from",
-         "if", "import", "lambda", "let", "match", "None", "not", "pass", "raise", "return", "True", "try", "type", "var", "while", "with", "yield"];
+         "if", "import", "lambda", "let", "match", "nonlocal", "None", "not", "pass", "raise", "return", "True", "try", "type", "var", "while", "with", "yield"];
 
     private static readonly string[] ExpressionKeywords = ["await", "False", "lambda", "match", "None", "not", "True"];
 

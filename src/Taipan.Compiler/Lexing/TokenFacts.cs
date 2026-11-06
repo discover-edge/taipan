@@ -43,6 +43,7 @@ public static class TokenFacts
         ["await"] = TokenKind.AwaitKeyword,
         ["with"] = TokenKind.WithKeyword,
         ["assert"] = TokenKind.AssertKeyword,
+        ["nonlocal"] = TokenKind.NonlocalKeyword,
     };
 
     private static readonly Dictionary<TokenKind, string> KeywordText =

@@ -750,6 +750,8 @@ public sealed class Parser
                 return ParseDelStmt();
             case TokenKind.AssertKeyword:
                 return ParseAssertStmt();
+            case TokenKind.NonlocalKeyword:
+                return ParseNonlocalStmt();
             case TokenKind.YieldKeyword:
                 return ParseYieldStmt();
             case TokenKind.PassKeyword:
@@ -999,6 +1001,20 @@ public sealed class Parser
     }
 
     // raise_stmt = "raise" [ expr [ "from" expr ] ]
+    // nonlocal_stmt = "nonlocal" NAME { "," NAME }
+    private NonlocalStmt ParseNonlocalStmt()
+    {
+        var start = Next().Span.Start;
+        var names = ImmutableArray.CreateBuilder<Identifier>();
+        names.Add(ExpectIdentifier());
+        while (At(TokenKind.Comma))
+        {
+            Next();
+            names.Add(ExpectIdentifier());
+        }
+        return new NonlocalStmt(names.ToImmutable(), new TextSpan(start, names[^1].Span.End - start));
+    }
+
     // assert_stmt = "assert" expr [ "," expr ]
     private AssertStmt ParseAssertStmt()
     {

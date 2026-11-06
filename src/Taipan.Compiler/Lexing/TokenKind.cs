@@ -53,6 +53,7 @@ public enum TokenKind
     AwaitKeyword,
     WithKeyword,
     AssertKeyword,
+    NonlocalKeyword,
 
     // Operators and punctuation
     Plus,

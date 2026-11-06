@@ -221,7 +221,7 @@
           "name": "constant.language.taipan"
         },
         {
-          "match": "\\b(if|elif|else|while|match|return|pass|break|continue|try|except|finally|raise|yield|await|with|assert)\\b",
+          "match": "\\b(if|elif|else|while|match|return|pass|break|continue|nonlocal|try|except|finally|raise|yield|await|with|assert)\\b",
           "name": "keyword.control.flow.taipan"
         },
         {

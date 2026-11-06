@@ -54,7 +54,7 @@ Taipan is a statically typed, compiled language with Python's surface syntax. Th
 - **Comments:** `#` to end of line.
 - **Identifiers:** `[A-Za-z_][A-Za-z0-9_]*`. A lone `_` is the wildcard pattern only.
 - **Keywords:**
-  `def class enum let var const if elif else while for in match return pass break continue and or not is some None True False as from import lambda try except finally raise del yield async await with assert`
+  `def class enum let var const if elif else while for in match return pass break continue and or not is some None True False as from import lambda try except finally raise del yield async await with assert nonlocal`
   - `yield` is a keyword since M31 (§3.13), `async` and `await` since M33 (§3.14), `with` since M37 (§3.17), and `assert` since M44 (§5.6).
   - `struct` was a keyword before M15. It's now an ordinary name, and records are declared with `@dataclass class` (§4.3).
   - `type` is a *soft keyword* (M18), as in Python 3.12: it starts a type alias (§3.12) only at the start of a line, followed by a name and then `=` or `[`. Anywhere else it's an ordinary name, so `type = "json"` and `e.type` still work.
@@ -140,7 +140,8 @@ block         = NEWLINE INDENT stmt { stmt } DEDENT ;
 
 stmt          = simple_stmt NEWLINE | compound_stmt | type_alias ;   (* type_alias in a block: M40, §3.18 *)
 simple_stmt   = let_stmt | var_stmt | assign_stmt | return_stmt | raise_stmt | del_stmt | yield_stmt
-              | assert_stmt | "pass" | "break" | "continue" | expr ;
+              | assert_stmt | nonlocal_stmt | "pass" | "break" | "continue" | expr ;
+nonlocal_stmt = "nonlocal" NAME { "," NAME } ;                       (* §3.7 *)
 assert_stmt   = "assert" expr [ "," expr ] ;                         (* M44, §5.6 *)
 del_stmt      = "del" target { "," target } ;                       (* M26, §5.5 *)
 let_stmt      = "let" ( NAME [ ":" type ] | names ) "=" ( expr_list | yield_expr ) ;   (* yield_expr: M42 *)
@@ -401,7 +402,11 @@ There are no other implicit conversions. Explicit conversions use the built-ins 
   - A nested function can't have type parameters (`TP0223`), but it may use those of an enclosing generic function.
   - `return`, `break` and `continue` in its body belong to the nested function. A loop around the `def` isn't its loop (`TP0215`).
 - **Capture:** a lambda or nested function may use any binding visible where it's written. That includes parameters, `self`, and top-level `let`/`var` bindings when it's written at the top level. A function nested inside a top-level function still can't see top-level variables (`TP0211`).
-  - A captured `var` is shared, not copied. The function sees later assignments to it and may assign to it itself. There is no `nonlocal`, since assignment never declares.
+  - A captured `var` is shared, not copied. The function sees later assignments to it.
+  - **`nonlocal`:** a nested function assigns to a binding of an enclosing function only after declaring it, as in Python: `nonlocal n`. Without that, assigning to it, including with `op=` and a list's `+=`, is `TP0236`, since Python would make a new local variable there. Taipan's locals are declared with `let` or `var`, and one can't reuse the outer name (`TP0207`), so a new local needs another name.
+    - `nonlocal` statements come first in the nested function's body, after any docstring, and may be repeated. Elsewhere, or in a function that isn't nested or at the top level, it's `TP0236`.
+    - The name must be a binding of an enclosing function, and not one the function itself declares (`TP0236`). `nonlocal` changes nothing else: assigning to a `let`, a parameter or a loop variable is still `TP0202`, though a `let` or a parameter holding a list may use `+=` (§4.5).
+    - A nested function in a top-level block can't assign to a top-level variable, with or without `nonlocal` (`TP0236`). Python would need `global`, which Taipan doesn't have.
   - A `let`, a parameter or a loop variable can't change, so capturing one captures its value.
   - Each loop iteration gets its own loop variable and its own body bindings. So the functions made by `for i in range(3): fs.append(lambda: i)` return 0, 1 and 2, where in Python they'd all return 2.
 - **Equality and display:**
@@ -2123,6 +2128,7 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 | TP0233 | can't be used in a native program (M23) |
 | TP0234 | abstract class instantiated (M28) |
 | TP0235 | awaitable never awaited (M33) |
+| TP0236 | a nested function assigns to an outer variable without `nonlocal`, or a misplaced `nonlocal` |
 | TPN001 | an SDK project's main file is missing (M34, §18.5; reported by the build, not the compiler) |
 | TPN002 | an SDK project's `taipan.json` lists references or packages (M34, §18.5) |
 | TP0300 | warning: unreachable code (a statement, `match` arm or `except` clause) |
@@ -2216,6 +2222,7 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0228 | `'<B>.<m>' is final` / `'<m>' must return Self, as '<B>.<m>' does` (M39) |
 | TP0228 | `'<m>' must be 'def <m>(self, <params>) -> <R>', as in '<I>.<m>'` (implementing a .NET interface's method, or overriding a .NET class's) (M43) |
 | TP0235 | `this awaitable is never awaited`, with help `write 'await …'` (M33) |
+| TP0236 | `'<x>' belongs to an enclosing function, so assigning to it needs 'nonlocal'`, with help `add 'nonlocal <x>' at the start of this function, or use 'let' with another name for a new variable` / `a nested function can't assign to the top-level variable '<x>'`, with help `pass it in and return the new value` / `'nonlocal' can only be used in a nested function` / `'nonlocal' must come first in a function's body` / `no binding for nonlocal '<x>' found` / `'<x>' is declared in this function, so it can't be nonlocal` |
 | TP0234 | `cannot instantiate abstract class '<C>'`, with help `it does not implement '<B>.<m>'` (`'<B>.<m>' and '<B>.<n>'` for more) / `'cls(…)' may construct the abstract class '<C>'` / `'<C>' cannot add abstract method '<m>', since '<B>.<cm>' calls 'cls(…)'` (M28) |
 | TP0220 | `a bound can't use type parameters` (M40) |
 | TP0220 | `a constraint needs at least two types` / `'<T>' is listed twice in the constraint` / `a constraint cannot be optional or generic` / `constraints are only supported on functions` / `'<T>' is not a protocol` (with help `class bounds are not supported`, for a class) / `bounds are only supported on functions` (M17) |
