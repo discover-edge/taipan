@@ -74,7 +74,7 @@ AssertionError: a negative side has no area
 In an SDK project, a test project is a `.tpnproj` with `IsTestProject`, so `dotnet test` runs it beside your C# tests:
 
 ```xml
-<Project Sdk="TaipanLang.Sdk/0.4.3">
+<Project Sdk="TaipanLang.Sdk/0.5.0">
   <PropertyGroup>
     <IsTestProject>true</IsTestProject>
   </PropertyGroup>
