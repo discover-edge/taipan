@@ -564,6 +564,35 @@ public static class Ops
 
     public static List<T> Concat<T>(List<T> left, List<T> right) => [.. left, .. right];
 
+    // ---- Repetition (SPEC §5.3, M48) ----
+
+    private const int MaxStringLength = 0x3FFFFFDF;
+
+    public static string Repeat(string value, long count)
+    {
+        if (count <= 0 || value.Length == 0)
+            return "";
+        if (count > MaxStringLength / value.Length)
+            throw new OverflowError("repeated sequence is too long");
+        return new System.Text.StringBuilder(value.Length * (int)count).Insert(0, value, (int)count).ToString();
+    }
+
+    public static string Repeat(long count, string value) => Repeat(value, count);
+
+    public static List<T> Repeat<T>(List<T> list, long count)
+    {
+        if (count <= 0 || list.Count == 0)
+            return [];
+        if (count > Array.MaxLength / list.Count)
+            throw new OverflowError("repeated sequence is too long");
+        var result = new List<T>(list.Count * (int)count);
+        for (var i = 0; i < count; i++)
+            result.AddRange(list);
+        return result;
+    }
+
+    public static List<T> Repeat<T>(long count, List<T> list) => Repeat(list, count);
+
     /// <summary><c>xs += ys</c>: adds to the list itself, and gives it back to be assigned (SPEC §4.5).</summary>
     public static List<T> Extend<T>(List<T> list, List<T> items)
     {

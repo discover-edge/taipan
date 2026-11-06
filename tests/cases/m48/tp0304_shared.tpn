@@ -1,0 +1,19 @@
+let grid = [[0] * 3] * 2
+grid[0][0] = 1
+print(grid)
+
+let rows: list[list[int]] = [[]] * 2
+print(rows)
+let maps: list[dict[str, int]] = 2 * [{}]
+print(maps)
+let sets = [{1}] * 2
+print(sets)
+let squares = [[i for i in range(2)]] * 2
+print(squares)
+
+let fine = [[0] * 3 for _ in range(2)]
+fine[0][0] = 1
+print(fine)
+print([0] * 3, [(1, 2)] * 2, ["a"] * 2)
+let row = [0]
+print([row] * 2)

@@ -1,0 +1,18 @@
+let f = 2.0
+let xs = [1]
+print("a" * 2.0)
+print("a" * "b")
+print([1] * True)
+print("a" * f)
+print([1] * [2])
+print(True * "a")
+print(2.0 * [1])
+var ys = [1]
+ys *= 2
+var n = 2
+n *= "a"
+let d = {"a": 1}
+print("a" * d.get("a"))
+print((1, 2) * 2)
+print({1} * 2)
+print({"a": 1} * 2)

@@ -2,7 +2,7 @@
 
 Each milestone is done when **all** of its acceptance criteria pass as golden tests (see CLAUDE.md). Milestones are sequential. Don't start the next one early.
 
-M0–M10 (with M8.1) make up v0.1 and are complete. M11 through M47 are complete.
+M0–M10 (with M8.1) make up v0.1 and are complete. M11 through M48 are complete.
 
 ## M0 — Scaffold
 - Create the solution layout from CLAUDE.md, the `taipan` CLI with `check | emit | build | run` stubs, and the golden-test harness.
@@ -375,3 +375,15 @@ M0–M10 (with M8.1) make up v0.1 and are complete. M11 through M47 are complete
   - The extension packages at the compiler's version with its icon and commands, and its scripted tests show Run File running the file and a missing `taipan` giving the install message.
   - Vim highlights the grammar's sample file as its golden syntax list says, and typing a block indents it.
   - A scripted Neovim session using `lsp/taipan.lua` gets the diagnostics `taipan check` reports.
+
+## M48 — Sequence repetition
+- `str * int` and `list[T] * int`, in either order, as in Python, and `*=` on a `str`. `*=` on a list is a compile error.
+- A warning for repeating a list whose element is itself a new list, dict or set, since every copy shares it.
+- Update SPEC first: the operand types, a count of zero or less, how the expected type applies, the length limit, `*=`, the warning's code and text, and what's deferred (tuples).
+- **Accept:**
+  - `"-" * 3`, `3 * "ab"`, `[0] * 3` and `3 * [0]` give Python's results, and a count of zero or less gives `""` or `[]`.
+  - `let xs: list[int?] = [None] * 3` type-checks through the expected type.
+  - `"a" * 2.0`, `"a" * "b"`, `[1] * True` and `xs *= 2` on a list are `TP0200`.
+  - A result longer than .NET allows raises `OverflowError`.
+  - `[[0] * 3] * 3` warns, while `[[0] * 3 for _ in range(3)]` and `[0] * 3` don't.
+  - `const RULE = "-" * 40` is valid.

@@ -1759,6 +1759,8 @@ def area(s: Shape) -> float:
 | `%` | int, int | int | result takes the divisor's sign (Python semantics) |
 | `+` | str, str | str | concatenation |
 | `+` | list[T], list[T] | list[T] | new list |
+| `*` | str, int; int, str | str | M48: the string repeated; a count of zero or less gives `""` |
+| `*` | list[T], int; int, list[T] | list[T] | M48: a new list holding the elements that many times, as references, as in Python; a count of zero or less gives `[]` |
 | `**` | int, int | int | M35: checked; a negative exponent raises `ValueError`, `negative exponent; use a float base, as in 2.0 ** -1`, and is `TP0200` when it's a literal; `0 ** 0` is `1` |
 | `**` | numeric, with a float | float | M35: as Python's: `0.0 ** -1` raises `ZeroDivisionError`, and a negative base with a fractional exponent raises `ValueError` (Python would give a complex number) |
 | `**` | a class with `__pow__` (or `__rpow__`) | the method's | M35, §4.8 |
@@ -1775,6 +1777,13 @@ def area(s: Shape) -> float:
 Comparing values of unrelated types is `TP0200`.
 
 `-2 ** 2` is `-4` and `2 ** 3 ** 2` is `512`, as in Python: `**` binds tighter than a unary minus on its left, and groups to the right. `//=`, `%=` and `**=` (M35) assign as `+=` does.
+
+**Repetition (M48).**
+- **The count** must be an `int`, so a `float` or a `bool` is `TP0200`, with the usual message.
+- **A list display operand** is checked against the expression's expected type (§4.6), so `let xs: list[int?] = [None] * n` is valid.
+- **Too long:** a result longer than .NET allows raises `OverflowError`, `repeated sequence is too long`, before anything is allocated.
+- **`s *= n`** on a `str` assigns `s * n`, as `op=` does (§4.5). On a list it's `TP0200`, `'*=' isn't supported on a list`, with help `write 'xs = xs * n', which makes a new list`. Python changes the list in place, and `*=` on a list is too rare to carry.
+- **Shared elements:** the copies share the elements, as in Python. So when the list operand is a list display with an element that's itself a list, dict or set display, a comprehension, or a repetition of a list display, it's warning `TP0304`, `every copy shares the same <list|dict|set>`, with help `build each one separately, with a comprehension: [… for _ in range(…)]`.
 
 In `a == b` and `a != b`, `a`'s type is `b`'s expected type (§4.6), so `m == Nothing` with `m: Maybe[int]`, and `xs == []`, are valid.
 
@@ -1957,6 +1966,7 @@ print("done", file=sys.stderr)
 - The emitted C# carries `#line` directives, so .NET stack traces and debuggers map back to `.tpn` lines. Tracebacks come from the program's own line tracking (§8, §15.3), not from stack traces.
 - From M16, every runtime error raises an exception (§3.10), which a `try` can catch. A panic is an exception that nothing catches. The class each one raises follows its message below.
 - **Panic sources and messages:**
+  - repetition: `repeated sequence is too long` (M48, §5.3). (`OverflowError`)
   - int overflow: `integer overflow`. This includes `-x` and `x // -1` for the most negative int. (`OverflowError`)
   - division by zero (`/`, `//`, `%`): `division by zero` (`ZeroDivisionError`)
   - `int(x)` of a float that is NaN, infinite, or outside the int range: `cannot convert <x> to int`, with `<x>` in display form (`ValueError` for NaN, `OverflowError` otherwise, as in Python)
@@ -2136,6 +2146,7 @@ The output is one C# compilation unit per program, compiled in-process by Roslyn
 | TP0301 | warning: broad `except` clause discards the exception |
 | TP0302 | warning: a library's or extension module's definition can't be exported (M22, M25) |
 | TP0303 | warning: a `test_` function that can't be run as a test (M44, §20; reported only by `taipan test`) |
+| TP0304 | warning: repeating a list whose element is a new list, dict or set (M48, §5.3) |
 
 New codes go into this table before they're implemented.
 
@@ -2236,6 +2247,7 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0300 | `unreachable match arm` / `unreachable except clause`, with help `'<B>' is already caught above` / `unreachable code` (M16) |
 | TP0301 | `this clause catches every exception and discards it`, with help `catch a specific class, re-raise with 'raise', or bind it with 'as e' and use it` (M16) |
 | TP0303 | `'<f>' takes parameters, so it isn't run as a test` (M44) |
+| TP0304 | `every copy shares the same <list\|dict\|set>`, with help `build each one separately, with a comprehension: [… for _ in range(…)]` (M48) |
 | TP0302 | `'<f>' is not exported: <reason>`, where `<reason>` is `its type parameter '<T>' has a bound` / `'<T>?' has no .NET generic form` / `it uses '<g>', which isn't a .NET generic` / `it uses '<C>', which isn't exported` / `it has its module's name` (M22) / `'<T>' can't be passed to Python` / `it's generic` (M25) / `it's used as the protocol '<P>'` (M40) / `'<T>' can't be passed to C` / `it's async` / `it has '*args' or '**kwargs'` / `it has keyword-only parameters` (a native library) (M45), with help `rename it '_<f>' to keep it private` |
 
 Types are written as in source: `int`, `str?`, `list[int]`. The type of `None` is written `None`, and a missing value is written `nothing`.
@@ -2302,6 +2314,7 @@ Types are written as in source: `int`, `str?`, `list[int]`. The type of `None` i
 ## 11. Deferred (post-v0.1)
 ROADMAP.md plans most of these from M35 on. They were never part of v0.1:
 
+- tuple repetition, along with tuple concatenation (M48)
 - built-ins beyond M35: `frozenset`, `|=` and the other in-place set operators, `str.format` and `%` formatting, `sorted`'s and `min`'s keys on mixed types, and passing sets to Python and .NET
 - I/O beyond §6.1 (M37): binary files and `bytes`, read-write (`+`) modes, `seek` and `tell`, `open`'s `errors=` and `buffering=`, `newline` values other than `None` and `""`, other encodings, `os.path` and the rest of `os` and `sys`, `contextlib`, parenthesized `with` items and targets other than a name, `yield` inside `with`, and `NotADirectoryError` and Python's other `OSError` classes
 - protocols extending other protocols, a check that a class used with a protocol declares it, properties in protocols, and runtime-checkable protocols (`isinstance(x, P)`)

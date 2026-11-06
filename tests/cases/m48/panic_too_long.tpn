@@ -1,0 +1,11 @@
+let big = 2 ** 40
+try:
+    print(len("ab" * big))
+except OverflowError as e:
+    print(e)
+try:
+    print(len(big * [0, 1]))
+except OverflowError as e:
+    print(e)
+print(len("" * big), len(big * [0][1:]))
+print(len("a" * (2 ** 62)))
