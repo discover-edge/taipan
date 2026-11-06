@@ -1,0 +1,4 @@
+tests/cases/m16/tp0201_recursion_error.tpn:6:8: error TP0201: undefined name 'RecursionError'
+  help: infinite recursion ends the process, as in .NET, so nothing can catch it
+tests/cases/m16/tp0201_recursion_error.tpn:9:7: error TP0201: undefined name 'RecursionError'
+  help: infinite recursion ends the process, as in .NET, so nothing can catch it

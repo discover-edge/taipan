@@ -172,6 +172,7 @@ print(area(Rect(2.0, 3.0)))
 - **Calling an async function starts it**, as a .NET task starts, rather than waiting to be awaited.
 - **`keys()`, `values()` and `items()` give new lists**, not live views.
 - **Exception messages are Taipan's own**, so `str(e)` can differ from Python's.
+- **Infinite recursion ends the process**, as in .NET, and can't be caught, so there's no `RecursionError`. Recursion can go much deeper than Python's limit of 1,000.
 - **Lists are invariant**: a `list[Dog]` isn't a `list[Animal]`, since code holding it as one could add a `Cat`.
 - **Imports are of Taipan modules**, files beside the main file. Python modules are imported with `from python import json` and .NET namespaces with `from dotnet.System.IO import File`.
 - **No dynamic features**: no `eval`, `setattr`, monkey-patching or multiple inheritance. Protocols cover what multiple inheritance usually does.
