@@ -7,4 +7,4 @@ tests/cases/m3/tp0200_operators.tpn:6:9: error TP0200: operator '<' cannot be ap
 tests/cases/m3/tp0200_operators.tpn:7:9: error TP0200: cannot compare int and str
 tests/cases/m3/tp0200_operators.tpn:8:9: error TP0200: cannot compare str and int
 tests/cases/m3/tp0200_operators.tpn:9:9: error TP0200: operator 'in' cannot be applied to str and int
-tests/cases/m3/tp0200_operators.tpn:10:9: error TP0200: operator '*' cannot be applied to str and int
+tests/cases/m3/tp0200_operators.tpn:10:9: error TP0200: operator '*' cannot be applied to str and float

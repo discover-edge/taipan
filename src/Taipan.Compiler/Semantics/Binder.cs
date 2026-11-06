@@ -2556,6 +2556,9 @@ public sealed partial class Binder
         BoundExpr value = BindInPlace(current, assign.Op, operand, assign.Span)
             ?? BindBinaryOperation(current, TypeChecker.ToBinaryOp(assign.Op), operand, assign.Span);
         CheckAssignable(value, targetType, assign.Value.Span);
+        // Python's *= changes a list in place, and it's too rare to carry (SPEC §5.3, M48).
+        if (assign.Op == AssignOp.Multiply && value is BoundBinary { Type: ListOfType } && current.Type is ListOfType)
+            _diagnostics.ReportListRepeatAssign(assign.Span);
         // A list's += adds to the list itself, as in Python (SPEC §4.5).
         if (assign.Op == AssignOp.Add && value is BoundBinary { Op: BinaryOp.Add, Type: ListOfType } add)
             return new BoundListExtend(add.Left, add.Right, assign.Span);
@@ -3449,6 +3452,7 @@ public sealed partial class Binder
         BinaryExpr { Op: BinaryOp.And or BinaryOp.Or } logical => BindLogical(logical),
         IsNoneExpr isNone => BindIsNone(isNone),
         IsExpr identity => BindIs(identity),
+        BinaryExpr { Op: BinaryOp.Multiply } multiply => BindMultiply(multiply, expected),
         BinaryExpr binary => BindBinaryOperation(BindValue(binary.Left), binary.Op, BindValue(binary.Right), binary.Span),
         CallExpr call => BindCall(call, expected),
         ListExpr list => BindList(list, expected),
@@ -3658,6 +3662,39 @@ public sealed partial class Binder
         }
         return new BoundUnary(unary.Op, operand, operand.Type, unary.Span);
     }
+
+    // A list display being repeated takes the expression's expected type (SPEC §5.3, M48).
+    private BoundExpr BindMultiply(BinaryExpr binary, TaipanType? expected)
+    {
+        var left = BindValue(binary.Left, ExpectedOfRepeated(binary.Left, expected));
+        var right = BindValue(binary.Right, ExpectedOfRepeated(binary.Right, expected));
+        var result = BindBinaryOperation(left, binary.Op, right, binary.Span);
+        if (result.Type is ListOfType && SharedElementKind(binary.Left) is { } kind)
+            _diagnostics.ReportRepeatSharesElements(binary.Left.Span, kind);
+        else if (result.Type is ListOfType && SharedElementKind(binary.Right) is { } rightKind)
+            _diagnostics.ReportRepeatSharesElements(binary.Right.Span, rightKind);
+        return result;
+    }
+
+    private static TaipanType? ExpectedOfRepeated(Expr operand, TaipanType? expected) =>
+        operand is ListExpr or BinaryExpr { Op: BinaryOp.Multiply } ? expected : null;
+
+    // What a list display being repeated would share between its copies (SPEC §5.3, M48).
+    private static string? SharedElementKind(Expr operand) => operand is ListExpr list
+        ? list.Elements.Select(NewCollectionKind).FirstOrDefault(kind => kind is not null)
+        : null;
+
+    private static string? NewCollectionKind(Expr element) => element switch
+    {
+        ListExpr => "list",
+        DictExpr => "dict",
+        SetExpr => "set",
+        ComprehensionExpr { Kind: ComprehensionKind.List } => "list",
+        ComprehensionExpr { Kind: ComprehensionKind.Dict } => "dict",
+        ComprehensionExpr { Kind: ComprehensionKind.Set } => "set",
+        BinaryExpr { Op: BinaryOp.Multiply, Left: var left, Right: var right } when left is ListExpr || right is ListExpr => "list",
+        _ => null,
+    };
 
     private BoundExpr BindBinaryOperation(BoundExpr left, BinaryOp op, BoundExpr right, TextSpan span)
     {

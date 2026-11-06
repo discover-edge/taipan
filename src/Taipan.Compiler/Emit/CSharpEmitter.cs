@@ -1869,6 +1869,8 @@ public sealed partial class CSharpEmitter
             BinaryOp.Power => $"{Runtime}.Ops.Pow({l}, {r})",
             BinaryOp.Add => $"{left} + {right}",
             BinaryOp.Subtract => $"{left} - {right}",
+            // Each order keeps its operands' order of evaluation (SPEC §5.3, M48).
+            BinaryOp.Multiply when binary.Type is PrimitiveType { Name: "str" } || Concrete(binary.Type) is ListOfType => $"{Runtime}.Ops.Repeat({l}, {r})",
             BinaryOp.Multiply => $"{left} * {right}",
             BinaryOp.Divide => $"{Runtime}.Ops.Div({l}, {r})",
             BinaryOp.FloorDivide => $"{Runtime}.Ops.FloorDiv({l}, {r})",

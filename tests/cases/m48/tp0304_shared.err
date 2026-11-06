@@ -1,0 +1,10 @@
+tests/cases/m48/tp0304_shared.tpn:1:12: warning TP0304: every copy shares the same list
+  help: build each one separately, with a comprehension: [… for _ in range(…)]
+tests/cases/m48/tp0304_shared.tpn:5:29: warning TP0304: every copy shares the same list
+  help: build each one separately, with a comprehension: [… for _ in range(…)]
+tests/cases/m48/tp0304_shared.tpn:7:38: warning TP0304: every copy shares the same dict
+  help: build each one separately, with a comprehension: [… for _ in range(…)]
+tests/cases/m48/tp0304_shared.tpn:9:12: warning TP0304: every copy shares the same set
+  help: build each one separately, with a comprehension: [… for _ in range(…)]
+tests/cases/m48/tp0304_shared.tpn:11:15: warning TP0304: every copy shares the same list
+  help: build each one separately, with a comprehension: [… for _ in range(…)]

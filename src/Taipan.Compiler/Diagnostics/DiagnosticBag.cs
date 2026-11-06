@@ -403,6 +403,12 @@ public sealed class DiagnosticBag
     public void ReportUnreachableCode(TextSpan span) =>
         Warn("TP0300", span, "unreachable code");
 
+    public void ReportRepeatSharesElements(TextSpan span, string kind) =>
+        Warn("TP0304", span, $"every copy shares the same {kind}", "build each one separately, with a comprehension: [… for _ in range(…)]");
+
+    public void ReportListRepeatAssign(TextSpan span) =>
+        Add("TP0200", span, "'*=' isn't supported on a list", "write 'xs = xs * n', which makes a new list");
+
     public void ReportBroadHandler(TextSpan span) =>
         Warn("TP0301", span, "this clause catches every exception and discards it",
             "catch a specific class, re-raise with 'raise', or bind it with 'as e' and use it");

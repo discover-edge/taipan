@@ -276,6 +276,9 @@ public static class TypeChecker
         {
             BinaryOp.Add when left == TaipanType.Str && right == TaipanType.Str => TaipanType.Str,
             BinaryOp.Add when left is ListOfType && left == right => left,
+            // Repetition, in either order (SPEC §5.3, M48).
+            BinaryOp.Multiply when (left == TaipanType.Str || left is ListOfType) && right == TaipanType.Int => left,
+            BinaryOp.Multiply when left == TaipanType.Int && (right == TaipanType.Str || right is ListOfType) => right,
             BinaryOp.Add or BinaryOp.Subtract or BinaryOp.Multiply when ints => TaipanType.Int,
             BinaryOp.Add or BinaryOp.Subtract or BinaryOp.Multiply when numeric => TaipanType.Float,
             BinaryOp.Divide when numeric => TaipanType.Float,

@@ -1,0 +1,15 @@
+tests/cases/m48/tp0200_repetition.tpn:3:7: error TP0200: operator '*' cannot be applied to str and float
+tests/cases/m48/tp0200_repetition.tpn:4:7: error TP0200: operator '*' cannot be applied to str and str
+tests/cases/m48/tp0200_repetition.tpn:5:7: error TP0200: operator '*' cannot be applied to list[int] and bool
+tests/cases/m48/tp0200_repetition.tpn:6:7: error TP0200: operator '*' cannot be applied to str and float
+tests/cases/m48/tp0200_repetition.tpn:7:7: error TP0200: operator '*' cannot be applied to list[int] and list[int]
+tests/cases/m48/tp0200_repetition.tpn:8:7: error TP0200: operator '*' cannot be applied to bool and str
+tests/cases/m48/tp0200_repetition.tpn:9:7: error TP0200: operator '*' cannot be applied to float and list[int]
+tests/cases/m48/tp0200_repetition.tpn:11:1: error TP0200: '*=' isn't supported on a list
+  help: write 'xs = xs * n', which makes a new list
+tests/cases/m48/tp0200_repetition.tpn:13:6: error TP0200: expected int, found str
+tests/cases/m48/tp0200_repetition.tpn:15:13: error TP0203: int? must be narrowed before use
+  help: narrow it with 'is some', or give a default with '??'
+tests/cases/m48/tp0200_repetition.tpn:16:7: error TP0200: operator '*' cannot be applied to tuple[int, int] and int
+tests/cases/m48/tp0200_repetition.tpn:17:7: error TP0200: operator '*' cannot be applied to set[int] and int
+tests/cases/m48/tp0200_repetition.tpn:18:7: error TP0200: operator '*' cannot be applied to dict[str, int] and int

@@ -1,0 +1,4 @@
+Traceback (most recent call last):
+  File "tests/cases/m48/panic_too_long.tpn", line 11, in <module>
+    print(len("a" * (2 ** 62)))
+OverflowError: repeated sequence is too long

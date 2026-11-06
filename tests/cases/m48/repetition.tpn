@@ -1,0 +1,54 @@
+print("-" * 3, 3 * "ab", "ab" * 0, "ab" * -1, "" * 5)
+print("😀" * 2, len("😀" * 2))
+print([0] * 3, 3 * [0], [1, 2] * 2, [1] * 0, [1] * -1)
+
+let n = 2
+print("x" * n, n * "x", [n] * n)
+
+let opt: list[int?] = [None] * 2
+print(opt)
+let more: list[int?] = 2 * [None, 1]
+print(more)
+let nested: list[int?] = [None] * 2 * 2
+print(nested)
+
+let base = [1, 2]
+let copy = base * 1
+copy.append(3)
+print(base, copy)
+
+let shared = [base] * 2
+shared[0].append(9)
+print(shared)
+
+var s = "ab"
+s *= 2
+print(s)
+s *= 0
+print(s == "")
+
+let width = 3
+print("=" * width + "|" + "." * (width - 1))
+print(2 * 3 * "a", "a" * 2 * 2, (1 + 1) * "b")
+
+def order(label: str, value: int) -> int:
+    print(label)
+    return value
+
+def text(label: str) -> str:
+    print(label)
+    return "t"
+
+print(order("left", 2) * text("right"))
+print(text("left") * order("right", 2))
+
+@dataclass
+class P:
+    x: int
+
+let ps = [P(1)] * 2
+print(ps[0] is ps[1])
+
+const RULE = "-" * 5
+const COUNT = 2 * 3
+print(RULE, COUNT)
