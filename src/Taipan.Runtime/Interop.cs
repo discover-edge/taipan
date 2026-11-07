@@ -60,24 +60,35 @@ public static class Interop
         }
     }
 
+    // Python starts once per process. Threads that need it at the same time, such as parallel tests or
+    // the language server's requests, wait for the first to finish, since pythonnet can't start twice.
+    private static readonly object StartLock = new();
+    private static volatile bool _started;
+
     private static void EnsureStarted()
     {
-        if (PythonEngine.IsInitialized)
+        if (_started)
             return;
-        var library = FindLibrary()
-            ?? throw Panic.Create("cannot load Python: no Python installation found (set PYTHONNET_PYDLL)");
-        try
+        lock (StartLock)
         {
-            global::Python.Runtime.Runtime.PythonDLL = library;
-            PythonEngine.Initialize();
-            PythonEngine.BeginAllowThreads();
+            if (_started)
+                return;
+            var library = FindLibrary()
+                ?? throw Panic.Create("cannot load Python: no Python installation found (set PYTHONNET_PYDLL)");
+            try
+            {
+                global::Python.Runtime.Runtime.PythonDLL = library;
+                PythonEngine.Initialize();
+                PythonEngine.BeginAllowThreads();
+            }
+            catch (Exception e) when (e is not TaipanPanic)
+            {
+                // pythonnet wraps the reason, such as a library that won't load, in a type initializer's exception.
+                throw Panic.Create($"cannot load Python: {e.GetBaseException().Message}");
+            }
+            Display.ExternalFormat = (value, nested) => value is PyObject python ? Run(() => Show(python, nested)) : null;
+            _started = true;
         }
-        catch (Exception e) when (e is not TaipanPanic)
-        {
-            // pythonnet wraps the reason, such as a library that won't load, in a type initializer's exception.
-            throw Panic.Create($"cannot load Python: {e.GetBaseException().Message}");
-        }
-        Display.ExternalFormat = (value, nested) => value is PyObject python ? Run(() => Show(python, nested)) : null;
     }
 
     /// <summary>
