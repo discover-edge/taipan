@@ -72,6 +72,7 @@ public static class TypeChecker
         IterableOfType iterable => iterable.Element,
         GeneratorOfType generator => generator.Yielded,
         OpaqueType { Name: "TextIO" } => TaipanType.Str,
+        OpaqueType { Name: "range" } => TaipanType.Int,
         // A .NET IEnumerable<T> (SPEC §13.13, M43).
         DotNetType net => DotNetTypes.EnumerableElement(net)?.Element,
         ClassType classType when classType.Symbol.FindMethod("__iter__") is { ReturnType: var result } => Substitute(result, MapOf(classType)) is IteratorOfType iterator ? iterator.Element : null,
@@ -283,6 +284,7 @@ public static class TypeChecker
             BinaryOp.Add or BinaryOp.Subtract or BinaryOp.Multiply when numeric => TaipanType.Float,
             BinaryOp.Divide when numeric => TaipanType.Float,
             BinaryOp.FloorDivide or BinaryOp.Modulo when ints => TaipanType.Int,
+            BinaryOp.FloorDivide or BinaryOp.Modulo when numeric => TaipanType.Float,
             // `**` (SPEC §5.3, M35): an int for ints, a float with a float.
             BinaryOp.Power when ints => TaipanType.Int,
             BinaryOp.Power when numeric => TaipanType.Float,

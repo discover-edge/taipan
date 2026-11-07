@@ -1,0 +1,24 @@
+print(list(reversed([1, 2, 3])), list(reversed("ab😀")), list(reversed({"a": 1, "b": 2})), list(reversed(range(3))))
+print(list(reversed(range(0, 10, 3))), list(reversed(range(3, 0, -1))), list(reversed(range(0))), list(reversed([1])))
+print(list(reversed(tuple([1, 2]))))
+print("".join(reversed("abc")), sum(reversed([1, 2])), sorted(reversed([2, 1])))
+for x in reversed([1, 2]):
+    print(x)
+
+let it = reversed([1, 2])
+print(next(it), next(it), next(it, 9), list(it))
+
+let later = [1, 2, 3]
+let lazy = reversed(later)
+later[2] = 9
+print(next(lazy))
+later.pop()
+later.pop()
+print(next(lazy, 0))
+
+let d = {"a": 1}
+try:
+    for k in reversed(d):
+        d["b"] = 2
+except RuntimeError as e:
+    print("RuntimeError")

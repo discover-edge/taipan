@@ -93,6 +93,7 @@ public sealed partial class Binder
         TaipanType element;
         if (loop.Iterable is CallExpr { Callee: NameExpr { Name: "range" } } range && _scope.Lookup("range") is FunctionSymbol { Builtin: BuiltinFunction.Range })
         {
+            ReportKeywordArguments(range, "range");
             var (start, stop, step) = BindRangeArguments(range);
             (iterable, element) = (new BoundRangeValues(start, stop, step, range.Span), TaipanType.Int);
         }

@@ -20,6 +20,9 @@ public static class Iter
         }
     }
 
+    /// <summary>A range can't change, so it needs no guard (SPEC §6).</summary>
+    public static IEnumerable<long> Over(RangeObject range) => range;
+
     /// <summary>A tuple[T, ...] can't change, so it needs no guard (SPEC §3.19).</summary>
     public static IEnumerable<T> Over<T>(VarTuple<T> tuple) => tuple;
 

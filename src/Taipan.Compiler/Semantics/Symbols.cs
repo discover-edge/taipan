@@ -25,7 +25,7 @@ public sealed class VariableSymbol(string name, TaipanType type, VariableKind ki
     public string? RuntimePath { get; init; }
 }
 
-public enum BuiltinFunction { Print, Len, Str, Int, Float, Range, Sorted, Map, Filter, Enumerate, Zip, IsInstance, Super, Repr, Hash, List, Iter, Next, Abs, Min, Max, Sum, Any, All, Round, DivMod, Set, Tuple, Input, Open, Exit, GetEnv,
+public enum BuiltinFunction { Print, Len, Str, Int, Float, Range, Reversed, Sorted, Map, Filter, Enumerate, Zip, IsInstance, Super, Repr, Hash, List, Iter, Next, Abs, Min, Max, Sum, Any, All, Round, DivMod, Set, Tuple, Input, Open, Exit, GetEnv,
     // M42 (SPEC §3.20): anext, and asyncio's functions.
     Anext, Gather, Sleep, WaitFor, Timeout, Run }
 
@@ -158,6 +158,7 @@ public sealed class FunctionSymbol(
         new("float", [], TaipanType.Float, BuiltinFunction.Float),
         new("range", [], TaipanType.Nothing, BuiltinFunction.Range),
         new("sorted", [], TaipanType.Error, BuiltinFunction.Sorted),
+        new("reversed", [], TaipanType.Error, BuiltinFunction.Reversed),
         new("map", [], TaipanType.Error, BuiltinFunction.Map),
         new("filter", [], TaipanType.Error, BuiltinFunction.Filter),
         new("enumerate", [], TaipanType.Error, BuiltinFunction.Enumerate),

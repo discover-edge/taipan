@@ -107,6 +107,14 @@ public static class Ops
     }
 
     /// <summary><c>%</c>: the result takes the divisor's sign, as in Python.</summary>
+    /// <summary><c>a // b</c> with a float, as CPython computes it (SPEC §5.3, M50).</summary>
+    public static double FloorDiv(double left, double right) =>
+        right != 0 ? Numbers.DivMod(left, right).Item1 : throw new ZeroDivisionError("division by zero");
+
+    /// <summary><c>a % b</c> with a float, as CPython computes it (SPEC §5.3, M50).</summary>
+    public static double Mod(double left, double right) =>
+        right != 0 ? Numbers.DivMod(left, right).Item2 : throw new ZeroDivisionError("division by zero");
+
     public static long Mod(long left, long right)
     {
         if (right == 0)
@@ -157,9 +165,13 @@ public static class Ops
 
     public static T Index<T>(VarTuple<T> tuple, long index) => tuple.At(index);
 
+    public static long Index(RangeObject range, long index) => range.At(index);
+
     public static VarTuple<T> Slice<T>(VarTuple<T> tuple, long? start, long? stop, long? step) => tuple.Slice(start, stop, step);
 
     public static bool In<T>(T item, VarTuple<T> tuple) => tuple.Contains(item);
+
+    public static bool In(long item, RangeObject range) => range.Contains(item);
 
     public static TValue Index<TKey, TValue>(OrderedDictionary<TKey, TValue> dict, TKey key) where TKey : notnull =>
         dict.TryGetValue(key, out var value) ? value : throw new KeyError($"missing key {Display.Repr(key)}");

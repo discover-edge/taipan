@@ -1847,6 +1847,9 @@ public sealed partial class Binder
                 if (_asNative && !_asExtension)
                     _diagnostics.ReportNativePython(py.Span, _asExtension);
                 return TaipanType.Py;
+            case NamedType { Name.Text: "range" } range when ResolveTypeName("range") is null:
+                Index(range.Name.Span, new SemanticIndex.BuiltinType("range"));
+                return TaipanType.Range;
             case NamedType { Name.Text: "TextIO" } file when ResolveTypeName("TextIO") is null:
                 Index(file.Name.Span, new SemanticIndex.BuiltinType("TextIO"));
                 return TaipanType.TextIO;
@@ -3011,6 +3014,7 @@ public sealed partial class Binder
         }
         else if (isRange)
         {
+            ReportKeywordArguments((CallExpr)forStmt.Iterable, "range");
             (start, iterable, step) = BindRangeArguments((CallExpr)forStmt.Iterable);
             variableType = TaipanType.Int;
         }
@@ -3089,6 +3093,7 @@ public sealed partial class Binder
             IterableOfType iterated => iterated.Element,
             // A file gives its lines (SPEC §6.1).
             OpaqueType { Name: "TextIO" } => TaipanType.Str,
+            OpaqueType { Name: "range" } => TaipanType.Int,
             // A .NET IEnumerable<T> (SPEC §13.13, M43).
             DotNetType net when DotNetTypes.EnumerableElement(net) is { } enumerable => enumerable.Element,
             { ContainsError: true } => TaipanType.Error,
@@ -3100,7 +3105,6 @@ public sealed partial class Binder
 
     private (BoundExpr? Start, BoundExpr Stop, BoundExpr? Step) BindRangeArguments(CallExpr call)
     {
-        ReportKeywordArguments(call, "range");
         var arguments = call.Arguments.Select(a => BindExpected(a.Value, TaipanType.Int)).ToImmutableArray();
         switch (arguments.Length)
         {
@@ -3938,6 +3942,7 @@ public sealed partial class Binder
     private static TaipanType? MembershipResult(TaipanType item, TaipanType container) => container switch
     {
         PrimitiveType { Name: "str" } when item == TaipanType.Str => TaipanType.Bool,
+        OpaqueType { Name: "range" } when item == TaipanType.Int => TaipanType.Bool,
         ListOfType list when TypeChecker.AreComparable(item, list.Element) => TaipanType.Bool,
         VarTupleOfType varTuple when TypeChecker.AreComparable(item, varTuple.Element) => TaipanType.Bool,
         SetOfType set when TypeChecker.AreComparable(item, set.Element) => TaipanType.Bool,
@@ -4236,6 +4241,8 @@ public sealed partial class Binder
                 return NarrowedElement(new BoundIndex(target, BindExpected(indexExpr.Index, dict.Key), dict.Value, indexExpr.Span));
             case PrimitiveType { Name: "str" }:
                 return new BoundIndex(target, BindExpected(indexExpr.Index, TaipanType.Int), TaipanType.Str, indexExpr.Span);
+            case OpaqueType { Name: "range" }:
+                return new BoundIndex(target, BindExpected(indexExpr.Index, TaipanType.Int), TaipanType.Int, indexExpr.Span);
             case DotNetType net:
                 return BindDotNetIndex(target, net, indexExpr);
             // A class with __getitem__ (SPEC §4.9, M39).
@@ -5481,6 +5488,35 @@ public sealed partial class Binder
         return new BoundCall(function, [.. sources.Select(s => s.Value)], type, call.Span);
     }
 
+    // reversed(x) on a sequence (SPEC §6, M50).
+    private BoundExpr BindReversed(CallExpr call, FunctionSymbol function)
+    {
+        var arguments = call.Arguments.Select(a => BindValue(a.Value)).ToImmutableArray();
+        if (arguments.Length != 1)
+        {
+            _diagnostics.ReportWrongArgumentCount(call.Callee.Span, "reversed", "1 argument", arguments.Length);
+            return new BoundErrorExpr(call.Span);
+        }
+        var argument = arguments[0];
+        var element = argument.Type switch
+        {
+            ListOfType list => list.Element,
+            VarTupleOfType tuple => tuple.Element,
+            DictOfType dict => dict.Key,
+            PrimitiveType { Name: "str" } => TaipanType.Str,
+            OpaqueType { Name: "range" } => TaipanType.Int,
+            _ => null,
+        };
+        if (element is null)
+        {
+            if (argument.Type.ContainsError || ReportIfOptional(argument, argument.Span))
+                return new BoundErrorExpr(call.Span);
+            _diagnostics.ReportReversedNeedsSequence(argument.Span, argument.Type);
+            return new BoundErrorExpr(call.Span);
+        }
+        return new BoundCall(function, arguments, new IteratorOfType(element), call.Span);
+    }
+
     private BoundExpr BindBuiltinCall(CallExpr call, FunctionSymbol function, BuiltinFunction builtin, TaipanType? expected)
     {
         switch (builtin)
@@ -5491,10 +5527,12 @@ public sealed partial class Binder
                 return BindMapFilter(call, function, builtin, expected);
             case BuiltinFunction.Print:
                 return new BoundCall(function, BindArgumentValues(call), TaipanType.Nothing, call.Span);
+            // A value since M50 (SPEC §6).
             case BuiltinFunction.Range:
-                BindArguments(call);
-                _diagnostics.ReportRangeOutsideFor(call.Callee.Span);
-                return new BoundErrorExpr(call.Span);
+                var (start, stop, step) = BindRangeArguments(call);
+                return new BoundCall(function, [.. ((BoundExpr?[])[start, stop, step]).OfType<BoundExpr>()], TaipanType.Range, call.Span);
+            case BuiltinFunction.Reversed:
+                return BindReversed(call, function);
             case BuiltinFunction.Super:
                 // `super().m(…)` is bound as a method call (SPEC §4.3); this is any other use.
                 BindArguments(call);
@@ -5522,7 +5560,7 @@ public sealed partial class Binder
             case BuiltinFunction.Len when argument.Type is IteratorOfType or IterableOfType:
                 _diagnostics.ReportNotIterableFromList(argumentSpan, $"'len' takes a list, dict or str, found {argument.Type}");
                 break;
-            case BuiltinFunction.Len when argument.Type is not (ListOfType or DictOfType or SetOfType or VarTupleOfType) && argument.Type != TaipanType.Py && !argument.Type.ContainsError:
+            case BuiltinFunction.Len when argument.Type is not (ListOfType or DictOfType or SetOfType or VarTupleOfType) && argument.Type != TaipanType.Range && argument.Type != TaipanType.Py && !argument.Type.ContainsError:
                 CheckAssignable(argument, TaipanType.Str, argumentSpan, "str, list, dict or set");
                 break;
             case BuiltinFunction.Int or BuiltinFunction.Float when argument.Type == TaipanType.Str:
