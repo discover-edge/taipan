@@ -12,7 +12,7 @@ sidebar:
 A Taipan project is a `.tpnproj` file using the `TaipanLang.Sdk` project SDK:
 
 ```xml
-<Project Sdk="TaipanLang.Sdk/0.5.0">
+<Project Sdk="TaipanLang.Sdk/0.6.0">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
   </PropertyGroup>
