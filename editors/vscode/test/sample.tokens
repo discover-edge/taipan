@@ -347,3 +347,53 @@
 66:14 "(f.read(), file" -
 66:29 "=" keyword.operator.assignment.taipan
 66:30 "sys.stderr)" -
+68:1 "def" storage.type.function.taipan
+68:5 "docs" entity.name.function.taipan
+68:9 "() " -
+68:12 "->" punctuation.separator.annotation.result.taipan
+68:15 "str" support.type.builtin.taipan
+68:18 ":" -
+69:5 "\"\"\"" string.quoted.double.taipan
+69:8 "A docstring" string.quoted.double.taipan
+70:1 "    across lines, with an escape" string.quoted.double.taipan
+70:33 "\\t" string.quoted.double.taipan constant.character.escape.taipan
+70:35 "." string.quoted.double.taipan
+71:5 "\"\"\"" string.quoted.double.taipan
+72:5 "let" storage.modifier.declaration.taipan
+72:8 " raw " -
+72:13 "=" keyword.operator.assignment.taipan
+72:15 "r\"" string.quoted.raw.taipan
+72:17 "\\d" string.quoted.raw.taipan
+72:19 "+" string.quoted.raw.taipan
+72:20 "\\n" string.quoted.raw.taipan
+72:22 "\"" string.quoted.raw.taipan
+72:24 "+" keyword.operator.arithmetic.taipan
+72:26 "r\"\"\"" string.quoted.raw.taipan
+72:30 "\\s" string.quoted.raw.taipan
+73:1 "\"\"\"" string.quoted.raw.taipan
+74:5 "let" storage.modifier.declaration.taipan
+74:8 " codes " -
+74:15 "=" keyword.operator.assignment.taipan
+74:17 "\"" string.quoted.double.taipan
+74:18 "\\r" string.quoted.double.taipan constant.character.escape.taipan
+74:20 "\\x41" string.quoted.double.taipan constant.character.escape.taipan
+74:24 "\\u00e9" string.quoted.double.taipan constant.character.escape.taipan
+74:30 "\\U0001F600" string.quoted.double.taipan constant.character.escape.taipan
+74:40 "\\012" string.quoted.double.taipan constant.character.escape.taipan
+74:44 "\"" string.quoted.double.taipan
+75:5 "return" keyword.control.flow.taipan
+75:12 "f\"\"\"" string.interpolated.taipan
+75:16 "{" string.interpolated.taipan meta.interpolation.taipan punctuation.section.interpolation.begin.taipan
+75:17 "raw" string.interpolated.taipan meta.interpolation.taipan
+75:20 "}" string.interpolated.taipan meta.interpolation.taipan punctuation.section.interpolation.end.taipan
+75:22 "{{" string.interpolated.taipan constant.character.escape.taipan
+75:24 "braces" string.interpolated.taipan
+75:30 "}}" string.interpolated.taipan constant.character.escape.taipan
+76:1 "\"\"\"" string.interpolated.taipan
+76:5 "+" keyword.operator.arithmetic.taipan
+76:7 "rf\"" string.interpolated.taipan
+76:10 "\\d" string.interpolated.taipan
+76:12 "{" string.interpolated.taipan meta.interpolation.taipan punctuation.section.interpolation.begin.taipan
+76:13 "codes" string.interpolated.taipan meta.interpolation.taipan
+76:18 "}" string.interpolated.taipan meta.interpolation.taipan punctuation.section.interpolation.end.taipan
+76:19 "\"" string.interpolated.taipan

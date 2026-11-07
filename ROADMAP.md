@@ -2,7 +2,7 @@
 
 Each milestone is done when **all** of its acceptance criteria pass as golden tests (see CLAUDE.md). Milestones are sequential. Don't start the next one early.
 
-M0–M10 (with M8.1) make up v0.1 and are complete. M11 through M48 are complete.
+M0–M10 (with M8.1) make up v0.1 and are complete. M11 through M49 are complete.
 
 ## M0 — Scaffold
 - Create the solution layout from CLAUDE.md, the `taipan` CLI with `check | emit | build | run` stubs, and the golden-test harness.
@@ -387,3 +387,23 @@ M0–M10 (with M8.1) make up v0.1 and are complete. M11 through M48 are complete
   - A result longer than .NET allows raises `OverflowError`.
   - `[[0] * 3] * 3` warns, while `[[0] * 3 for _ in range(3)]` and `[0] * 3` don't.
   - `const RULE = "-" * 40` is valid.
+
+## M49 — Strings
+- Triple-quoted strings, spanning lines, with `f` and `r`, so Python-style docstrings compile, in class bodies and module files too.
+- Raw strings: `r"…"`, `rf` and `fr`, lowercase only.
+- Escapes: `\r \a \b \f \v`, octal, `\xhh`, `\uhhhh`, `\Uhhhhhhhh`, and a backslash before a newline. `\N{…}` and other unknown escapes stay `TP0005`, and so does a lone surrogate.
+- Containers and `repr` escape what Python's `repr` escapes.
+- `\{` and `\}` become `TP0005`, since Python keeps the backslash.
+- Update SPEC first: the literal forms, the escapes, the display of strings, and `TP0005`'s messages.
+- **Accept:**
+  - Each form's output matches Python 3.12, apart from Taipan's double quotes.
+  - A docstring compiles in a function, a class, a module and a library.
+  - Each bad form reports its error at the right column.
+  - `taipan fmt` leaves a multi-line string's text alone, and the language server's semantic tokens cover it.
+
+## M50 — Everyday sequences and numbers
+- `range(…)` as a value, with a `range` type: `list(range(3))`, `sum(range(3))`, `let r = range(3)`, `len(r)`, `2 in r`, `r[0]`, `==`, displayed as `range(0, 3)`, and reusable across loops. Slicing a range stays `TP0200`. `let range = 3` stays allowed.
+- `reversed(x)` on a list, `str`, dict, `range` or `tuple[T, ...]`, giving a lazy `Iterator[T]`. Anything else is `TP0200`.
+- `%` and `//` on floats, including mixed `int` and `float`, `%=` and `//=`, with Python's signs and rounding.
+- Update SPEC first: the `range` type, `reversed`, and the operator table.
+- **Accept:** results match Python 3.12, including negatives and infinities, and the rejected forms are `TP0200`.

@@ -1,0 +1,5 @@
+"""An extension module's docstring."""
+
+def twice(n: int) -> int:
+    """Doubles it."""
+    return n * 2

@@ -1,0 +1,3 @@
+tests/cases/m49/tp0006_nested.tpn:2:10: error TP0006: f-strings cannot be nested
+tests/cases/m49/tp0006_nested.tpn:3:10: error TP0006: f-strings cannot be nested
+tests/cases/m49/tp0006_nested.tpn:4:10: error TP0006: f-strings cannot be nested

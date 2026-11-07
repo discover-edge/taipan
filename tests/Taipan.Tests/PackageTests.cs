@@ -8,6 +8,7 @@ namespace Taipan.Tests;
 /// minute, so it runs only with <c>TAIPAN_TEST_PACKAGE=1</c> (as CI sets) and otherwise passes
 /// with a note.
 /// </summary>
+[Collection(PackingRepo.Name)]
 public class PackageTests
 {
     [Fact]

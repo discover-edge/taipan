@@ -49,7 +49,14 @@ public sealed class DiagnosticBag
         Add("TP0004", span, $"invalid character {Describe(character)}");
 
     public void ReportInvalidEscape(TextSpan span, Rune character) =>
-        Add("TP0005", span, $"invalid escape sequence '\\{character}'");
+        Add("TP0005", span, $"invalid escape sequence '\\{character}'",
+            character.Value is '{' or '}' ? $"write '{character}{character}' in an f-string, or '{character}' elsewhere" : null);
+
+    public void ReportEscapeNeedsHexDigits(TextSpan span, char letter, int digits) =>
+        Add("TP0005", span, $"'\\{letter}' needs {digits} hex digits");
+
+    public void ReportEscapeNotACharacter(TextSpan span, char letter, string hex) =>
+        Add("TP0005", span, $"'\\{letter}{hex}' isn't a character a string can hold");
 
     public void ReportSingleCloseBraceInFString(TextSpan span) =>
         Add("TP0006", span, "single '}' is not allowed in an f-string");

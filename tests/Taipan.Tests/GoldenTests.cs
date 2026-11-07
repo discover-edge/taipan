@@ -131,3 +131,13 @@ public sealed class RunningPrograms
 {
     public const string Name = "Running programs";
 }
+
+/// <summary>
+/// Test classes that run <c>dotnet pack</c> on the repository's projects, which writes to their
+/// <c>bin/Release</c>, so they can't run in parallel with each other.
+/// </summary>
+[CollectionDefinition(Name)]
+public sealed class PackingRepo
+{
+    public const string Name = "Packing the repository";
+}

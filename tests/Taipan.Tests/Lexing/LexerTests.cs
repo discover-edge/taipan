@@ -166,9 +166,34 @@ public class LexerTests
     [Fact]
     public void StringValuesAreDecoded()
     {
-        var tokens = Lexer.Lex(SourceText.From("\"a\\nb\" 'it\\'s' \"\\t\\\\\\\"\\{\\}\" '\"' \"'\"")).Tokens;
+        var tokens = Lexer.Lex(SourceText.From("\"a\\nb\" 'it\\'s' \"\\t\\\\\\\"{}\" '\"' \"'\"")).Tokens;
         Assert.Equal(["a\nb", "it's", "\t\\\"{}", "\"", "'"], tokens.Where(t => t.Kind == TokenKind.String).Select(t => t.Value));
     }
+
+    [Theory]
+    [InlineData("\"\"\"a\nb\"\"\"", "a\nb")]
+    [InlineData("'''a\"b'''", "a\"b")]
+    [InlineData("\"\"", "")]
+    [InlineData("\"\"\"\"\"\"", "")]
+    [InlineData("r\"\\n\"", "\\n")]
+    [InlineData("r\"\\\"\"", "\\\"")]
+    [InlineData("r\"\"\"\\\n\"\"\"", "\\\n")]
+    [InlineData("\"a\\\nb\"", "ab")]
+    [InlineData("\"\\r\\a\\b\\f\\v\"", "\r\a\b\f\v")]
+    [InlineData("\"\\0\\012\\1234\"", "\0\nS4")]
+    [InlineData("\"\\x41\\u00e9\\U0001F600\"", "A\u00e9\U0001F600")]
+    public void StringForms(string source, string value)
+    {
+        var token = Assert.Single(Lexer.Lex(SourceText.From(source)).Tokens, t => t.Kind == TokenKind.String);
+        Assert.Equal(value, token.Value);
+    }
+
+    [Theory]
+    [InlineData("rf\"{x}\"")]
+    [InlineData("fr\"\\d{x}\"")]
+    [InlineData("f\"\"\"{x}\n\"\"\"")]
+    public void FStringForms(string source) =>
+        Assert.Single(Lexer.Lex(SourceText.From(source)).Tokens, t => t.Kind == TokenKind.FString);
 
     [Fact]
     public void StringsMayContainNonAscii()

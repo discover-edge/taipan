@@ -1,0 +1,2 @@
+tests/cases/m49/tp0003_hole.tpn:2:8: error TP0003: unterminated string
+tests/cases/m49/tp0003_hole.tpn:3:2: error TP0003: unterminated string

@@ -64,6 +64,7 @@ public sealed class PackedFeed : IDisposable
 /// other builds and tests with <c>dotnet test</c>, and a packed Taipan library installs from a
 /// local feed into a fresh C# project and is called from it.
 /// </summary>
+[Collection(PackingRepo.Name)]
 public class BuildIntegrationTests(PackedFeed packed) : IClassFixture<PackedFeed>
 {
     /// <summary>Runs <c>dotnet</c> with a package cache of its own, so the feed's packages are always the ones just packed.</summary>

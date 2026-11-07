@@ -63,8 +63,11 @@ Taipan is a statically typed, compiled language with Python's surface syntax. Th
 - **Integer literals:** decimal, with `_` separators allowed (`1_000`). They're 64-bit signed, and overflow at compile time is `TP0200`. The range check belongs to the type checker, not the lexer, so `-9223372036854775808` is valid.
 - **Float literals:** `1.5`, `1e9`, `2.5e-3`. A leading digit is required, so `.5` is invalid. Formally: `digits "." digits [exp] | digits exp`, where `exp = ("e" | "E") ["+" | "-"] digits`. `1.` lexes as the int `1` followed by `.`.
 - **Number literal rules:** `_` may appear only between two digits. A multi-digit integer part can't start with `0`. A number immediately followed by a letter, digit-less exponent, or `_` (`12abc`, `1e`, `1_`, `007`) is `TP0007`.
-- **String literals:** `"..."` or `'...'`. Escapes are `\n \t \\ \" \' \{ \}`. Any other backslash sequence is `TP0005`. Strings are single-line only, and an unterminated string is `TP0003`.
-- **F-strings:** `f"...{expr}..."` or `f'...'`, with a lowercase `f` immediately before the quote. A hole holds any expression except an f-string. `{{` and `}}` are literal braces, and literal text uses the string escapes. The lexer emits the f-string as a single token holding the raw text plus hole spans, and the parser re-lexes the holes.
+- **String literals:** `"..."` or `'...'`, on one line, or since M49 `"""..."""` or `'''...'''`, which may span lines and keep their newlines and indentation. An unterminated string is `TP0003`.
+  - **Escapes:** `\n \t \r \a \b \f \v \\ \" \'`, and since M49 octal (`\0`, `\012`, up to three digits), `\xhh`, `\uhhhh` and `\Uhhhhhhhh`, as in Python. A backslash before a newline joins the lines, in any string. Any other backslash sequence is `TP0005`, including `\N{…}` and, since M49, `\{` and `\}`, where Python keeps the backslash. So is a `\x`, `\u` or `\U` without enough hex digits, or one naming a value above `U+10FFFF` or a surrogate, which a Taipan string can't hold.
+  - **Raw strings (M49):** a lowercase `r` before the quote, in any of the forms: `r"\d+"`. A backslash stays in the string, along with the character after it, so `r"\""` is a backslash and a quote, and `r"\"` is unterminated, as in Python.
+  - **Docstrings:** a string literal may stand alone as a statement, which does nothing. Since M49 it may also stand alone in a class body or at the top level of a module, a library or an extension module, where other statements are `TP0222`.
+- **F-strings:** `f"...{expr}..."` or `f'...'`, with a lowercase `f` immediately before the quote, and since M49 triple-quoted, or raw with `rf` or `fr`. A hole stays on one line (`TP0003`), where Python 3.12 allows several. A hole holds any expression except an f-string. `{{` and `}}` are literal braces, and literal text uses the string escapes. The lexer emits the f-string as a single token holding the raw text plus hole spans, and the parser re-lexes the holes.
   - A hole runs from `{` to its matching `}`. Inside a hole the lexer tracks nested brackets and skips over string literals of either quote, so `f"{d["k"]}"` is valid.
   - `TP0006`: a lone `}` in literal text, an empty or whitespace-only hole, or an f-string inside a hole.
   - **A hole's parts (M26)** are, in order: the expression; an optional `=`, which shows the expression's text before its value; an optional conversion, `!r` or `!s`; and an optional format spec, `:` followed by the spec up to the hole's closing `}`. So `{x}`, `{x=}`, `{x!r}`, `{x:>8.2f}` and `{x=!r:>10}`. The lexer finds them at the hole's top level only: a `:` or `!` inside brackets or a string, or one that's part of `!=`, `==`, `<=`, `>=`, belongs to the expression. A `lambda` in a hole must be parenthesized, as in Python, since its `:` would start a spec.
@@ -94,7 +97,7 @@ Taipan is a statically typed, compiled language with Python's surface syntax. Th
 | TP0002 | `dedent does not match any outer indentation level` |
 | TP0003 | `unterminated string` |
 | TP0004 | `invalid character '<c>'`, or `invalid character U+XXXX` for control and whitespace characters |
-| TP0005 | `invalid escape sequence '\<c>'` |
+| TP0005 | `invalid escape sequence '\<c>'` (with help `write '{{' in an f-string, or '{' elsewhere` for `\{`, and likewise for `\}`) / `'\<c>' needs <n> hex digits` / `'\<c><hex>' isn't a character a string can hold` (M49) |
 | TP0006 | `single '}' is not allowed in an f-string` / `empty f-string hole` / `f-strings cannot be nested` / `invalid conversion '!<c>'`, with help `use '!r' or '!s'` / `format specs can't be nested` / `invalid format spec '<spec>'` (M26) |
 | TP0007 | `invalid number literal` |
 
@@ -129,7 +132,7 @@ type_param    = NAME [ ":" ( "(" type { "," type } [ "," ] ")"     (* constraint
 class_def     = { decorator } "class" NAME [ type_params ] [ "(" base { "," base } ")" ] ":"   (* M15, §4.3 *)
                 NEWLINE INDENT class_member { class_member } DEDENT ;
 base          = NAME [ "." NAME ] [ "[" type { "," type } "]" ] ;   (* more than one class base is TP0225; protocols may be added: M17 *)
-class_member  = NAME ":" type [ "=" expr ] NEWLINE | method_def | type_alias | "pass" NEWLINE ;   (* type_alias: M40 *)
+class_member  = NAME ":" type [ "=" expr ] NEWLINE | method_def | type_alias | "pass" NEWLINE | STRING NEWLINE ;   (* type_alias: M40; STRING: M49 *)
 method_def    = { decorator } [ "async" ] "def" NAME "(" [ method_params ] ")" [ "->" type ] ":" ( block | "..." NEWLINE ) ;   (* M5; "...": M17; async: M33 *)
 method_params = ( "self" | "cls" ) { "," param } [ "," ] | params ;  (* M28: "cls", or neither, for class and static methods, §4.8 *)
 
@@ -1836,7 +1839,7 @@ In `a == b` and `a != b`, `a`'s type is `b`'s expected type (§4.6), so `m == No
 - `len(x) -> int` takes a list, dict, str or, since M35, set (an iterator is `TP0200`, with help `convert it with 'list(…)' first`). For a `str` it counts Unicode code points, so `len("🐍")` is `1`.
 - `range(stop)`, `range(start, stop)` and, since M35, `range(start, stop, step)` iterate only (they're not a list). A negative `step` counts down, and a `step` of 0 raises `ValueError`, `range() arg 3 must not be zero`.
 - `str(x) -> str` gives the display form.
-- `repr(x) -> str` (M28) gives the form a value has inside a list, as `!r` writes it: `repr("a")` is `"a"` with its quotes. A class's `__repr__` defines it (§4.8).
+- `repr(x) -> str` (M28) gives the form a value has inside a list, as `!r` writes it: `repr("a")` is `"a"` with its quotes. In that form a string escapes what Python's `repr` escapes (M49): `\\`, `\"`, `\n`, `\r`, `\t`, and any other character Python doesn't count as printable, as `\xhh`, `\uhhhh` or `\Uhhhhhhhh`. A class's `__repr__` defines it (§4.8).
 - `hash(x) -> int` (M28) takes any value that can be a dict key (§3.1), and is `TP0200` otherwise, `cannot hash <T>`. Equal values hash equally. For an `int` or `bool` it's Python's (`hash(-1)` is `-2`), for a class with `__hash__` it's that method's result reduced as Python reduces it (§4.8), and otherwise its value is unspecified and may differ between runs, as `str` hashes do in Python.
 - `int(x: float) -> int` truncates toward zero. An `int` argument is returned unchanged. `int(x: str) -> int?` parses, returning `None` on failure. It accepts an optional sign and decimal digits with `_` only between digits (as in §1.3), with surrounding whitespace allowed. A value outside the int range gives `None`.
 - `float(x: int) -> float`. A `float` argument is returned unchanged. `float(x: str) -> float?` accepts the same forms as `int(str)`, plus an optional fraction and exponent (`1.5`, `2e-3`, `.5`, `5.`), and `inf`, `infinity` and `nan` in any case. Otherwise it returns `None`.
@@ -3080,10 +3083,10 @@ int main(void) {
   | Text | Group | Linked to |
   |---|---|---|
   | `# …` | `taipanComment` | `Comment` |
-  | `"…"`, `'…'` | `taipanString` | `String` |
+  | `"…"`, `'…'`, triple-quoted and raw strings | `taipanString` | `String` |
   | escapes in strings | `taipanEscape` | `SpecialChar` |
   | `{{` and `}}` in f-strings | `taipanFBraces` | `SpecialChar` |
-  | `f"…"`, `f'…'` | `taipanFString` | `String` |
+  | `f"…"`, `f'…'`, triple-quoted and raw f-strings | `taipanFString` | `String` |
   | an f-string hole's braces | `taipanHoleBrace` | `Delimiter` |
   | the code in a hole | `taipanHole` | nothing: colored as code |
   | a hole's conversion (`!r`) and format spec (`:>8`) | `taipanFormat` | `Special` |

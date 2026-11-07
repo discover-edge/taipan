@@ -1,0 +1,60 @@
+"""A module docstring."""
+
+let block = """line one
+    indented "quoted" 'single'
+line three
+"""
+print(block)
+print(len(block))
+print('''a "b" c''', """a 'b' c""", """""", '''''', len(""""""))
+print("""ends with quote\"""" + "|")
+print("""has \""" inside""")
+print("""joined \
+line""")
+print("single \
+joined")
+
+let name = "ada"
+print(f"""hello {name}
+  and {name.upper()} {{braces}}
+""")
+print(f'''{name!r} {len(name):>3}''')
+print(f"""{"a" + "b"} {{}}""")
+
+print(r"a\nb", r'c\td', r"\d+\.\d*", r"C:\temp\new")
+print(r"\"", len(r"\""), r"\\", len(r"\\"))
+print(r"""raw
+\n""", len(r"""\n"""))
+print(rf"{name}\n", fr"\t{name}", rf"""{name}\d""", fr'''\d{name}''')
+print(rf"\{name}")
+
+print("tab\there", "cr\rx", "a\ab" == "a" + "\a" + "b")
+print(len("\r"), len("\a"), len("\b"), len("\f"), len("\v"), len("\0"), len("\012"), len("\101"))
+print("\101\102", "\x41", "\u00e9", "\U0001F600", len("\U0001F600"), "\x7a")
+print("\0" == "\x00", "\7" == "\a", "\1234" == "S4", "\x41B")
+print("\u0041" == "A")
+print(f"\x41{1}\u00e9\t|")
+
+print(repr("a\nb\tc"), repr("\r"), repr("\\"))
+print(repr("\x00\x01\x1f\x7f"), repr("\x80\x9f"), repr("\xa0\xad"), repr("\u200b\u2028\u3000"))
+print(repr("é ñ 😀 中"), repr(" "), repr("\ue000"), repr("\U000e0001"))
+print(["\r"], ("\x00", 1), {"\x7f": "\u200b"})
+print(f"{"\r"!r}")
+
+def documented() -> int:
+    """Returns one.
+
+    At length.
+    """
+    return 1
+
+class Doc:
+    """A class."""
+    x: int
+    "Another string, anywhere."
+
+    def __init__(self):
+        "Sets x."
+        self.x = 2
+
+print(documented(), Doc().x)

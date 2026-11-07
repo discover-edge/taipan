@@ -293,7 +293,7 @@ public sealed partial class Binder
                 ImportValue(target, name);
             if (module != main)
             {
-                foreach (var stmt in module.File.Unit.Items.OfType<Stmt>())
+                foreach (var stmt in module.File.Unit.Items.OfType<Stmt>().Where(s => !IsDocstring(s)))
                     _diagnostics.ReportStatementInModule(stmt.Span);
             }
         }
@@ -302,6 +302,8 @@ public sealed partial class Binder
         foreach (var stmt in main.File.Unit.Items.OfType<Stmt>())
         {
             // A library has no top level (SPEC §14.3), nor does an extension module (SPEC §17.1).
+            if (IsDocstring(stmt))
+                continue;
             if (_asLibrary)
                 _diagnostics.ReportStatementInLibrary(stmt.Span);
             else if (_asExtension)
@@ -2222,6 +2224,8 @@ public sealed partial class Binder
                 return;
         }
     }
+
+    private static bool IsDocstring(Stmt stmt) => stmt is ExprStmt { Expr: StringLiteral };
 
     private enum Reach { Local, EnclosingFunction, TopLevel, Unknown }
 

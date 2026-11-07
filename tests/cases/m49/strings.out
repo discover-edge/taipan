@@ -1,0 +1,33 @@
+line one
+    indented "quoted" 'single'
+line three
+
+51
+a "b" c a 'b' c   0
+ends with quote"|
+has """ inside
+joined line
+single joined
+hello ada
+  and ADA {braces}
+
+"ada"   3
+ab {}
+a\nb c\td \d+\.\d* C:\temp\new
+\" 2 \\ 2
+raw
+\n 2
+ada\n \tada ada\d \dada
+\ada
+tab	here crx True
+1 1 1 1 1 1 1 1
+AB A é 😀 1 z
+True True True AB
+True
+A1é	|
+"a\nb\tc" "\r" "\\"
+"\x00\x01\x1f\x7f" "\x80\x9f" "\xa0\xad" "\u200b\u2028\u3000"
+"é ñ 😀 中" " " "\ue000" "\U000e0001"
+["\r"] ("\x00", 1) {"\x7f": "\u200b"}
+"\r"
+1 2
