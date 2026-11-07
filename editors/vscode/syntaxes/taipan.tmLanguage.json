@@ -413,7 +413,7 @@
     "builtin": {
       "patterns": [
         {
-          "match": "\\b(print|len|range|repr|hash|sorted|map|filter|enumerate|zip|iter|next|isinstance|super|abs|min|max|sum|any|all|round|divmod|input|open)\\b",
+          "match": "\\b(print|len|range|reversed|repr|hash|sorted|map|filter|enumerate|zip|iter|next|isinstance|super|abs|min|max|sum|any|all|round|divmod|input|open)\\b",
           "name": "support.function.builtin.taipan"
         },
         {

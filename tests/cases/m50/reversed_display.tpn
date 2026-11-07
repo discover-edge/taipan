@@ -1,0 +1,10 @@
+print(reversed([1, 2]))
+print(reversed("a"))
+print(reversed({"a": 1}))
+print(reversed(range(1)))
+print(reversed(tuple([1, 2])))
+print(iter(range(1)))
+let rs: list[range] = [range(2)]
+print(rs, rs[0] == range(2), rs == [range(2)])
+let maybe: range? = None
+print(maybe)

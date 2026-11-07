@@ -205,9 +205,6 @@ public sealed class DiagnosticBag
     public void ReportIntegerOutOfRange(TextSpan span) =>
         Add("TP0200", span, "integer literal is out of range");
 
-    public void ReportRangeOutsideFor(TextSpan span) =>
-        Add("TP0200", span, "'range' can only be used in a for loop");
-
     public void ReportCannotIterate(TextSpan span, object type) =>
         Add("TP0200", span, $"cannot iterate over {type}");
 
@@ -425,6 +422,9 @@ public sealed class DiagnosticBag
 
     public void ReportFieldNotMethod(TextSpan span, string field) =>
         Add("TP0200", span, $"'{field}' is a field, not a method");
+
+    public void ReportReversedNeedsSequence(TextSpan span, object type) =>
+        Add("TP0200", span, $"'reversed' needs a sequence, found {type}", "convert it with 'list(…)' first");
 
     public void ReportCannotIndex(TextSpan span, object type) =>
         Add("TP0200", span, $"cannot index {type}");

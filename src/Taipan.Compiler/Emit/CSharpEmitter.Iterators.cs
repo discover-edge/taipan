@@ -162,6 +162,7 @@ public sealed partial class CSharpEmitter
         (argument is BoundToIterable converted ? Concrete(converted.Value.Type) : Concrete(argument.Type)) switch
         {
             ListOfType => "list_iterator object",
+            OpaqueType { Name: "range" } => "range_iterator object",
             _ => "iterator object",
         };
 }

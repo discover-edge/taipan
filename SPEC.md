@@ -1759,7 +1759,9 @@ def area(s: Shape) -> float:
 | `+ - *` | numeric, mixed | float | int widens |
 | `/` | numeric | float | always true division; ÷0 panics (floats too) |
 | `//` | int, int | int | floor division (Python semantics); ÷0 panics |
+| `//` | numeric, with a float | float | M50: floor division, as Python's: `-7.5 // 2` is `-4.0`; ÷0 raises `ZeroDivisionError` |
 | `%` | int, int | int | result takes the divisor's sign (Python semantics) |
+| `%` | numeric, with a float | float | M50: result takes the divisor's sign, as Python's: `-7.5 % 2` is `0.5`; ÷0 raises `ZeroDivisionError` |
 | `+` | str, str | str | concatenation |
 | `+` | list[T], list[T] | list[T] | new list |
 | `*` | str, int; int, str | str | M48: the string repeated; a count of zero or less gives `""` |
@@ -1837,7 +1839,9 @@ In `a == b` and `a != b`, `a`'s type is `b`'s expected type (§4.6), so `m == No
 - `input()` and `input(prompt: str) -> str` (M37) write `prompt` to stdout without a newline, flushing it, then read a line from stdin, without its line ending (`\n` or `\r\n`). At the end of the input, it raises `EOFError`, `EOF when reading a line`.
 - `open(file: str, mode: str = "r", *, encoding: str = "utf-8", newline: str? = None) -> TextIO` (M37) opens a text file (§6.1).
 - `len(x) -> int` takes a list, dict, str or, since M35, set (an iterator is `TP0200`, with help `convert it with 'list(…)' first`). For a `str` it counts Unicode code points, so `len("🐍")` is `1`.
-- `range(stop)`, `range(start, stop)` and, since M35, `range(start, stop, step)` iterate only (they're not a list). A negative `step` counts down, and a `step` of 0 raises `ValueError`, `range() arg 3 must not be zero`.
+- `range(stop)`, `range(start, stop)` and, since M35, `range(start, stop, step)` count from `start`, as in Python. A negative `step` counts down, and a `step` of 0 raises `ValueError`, `range() arg 3 must not be zero`.
+  - **Since M50, `range(…)` is a value** of the built-in type `range`, written as such in annotations. It's an `Iterable[int]`, so `list(range(3))`, `sum(range(3))`, `let r = range(3)` and `for x in r` work, as many times as needed. `len(r)` gives its length, `x in r` takes an `int`, and `r[i]` follows a list's rules, raising `IndexError`. Two ranges are `==` when they give the same values, so `range(0) == range(2, 1)`. It displays as `range(0, 3)`, or `range(0, 6, 2)` with a step other than 1. Slicing one is `TP0200`, and so are `next(r)` and using one as a dict key or set element. `range` itself still isn't a value (§3.7), and a local may still be named `range`.
+- `reversed(x) -> Iterator[T]` (M50) takes a `list[T]`, `str`, `dict[K, V]` (its keys), `range` or `tuple[T, ...]`, and goes through it from the end, lazily, as in Python. Anything else is `TP0200`, `'reversed' needs a sequence, found <T>`, with help `convert it with 'list(…)' first`, as Python raises `TypeError`. Adding to a dict during the iteration raises `RuntimeError`, as for a loop (§5.2). A list is read as it goes: shrinking it ends the iteration if the next index is past its end, as in Python.
 - `str(x) -> str` gives the display form.
 - `repr(x) -> str` (M28) gives the form a value has inside a list, as `!r` writes it: `repr("a")` is `"a"` with its quotes. In that form a string escapes what Python's `repr` escapes (M49): `\\`, `\"`, `\n`, `\r`, `\t`, and any other character Python doesn't count as printable, as `\xhh`, `\uhhhh` or `\Uhhhhhhhh`. A class's `__repr__` defines it (§4.8).
 - `hash(x) -> int` (M28) takes any value that can be a dict key (§3.1), and is `TP0200` otherwise, `cannot hash <T>`. Equal values hash equally. For an `int` or `bool` it's Python's (`hash(-1)` is `-2`), for a class with `__hash__` it's that method's result reduced as Python reduces it (§4.8), and otherwise its value is unspecified and may differ between runs, as `str` hashes do in Python.
@@ -2170,7 +2174,7 @@ Each diagnostic points at the expression, name or keyword at fault. TP0208 point
 | TP0200 | `expected <T>, found lambda` / `cannot sort <T>`, with help `pass a key, e.g. 'key=lambda x: ...'` / `cannot sort by <K>` (M11) |
 | TP0200 | `tuple index must be an integer literal` / `index <i> out of range for <T>` (a tuple) / `cannot unpack <T>` / `cannot slice <T>` (M12) |
 | TP0200 | `integer literal is out of range` |
-| TP0200 | `'range' can only be used in a for loop` / `cannot iterate over <T>` |
+| TP0200 | `cannot iterate over <T>` / `'reversed' needs a sequence, found <T>`, with help `convert it with 'list(…)' first` (M50) |
 | TP0200 | `'<T>' is inferred as both <A> and <B>` / `'<T>' must be <A> or <B>, found <C>` (type-argument inference and constraints; `A, B or C` for longer tuples) |
 | TP0200 | `'<m>' is a module, not a value` |
 | TP0200 | `'as' converts py values; found <T>` / `cannot convert to <T>` / `cannot pass <T> to Python` (§10) |

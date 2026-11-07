@@ -1,0 +1,42 @@
+tests/cases/m50/tp0200_sequences.tpn:2:7: error TP0200: cannot slice range
+tests/cases/m50/tp0200_sequences.tpn:3:12: error TP0200: expected Iterator, found range
+tests/cases/m50/tp0200_sequences.tpn:4:7: error TP0200: operator 'in' cannot be applied to str and range
+tests/cases/m50/tp0200_sequences.tpn:5:9: error TP0200: expected int, found str
+tests/cases/m50/tp0200_sequences.tpn:6:7: error TP0200: operator '<' cannot be applied to range and range
+tests/cases/m50/tp0200_sequences.tpn:7:10: error TP0200: dict keys must be int, str, bool, tuples of those, or plain class instances, found range
+tests/cases/m50/tp0200_sequences.tpn:8:10: error TP0200: set elements must be hashable, found range
+tests/cases/m50/tp0200_sequences.tpn:9:9: error TP0200: 'range' cannot be used as a value
+  help: wrap it in a lambda
+tests/cases/m50/tp0200_sequences.tpn:10:13: error TP0200: expected int, found float
+tests/cases/m50/tp0200_sequences.tpn:11:7: error TP0209: 'range' takes 1 to 3 arguments, found 4
+tests/cases/m50/tp0200_sequences.tpn:12:13: error TP0218: 'range' takes no keyword arguments
+tests/cases/m50/tp0200_sequences.tpn:13:16: error TP0200: 'reversed' needs a sequence, found set[int]
+  help: convert it with 'list(…)' first
+tests/cases/m50/tp0200_sequences.tpn:14:16: error TP0200: 'reversed' needs a sequence, found Iterator[int]
+  help: convert it with 'list(…)' first
+tests/cases/m50/tp0200_sequences.tpn:15:16: error TP0200: 'reversed' needs a sequence, found Iterator[int]
+  help: convert it with 'list(…)' first
+tests/cases/m50/tp0200_sequences.tpn:16:16: error TP0200: 'reversed' needs a sequence, found tuple[int, str]
+  help: convert it with 'list(…)' first
+tests/cases/m50/tp0200_sequences.tpn:17:16: error TP0200: 'reversed' needs a sequence, found int
+  help: convert it with 'list(…)' first
+tests/cases/m50/tp0200_sequences.tpn:18:7: error TP0209: 'reversed' takes 1 argument, found 0
+tests/cases/m50/tp0200_sequences.tpn:19:7: error TP0209: 'reversed' takes 1 argument, found 2
+tests/cases/m50/tp0200_sequences.tpn:20:7: error TP0209: 'reversed' takes 1 argument, found 2
+tests/cases/m50/tp0200_sequences.tpn:20:21: error TP0218: 'reversed' takes no keyword arguments
+tests/cases/m50/tp0200_sequences.tpn:21:16: error TP0218: 'range' takes no keyword arguments
+tests/cases/m50/tp0200_sequences.tpn:23:25: error TP0218: 'range' takes no keyword arguments
+tests/cases/m50/tp0200_sequences.tpn:24:7: error TP0200: operator 'in' cannot be applied to float and range
+tests/cases/m50/tp0200_sequences.tpn:25:7: error TP0200: cannot index Iterator[int]
+  help: convert it with 'list(…)' first
+tests/cases/m50/tp0200_sequences.tpn:26:11: error TP0200: 'len' takes a list, dict or str, found Iterator[int]
+  help: convert it with 'list(…)' first
+tests/cases/m50/tp0200_sequences.tpn:27:7: error TP0200: operator '%' cannot be applied to float and str
+tests/cases/m50/tp0200_sequences.tpn:28:7: error TP0200: operator '//' cannot be applied to str and float
+tests/cases/m50/tp0200_sequences.tpn:30:6: error TP0200: expected int, found float
+tests/cases/m50/tp0200_sequences.tpn:31:7: error TP0200: expected int, found float
+tests/cases/m50/tp0200_sequences.tpn:32:7: error TP0200: operator '%' cannot be applied to float and bool
+tests/cases/m50/tp0200_sequences.tpn:37:16: error TP0200: 'reversed' needs a sequence, found Own
+  help: convert it with 'list(…)' first
+tests/cases/m50/tp0200_sequences.tpn:39:16: error TP0203: list[int]? must be narrowed before use
+  help: narrow it with 'is some', or give a default with '??'

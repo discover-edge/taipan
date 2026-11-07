@@ -90,6 +90,41 @@ public static class Iterators
         public override string ToString() => Display.Format(value);
     }
 
+    // ---- reversed (SPEC §6, M50), with Python's names for what they display as ----
+
+    public static IIterator<T> Reversed<T>(List<T> list) =>
+        new Iterator<T>(ReversedList(list, list.Count).GetEnumerator(), "list_reverseiterator object");
+
+    private static IEnumerable<T> ReversedList<T>(List<T> list, int from)
+    {
+        for (var i = from - 1; i >= 0 && i < list.Count; i--)
+            yield return list[i];
+    }
+
+    public static IIterator<string> Reversed(string value) =>
+        new Iterator<string>(Enumerable.Reverse(Taipan.Runtime.Iter.Over(value).ToList()).GetEnumerator(), "reversed object");
+
+    public static IIterator<T> Reversed<T>(VarTuple<T> tuple) =>
+        new Iterator<T>(Enumerable.Reverse(tuple.ToList()).GetEnumerator(), "reversed object");
+
+    public static IIterator<long> Reversed(RangeObject range) =>
+        new Iterator<long>(range.Backward().GetEnumerator(), "range_iterator object");
+
+    public static IIterator<TKey> Reversed<TKey, TValue>(OrderedDictionary<TKey, TValue> dict) where TKey : notnull =>
+        new Iterator<TKey>(ReversedDict(dict, dict.Count).GetEnumerator(), "dict_reversekeyiterator object");
+
+    private static IEnumerable<TKey> ReversedDict<TKey, TValue>(OrderedDictionary<TKey, TValue> dict, int count) where TKey : notnull
+    {
+        for (var i = count - 1; i >= 0; i--)
+        {
+            if (dict.Count != count)
+                throw new RuntimeError("dict mutated during iteration");
+            yield return dict.GetAt(i).Key;
+        }
+        if (dict.Count != count)
+            throw new RuntimeError("dict mutated during iteration");
+    }
+
     /// <summary><c>iter(xs)</c>: an iterator over an iterable, or the iterator itself.</summary>
     public static IIterator<T> Iter<T>(IEnumerable<T> values, string name) =>
         values as IIterator<T> ?? new Iterator<T>(values.GetEnumerator(), name);

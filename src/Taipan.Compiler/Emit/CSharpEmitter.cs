@@ -1913,6 +1913,8 @@ public sealed partial class CSharpEmitter
                 p => $"@{call.Function.Parameters[p].Name}", p => $"{Global(DefaultName(FunctionName(call), call.Function, p))}{TypeArgumentList(call)}()")})",
             null => $"{FunctionReference(call)}({arguments})",
             BuiltinFunction.Print => $"{Runtime}.Builtins.Print({arguments})",
+            BuiltinFunction.Range => $"{Runtime}.RangeObject.Of({arguments})",
+            BuiltinFunction.Reversed => $"{Runtime}.Iterators.Reversed({arguments})",
             // M37 (SPEC §6.1).
             BuiltinFunction.Input => $"{Runtime}.Builtins.Input({arguments})",
             BuiltinFunction.Open => $"{Runtime}.TextFile.@open({arguments})",

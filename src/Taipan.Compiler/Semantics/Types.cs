@@ -24,6 +24,7 @@ public abstract record TaipanType
 
     /// <summary>An open text file or standard stream (SPEC §6.1, M37).</summary>
     public static readonly TaipanType TextIO = new OpaqueType("TextIO", "Taipan.Runtime.TextFile");
+    public static readonly TaipanType Range = new OpaqueType("range", "Taipan.Runtime.RangeObject");
 
     /// <summary><c>Self</c> in a class method's result (SPEC §4.9, M39): the type of what it's called on.</summary>
     public static readonly TaipanType Self = new SelfType();

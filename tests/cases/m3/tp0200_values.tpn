@@ -14,7 +14,7 @@ let d = 5
 d(1)
 "text"(1)
 let big = 9223372036854775808
-let r = range(3)
+let r = range
 for x in 5:
     pass
 print(len(twice(1)))

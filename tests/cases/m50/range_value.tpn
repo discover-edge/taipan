@@ -1,0 +1,53 @@
+print(list(range(3)), list(range(1, 4)), list(range(0, 10, 3)), list(range(3, 0, -1)), list(range(0)), list(range(5, 1)))
+print(sum(range(4)), max(range(4)), sorted(range(3), reverse=True), set(range(2)) == {0, 1})
+print(list(map(str, range(2))), list(enumerate(range(2))), list(zip(range(2), "ab")), any(x > 1 for x in range(3)))
+
+let r = range(2, 8, 2)
+print(r, range(3), range(1, 4), range(0, -3, -1), str(r), repr(r), [r], f"{r}")
+print(len(r), len(range(0)), len(range(10, 0, -3)), len(range(1, 2, 5)))
+print(r[0], r[1], r[-1], r[-3], range(10, 0, -3)[2])
+print(2 in r, 3 in r, 8 in r, 0 in r, 1 not in r, 7 in range(10, 0, -3), 8 in range(10, 0, -3), 0 in range(0))
+
+for x in r:
+    print(x)
+for x in r:
+    print(x)
+print([x * x for x in r], list(r), list(r))
+
+print(range(3) == range(3), range(3) == range(0, 3), range(0) == range(2, 1), range(0, 3, 2) == range(0, 4, 2))
+print(range(1, 2, 5) == range(1, 2, 9), range(3) != range(4), range(0, 3, 2) == range(0, 3))
+
+def total(numbers: range) -> int:
+    var sum_so_far = 0
+    for n in numbers:
+        sum_so_far += n
+    return sum_so_far
+
+print(total(range(4)))
+
+def values(numbers: Iterable[int]) -> list[int]:
+    return list(numbers)
+
+print(values(range(2)))
+let it = iter(range(2))
+print(next(it), next(it), next(it, 9))
+
+let big = range(2 ** 62, 2 ** 62 + 3)
+print(len(big), big[2], 2 ** 62 + 1 in big, list(big)[0])
+print(range(9223372036854775806, 9223372036854775807)[0], list(range(9223372036854775805, 9223372036854775807)))
+print(list(range(-9223372036854775807, -9223372036854775805)))
+
+def shadow() -> int:
+    let range = 3
+    return range
+
+print(shadow())
+
+try:
+    print(range(0, 5, 0))
+except ValueError as e:
+    print(e)
+try:
+    print(r[5])
+except IndexError as e:
+    print("IndexError")
